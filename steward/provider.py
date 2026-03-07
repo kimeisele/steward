@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -38,6 +39,16 @@ _ADDR_ANTHROPIC = MAHA_QUANTUM * 13   # 1781
 
 _PRANA_FREE = MAHA_QUANTUM * 100      # 13700 (free tier = full energy)
 _PRANA_CHEAP = MAHA_QUANTUM * 10      # 1370  (paid = less energy = lower priority)
+
+# Transient errors that warrant retry (not provider switch)
+_TRANSIENT_ERRORS = (
+    "timeout", "timed out", "rate limit", "429", "503", "502",
+    "connection reset", "connection refused", "temporary",
+    "overloaded", "capacity", "retry",
+)
+
+_MAX_RETRIES = 2
+_RETRY_BASE_DELAY = 1.0  # seconds
 
 
 # ── Provider Cell Payload ────────────────────────────────────────────
@@ -127,46 +138,62 @@ class ProviderChamber:
                 logger.debug("'%s' over quota, skipping", payload.name)
                 continue
 
-            try:
-                call_kwargs = dict(kwargs)
-                call_kwargs["model"] = payload.model
-                call_kwargs.pop("max_retries", None)
+            call_kwargs = dict(kwargs)
+            call_kwargs["model"] = payload.model
+            call_kwargs.pop("max_retries", None)
 
-                response = payload.provider.invoke(**call_kwargs)
+            last_error: Exception | None = None
+            for attempt in range(_MAX_RETRIES + 1):
+                try:
+                    response = payload.provider.invoke(**call_kwargs)
 
-                # Track usage
-                input_tokens = 0
-                output_tokens = 0
-                if hasattr(response, "usage") and response.usage:  # type: ignore[attr-defined]
-                    usage = response.usage  # type: ignore[attr-defined]
-                    input_tokens = (
-                        getattr(usage, "input_tokens", 0)
-                        or getattr(usage, "prompt_tokens", 0)
+                    # Track usage
+                    input_tokens = 0
+                    output_tokens = 0
+                    if hasattr(response, "usage") and response.usage:  # type: ignore[attr-defined]
+                        usage = response.usage  # type: ignore[attr-defined]
+                        input_tokens = (
+                            getattr(usage, "input_tokens", 0)
+                            or getattr(usage, "prompt_tokens", 0)
+                        )
+                        output_tokens = (
+                            getattr(usage, "output_tokens", 0)
+                            or getattr(usage, "completion_tokens", 0)
+                        )
+
+                    cell.lifecycle.prana = max(
+                        0, cell.lifecycle.prana - (input_tokens + output_tokens)
                     )
-                    output_tokens = (
-                        getattr(usage, "output_tokens", 0)
-                        or getattr(usage, "completion_tokens", 0)
+                    self._total_calls += 1
+
+                    logger.debug(
+                        "'%s' responded (tokens: %d+%d, prana: %d)",
+                        payload.name, input_tokens, output_tokens, cell.lifecycle.prana,
                     )
+                    return response
 
-                cell.lifecycle.prana = max(
-                    0, cell.lifecycle.prana - (input_tokens + output_tokens)
-                )
-                self._total_calls += 1
+                except Exception as e:
+                    last_error = e
+                    if attempt < _MAX_RETRIES and _is_transient(e):
+                        delay = _RETRY_BASE_DELAY * (2 ** attempt)
+                        logger.info(
+                            "'%s' transient error (%s), retry %d/%d in %.1fs",
+                            payload.name, e, attempt + 1, _MAX_RETRIES, delay,
+                        )
+                        time.sleep(delay)
+                        continue
+                    break  # non-transient or retries exhausted → next provider
 
-                logger.debug(
-                    "'%s' responded (tokens: %d+%d, prana: %d)",
-                    payload.name, input_tokens, output_tokens, cell.lifecycle.prana,
-                )
-                return response
-
-            except Exception as e:
+            # All retries failed for this provider
+            if last_error is not None:
                 self._total_failures += 1
                 cell.lifecycle.integrity = max(
                     0, cell.lifecycle.integrity - (COSMIC_FRAME // 10)
                 )
                 logger.info(
                     "'%s' failed (%s: %s), integrity->%d, trying next",
-                    payload.name, type(e).__name__, e, cell.lifecycle.integrity,
+                    payload.name, type(last_error).__name__, last_error,
+                    cell.lifecycle.integrity,
                 )
                 continue
 
@@ -209,6 +236,12 @@ class ProviderChamber:
 
     def __len__(self) -> int:
         return len(self._cells)
+
+
+def _is_transient(error: Exception) -> bool:
+    """Check if an error is transient (worth retrying)."""
+    error_str = str(error).lower()
+    return any(hint in error_str for hint in _TRANSIENT_ERRORS)
 
 
 # ── Adapters ─────────────────────────────────────────────────────────

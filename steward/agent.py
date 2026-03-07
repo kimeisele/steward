@@ -29,6 +29,7 @@ from vibe_core.tools.tool_registry import ToolRegistry
 
 from vibe_core.protocols.memory import MemoryProtocol
 
+from steward.config import StewardConfig, load_config
 from steward.loop.engine import AgentLoop
 from steward.services import (
     SVC_ATTENTION,
@@ -175,16 +176,21 @@ class StewardAgent:
         provider: LLMProvider,
         system_prompt: str | None = None,
         cwd: str | None = None,
-        max_context_tokens: int = 100_000,
-        max_output_tokens: int = 4096,
+        max_context_tokens: int | None = None,
+        max_output_tokens: int | None = None,
         tools: list[Tool] | None = None,
+        config: StewardConfig | None = None,
     ) -> None:
         self._provider = provider
         self._cwd = cwd or str(Path.cwd())
-        self._max_output_tokens = max_output_tokens
+
+        # Load config from file, merge with explicit args
+        self._config = config or load_config(self._cwd)
+        self._max_output_tokens = max_output_tokens or self._config.max_output_tokens
+        ctx_tokens = max_context_tokens or self._config.max_context_tokens
 
         # Initialize conversation
-        self._conversation = Conversation(max_tokens=max_context_tokens)
+        self._conversation = Conversation(max_tokens=ctx_tokens)
 
         # Build tool list
         builtin_tools = self._builtin_tools()
@@ -388,6 +394,11 @@ class StewardAgent:
     def memory(self) -> MemoryProtocol:
         """Access the agent memory."""
         return self._memory
+
+    @property
+    def config(self) -> StewardConfig:
+        """Access the loaded configuration."""
+        return self._config
 
     def reset(self) -> None:
         """Clear conversation history, safety guard, and session memory."""

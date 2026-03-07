@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from vibe_core.mahamantra.protocols._seed import COSMIC_FRAME, MAHA_QUANTUM
 
-from steward.provider import ProviderChamber, _PRANA_CHEAP, _PRANA_FREE
+from steward.provider import ProviderChamber, _PRANA_CHEAP, _PRANA_FREE, _is_transient
 
 
 # ── Fake Providers ───────────────────────────────────────────────────
@@ -223,3 +223,90 @@ class TestProviderChamber:
         chamber = ProviderChamber()
         assert chamber.invoke(messages=[]) is None
         assert len(chamber) == 0
+
+    def test_retries_transient_errors(self):
+        """Transient errors are retried before switching providers."""
+
+        class TransientProvider:
+            """Fails with timeout twice, then succeeds."""
+
+            def __init__(self) -> None:
+                self.call_count = 0
+
+            def invoke(self, **kwargs: object) -> FakeResponse:
+                self.call_count += 1
+                if self.call_count <= 2:
+                    raise TimeoutError("Request timed out")
+                return FakeResponse(content="recovered")
+
+        provider = TransientProvider()
+        chamber = ProviderChamber()
+        chamber.add_provider(
+            name="flaky",
+            provider=provider,
+            model="flaky-v1",
+            source_address=MAHA_QUANTUM * 10,
+        )
+
+        import steward.provider as pmod
+        # Speed up retries for testing
+        orig_delay = pmod._RETRY_BASE_DELAY
+        pmod._RETRY_BASE_DELAY = 0.01
+        try:
+            response = chamber.invoke(messages=[])
+        finally:
+            pmod._RETRY_BASE_DELAY = orig_delay
+
+        assert response is not None
+        assert response.content == "recovered"
+        assert provider.call_count == 3  # 2 fails + 1 success
+
+    def test_non_transient_error_skips_retry(self):
+        """Non-transient errors immediately switch to next provider."""
+
+        class BadProvider:
+            call_count = 0
+
+            def invoke(self, **kwargs: object) -> object:
+                self.call_count += 1
+                raise ValueError("Invalid input format")
+
+        bad = BadProvider()
+        backup = FakeProvider("backup")
+        chamber = ProviderChamber()
+        chamber.add_provider(
+            name="bad",
+            provider=bad,
+            model="bad-v1",
+            source_address=MAHA_QUANTUM * 10,
+            prana=_PRANA_FREE,
+        )
+        chamber.add_provider(
+            name="backup",
+            provider=backup,
+            model="backup-v1",
+            source_address=MAHA_QUANTUM * 11,
+            prana=_PRANA_FREE,
+        )
+
+        response = chamber.invoke(messages=[])
+        assert response is not None
+        assert response.content == "backup response"
+        assert bad.call_count == 1  # no retries for non-transient
+
+
+class TestIsTransient:
+    def test_timeout_is_transient(self) -> None:
+        assert _is_transient(TimeoutError("Request timed out"))
+
+    def test_rate_limit_is_transient(self) -> None:
+        assert _is_transient(Exception("Rate limit exceeded (429)"))
+
+    def test_503_is_transient(self) -> None:
+        assert _is_transient(Exception("Service unavailable 503"))
+
+    def test_value_error_is_not_transient(self) -> None:
+        assert not _is_transient(ValueError("Invalid JSON"))
+
+    def test_auth_error_is_not_transient(self) -> None:
+        assert not _is_transient(Exception("Authentication failed"))
