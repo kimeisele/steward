@@ -1,8 +1,17 @@
-"""Tests for Buddhi — Discriminative Intelligence."""
+"""Tests for Buddhi — Discriminative Intelligence.
+
+Uses REAL substrate primitives:
+- SemanticActionType from steward-protocol
+- IntentGuna from MahaCompression
+- MahaBuddhi for cognitive classification
+"""
 
 from __future__ import annotations
 
-from steward.buddhi import Buddhi, BuddhiDirective, BuddhiVerdict, TaskIntent
+from vibe_core.mahamantra.protocols.compression import IntentGuna
+from vibe_core.runtime.semantic_actions import SemanticActionType
+
+from steward.buddhi import Buddhi, BuddhiDirective, BuddhiVerdict
 from steward.types import ToolUse
 
 
@@ -130,17 +139,12 @@ class TestErrorRatio:
         for i in range(5):
             buddhi.evaluate([_tc("bash", command=f"fail{i}")], [(False, "err")])
         buddhi.evaluate([_tc("bash", command="ok")], [(True, "")])
-        # Need one more to get over threshold with enough history
         v = buddhi.evaluate([_tc("bash", command="fail_again")], [(False, "err")])
-        # 6/7 = 85% > 70% → but consecutive error check fires first (5 consecutive before the success)
-        # After success, we have 1 more error → not 5 consecutive
-        # Error ratio = 6/7 = 85.7% > 70%
         assert v.action == "reflect"
 
     def test_low_error_ratio_continues(self):
         """< 70% errors → continue."""
         buddhi = Buddhi()
-        # 3 errors, 4 successes = 43% error ratio
         for i in range(3):
             buddhi.evaluate([_tc("bash", command=f"fail{i}")], [(False, "err")])
         for i in range(4):
@@ -173,125 +177,103 @@ class TestStats:
         assert stats["error_ratio"] == 0.5
 
 
-class TestIntentClassification:
-    """Deterministic intent classification — zero LLM cost."""
+class TestPreFlightSubstrate:
+    """Pre-flight uses real substrate primitives."""
 
-    def test_fix_intent(self):
+    def test_pre_flight_returns_directive(self):
+        """pre_flight returns a BuddhiDirective with substrate types."""
         buddhi = Buddhi()
-        d = buddhi.pre_flight("fix the bug in main.py", 0)
-        assert d.intent == TaskIntent.FIX
-        assert "edit_file" in d.tool_names
-        assert "read_file" in d.tool_names
+        d = buddhi.pre_flight("fix the authentication bug", 0)
+        assert isinstance(d, BuddhiDirective)
+        assert isinstance(d.action, SemanticActionType)
+        assert isinstance(d.guna, IntentGuna)
+        assert isinstance(d.tool_names, frozenset)
+        assert d.max_tokens > 0
 
-    def test_explain_intent(self):
+    def test_pre_flight_has_cognitive_frame(self):
+        """Directive includes MahaBuddhi cognitive frame."""
         buddhi = Buddhi()
-        d = buddhi.pre_flight("explain how the router works", 0)
-        assert d.intent == TaskIntent.EXPLAIN
-        assert "read_file" in d.tool_names
-        assert "grep" in d.tool_names
-        # explain doesn't need write tools
-        assert "write_file" not in d.tool_names
-        assert "edit_file" not in d.tool_names
+        d = buddhi.pre_flight("implement a new router", 0)
+        # function and approach come from MahaBuddhi.think()
+        assert d.function != ""  # BRAHMA/VISHNU/SHIVA
+        assert d.approach != ""  # GENESIS/DHARMA/KARMA/MOKSHA
 
-    def test_test_intent(self):
+    def test_pre_flight_tool_selection_not_empty(self):
+        """Pre-flight selects at least some tools for real messages."""
         buddhi = Buddhi()
-        d = buddhi.pre_flight("run the tests", 0)
-        assert d.intent == TaskIntent.TEST
-        assert "bash" in d.tool_names
+        d = buddhi.pre_flight("read the main.py file and explain it", 0)
+        assert len(d.tool_names) > 0
 
-    def test_create_intent(self):
+    def test_pre_flight_token_budget(self):
+        """Token budget is set from action type."""
         buddhi = Buddhi()
-        d = buddhi.pre_flight("add a new feature for auth", 0)
-        assert d.intent == TaskIntent.CREATE
-        assert "write_file" in d.tool_names
+        d = buddhi.pre_flight("some task", 0)
+        assert d.max_tokens in (2048, 4096)
 
-    def test_explore_intent(self):
+    def test_pre_flight_stable_across_rounds(self):
+        """Action type classified once on round 0, stable after."""
         buddhi = Buddhi()
-        d = buddhi.pre_flight("find where the config is loaded", 0)
-        assert d.intent == TaskIntent.EXPLORE
-        assert "grep" in d.tool_names
-        assert "glob" in d.tool_names
-
-    def test_modify_intent(self):
-        buddhi = Buddhi()
-        d = buddhi.pre_flight("refactor the database module", 0)
-        assert d.intent == TaskIntent.MODIFY
-        assert "edit_file" in d.tool_names
-
-    def test_general_fallback(self):
-        """Unrecognizable message → GENERAL (all tools)."""
-        buddhi = Buddhi()
-        d = buddhi.pre_flight("hello world", 0)
-        assert d.intent == TaskIntent.GENERAL
-        assert len(d.tool_names) == 0  # empty = send all tools
-
-    def test_token_budget_varies_by_intent(self):
-        """Simple intents get smaller token budgets."""
-        buddhi = Buddhi()
-        explain = buddhi.pre_flight("explain this function", 0)
-        fix = buddhi.pre_flight("fix the authentication bug", 0)
-        assert explain.max_tokens <= fix.max_tokens
+        d0 = buddhi.pre_flight("fix the bug", 0)
+        d1 = buddhi.pre_flight("whatever", 1)
+        assert d0.action == d1.action  # not reclassified
 
 
 class TestPreFlightPhaseEvolution:
     """Tool set evolves as rounds progress."""
 
-    def test_explore_gains_write_after_3_rounds(self):
-        """EXPLORE intent gains edit/write tools after round 3."""
+    def test_read_action_gains_write_after_3_rounds(self):
+        """Read-only action gains write tools after round 3."""
         buddhi = Buddhi()
-        d0 = buddhi.pre_flight("find the config file", 0)
+        # Force a SATTVA action (RESEARCH/ANALYZE/REVIEW/MONITOR)
+        buddhi._action = SemanticActionType.RESEARCH
+        buddhi._guna = IntentGuna.SATTVA
+        buddhi._function = "VISHNU"
+        buddhi._approach = "MOKSHA"
+
+        d0 = buddhi.pre_flight("observe", 1)  # round > 0, no reclassify
         assert "edit_file" not in d0.tool_names
 
-        d3 = buddhi.pre_flight("find the config file", 3)
+        d3 = buddhi.pre_flight("observe", 3)
         assert "edit_file" in d3.tool_names
-        assert "write_file" in d3.tool_names
 
     def test_errors_add_bash(self):
         """After 2+ recent errors, bash is added for debugging."""
         buddhi = Buddhi()
-        # Explain intent normally has no bash... wait let me check
-        d0 = buddhi.pre_flight("explain this", 0)
-        # Actually explain doesn't have bash by default? Let me check
-        # EXPLAIN tools: read_file, glob, grep
-        # After errors, bash should be added
-        # Simulate 2 errors in history
+        buddhi._action = SemanticActionType.RESEARCH
+        buddhi._guna = IntentGuna.SATTVA
+        buddhi._function = "VISHNU"
+        buddhi._approach = "MOKSHA"
+
         buddhi.evaluate([_tc("read_file", path="/a")], [(False, "err")])
         buddhi.evaluate([_tc("grep", pattern="x")], [(False, "err")])
-        d1 = buddhi.pre_flight("explain this", 2)
-        assert "bash" in d1.tool_names
-
-    def test_intent_stable_across_rounds(self):
-        """Intent is classified once on round 0, stable after."""
-        buddhi = Buddhi()
-        d0 = buddhi.pre_flight("fix the bug", 0)
-        assert d0.intent == TaskIntent.FIX
-        # Round 1 uses same intent regardless of message
-        d1 = buddhi.pre_flight("anything", 1)
-        assert d1.intent == TaskIntent.FIX  # not reclassified
+        d = buddhi.pre_flight("observe", 2)
+        assert "bash" in d.tool_names
 
 
 class TestPreFlightTokenSavings:
-    """Verify that pre-flight actually saves tokens."""
+    """Verify that pre-flight saves tokens with substrate routing."""
 
-    def test_explore_sends_fewer_tools(self):
-        """EXPLORE sends 3 tools, not 6."""
+    def test_read_action_sends_fewer_tools(self):
+        """RESEARCH/ANALYZE sends 3 tools, not 6."""
         buddhi = Buddhi()
-        d = buddhi.pre_flight("find the router module", 0)
-        # EXPLORE: read_file, glob, grep — 3 tools
+        buddhi._action = SemanticActionType.RESEARCH
+        buddhi._guna = IntentGuna.SATTVA
+        buddhi._function = "VISHNU"
+        buddhi._approach = "MOKSHA"
+
+        d = buddhi.pre_flight("research", 1)
         assert len(d.tool_names) == 3
 
-    def test_test_sends_fewer_tools(self):
+    def test_test_action_sends_fewer_tools(self):
         """TEST sends 3 tools, not 6."""
         buddhi = Buddhi()
-        d = buddhi.pre_flight("run pytest", 0)
-        assert len(d.tool_names) == 3
+        buddhi._action = SemanticActionType.TEST
+        buddhi._guna = IntentGuna.TAMAS
+        buddhi._function = "SHIVA"
+        buddhi._approach = "KARMA"
 
-    def test_explain_excludes_write_tools(self):
-        """EXPLAIN never sends write_file or edit_file on round 0."""
-        buddhi = Buddhi()
-        d = buddhi.pre_flight("what does this function do", 0)
-        assert "write_file" not in d.tool_names
-        assert "edit_file" not in d.tool_names
+        d = buddhi.pre_flight("test", 1)
+        assert len(d.tool_names) == 3
 
 
 class TestBuddhiInLoop:

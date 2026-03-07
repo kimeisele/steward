@@ -8,20 +8,24 @@ that answers: "SHOULD I do this?" It's the driver of the chariot
 Architecture (80% deterministic / 20% LLM):
 
     PRE-FLIGHT (before LLM call):
-        - Intent classification from user message (deterministic)
-        - Tool pre-selection: only send relevant tools (token efficiency)
-        - Token budget constraint: simple tasks get less budget
-        - Phase awareness: early rounds need exploration tools, late rounds
-          need write tools
+        - MahaBuddhi.think() → cognitive frame (mode/function/approach)
+        - SemanticActionType from substrate → intent taxonomy
+        - Guna-based tool pre-selection (SATTVA=read, RAJAS=act, TAMAS=debug)
+        - Phase awareness: early rounds → exploration, late rounds → action
 
     POST-FLIGHT (after tool execution):
         - Stuck loop detection (same tool+params repeated)
         - Error pattern recognition (repeated failures)
-        - Progress tracking (files modified, tests passing)
         - Tool sequence analysis (read before write, etc.)
 
     LLM REFLECTION (only when stuck):
         - Triggered ONLY after deterministic checks fail to resolve
+
+Uses REAL substrate primitives:
+    - SemanticActionType (not hardcoded enums)
+    - MahaBuddhi.think() (Lotus VM + MahaComposition, zero LLM)
+    - MahaCompression.decode_samskara_intent() (guna from seed)
+    - IntentGuna (SATTVA/RAJAS/TAMAS/SUDDHA)
 
 Usage:
     buddhi = Buddhi()
@@ -37,9 +41,12 @@ Usage:
 from __future__ import annotations
 
 import logging
-import re
 from dataclasses import dataclass, field
-from enum import StrEnum
+
+from vibe_core.mahamantra.adapters.compression import MahaCompression
+from vibe_core.mahamantra.protocols.compression import IntentGuna
+from vibe_core.mahamantra.substrate.buddhi import MahaBuddhi, get_buddhi
+from vibe_core.runtime.semantic_actions import SemanticActionType
 
 from steward.types import ToolUse
 
@@ -52,61 +59,81 @@ _MAX_SAME_TOOL_STREAK = 8     # same tool name repeatedly = likely stuck
 _ERROR_RATIO_THRESHOLD = 0.7   # > 70% of calls failing = systemic issue
 
 
-# ── Intent Classification (deterministic, zero LLM) ──────────────────
+# ── Semantic Tool Mapping (substrate-derived) ────────────────────────
+#
+# SemanticActionType → which tools are relevant.
+# The taxonomy comes from steward-protocol, the tool mapping is
+# steward-specific (steward knows its own tools).
+#
+# Guna overlay:
+#   SATTVA → read-only tools (safe, observational)
+#   RAJAS  → all tools (active, creative)
+#   TAMAS  → debug tools (fix, heal, respond)
+#
 
+_READ_TOOLS = frozenset({"read_file", "glob", "grep"})
+_WRITE_TOOLS = frozenset({"read_file", "glob", "grep", "edit_file", "write_file", "bash"})
+_DEBUG_TOOLS = frozenset({"read_file", "glob", "grep", "edit_file", "bash"})
+_ALL_TOOLS = frozenset()  # empty = send everything
 
-class TaskIntent(StrEnum):
-    """Deterministic task classification from user message.
-
-    Each intent maps to a tool set and token budget.
-    Classified by regex patterns — no LLM needed.
-    """
-
-    EXPLORE = "explore"        # read code, understand structure
-    FIX = "fix"                # fix a bug, resolve an error
-    CREATE = "create"          # write new code, add feature
-    MODIFY = "modify"          # edit existing code, refactor
-    TEST = "test"              # run tests, verify behavior
-    EXPLAIN = "explain"        # explain code, answer question
-    GENERAL = "general"        # unclear — send all tools
-
-
-# Intent → regex patterns (first match wins, checked in order)
-_INTENT_PATTERNS: list[tuple[TaskIntent, re.Pattern[str]]] = [
-    (TaskIntent.TEST, re.compile(
-        r"\b(run\s+(\w+\s+)?tests?|pytest|test\s+suite|check\s+(\w+\s+)?tests?|verify|unittest)\b", re.I)),
-    (TaskIntent.EXPLAIN, re.compile(
-        r"\b(explain|what\s+(does|is)|how\s+does|describe|show\s+me|understand)\b", re.I)),
-    (TaskIntent.FIX, re.compile(
-        r"\b(fix|bug|error|broken|crash|fail|issue|wrong|doesn.t\s+work|not\s+working)\b", re.I)),
-    (TaskIntent.CREATE, re.compile(
-        r"\b(create|add|implement|build|write|new\s+file|new\s+feature|generate)\b", re.I)),
-    (TaskIntent.MODIFY, re.compile(
-        r"\b(change|modify|update|refactor|rename|move|edit|replace|remove|delete)\b", re.I)),
-    (TaskIntent.EXPLORE, re.compile(
-        r"\b(find|search|look\s+for|where\s+is|list|grep|show\s+files|read)\b", re.I)),
-]
-
-# Intent → which tools are relevant (the rest are noise)
-_INTENT_TOOLS: dict[TaskIntent, frozenset[str]] = {
-    TaskIntent.EXPLORE:  frozenset({"read_file", "glob", "grep"}),
-    TaskIntent.FIX:      frozenset({"read_file", "glob", "grep", "edit_file", "bash"}),
-    TaskIntent.CREATE:   frozenset({"read_file", "glob", "write_file", "bash"}),
-    TaskIntent.MODIFY:   frozenset({"read_file", "glob", "grep", "edit_file", "bash"}),
-    TaskIntent.TEST:     frozenset({"bash", "read_file", "glob"}),
-    TaskIntent.EXPLAIN:  frozenset({"read_file", "glob", "grep"}),
-    TaskIntent.GENERAL:  frozenset(),  # empty = send all
+# SemanticActionType → tool set
+_ACTION_TOOLS: dict[SemanticActionType, frozenset[str]] = {
+    # SATTVA-aligned: observation
+    SemanticActionType.RESEARCH:   _READ_TOOLS,
+    SemanticActionType.ANALYZE:    _READ_TOOLS,
+    SemanticActionType.MONITOR:    _READ_TOOLS,
+    SemanticActionType.REVIEW:     _READ_TOOLS,
+    # RAJAS-aligned: action
+    SemanticActionType.IMPLEMENT:  _WRITE_TOOLS,
+    SemanticActionType.REFACTOR:   _WRITE_TOOLS,
+    SemanticActionType.DESIGN:     _WRITE_TOOLS,
+    SemanticActionType.PLAN:       _READ_TOOLS,
+    SemanticActionType.SYNTHESIZE: _READ_TOOLS,
+    # TAMAS-aligned: fix/respond
+    SemanticActionType.DEBUG:      _DEBUG_TOOLS,
+    SemanticActionType.TEST:       frozenset({"bash", "read_file", "glob"}),
+    SemanticActionType.RESPOND:    _DEBUG_TOOLS,
 }
 
-# Intent → max_tokens constraint (simple tasks get less budget)
-_INTENT_MAX_TOKENS: dict[TaskIntent, int] = {
-    TaskIntent.EXPLORE:  2048,
-    TaskIntent.FIX:      4096,
-    TaskIntent.CREATE:   4096,
-    TaskIntent.MODIFY:   4096,
-    TaskIntent.TEST:     2048,
-    TaskIntent.EXPLAIN:  2048,
-    TaskIntent.GENERAL:  4096,
+# SemanticActionType → max_tokens
+_ACTION_MAX_TOKENS: dict[SemanticActionType, int] = {
+    SemanticActionType.RESEARCH:   2048,
+    SemanticActionType.ANALYZE:    2048,
+    SemanticActionType.MONITOR:    2048,
+    SemanticActionType.REVIEW:     2048,
+    SemanticActionType.IMPLEMENT:  4096,
+    SemanticActionType.REFACTOR:   4096,
+    SemanticActionType.DESIGN:     4096,
+    SemanticActionType.PLAN:       2048,
+    SemanticActionType.SYNTHESIZE: 2048,
+    SemanticActionType.DEBUG:      4096,
+    SemanticActionType.TEST:       2048,
+    SemanticActionType.RESPOND:    4096,
+}
+
+# Guna → fallback tool set (when action type is ambiguous)
+_GUNA_TOOLS: dict[IntentGuna, frozenset[str]] = {
+    IntentGuna.SATTVA: _READ_TOOLS,
+    IntentGuna.RAJAS:  _WRITE_TOOLS,
+    IntentGuna.TAMAS:  _DEBUG_TOOLS,
+    IntentGuna.SUDDHA: _ALL_TOOLS,  # transcendental = no restriction
+}
+
+# Trinity function → SemanticActionType affinity
+# BRAHMA = creation, VISHNU = maintenance, SHIVA = transformation
+_FUNCTION_AFFINITY: dict[str, SemanticActionType] = {
+    "BRAHMA": SemanticActionType.IMPLEMENT,
+    "VISHNU": SemanticActionType.MONITOR,
+    "SHIVA": SemanticActionType.REFACTOR,
+}
+
+# Approach → SemanticActionType affinity
+# GENESIS = build, DHARMA = maintain, KARMA = fix, MOKSHA = transcend
+_APPROACH_AFFINITY: dict[str, SemanticActionType] = {
+    "GENESIS": SemanticActionType.IMPLEMENT,
+    "DHARMA": SemanticActionType.REVIEW,
+    "KARMA": SemanticActionType.DEBUG,
+    "MOKSHA": SemanticActionType.RESEARCH,
 }
 
 
@@ -114,12 +141,15 @@ _INTENT_MAX_TOKENS: dict[TaskIntent, int] = {
 class BuddhiDirective:
     """Pre-flight directive — what the LLM needs for THIS call.
 
-    Determined deterministically from intent + round + history.
+    Determined deterministically from substrate cognition.
     """
 
-    intent: TaskIntent
-    tool_names: frozenset[str]    # only send these tool descriptions
-    max_tokens: int               # constrain LLM output budget
+    action: SemanticActionType     # from substrate taxonomy
+    guna: IntentGuna               # from MahaCompression seed
+    tool_names: frozenset[str]     # only send these tool descriptions
+    max_tokens: int                # constrain LLM output budget
+    function: str = ""             # BRAHMA/VISHNU/SHIVA (from MahaBuddhi)
+    approach: str = ""             # GENESIS/DHARMA/KARMA/MOKSHA
 
 
 @dataclass(frozen=True)
@@ -151,55 +181,65 @@ class _ToolRecord:
 class Buddhi:
     """Discriminative intelligence — evaluates agent actions.
 
-    Two phases, both deterministic, zero LLM cost:
+    Uses REAL substrate primitives for cognition:
+    - MahaBuddhi.think() for cognitive frame (zero LLM, Lotus VM)
+    - MahaCompression.decode_samskara_intent() for guna classification
+    - SemanticActionType for intent taxonomy
 
     PRE-FLIGHT (pre_flight):
-        Classifies user intent → selects relevant tools → constrains
-        token budget. Saves tokens on EVERY LLM call by not sending
-        irrelevant tool descriptions.
+        Substrate cognition → tool selection → token budget.
 
     POST-FLIGHT (evaluate):
-        Detects stuck loops, error patterns, tool streaks.
-        Suggests reflection or abort.
-
-    Phase-aware: as round number increases, tool set evolves.
-    Early rounds favor exploration (read/grep/glob).
-    Later rounds favor action (edit/write/bash).
+        Stuck loop detection, error patterns, tool streaks.
     """
 
     def __init__(self) -> None:
         self._history: list[_ToolRecord] = []
         self._round: int = 0
-        self._intent: TaskIntent = TaskIntent.GENERAL
-        self._tools_used: set[str] = set()
+        self._action: SemanticActionType = SemanticActionType.IMPLEMENT
+        self._guna: IntentGuna = IntentGuna.RAJAS
+        self._function: str = ""
+        self._approach: str = ""
+        self._compression = MahaCompression()
+        self._maha_buddhi = get_buddhi()
 
     def pre_flight(self, user_message: str, round_num: int) -> BuddhiDirective:
-        """Pre-flight gate — what does the LLM need for this call?
+        """Pre-flight gate — substrate cognition → tool selection.
 
-        Deterministic. Zero tokens. Called BEFORE every LLM call.
+        Uses MahaBuddhi.think() + MahaCompression for classification.
+        Deterministic. Zero LLM tokens.
 
         Args:
             user_message: The original user request (for intent on round 0)
             round_num: Current tool-use round (0 = first LLM call)
 
         Returns:
-            BuddhiDirective with tool_names and max_tokens
+            BuddhiDirective with action type, guna, tool_names, max_tokens
         """
         # Classify intent only on first round (user message is stable)
         if round_num == 0:
-            self._intent = self._classify_intent(user_message)
-            self._tools_used.clear()
-            logger.info("Buddhi pre-flight: intent=%s", self._intent.value)
+            self._classify(user_message)
+            logger.info(
+                "Buddhi pre-flight: action=%s guna=%s function=%s approach=%s",
+                self._action.value, self._guna.value,
+                self._function, self._approach,
+            )
 
-        base_tools = _INTENT_TOOLS[self._intent]
-        max_tokens = _INTENT_MAX_TOKENS[self._intent]
+        # Tool selection: action type → tool set
+        base_tools = _ACTION_TOOLS.get(self._action, _ALL_TOOLS)
+        max_tokens = _ACTION_MAX_TOKENS.get(self._action, 4096)
+
+        # Guna overlay: if action tools are empty, use guna fallback
+        if not base_tools:
+            base_tools = _GUNA_TOOLS.get(self._guna, _ALL_TOOLS)
 
         # Phase evolution: later rounds may need different tools
         if round_num > 0:
             # After exploration, the LLM may need write/edit tools
-            # even if initial intent was EXPLORE or EXPLAIN
-            if self._intent in (TaskIntent.EXPLORE, TaskIntent.EXPLAIN):
-                # If the LLM already explored, let it act if needed
+            if self._action in (
+                SemanticActionType.RESEARCH, SemanticActionType.ANALYZE,
+                SemanticActionType.MONITOR, SemanticActionType.REVIEW,
+            ):
                 if round_num >= 3:
                     base_tools = frozenset(base_tools | {"edit_file", "write_file", "bash"})
 
@@ -208,26 +248,46 @@ class Buddhi:
             if recent_errors >= 2:
                 base_tools = frozenset(base_tools | {"bash"})
 
-        # Empty base_tools = GENERAL intent = send all tools
-        if not base_tools:
-            base_tools = frozenset()
-
         return BuddhiDirective(
-            intent=self._intent,
+            action=self._action,
+            guna=self._guna,
             tool_names=base_tools,
             max_tokens=max_tokens,
+            function=self._function,
+            approach=self._approach,
         )
 
-    @staticmethod
-    def _classify_intent(message: str) -> TaskIntent:
-        """Classify user intent from message text — deterministic regex.
+    def _classify(self, message: str) -> None:
+        """Classify user intent using substrate primitives.
 
-        First matching pattern wins. Falls back to GENERAL.
+        1. MahaCompression → seed → IntentGuna (SATTVA/RAJAS/TAMAS)
+        2. MahaBuddhi.think() → cognitive frame (function/approach)
+        3. Map cognitive frame → SemanticActionType
         """
-        for intent, pattern in _INTENT_PATTERNS:
-            if pattern.search(message):
-                return intent
-        return TaskIntent.GENERAL
+        # Step 1: Compression → guna
+        cr = self._compression.compress(message)
+        self._guna = self._compression.decode_samskara_intent(cr.seed).guna
+
+        # Step 2: MahaBuddhi → cognitive frame
+        cognition = self._maha_buddhi.think(message)
+        self._function = cognition.function
+        self._approach = cognition.approach
+
+        # Step 3: Map to SemanticActionType
+        # Priority: approach affinity > function affinity > guna default
+        action = _APPROACH_AFFINITY.get(cognition.approach)
+        if action is None:
+            action = _FUNCTION_AFFINITY.get(cognition.function)
+        if action is None:
+            # Guna fallback
+            guna_defaults = {
+                IntentGuna.SATTVA: SemanticActionType.RESEARCH,
+                IntentGuna.RAJAS: SemanticActionType.IMPLEMENT,
+                IntentGuna.TAMAS: SemanticActionType.DEBUG,
+                IntentGuna.SUDDHA: SemanticActionType.IMPLEMENT,
+            }
+            action = guna_defaults.get(self._guna, SemanticActionType.IMPLEMENT)
+        self._action = action
 
     def evaluate(
         self,

@@ -395,7 +395,7 @@ class AgentLoop:
                     if len(filtered) < len(all_tools):
                         logger.debug(
                             "Buddhi pre-flight: %d/%d tools selected (%s)",
-                            len(filtered), len(all_tools), directive.intent.value,
+                            len(filtered), len(all_tools), directive.action.value,
                         )
                 else:
                     kwargs["tools"] = all_tools
