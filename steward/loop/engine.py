@@ -37,7 +37,7 @@ from vibe_core.runtime.tool_safety_guard import ToolSafetyGuard
 from vibe_core.tools.tool_protocol import ToolCall as ProtoToolCall, ToolResult
 from vibe_core.tools.tool_registry import ToolRegistry
 
-from steward.buddhi import Buddhi
+from steward.buddhi import Buddhi, BuddhiDirective
 from steward.context import SamskaraContext
 from steward.services import tool_descriptions_for_llm
 from steward.summarizer import Summarizer, should_summarize
@@ -123,7 +123,9 @@ class AgentLoop:
         usage = AgentUsage()
 
         for round_num in range(MAX_TOOL_ROUNDS):
-            response = await self._call_llm()
+            # Buddhi pre-flight: deterministic tool selection + token budget
+            directive = self._buddhi.pre_flight(user_message, round_num)
+            response = await self._call_llm(directive)
             usage.llm_calls += 1
             if response is None:
                 yield AgentEvent(type="error", content="LLM returned no response")
@@ -332,8 +334,11 @@ class AgentLoop:
             existing.append(path)
             self._memory.remember(key, existing, session_id="steward", tags=["file_ops"])
 
-    async def _call_llm(self) -> object | None:
+    async def _call_llm(self, directive: BuddhiDirective | None = None) -> object | None:
         """Call the LLM provider with current conversation + tools.
+
+        Uses BuddhiDirective for tool pre-selection and token budget.
+        Only sends relevant tools = fewer input tokens per call.
 
         Context budget management (80% infra / 20% LLM):
         1. At 50%: Samskara compaction (deterministic, zero tokens)
@@ -366,15 +371,34 @@ class AgentLoop:
             except Exception as e:
                 logger.warning("Summarization failed: %s — _trim() will handle overflow", e)
 
+        # Token budget: use directive's constraint or default
+        max_tokens = self._max_tokens
+        if directive and directive.max_tokens:
+            max_tokens = directive.max_tokens
+
         try:
             kwargs: dict[str, object] = {
                 "messages": self._conversation.to_dicts(),
-                "max_tokens": self._max_tokens,
+                "max_tokens": max_tokens,
             }
-            # Add tool descriptions if we have tools
-            tools = tool_descriptions_for_llm(self._registry)
-            if tools:
-                kwargs["tools"] = tools
+
+            # Buddhi tool pre-selection: only send relevant tools
+            all_tools = tool_descriptions_for_llm(self._registry)
+            if all_tools:
+                if directive and directive.tool_names:
+                    # Filter to only tools Buddhi says are relevant
+                    filtered = [
+                        t for t in all_tools
+                        if t.get("function", {}).get("name") in directive.tool_names  # type: ignore[union-attr]
+                    ]
+                    kwargs["tools"] = filtered or all_tools  # fallback to all if filter empties
+                    if len(filtered) < len(all_tools):
+                        logger.debug(
+                            "Buddhi pre-flight: %d/%d tools selected (%s)",
+                            len(filtered), len(all_tools), directive.intent.value,
+                        )
+                else:
+                    kwargs["tools"] = all_tools
 
             return await asyncio.to_thread(self._provider.invoke, **kwargs)
         except Exception as e:

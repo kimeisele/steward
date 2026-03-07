@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from steward.buddhi import Buddhi, BuddhiVerdict
+from steward.buddhi import Buddhi, BuddhiDirective, BuddhiVerdict, TaskIntent
 from steward.types import ToolUse
 
 
@@ -171,6 +171,127 @@ class TestStats:
         stats = buddhi.stats
         assert stats["errors"] == 1
         assert stats["error_ratio"] == 0.5
+
+
+class TestIntentClassification:
+    """Deterministic intent classification — zero LLM cost."""
+
+    def test_fix_intent(self):
+        buddhi = Buddhi()
+        d = buddhi.pre_flight("fix the bug in main.py", 0)
+        assert d.intent == TaskIntent.FIX
+        assert "edit_file" in d.tool_names
+        assert "read_file" in d.tool_names
+
+    def test_explain_intent(self):
+        buddhi = Buddhi()
+        d = buddhi.pre_flight("explain how the router works", 0)
+        assert d.intent == TaskIntent.EXPLAIN
+        assert "read_file" in d.tool_names
+        assert "grep" in d.tool_names
+        # explain doesn't need write tools
+        assert "write_file" not in d.tool_names
+        assert "edit_file" not in d.tool_names
+
+    def test_test_intent(self):
+        buddhi = Buddhi()
+        d = buddhi.pre_flight("run the tests", 0)
+        assert d.intent == TaskIntent.TEST
+        assert "bash" in d.tool_names
+
+    def test_create_intent(self):
+        buddhi = Buddhi()
+        d = buddhi.pre_flight("add a new feature for auth", 0)
+        assert d.intent == TaskIntent.CREATE
+        assert "write_file" in d.tool_names
+
+    def test_explore_intent(self):
+        buddhi = Buddhi()
+        d = buddhi.pre_flight("find where the config is loaded", 0)
+        assert d.intent == TaskIntent.EXPLORE
+        assert "grep" in d.tool_names
+        assert "glob" in d.tool_names
+
+    def test_modify_intent(self):
+        buddhi = Buddhi()
+        d = buddhi.pre_flight("refactor the database module", 0)
+        assert d.intent == TaskIntent.MODIFY
+        assert "edit_file" in d.tool_names
+
+    def test_general_fallback(self):
+        """Unrecognizable message → GENERAL (all tools)."""
+        buddhi = Buddhi()
+        d = buddhi.pre_flight("hello world", 0)
+        assert d.intent == TaskIntent.GENERAL
+        assert len(d.tool_names) == 0  # empty = send all tools
+
+    def test_token_budget_varies_by_intent(self):
+        """Simple intents get smaller token budgets."""
+        buddhi = Buddhi()
+        explain = buddhi.pre_flight("explain this function", 0)
+        fix = buddhi.pre_flight("fix the authentication bug", 0)
+        assert explain.max_tokens <= fix.max_tokens
+
+
+class TestPreFlightPhaseEvolution:
+    """Tool set evolves as rounds progress."""
+
+    def test_explore_gains_write_after_3_rounds(self):
+        """EXPLORE intent gains edit/write tools after round 3."""
+        buddhi = Buddhi()
+        d0 = buddhi.pre_flight("find the config file", 0)
+        assert "edit_file" not in d0.tool_names
+
+        d3 = buddhi.pre_flight("find the config file", 3)
+        assert "edit_file" in d3.tool_names
+        assert "write_file" in d3.tool_names
+
+    def test_errors_add_bash(self):
+        """After 2+ recent errors, bash is added for debugging."""
+        buddhi = Buddhi()
+        # Explain intent normally has no bash... wait let me check
+        d0 = buddhi.pre_flight("explain this", 0)
+        # Actually explain doesn't have bash by default? Let me check
+        # EXPLAIN tools: read_file, glob, grep
+        # After errors, bash should be added
+        # Simulate 2 errors in history
+        buddhi.evaluate([_tc("read_file", path="/a")], [(False, "err")])
+        buddhi.evaluate([_tc("grep", pattern="x")], [(False, "err")])
+        d1 = buddhi.pre_flight("explain this", 2)
+        assert "bash" in d1.tool_names
+
+    def test_intent_stable_across_rounds(self):
+        """Intent is classified once on round 0, stable after."""
+        buddhi = Buddhi()
+        d0 = buddhi.pre_flight("fix the bug", 0)
+        assert d0.intent == TaskIntent.FIX
+        # Round 1 uses same intent regardless of message
+        d1 = buddhi.pre_flight("anything", 1)
+        assert d1.intent == TaskIntent.FIX  # not reclassified
+
+
+class TestPreFlightTokenSavings:
+    """Verify that pre-flight actually saves tokens."""
+
+    def test_explore_sends_fewer_tools(self):
+        """EXPLORE sends 3 tools, not 6."""
+        buddhi = Buddhi()
+        d = buddhi.pre_flight("find the router module", 0)
+        # EXPLORE: read_file, glob, grep — 3 tools
+        assert len(d.tool_names) == 3
+
+    def test_test_sends_fewer_tools(self):
+        """TEST sends 3 tools, not 6."""
+        buddhi = Buddhi()
+        d = buddhi.pre_flight("run pytest", 0)
+        assert len(d.tool_names) == 3
+
+    def test_explain_excludes_write_tools(self):
+        """EXPLAIN never sends write_file or edit_file on round 0."""
+        buddhi = Buddhi()
+        d = buddhi.pre_flight("what does this function do", 0)
+        assert "write_file" not in d.tool_names
+        assert "edit_file" not in d.tool_names
 
 
 class TestBuddhiInLoop:

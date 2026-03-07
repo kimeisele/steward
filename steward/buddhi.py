@@ -6,31 +6,40 @@ that answers: "SHOULD I do this?" It's the driver of the chariot
 (Katha Upanishad), not the horses (Manas/senses).
 
 Architecture (80% deterministic / 20% LLM):
-    DETERMINISTIC CHECKS:
+
+    PRE-FLIGHT (before LLM call):
+        - Intent classification from user message (deterministic)
+        - Tool pre-selection: only send relevant tools (token efficiency)
+        - Token budget constraint: simple tasks get less budget
+        - Phase awareness: early rounds need exploration tools, late rounds
+          need write tools
+
+    POST-FLIGHT (after tool execution):
         - Stuck loop detection (same tool+params repeated)
         - Error pattern recognition (repeated failures)
         - Progress tracking (files modified, tests passing)
         - Tool sequence analysis (read before write, etc.)
 
     LLM REFLECTION (only when stuck):
-        - "Given these results, should I try a different approach?"
         - Triggered ONLY after deterministic checks fail to resolve
 
 Usage:
     buddhi = Buddhi()
-    for round in agent_loop:
-        execute_tools(...)
-        verdict = buddhi.evaluate(tool_calls, tool_results)
-        if verdict.action == "abort":
-            break
-        if verdict.action == "reflect":
-            # inject reflection prompt into conversation
+
+    # Pre-flight: which tools does the LLM need?
+    directive = buddhi.pre_flight(user_message, round_num)
+    tools = directive.tool_names  # send only these to LLM
+
+    # Post-flight: how did it go?
+    verdict = buddhi.evaluate(tool_calls, tool_results)
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
+from enum import StrEnum
 
 from steward.types import ToolUse
 
@@ -41,6 +50,76 @@ _MAX_IDENTICAL_CALLS = 3       # same tool + same params = stuck
 _MAX_CONSECUTIVE_ERRORS = 5    # too many errors in a row = abort
 _MAX_SAME_TOOL_STREAK = 8     # same tool name repeatedly = likely stuck
 _ERROR_RATIO_THRESHOLD = 0.7   # > 70% of calls failing = systemic issue
+
+
+# ── Intent Classification (deterministic, zero LLM) ──────────────────
+
+
+class TaskIntent(StrEnum):
+    """Deterministic task classification from user message.
+
+    Each intent maps to a tool set and token budget.
+    Classified by regex patterns — no LLM needed.
+    """
+
+    EXPLORE = "explore"        # read code, understand structure
+    FIX = "fix"                # fix a bug, resolve an error
+    CREATE = "create"          # write new code, add feature
+    MODIFY = "modify"          # edit existing code, refactor
+    TEST = "test"              # run tests, verify behavior
+    EXPLAIN = "explain"        # explain code, answer question
+    GENERAL = "general"        # unclear — send all tools
+
+
+# Intent → regex patterns (first match wins, checked in order)
+_INTENT_PATTERNS: list[tuple[TaskIntent, re.Pattern[str]]] = [
+    (TaskIntent.TEST, re.compile(
+        r"\b(run\s+(\w+\s+)?tests?|pytest|test\s+suite|check\s+(\w+\s+)?tests?|verify|unittest)\b", re.I)),
+    (TaskIntent.EXPLAIN, re.compile(
+        r"\b(explain|what\s+(does|is)|how\s+does|describe|show\s+me|understand)\b", re.I)),
+    (TaskIntent.FIX, re.compile(
+        r"\b(fix|bug|error|broken|crash|fail|issue|wrong|doesn.t\s+work|not\s+working)\b", re.I)),
+    (TaskIntent.CREATE, re.compile(
+        r"\b(create|add|implement|build|write|new\s+file|new\s+feature|generate)\b", re.I)),
+    (TaskIntent.MODIFY, re.compile(
+        r"\b(change|modify|update|refactor|rename|move|edit|replace|remove|delete)\b", re.I)),
+    (TaskIntent.EXPLORE, re.compile(
+        r"\b(find|search|look\s+for|where\s+is|list|grep|show\s+files|read)\b", re.I)),
+]
+
+# Intent → which tools are relevant (the rest are noise)
+_INTENT_TOOLS: dict[TaskIntent, frozenset[str]] = {
+    TaskIntent.EXPLORE:  frozenset({"read_file", "glob", "grep"}),
+    TaskIntent.FIX:      frozenset({"read_file", "glob", "grep", "edit_file", "bash"}),
+    TaskIntent.CREATE:   frozenset({"read_file", "glob", "write_file", "bash"}),
+    TaskIntent.MODIFY:   frozenset({"read_file", "glob", "grep", "edit_file", "bash"}),
+    TaskIntent.TEST:     frozenset({"bash", "read_file", "glob"}),
+    TaskIntent.EXPLAIN:  frozenset({"read_file", "glob", "grep"}),
+    TaskIntent.GENERAL:  frozenset(),  # empty = send all
+}
+
+# Intent → max_tokens constraint (simple tasks get less budget)
+_INTENT_MAX_TOKENS: dict[TaskIntent, int] = {
+    TaskIntent.EXPLORE:  2048,
+    TaskIntent.FIX:      4096,
+    TaskIntent.CREATE:   4096,
+    TaskIntent.MODIFY:   4096,
+    TaskIntent.TEST:     2048,
+    TaskIntent.EXPLAIN:  2048,
+    TaskIntent.GENERAL:  4096,
+}
+
+
+@dataclass(frozen=True)
+class BuddhiDirective:
+    """Pre-flight directive — what the LLM needs for THIS call.
+
+    Determined deterministically from intent + round + history.
+    """
+
+    intent: TaskIntent
+    tool_names: frozenset[str]    # only send these tool descriptions
+    max_tokens: int               # constrain LLM output budget
 
 
 @dataclass(frozen=True)
@@ -72,17 +151,83 @@ class _ToolRecord:
 class Buddhi:
     """Discriminative intelligence — evaluates agent actions.
 
-    Sits between tool execution and the next LLM call.
-    Detects patterns that indicate the agent is stuck,
-    failing systematically, or going in circles.
+    Two phases, both deterministic, zero LLM cost:
 
-    Zero LLM cost — all evaluation is deterministic.
-    LLM reflection is suggested (via verdict) but never invoked here.
+    PRE-FLIGHT (pre_flight):
+        Classifies user intent → selects relevant tools → constrains
+        token budget. Saves tokens on EVERY LLM call by not sending
+        irrelevant tool descriptions.
+
+    POST-FLIGHT (evaluate):
+        Detects stuck loops, error patterns, tool streaks.
+        Suggests reflection or abort.
+
+    Phase-aware: as round number increases, tool set evolves.
+    Early rounds favor exploration (read/grep/glob).
+    Later rounds favor action (edit/write/bash).
     """
 
     def __init__(self) -> None:
         self._history: list[_ToolRecord] = []
         self._round: int = 0
+        self._intent: TaskIntent = TaskIntent.GENERAL
+        self._tools_used: set[str] = set()
+
+    def pre_flight(self, user_message: str, round_num: int) -> BuddhiDirective:
+        """Pre-flight gate — what does the LLM need for this call?
+
+        Deterministic. Zero tokens. Called BEFORE every LLM call.
+
+        Args:
+            user_message: The original user request (for intent on round 0)
+            round_num: Current tool-use round (0 = first LLM call)
+
+        Returns:
+            BuddhiDirective with tool_names and max_tokens
+        """
+        # Classify intent only on first round (user message is stable)
+        if round_num == 0:
+            self._intent = self._classify_intent(user_message)
+            self._tools_used.clear()
+            logger.info("Buddhi pre-flight: intent=%s", self._intent.value)
+
+        base_tools = _INTENT_TOOLS[self._intent]
+        max_tokens = _INTENT_MAX_TOKENS[self._intent]
+
+        # Phase evolution: later rounds may need different tools
+        if round_num > 0:
+            # After exploration, the LLM may need write/edit tools
+            # even if initial intent was EXPLORE or EXPLAIN
+            if self._intent in (TaskIntent.EXPLORE, TaskIntent.EXPLAIN):
+                # If the LLM already explored, let it act if needed
+                if round_num >= 3:
+                    base_tools = frozenset(base_tools | {"edit_file", "write_file", "bash"})
+
+            # After errors, grant bash for debugging
+            recent_errors = sum(1 for r in self._history[-3:] if not r.success)
+            if recent_errors >= 2:
+                base_tools = frozenset(base_tools | {"bash"})
+
+        # Empty base_tools = GENERAL intent = send all tools
+        if not base_tools:
+            base_tools = frozenset()
+
+        return BuddhiDirective(
+            intent=self._intent,
+            tool_names=base_tools,
+            max_tokens=max_tokens,
+        )
+
+    @staticmethod
+    def _classify_intent(message: str) -> TaskIntent:
+        """Classify user intent from message text — deterministic regex.
+
+        First matching pattern wins. Falls back to GENERAL.
+        """
+        for intent, pattern in _INTENT_PATTERNS:
+            if pattern.search(message):
+                return intent
+        return TaskIntent.GENERAL
 
     def evaluate(
         self,
