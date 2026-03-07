@@ -36,6 +36,7 @@ from vibe_core.runtime.tool_safety_guard import ToolSafetyGuard
 from vibe_core.tools.tool_protocol import ToolCall as ProtoToolCall, ToolResult
 from vibe_core.tools.tool_registry import ToolRegistry
 
+from steward.context import SamskaraContext
 from steward.services import tool_descriptions_for_llm
 from steward.summarizer import Summarizer, should_summarize
 from steward.types import AgentEvent, AgentUsage, Conversation, LLMProvider, Message, ToolUse
@@ -83,6 +84,7 @@ class AgentLoop:
         self._safety_guard = safety_guard
         self._attention = attention
         self._memory = memory
+        self._samskara = SamskaraContext()
 
         # Ensure system prompt is first message
         if system_prompt and (
@@ -277,11 +279,28 @@ class AgentLoop:
             self._memory.remember(key, existing, session_id="steward", tags=["file_ops"])
 
     async def _call_llm(self) -> object | None:
-        """Call the LLM provider with current conversation + tools."""
-        # Context budget check — summarize if approaching limit
+        """Call the LLM provider with current conversation + tools.
+
+        Context budget management (80% infra / 20% LLM):
+        1. At 50%: Samskara compaction (deterministic, zero tokens)
+        2. At 70%: LLM summarization (fallback, costs tokens)
+        3. Over 100%: _trim() evicts oldest messages (last resort)
+        """
+        # Phase 1: Samskara compaction at 50% — FREE, deterministic
+        if self._samskara.should_compact(self._conversation, threshold=0.5):
+            pct = int(self._conversation.total_tokens / self._conversation.max_tokens * 100)
+            logger.info("Context at %d%% — samskara compaction (free)", pct)
+            if self._samskara.compact(self._conversation):
+                logger.info(
+                    "Samskara compacted — now at %d tokens (%d%%)",
+                    self._conversation.total_tokens,
+                    int(self._conversation.total_tokens / self._conversation.max_tokens * 100),
+                )
+
+        # Phase 2: LLM summarization at 70% — fallback, costs tokens
         if should_summarize(self._conversation, threshold=0.7):
             pct = int(self._conversation.total_tokens / self._conversation.max_tokens * 100)
-            logger.info("Context at %d%% — triggering summarization", pct)
+            logger.info("Context at %d%% — LLM summarization (fallback)", pct)
             try:
                 summarizer = Summarizer(self._provider)
                 if summarizer.summarize(self._conversation):

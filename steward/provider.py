@@ -23,6 +23,7 @@ from vibe_core.mahamantra.substrate.cell_system.cell import (
     CellLifecycleState,
     MahaCellUnified,
 )
+from vibe_core.runtime.quota_manager import OperationalQuota, QuotaExceededError, QuotaLimits
 
 from steward.types import LLMProvider
 
@@ -81,6 +82,7 @@ class ProviderChamber:
     _last_reset: date = field(default_factory=date.today)
     _total_calls: int = 0
     _total_failures: int = 0
+    _quota: OperationalQuota = field(default_factory=OperationalQuota)
 
     def add_provider(
         self,
@@ -129,6 +131,16 @@ class ProviderChamber:
         """
         self._maybe_reset_daily()
 
+        # Pre-flight quota check (OperationalQuota from substrate)
+        try:
+            self._quota.check_before_request(
+                estimated_tokens=int(kwargs.get("max_tokens", 4096)),  # type: ignore[arg-type]
+                operation="llm_invoke",
+            )
+        except QuotaExceededError as e:
+            logger.warning("Quota exceeded — blocking request: %s", e)
+            return None
+
         alive = [c for c in self._cells if c.is_alive]
         alive.sort(key=lambda c: c.lifecycle.prana, reverse=True)
 
@@ -166,6 +178,15 @@ class ProviderChamber:
                     )
                     self._total_calls += 1
 
+                    # Post-flight quota recording
+                    total_tokens = input_tokens + output_tokens
+                    cost = total_tokens / 1_000_000 * payload.cost_per_mtok_input
+                    self._quota.record_request(
+                        tokens_used=total_tokens,
+                        cost_usd=cost,
+                        operation=f"llm:{payload.name}",
+                    )
+
                     logger.debug(
                         "'%s' responded (tokens: %d+%d, prana: %d)",
                         payload.name, input_tokens, output_tokens, cell.lifecycle.prana,
@@ -200,6 +221,11 @@ class ProviderChamber:
         logger.warning("ALL providers exhausted or failed")
         return None
 
+    @property
+    def quota(self) -> OperationalQuota:
+        """Access the operational quota manager."""
+        return self._quota
+
     def stats(self) -> dict[str, object]:
         return {
             "providers": [
@@ -214,6 +240,7 @@ class ProviderChamber:
             ],
             "total_calls": self._total_calls,
             "total_failures": self._total_failures,
+            "quota": self._quota.get_status(),
         }
 
     @staticmethod

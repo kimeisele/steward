@@ -310,3 +310,63 @@ class TestIsTransient:
 
     def test_auth_error_is_not_transient(self) -> None:
         assert not _is_transient(Exception("Authentication failed"))
+
+
+class TestOperationalQuota:
+    """Tests for OperationalQuota integration in ProviderChamber."""
+
+    def test_quota_tracks_requests(self):
+        """Successful invoke records usage in OperationalQuota."""
+        chamber = ProviderChamber()
+        chamber.add_provider(
+            name="test",
+            provider=FakeProvider(),
+            model="test-v1",
+            source_address=MAHA_QUANTUM * 10,
+        )
+
+        chamber.invoke(messages=[])
+
+        status = chamber.quota.get_status()
+        assert status["totals"]["total_requests"] == 1
+
+    def test_quota_in_stats(self):
+        """Stats includes quota status."""
+        chamber = ProviderChamber()
+        chamber.add_provider(
+            name="test",
+            provider=FakeProvider(),
+            model="test-v1",
+            source_address=MAHA_QUANTUM * 10,
+        )
+
+        chamber.invoke(messages=[])
+        stats = chamber.stats()
+
+        assert "quota" in stats
+        quota_stats = stats["quota"]
+        assert "requests" in quota_stats
+        assert "cost" in quota_stats
+
+    def test_quota_blocks_when_exceeded(self):
+        """When quota is exceeded, invoke returns None."""
+        from vibe_core.runtime.quota_manager import QuotaLimits
+
+        # Set RPM to 1 — second request should be blocked
+        limits = QuotaLimits(requests_per_minute=1)
+        chamber = ProviderChamber()
+        chamber._quota = __import__("vibe_core.runtime.quota_manager", fromlist=["OperationalQuota"]).OperationalQuota(limits=limits)
+        chamber.add_provider(
+            name="test",
+            provider=FakeProvider(),
+            model="test-v1",
+            source_address=MAHA_QUANTUM * 10,
+        )
+
+        # First call should succeed
+        r1 = chamber.invoke(messages=[])
+        assert r1 is not None
+
+        # Second call should be blocked by quota
+        r2 = chamber.invoke(messages=[])
+        assert r2 is None
