@@ -13,8 +13,20 @@ from typing import Any
 from vibe_core.tools.tool_protocol import Tool, ToolResult
 
 
+# Commands that are NEVER allowed — destructive or dangerous
+_BLOCKED_PATTERNS = [
+    "rm -rf /", "rm -rf /*", "mkfs", "dd if=", "format c:",
+    "> /dev/sd", "chmod -R 777 /", ":(){ :|:& };:",
+    "curl | bash", "curl | sh", "wget | bash", "wget | sh",
+    "eval $(curl", "eval $(wget",
+]
+
+
 class BashTool(Tool):
-    """Execute a bash command and return stdout/stderr."""
+    """Execute a bash command and return stdout/stderr.
+
+    Safety: Blocks known destructive commands. Runs in subprocess with timeout.
+    """
 
     def __init__(self, timeout: int = 120, cwd: str | None = None) -> None:
         super().__init__()
@@ -55,6 +67,11 @@ class BashTool(Tool):
             raise TypeError("command must be a string")
         if not parameters["command"].strip():
             raise ValueError("command must not be empty")
+        # Block known destructive commands
+        cmd_lower = parameters["command"].lower()
+        for pattern in _BLOCKED_PATTERNS:
+            if pattern in cmd_lower:
+                raise ValueError(f"Blocked dangerous command pattern: {pattern}")
 
     def execute(self, parameters: dict[str, Any]) -> ToolResult:
         command = parameters["command"]

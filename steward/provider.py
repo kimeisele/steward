@@ -67,6 +67,7 @@ class ProviderPayload:
     cost_per_mtok_input: float = 0.0
     calls_today: int = 0
     tokens_today: int = 0
+    supports_tools: bool = False  # structured tool-calling support
 
 
 @dataclass
@@ -94,6 +95,7 @@ class ProviderChamber:
         daily_call_limit: int = 0,
         daily_token_limit: int = 0,
         cost_per_mtok: float = 0.0,
+        supports_tools: bool = False,
     ) -> None:
         """Add a provider as a real MahaCellUnified."""
         header = MahaHeader.create(
@@ -114,6 +116,7 @@ class ProviderChamber:
             daily_call_limit=daily_call_limit,
             daily_token_limit=daily_token_limit,
             cost_per_mtok_input=cost_per_mtok,
+            supports_tools=supports_tools,
         )
         cell: MahaCellUnified[ProviderPayload] = MahaCellUnified(
             header=header,
@@ -146,10 +149,19 @@ class ProviderChamber:
             return None
 
         alive = [c for c in self._cells if c.is_alive]
+        has_tools = bool(kwargs.get("tools"))
+
         if prefer_capable:
             # Complex task: sort by cost (highest = most capable first)
             alive.sort(key=lambda c: c.payload.cost_per_mtok_input, reverse=True)
             logger.debug("Adaptive routing: prefer_capable → cost-ordered")
+        elif has_tools:
+            # Tool-calling: prefer providers that support structured tools
+            alive.sort(
+                key=lambda c: (c.payload.supports_tools, c.lifecycle.prana),
+                reverse=True,
+            )
+            logger.debug("Tool-calling: preferring tool-capable providers")
         else:
             alive.sort(key=lambda c: c.lifecycle.prana, reverse=True)
 
@@ -338,6 +350,12 @@ class MistralAdapter:
         if timeout:
             create_kwargs["timeout"] = timeout
 
+        # Pass tools for structured tool-calling (OpenAI format)
+        tools = kwargs.get("tools")
+        if tools:
+            create_kwargs["tools"] = tools
+            create_kwargs["tool_choice"] = "auto"
+
         response = self._client.chat.completions.create(**create_kwargs)  # type: ignore[attr-defined]
         return _AdapterResponse(response)
 
@@ -508,6 +526,7 @@ def build_chamber() -> ProviderChamber:
                 daily_call_limit=2880,
                 daily_token_limit=30_000_000,
                 cost_per_mtok=0.10,
+                supports_tools=True,
             )
         except ImportError:
             logger.warning("openai package needed for Mistral")
@@ -529,6 +548,7 @@ def build_chamber() -> ProviderChamber:
                 prana=_PRANA_CHEAP,
                 daily_call_limit=0,
                 cost_per_mtok=0.27,
+                supports_tools=True,
             )
         except Exception as e:
             logger.warning("OpenRouter provider failed: %s", e)
@@ -549,6 +569,7 @@ def build_chamber() -> ProviderChamber:
                 prana=_PRANA_CHEAP,  # paid = lower prana = tried after free
                 daily_call_limit=0,
                 cost_per_mtok=3.0,
+                supports_tools=True,
             )
         except ImportError:
             logger.warning("anthropic package needed for Claude")
