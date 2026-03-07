@@ -348,6 +348,39 @@ class TestOperationalQuota:
         assert "requests" in quota_stats
         assert "cost" in quota_stats
 
+    def test_prefer_capable_inverts_order(self):
+        """prefer_capable=True tries expensive providers first."""
+        chamber = ProviderChamber()
+        cheap = FakeProvider("cheap")
+        expensive = FakeProvider("expensive")
+
+        chamber.add_provider(
+            name="cheap",
+            provider=cheap,
+            model="cheap-v1",
+            source_address=MAHA_QUANTUM * 10,
+            prana=_PRANA_FREE,
+            cost_per_mtok=0.10,
+        )
+        chamber.add_provider(
+            name="expensive",
+            provider=expensive,
+            model="expensive-v1",
+            source_address=MAHA_QUANTUM * 11,
+            prana=_PRANA_FREE,
+            cost_per_mtok=3.0,
+        )
+
+        # Normal: cheap first (higher prana or equal → first registered)
+        r1 = chamber.invoke(messages=[])
+        assert r1 is not None
+
+        # prefer_capable: expensive first
+        r2 = chamber.invoke(messages=[], prefer_capable=True)
+        assert r2 is not None
+        assert r2.content == "expensive response"
+        assert expensive.call_count >= 1
+
     def test_quota_blocks_when_exceeded(self):
         """When quota is exceeded, invoke returns None."""
         from vibe_core.runtime.quota_manager import QuotaLimits

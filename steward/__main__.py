@@ -122,7 +122,7 @@ def main() -> None:
     if args.resume:
         conv = load_conversation(cwd=args.cwd)
         if conv:
-            agent._conversation = conv  # noqa: SLF001
+            agent.resume(conv)
             print(f"{_DIM}Resumed session ({len(conv.messages)} messages){_RESET}")
         else:
             print(f"{_DIM}No previous session found{_RESET}")

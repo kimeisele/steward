@@ -36,6 +36,7 @@ from vibe_core.runtime.tool_safety_guard import ToolSafetyGuard
 from vibe_core.tools.tool_protocol import ToolCall as ProtoToolCall, ToolResult
 from vibe_core.tools.tool_registry import ToolRegistry
 
+from steward.buddhi import Buddhi
 from steward.context import SamskaraContext
 from steward.services import tool_descriptions_for_llm
 from steward.summarizer import Summarizer, should_summarize
@@ -85,6 +86,7 @@ class AgentLoop:
         self._attention = attention
         self._memory = memory
         self._samskara = SamskaraContext()
+        self._buddhi = Buddhi()
 
         # Ensure system prompt is first message
         if system_prompt and (
@@ -230,6 +232,37 @@ class AgentLoop:
                         "ok" if result.success else result.error,
                         round_num + 1,
                     )
+
+            # Phase 4: Buddhi evaluation — discriminative intelligence
+            if to_execute:
+                buddhi_results = [
+                    (
+                        not isinstance(r, BaseException) and r.success,
+                        str(r) if isinstance(r, BaseException) else (r.error or ""),
+                    )
+                    for r in results
+                ]
+                verdict = self._buddhi.evaluate(
+                    [tc for tc, _ in to_execute],
+                    buddhi_results,
+                )
+                if verdict.action == "abort":
+                    usage.rounds = round_num + 1
+                    yield AgentEvent(
+                        type="error",
+                        content=f"Buddhi abort: {verdict.reason}. {verdict.suggestion}",
+                    )
+                    return
+                if verdict.action == "reflect":
+                    # Inject reflection prompt — LLM will reconsider approach
+                    reflection = (
+                        f"[Buddhi reflection: {verdict.reason}] "
+                        f"{verdict.suggestion}"
+                    )
+                    self._conversation.add(
+                        Message(role="user", content=reflection)
+                    )
+                    logger.info("Buddhi injected reflection: %s", verdict.reason)
 
         usage.rounds = MAX_TOOL_ROUNDS
         yield AgentEvent(type="error", content="Maximum tool rounds exceeded")

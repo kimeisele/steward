@@ -127,9 +127,13 @@ class ProviderChamber:
         """Try provider cells in prana order until one succeeds.
 
         Each cell uses its own model. Caller's model kwarg is stripped.
+        Supports `prefer_capable=True` kwarg to invert prana ordering
+        (use most capable/expensive provider first for complex tasks).
+
         Returns LLMResponse or None if all providers exhausted.
         """
         self._maybe_reset_daily()
+        prefer_capable = bool(kwargs.pop("prefer_capable", False))
 
         # Pre-flight quota check (OperationalQuota from substrate)
         try:
@@ -142,7 +146,12 @@ class ProviderChamber:
             return None
 
         alive = [c for c in self._cells if c.is_alive]
-        alive.sort(key=lambda c: c.lifecycle.prana, reverse=True)
+        if prefer_capable:
+            # Complex task: sort by cost (highest = most capable first)
+            alive.sort(key=lambda c: c.payload.cost_per_mtok_input, reverse=True)
+            logger.debug("Adaptive routing: prefer_capable → cost-ordered")
+        else:
+            alive.sort(key=lambda c: c.lifecycle.prana, reverse=True)
 
         for cell in alive:
             payload: ProviderPayload = cell.payload

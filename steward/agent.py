@@ -30,6 +30,7 @@ from vibe_core.tools.tool_registry import ToolRegistry
 from vibe_core.protocols.memory import MemoryProtocol
 
 from steward.config import StewardConfig, load_config
+from steward.context import SamskaraContext
 from steward.loop.engine import AgentLoop
 from steward.services import (
     SVC_ATTENTION,
@@ -399,6 +400,24 @@ class StewardAgent:
     def config(self) -> StewardConfig:
         """Access the loaded configuration."""
         return self._config
+
+    def resume(self, conversation: Conversation) -> None:
+        """Resume from a previous session's conversation.
+
+        Compacts old messages into a samskara impression so the agent
+        has context about what was done without wasting tokens on
+        the full raw conversation.
+        """
+        # Samskara-compact the old conversation (deterministic, free)
+        samskara = SamskaraContext()
+        samskara.compact(conversation, keep_recent=4)
+
+        self._conversation = conversation
+        logger.info(
+            "Resumed session (%d messages, %d tokens)",
+            len(conversation.messages),
+            conversation.total_tokens,
+        )
 
     def reset(self) -> None:
         """Clear conversation history, safety guard, and session memory."""
