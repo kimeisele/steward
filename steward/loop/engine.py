@@ -37,6 +37,7 @@ from vibe_core.tools.tool_protocol import ToolCall as ProtoToolCall, ToolResult
 from vibe_core.tools.tool_registry import ToolRegistry
 
 from steward.services import tool_descriptions_for_llm
+from steward.summarizer import Summarizer, should_summarize
 from steward.types import AgentEvent, AgentUsage, Conversation, LLMProvider, Message, ToolUse
 
 logger = logging.getLogger("STEWARD.LOOP")
@@ -277,15 +278,20 @@ class AgentLoop:
 
     async def _call_llm(self) -> object | None:
         """Call the LLM provider with current conversation + tools."""
-        # Context budget check — warn if approaching limit
-        ctx_tokens = self._conversation.total_tokens
-        ctx_max = self._conversation.max_tokens
-        if ctx_tokens > ctx_max * 0.8:
-            pct = int(ctx_tokens / ctx_max * 100)
-            logger.warning(
-                "Context budget %d%% (%d/%d tokens) — trimming may occur",
-                pct, ctx_tokens, ctx_max,
-            )
+        # Context budget check — summarize if approaching limit
+        if should_summarize(self._conversation, threshold=0.7):
+            pct = int(self._conversation.total_tokens / self._conversation.max_tokens * 100)
+            logger.info("Context at %d%% — triggering summarization", pct)
+            try:
+                summarizer = Summarizer(self._provider)
+                if summarizer.summarize(self._conversation):
+                    logger.info(
+                        "Summarized — now at %d tokens (%d%%)",
+                        self._conversation.total_tokens,
+                        int(self._conversation.total_tokens / self._conversation.max_tokens * 100),
+                    )
+            except Exception as e:
+                logger.warning("Summarization failed: %s — _trim() will handle overflow", e)
 
         try:
             kwargs: dict[str, object] = {

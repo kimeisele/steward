@@ -106,9 +106,9 @@ def boot(
     ServiceRegistry.register(SVC_SIGNAL_BUS, bus)
 
     # 6. Memory (Chitta — persistent context across turns)
-    from vibe_core.protocols.memory import InMemoryMemory
+    from steward.memory import PersistentMemory
 
-    memory = InMemoryMemory()
+    memory = PersistentMemory(cwd=cwd)
     ServiceRegistry.register(SVC_MEMORY, memory)
 
     # 7. EventBus (Narada — real-time event stream + Sudarshana rate limiting)
