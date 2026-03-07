@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import subprocess
 from pathlib import Path
 from typing import AsyncIterator
 
@@ -64,16 +65,79 @@ Guidelines:
 """
 
 
+def _load_project_instructions(cwd: str) -> str | None:
+    """Load project-specific instructions from the working directory.
+
+    Looks for (in order):
+    1. .steward/instructions.md
+    2. CLAUDE.md
+
+    Returns the file contents or None.
+    """
+    candidates = [
+        Path(cwd) / ".steward" / "instructions.md",
+        Path(cwd) / "CLAUDE.md",
+    ]
+    for path in candidates:
+        if path.is_file():
+            try:
+                content = path.read_text(encoding="utf-8").strip()
+                if content:
+                    logger.info("Loaded project instructions from %s", path)
+                    return content
+            except OSError as e:
+                logger.warning("Failed to read %s: %s", path, e)
+    return None
+
+
+def _git_status_summary(cwd: str) -> str | None:
+    """Get a short git status + diff summary for context.
+
+    Returns None if not in a git repo or git is unavailable.
+    """
+    try:
+        # Check if it's a git repo
+        subprocess.run(
+            ["git", "rev-parse", "--git-dir"],
+            cwd=cwd, capture_output=True, check=True, timeout=5,
+        )
+        # Get short status
+        status = subprocess.run(
+            ["git", "status", "--short"],
+            cwd=cwd, capture_output=True, text=True, timeout=5,
+        )
+        # Get diff stat
+        diff = subprocess.run(
+            ["git", "diff", "--stat"],
+            cwd=cwd, capture_output=True, text=True, timeout=5,
+        )
+        parts: list[str] = []
+        if status.stdout.strip():
+            # Limit to 20 lines
+            lines = status.stdout.strip().split("\n")
+            if len(lines) > 20:
+                parts.append("\n".join(lines[:20]) + f"\n... ({len(lines) - 20} more)")
+            else:
+                parts.append("\n".join(lines))
+        if diff.stdout.strip():
+            parts.append(diff.stdout.strip())
+        return "\n".join(parts) if parts else None
+    except (subprocess.SubprocessError, FileNotFoundError, OSError):
+        return None
+
+
 def _build_system_prompt(
     base: str,
     cwd: str,
     tool_names: list[str],
     dynamic_context: dict[str, str] | None = None,
+    project_instructions: str | None = None,
+    git_status: str | None = None,
 ) -> str:
     """Build system prompt with dynamic context.
 
-    Injects working directory, tool list, and any PromptContext
-    resolver values (git_status, system_time, etc.).
+    Injects working directory, tool list, project instructions,
+    git status, and any PromptContext resolver values.
     """
     parts = [base.rstrip()]
     parts.append(f"\nWorking directory: {cwd}")
@@ -84,6 +148,12 @@ def _build_system_prompt(
         for key, value in dynamic_context.items():
             if value and not value.startswith("["):
                 parts.append(f"  {key}: {value}")
+
+    if project_instructions:
+        parts.append(f"\nProject Instructions:\n{project_instructions}")
+
+    if git_status:
+        parts.append(f"\nGit Status:\n{git_status}")
 
     return "\n".join(parts)
 
@@ -133,11 +203,14 @@ class StewardAgent:
         if system_prompt is not None:
             self._system_prompt = system_prompt
         else:
-            # Resolve dynamic context from PromptContext
             dynamic_ctx = self._resolve_dynamic_context()
+            project_ctx = _load_project_instructions(self._cwd)
+            git_ctx = _git_status_summary(self._cwd)
             self._system_prompt = _build_system_prompt(
                 _BASE_SYSTEM_PROMPT, self._cwd, self._registry.list_tools(),
                 dynamic_context=dynamic_ctx,
+                project_instructions=project_ctx,
+                git_status=git_ctx,
             )
 
         # Emit AGENT_STARTUP signal
