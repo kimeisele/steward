@@ -31,6 +31,7 @@ import logging
 from typing import AsyncIterator
 
 from vibe_core.mahamantra.adapters.attention import MahaAttention
+from vibe_core.mahamantra.adapters.compression import MahaCompression
 from vibe_core.protocols.memory import MemoryProtocol
 from vibe_core.runtime.tool_safety_guard import ToolSafetyGuard
 from vibe_core.tools.tool_protocol import ToolCall as ProtoToolCall, ToolResult
@@ -96,6 +97,7 @@ class AgentLoop:
         self._memory = memory
         self._samskara = SamskaraContext()
         self._buddhi = Buddhi()
+        self._compression = MahaCompression()
 
         # Ensure system prompt is first message
         if system_prompt and (
@@ -112,6 +114,11 @@ class AgentLoop:
         # Hard boundary: truncate unbounded input (agent-city lesson)
         if len(user_message) > MAX_INPUT_CHARS:
             user_message = user_message[:MAX_INPUT_CHARS] + f"\n[truncated at {MAX_INPUT_CHARS} chars]"
+
+        # Entry-point compression: deterministic seed for this request
+        cr = self._compression.compress(user_message)
+        logger.debug("Input compressed: seed=%d, ratio=%.1f", cr.seed, cr.compression_ratio)
+
         self._conversation.add(Message(role="user", content=user_message))
         usage = AgentUsage()
 

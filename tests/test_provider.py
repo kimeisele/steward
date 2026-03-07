@@ -162,7 +162,9 @@ class TestProviderChamber:
         assert fragile["integrity"] < COSMIC_FRAME  # degraded
 
     def test_prana_decreases_with_usage(self):
-        """Provider prana decreases based on token usage."""
+        """Provider prana decreases based on token usage + METABOLIC_COST."""
+        from vibe_core.mahamantra.substrate.cell_system.cell import METABOLIC_COST
+
         chamber = ProviderChamber()
         chamber.add_provider(
             name="talker",
@@ -175,8 +177,11 @@ class TestProviderChamber:
         chamber.invoke(messages=[])
 
         stats = chamber.stats()
-        # Prana should have decreased by input_tokens + output_tokens (100 + 50 = 150)
-        assert stats["providers"][0]["prana"] == _PRANA_FREE - 150
+        # metabolize(-150): prana -= METABOLIC_COST (3) then prana += (-150)
+        # Total drain = 153, cycle increments by 1
+        total_tokens = 100 + 50  # FakeUsage defaults
+        assert stats["providers"][0]["prana"] == _PRANA_FREE - total_tokens - METABOLIC_COST
+        assert stats["providers"][0]["cycle"] == 1
 
     def test_stats(self):
         """Stats reports provider state."""

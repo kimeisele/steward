@@ -171,6 +171,13 @@ class ProviderChamber:
                 logger.debug("'%s' over quota, skipping", payload.name)
                 continue
 
+            # Membrane gate: signal() checks integrity before accepting work.
+            # Returns None if membrane too damaged — skip this provider.
+            if cell.signal(payload.name) is None:
+                logger.info("'%s' membrane too weak (integrity=%d), skipping",
+                            payload.name, cell.lifecycle.integrity)
+                continue
+
             call_kwargs = dict(kwargs)
             call_kwargs["model"] = payload.model
             call_kwargs.pop("max_retries", None)
@@ -194,13 +201,14 @@ class ProviderChamber:
                             or getattr(usage, "completion_tokens", 0)
                         )
 
-                    cell.lifecycle.prana = max(
-                        0, cell.lifecycle.prana - (input_tokens + output_tokens)
-                    )
+                    # Cell lifecycle: metabolize with token cost as energy drain.
+                    # metabolize() handles: METABOLIC_COST decay, age cycling,
+                    # starvation apoptosis, max-age apoptosis.
+                    total_tokens = input_tokens + output_tokens
+                    cell.metabolize(-total_tokens)  # negative = energy spent
                     self._total_calls += 1
 
                     # Post-flight quota recording
-                    total_tokens = input_tokens + output_tokens
                     cost = total_tokens / 1_000_000 * payload.cost_per_mtok_input
                     self._quota.record_request(
                         tokens_used=total_tokens,
@@ -209,8 +217,9 @@ class ProviderChamber:
                     )
 
                     logger.debug(
-                        "'%s' responded (tokens: %d+%d, prana: %d)",
-                        payload.name, input_tokens, output_tokens, cell.lifecycle.prana,
+                        "'%s' responded (tokens: %d+%d, prana: %d, cycle: %d)",
+                        payload.name, input_tokens, output_tokens,
+                        cell.lifecycle.prana, cell.lifecycle.cycle,
                     )
                     return response
 
@@ -226,16 +235,19 @@ class ProviderChamber:
                         continue
                     break  # non-transient or retries exhausted → next provider
 
-            # All retries failed for this provider
+            # All retries failed — metabolize failure as energy drain
             if last_error is not None:
                 self._total_failures += 1
+                # Integrity degrades on failure (membrane damage)
                 cell.lifecycle.integrity = max(
                     0, cell.lifecycle.integrity - (COSMIC_FRAME // 10)
                 )
+                # Failed call still costs metabolic energy
+                cell.metabolize(0)
                 logger.info(
-                    "'%s' failed (%s: %s), integrity->%d, trying next",
+                    "'%s' failed (%s: %s), integrity->%d, prana->%d, trying next",
                     payload.name, type(last_error).__name__, last_error,
-                    cell.lifecycle.integrity,
+                    cell.lifecycle.integrity, cell.lifecycle.prana,
                 )
                 continue
 
@@ -255,6 +267,7 @@ class ProviderChamber:
                     "model": c.payload.model,
                     "prana": c.lifecycle.prana,
                     "integrity": c.lifecycle.integrity,
+                    "cycle": c.lifecycle.cycle,
                     "alive": c.is_alive,
                 }
                 for c in self._cells
@@ -273,14 +286,20 @@ class ProviderChamber:
         return True
 
     def _maybe_reset_daily(self) -> None:
+        """Daily reset — restore all cells to genesis state.
+
+        Cells that apoptosed (from starvation or age) are reborn.
+        This is the natural daily cycle: death → rebirth.
+        """
         today = date.today()
         if today > self._last_reset:
             for cell in self._cells:
                 cell.lifecycle.prana = _PRANA_FREE
                 cell.lifecycle.integrity = COSMIC_FRAME
+                cell.lifecycle.cycle = 0
                 cell.lifecycle.is_active = True
             self._last_reset = today
-            logger.info("Daily reset — all providers refreshed")
+            logger.info("Daily reset — all provider cells reborn (prana=%d)", _PRANA_FREE)
 
     def __len__(self) -> int:
         return len(self._cells)
