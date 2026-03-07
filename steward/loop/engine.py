@@ -1,51 +1,51 @@
 """
-Agent Loop Engine — The core agentic cycle.
+Agent Loop Engine — The core agentic cycle (async-first).
 
 This is the beating heart of Steward. It implements the fundamental
 agent loop that all autonomous agents follow:
 
     User message
-       ↓
+       |
     Build context (system prompt + conversation + tool descriptions)
-       ↓
+       |
     LLM call (with tools)
-       ↓
+       |
     Parse response
-       ↓
-    If tool_use → execute tool → add result to conversation → loop back ↑
-    If text     → yield to caller (done for this turn)
+       |
+    If tool_use -> O(1) Lotus route -> safety check -> execute -> loop
+    If text     -> yield AgentEvent(type="text") -> done
 
-The loop is synchronous by design. Async is complexity tax we don't
-need for a single-agent engine.
+Tool routing: MahaAttention (Lotus Router) is the PRIMARY dispatcher.
+O(1) lookup for any tool name, regardless of registry size.
+ToolRegistry.execute() handles governance + execution.
+
+Parallel execution: when the LLM requests multiple tools in one
+response, they execute concurrently via asyncio.gather().
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
-from typing import Any, Protocol, runtime_checkable
+from typing import AsyncIterator
 
-from steward.tool_registry import ToolRegistry
-from steward.types import Conversation, Message, ToolUse
+from vibe_core.mahamantra.adapters.attention import MahaAttention
+from vibe_core.protocols.memory import MemoryProtocol
+from vibe_core.runtime.tool_safety_guard import ToolSafetyGuard
+from vibe_core.tools.tool_protocol import ToolCall as ProtoToolCall, ToolResult
+from vibe_core.tools.tool_registry import ToolRegistry
+
+from steward.services import tool_descriptions_for_llm
+from steward.types import AgentEvent, AgentUsage, Conversation, LLMProvider, Message, ToolUse
 
 logger = logging.getLogger("STEWARD.LOOP")
 
 # Maximum tool-use iterations per turn to prevent infinite loops
 MAX_TOOL_ROUNDS = 50
 
-
-@runtime_checkable
-class LLMProvider(Protocol):
-    """Protocol for LLM providers.
-
-    Any object with an invoke(**kwargs) -> response method works.
-    Response must have:
-        .content: str           — text response
-        .tool_calls: list|None  — tool use requests (optional)
-        .usage: object|None     — token usage (optional)
-    """
-
-    def invoke(self, **kwargs: Any) -> Any: ...
+# Maximum characters for tool output in conversation (prevents context blowout)
+MAX_TOOL_OUTPUT_CHARS = 50_000
 
 
 class AgentLoop:
@@ -54,9 +54,14 @@ class AgentLoop:
     A "turn" starts with a user message and ends when the LLM
     produces a text response (no more tool calls).
 
+    Tool routing goes through MahaAttention (Lotus Router) for O(1) lookup.
+    Multiple tool calls in a single LLM response execute in parallel.
+
     Usage:
         loop = AgentLoop(provider=llm, registry=tools, conversation=conv)
-        response = loop.run("Fix the bug in main.py")
+        async for event in loop.run("Fix the bug in main.py"):
+            if event.type == "text":
+                print(event.content)
     """
 
     def __init__(
@@ -66,11 +71,17 @@ class AgentLoop:
         conversation: Conversation,
         system_prompt: str = "",
         max_tokens: int = 4096,
+        safety_guard: ToolSafetyGuard | None = None,
+        attention: MahaAttention | None = None,
+        memory: MemoryProtocol | None = None,
     ) -> None:
         self._provider = provider
         self._registry = registry
         self._conversation = conversation
         self._max_tokens = max_tokens
+        self._safety_guard = safety_guard
+        self._attention = attention
+        self._memory = memory
 
         # Ensure system prompt is first message
         if system_prompt and (
@@ -78,18 +89,24 @@ class AgentLoop:
         ):
             conversation.messages.insert(0, Message(role="system", content=system_prompt))
 
-    def run(self, user_message: str) -> str:
-        """Execute one full agent turn.
+    async def run(self, user_message: str) -> AsyncIterator[AgentEvent]:
+        """Execute one full agent turn as an async event stream.
 
         Adds the user message, runs the LLM loop until a text
-        response is produced, and returns that text.
+        response is produced, yielding events along the way.
         """
         self._conversation.add(Message(role="user", content=user_message))
+        usage = AgentUsage()
 
         for round_num in range(MAX_TOOL_ROUNDS):
-            response = self._call_llm()
+            response = await self._call_llm()
+            usage.llm_calls += 1
             if response is None:
-                return "[Error: LLM returned no response]"
+                yield AgentEvent(type="error", content="LLM returned no response")
+                return
+
+            # Track tokens from LLM response
+            self._accumulate_usage(response, usage)
 
             tool_calls = self._extract_tool_calls(response)
 
@@ -97,10 +114,16 @@ class AgentLoop:
                 # Pure text response — turn is done
                 text = self._extract_text(response)
                 self._conversation.add(Message(role="assistant", content=text))
-                logger.debug("Turn complete after %d rounds", round_num + 1)
-                return text
+                usage.rounds = round_num + 1
+                yield AgentEvent(type="text", content=text)
+                yield AgentEvent(type="done", usage=usage)
+                logger.debug(
+                    "Turn complete after %d rounds (%d tokens)",
+                    round_num + 1, usage.total_tokens,
+                )
+                return
 
-            # Tool use response — execute tools and loop
+            # Tool use response — add assistant message, then execute tools
             self._conversation.add(
                 Message(
                     role="assistant",
@@ -109,48 +132,181 @@ class AgentLoop:
                 )
             )
 
+            # Phase 1: O(1) route + safety check (fast, sequential)
+            to_execute: list[tuple[ToolUse, ProtoToolCall]] = []
             for tc in tool_calls:
-                result = self._registry.execute(tc.name, tc.parameters, call_id=tc.id)
-                # Add tool result to conversation
-                output = result.output if result.success else f"[Error] {result.error}"
-                self._conversation.add(
-                    Message(
-                        role="tool",
-                        content=str(output) if output else "",
-                        tool_use_id=tc.id,
+                usage.tool_calls += 1
+                yield AgentEvent(type="tool_call", tool_use=tc)
+
+                # O(1) Lotus route — verify tool exists before execution
+                if self._attention:
+                    route = self._attention.attend(tc.name)
+                    if not route.found:
+                        error_msg = f"Tool '{tc.name}' not found (O(1) route miss)"
+                        self._conversation.add(
+                            Message(role="tool", content=f"[Error] {error_msg}", tool_use_id=tc.id)
+                        )
+                        yield AgentEvent(
+                            type="tool_result",
+                            content=ToolResult(success=False, error=error_msg),
+                            tool_use=tc,
+                        )
+                        continue
+
+                # Iron Dome safety check
+                if self._safety_guard:
+                    allowed, violation = self._safety_guard.check_action(
+                        tc.name, tc.parameters
                     )
-                )
-                logger.debug(
-                    "Tool %s: %s (round %d)",
-                    tc.name,
-                    "ok" if result.success else result.error,
-                    round_num + 1,
-                )
+                    if not allowed:
+                        error_msg = violation.message if violation else "Blocked by safety guard"
+                        self._conversation.add(
+                            Message(role="tool", content=f"[Error] {error_msg}", tool_use_id=tc.id)
+                        )
+                        yield AgentEvent(
+                            type="tool_result",
+                            content=ToolResult(success=False, error=error_msg),
+                            tool_use=tc,
+                        )
+                        continue
 
-        return "[Error: Maximum tool rounds exceeded]"
+                # Cleared for execution
+                proto_call = ProtoToolCall(
+                    tool_name=tc.name,
+                    parameters=tc.parameters,
+                    call_id=tc.id,
+                    caller_agent_id="steward",
+                )
+                to_execute.append((tc, proto_call))
 
-    def _call_llm(self) -> Any:
+            # Phase 2: Execute all cleared tools in parallel
+            if to_execute:
+                tasks = [
+                    asyncio.to_thread(self._registry.execute, pc)
+                    for _, pc in to_execute
+                ]
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+
+                # Phase 3: Process results, record file ops, yield events
+                for (tc, _), raw_result in zip(to_execute, results):
+                    if isinstance(raw_result, BaseException):
+                        result = ToolResult(success=False, error=str(raw_result))
+                    else:
+                        result = raw_result
+
+                    # Record file operations for Iron Dome + Memory
+                    if result.success:
+                        if tc.name == "read_file":
+                            path = str(tc.parameters.get("path", ""))
+                            if self._safety_guard:
+                                self._safety_guard.record_file_read(path)
+                            if self._memory:
+                                self._record_file_op(path, "read")
+                        elif tc.name in ("write_file", "edit_file"):
+                            path = str(tc.parameters.get("path", ""))
+                            if self._safety_guard:
+                                self._safety_guard.record_file_write(path)
+                            if self._memory:
+                                self._record_file_op(path, "write")
+
+                    output = result.output if result.success else f"[Error] {result.error}"
+                    output_str = str(output) if output else ""
+                    if len(output_str) > MAX_TOOL_OUTPUT_CHARS:
+                        output_str = (
+                            output_str[:MAX_TOOL_OUTPUT_CHARS]
+                            + f"\n\n[truncated — {len(output_str)} chars total, "
+                            f"showing first {MAX_TOOL_OUTPUT_CHARS}]"
+                        )
+                    self._conversation.add(
+                        Message(role="tool", content=output_str, tool_use_id=tc.id)
+                    )
+                    yield AgentEvent(type="tool_result", content=result, tool_use=tc)
+                    logger.debug(
+                        "Tool %s: %s (round %d)",
+                        tc.name,
+                        "ok" if result.success else result.error,
+                        round_num + 1,
+                    )
+
+        usage.rounds = MAX_TOOL_ROUNDS
+        yield AgentEvent(type="error", content="Maximum tool rounds exceeded")
+
+    def run_sync(self, user_message: str) -> str:
+        """Synchronous wrapper — runs the async loop and returns final text.
+
+        For simple usage and testing. Use run() for streaming events.
+        """
+        async def _collect() -> str:
+            final_text = ""
+            async for event in self.run(user_message):
+                if event.type == "text":
+                    final_text = str(event.content) if event.content else ""
+                elif event.type == "error":
+                    return f"[Error: {event.content}]"
+            return final_text
+
+        return asyncio.run(_collect())
+
+    @staticmethod
+    def _accumulate_usage(response: object, usage: AgentUsage) -> None:
+        """Extract token counts from LLM response and add to usage."""
+        if not hasattr(response, "usage") or response.usage is None:  # type: ignore[attr-defined]
+            return
+        resp_usage = response.usage  # type: ignore[attr-defined]
+        usage.input_tokens += (
+            getattr(resp_usage, "input_tokens", 0)
+            or getattr(resp_usage, "prompt_tokens", 0)
+            or 0
+        )
+        usage.output_tokens += (
+            getattr(resp_usage, "output_tokens", 0)
+            or getattr(resp_usage, "completion_tokens", 0)
+            or 0
+        )
+
+    def _record_file_op(self, path: str, op: str) -> None:
+        """Record file operation in Memory for cross-turn awareness."""
+        if not self._memory or not path:
+            return
+        # Track files touched this session
+        key = f"files_{op}"
+        existing = self._memory.recall(key, session_id="steward") or []
+        if path not in existing:
+            existing.append(path)
+            self._memory.remember(key, existing, session_id="steward", tags=["file_ops"])
+
+    async def _call_llm(self) -> object | None:
         """Call the LLM provider with current conversation + tools."""
+        # Context budget check — warn if approaching limit
+        ctx_tokens = self._conversation.total_tokens
+        ctx_max = self._conversation.max_tokens
+        if ctx_tokens > ctx_max * 0.8:
+            pct = int(ctx_tokens / ctx_max * 100)
+            logger.warning(
+                "Context budget %d%% (%d/%d tokens) — trimming may occur",
+                pct, ctx_tokens, ctx_max,
+            )
+
         try:
-            kwargs: dict[str, Any] = {
+            kwargs: dict[str, object] = {
                 "messages": self._conversation.to_dicts(),
                 "max_tokens": self._max_tokens,
             }
             # Add tool descriptions if we have tools
-            tools = self._registry.to_llm_tools()
+            tools = tool_descriptions_for_llm(self._registry)
             if tools:
                 kwargs["tools"] = tools
 
-            return self._provider.invoke(**kwargs)
+            return await asyncio.to_thread(self._provider.invoke, **kwargs)
         except Exception as e:
             logger.error("LLM call failed: %s", e, exc_info=True)
             return None
 
     @staticmethod
-    def _extract_text(response: Any) -> str:
+    def _extract_text(response: object) -> str:
         """Extract text content from LLM response."""
         if hasattr(response, "content"):
-            content = response.content
+            content = response.content  # type: ignore[attr-defined]
             if isinstance(content, str):
                 return content
             # Anthropic-style: content is a list of blocks
@@ -164,7 +320,7 @@ class AgentLoop:
         return ""
 
     @staticmethod
-    def _extract_tool_calls(response: Any) -> list[ToolUse]:
+    def _extract_tool_calls(response: object) -> list[ToolUse]:
         """Extract tool calls from LLM response.
 
         Handles both OpenAI format (response.tool_calls) and
@@ -173,8 +329,8 @@ class AgentLoop:
         calls: list[ToolUse] = []
 
         # OpenAI format: response.choices[0].message.tool_calls
-        if hasattr(response, "tool_calls") and response.tool_calls:
-            for tc in response.tool_calls:
+        if hasattr(response, "tool_calls") and response.tool_calls:  # type: ignore[attr-defined]
+            for tc in response.tool_calls:  # type: ignore[attr-defined]
                 func = tc.function if hasattr(tc, "function") else tc
                 params = func.arguments if hasattr(func, "arguments") else {}
                 if isinstance(params, str):
@@ -190,8 +346,8 @@ class AgentLoop:
             return calls
 
         # Anthropic format: content blocks with type="tool_use"
-        if hasattr(response, "content") and isinstance(response.content, list):
-            for block in response.content:
+        if hasattr(response, "content") and isinstance(response.content, list):  # type: ignore[attr-defined]
+            for block in response.content:  # type: ignore[attr-defined]
                 if hasattr(block, "type") and block.type == "tool_use":
                     calls.append(ToolUse(
                         id=block.id,
@@ -201,7 +357,7 @@ class AgentLoop:
 
         # Stop reason check (Anthropic: stop_reason == "tool_use")
         if not calls and hasattr(response, "stop_reason"):
-            if response.stop_reason == "tool_use":
+            if response.stop_reason == "tool_use":  # type: ignore[attr-defined]
                 logger.warning("stop_reason=tool_use but no tool calls found")
 
         return calls

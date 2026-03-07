@@ -16,8 +16,8 @@ from vibe_core.tools.tool_protocol import Tool, ToolResult
 class BashTool(Tool):
     """Execute a bash command and return stdout/stderr."""
 
-    def __init__(self, timeout: int = 120, cwd: str | None = None, **kwargs: Any) -> None:
-        super().__init__(**kwargs)
+    def __init__(self, timeout: int = 120, cwd: str | None = None) -> None:
+        super().__init__()
         self._timeout = timeout
         self._cwd = cwd
 

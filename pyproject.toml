@@ -4,19 +4,21 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "steward"
-version = "0.1.0"
+version = "0.4.0"
 description = "Steward — Autonomous Agent Engine"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "steward-protocol",
+]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
     "pytest-timeout>=2.0",
 ]
-substrate = [
-    "steward-protocol",
-]
+
+[project.scripts]
+steward = "steward.__main__:main"
 
 [tool.setuptools.packages.find]
 include = ["steward*"]

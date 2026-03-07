@@ -13,8 +13,8 @@ from vibe_core.tools.tool_protocol import Tool, ToolResult
 class GlobTool(Tool):
     """Find files matching a glob pattern."""
 
-    def __init__(self, cwd: str | None = None, **kwargs: Any) -> None:
-        super().__init__(**kwargs)
+    def __init__(self, cwd: str | None = None) -> None:
+        super().__init__()
         self._cwd = Path(cwd) if cwd else Path.cwd()
 
     @property

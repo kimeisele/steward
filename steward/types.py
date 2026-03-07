@@ -4,21 +4,39 @@ Core types for the Steward agent engine.
 Message: A single message in a conversation (user, assistant, tool_result).
 Conversation: Ordered list of messages with context-window awareness.
 ToolUse: A tool call emitted by the LLM.
+AgentEvent: Event yielded by the async agent loop.
+LLMProvider: Protocol for LLM backends.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Protocol, runtime_checkable
+
+from vibe_core.tools.tool_protocol import ToolResult
+
+# JSON value types — what LLM tool parameters contain
+JsonValue = str | int | float | bool | None | list | dict
+
+
+@runtime_checkable
+class LLMProvider(Protocol):
+    """Protocol for LLM providers.
+
+    Any object with invoke(**kwargs) that returns an LLM response.
+    Response should have .content, .tool_calls, .usage attributes.
+    """
+
+    def invoke(self, **kwargs: object) -> object: ...
 
 
 @dataclass
 class ToolUse:
     """A tool invocation requested by the LLM."""
 
-    id: str                        # unique call ID for correlating results
-    name: str                      # tool name (e.g. "bash", "read_file")
-    parameters: dict[str, Any]     # tool-specific parameters
+    id: str                                  # unique call ID for correlating results
+    name: str                                # tool name (e.g. "bash", "read_file")
+    parameters: dict[str, JsonValue]         # tool-specific parameters
 
 
 @dataclass
@@ -66,11 +84,11 @@ class Conversation:
     def total_tokens(self) -> int:
         return sum(m.estimated_tokens for m in self.messages)
 
-    def to_dicts(self) -> list[dict[str, Any]]:
+    def to_dicts(self) -> list[dict[str, object]]:
         """Serialize for LLM API calls."""
-        out: list[dict[str, Any]] = []
+        out: list[dict[str, object]] = []
         for m in self.messages:
-            d: dict[str, Any] = {"role": m.role, "content": m.content}
+            d: dict[str, object] = {"role": m.role, "content": m.content}
             if m.tool_uses:
                 d["tool_calls"] = [
                     {
@@ -86,12 +104,79 @@ class Conversation:
         return out
 
     def _trim(self) -> None:
-        """Drop oldest non-system messages until under max_tokens."""
+        """Smart context trimming — evict tool results first, then oldest.
+
+        Priority order for eviction (highest first):
+        1. Tool result messages (largest, least valuable long-term)
+        2. Oldest non-system, non-user messages
+        3. Oldest non-system messages
+
+        When trimming occurs, inserts a summary marker so the LLM
+        knows context was compacted.
+        """
+        if self.total_tokens <= self.max_tokens:
+            return
+
+        trimmed_count = 0
+        # Phase 1: Drop oldest tool results first (they're biggest)
         while self.total_tokens > self.max_tokens and len(self.messages) > 2:
-            # Find first non-system message to drop
+            for i, m in enumerate(self.messages):
+                if m.role == "tool":
+                    self.messages.pop(i)
+                    trimmed_count += 1
+                    break
+            else:
+                break  # no more tool messages
+
+        # Phase 2: Drop oldest non-system messages
+        while self.total_tokens > self.max_tokens and len(self.messages) > 2:
             for i, m in enumerate(self.messages):
                 if m.role != "system":
                     self.messages.pop(i)
+                    trimmed_count += 1
                     break
             else:
                 break  # only system messages left
+
+        # Insert compaction marker after system message
+        if trimmed_count > 0 and len(self.messages) >= 2:
+            marker = Message(
+                role="user",
+                content=f"[{trimmed_count} earlier messages trimmed for context budget]",
+            )
+            # Insert after system prompt
+            insert_idx = 1 if self.messages[0].role == "system" else 0
+            self.messages.insert(insert_idx, marker)
+
+
+@dataclass
+class AgentUsage:
+    """Token usage and run statistics for a single turn."""
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    llm_calls: int = 0
+    tool_calls: int = 0
+    rounds: int = 0
+
+    @property
+    def total_tokens(self) -> int:
+        return self.input_tokens + self.output_tokens
+
+
+@dataclass
+class AgentEvent:
+    """Event yielded by the async agent loop.
+
+    Types:
+        text        — final text response from LLM
+        tool_call   — LLM requested a tool invocation
+        tool_result — tool execution completed
+        error       — something went wrong
+        done        — turn is complete (usage field populated)
+    """
+
+    type: str  # "text" | "tool_call" | "tool_result" | "error" | "done"
+    content: str | ToolResult | None = None
+    tool_use: ToolUse | None = None
+    usage: AgentUsage | None = None

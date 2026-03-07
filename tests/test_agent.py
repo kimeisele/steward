@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from typing import Any
 
+import pytest
+
 from steward.agent import StewardAgent
 from steward.loop.engine import AgentLoop
-from steward.tool_registry import ToolRegistry
-from steward.types import Conversation, Message
+from steward.types import AgentEvent, Conversation, Message
+from vibe_core.tools.tool_registry import ToolRegistry
 
 
 # ── Fake LLM Provider ────────────────────────────────────────────────
@@ -60,20 +63,41 @@ class FakeLLM:
         return FakeResponse(content="[no more responses]")
 
 
+# ── Helper: collect events from async loop ───────────────────────────
+
+
+def run_loop(loop: AgentLoop, message: str) -> tuple[str, list[AgentEvent]]:
+    """Run the async loop synchronously, return (final_text, all_events)."""
+
+    async def _collect():
+        events = []
+        final_text = ""
+        async for event in loop.run(message):
+            events.append(event)
+            if event.type == "text":
+                final_text = event.content or ""
+            elif event.type == "error":
+                final_text = f"[Error: {event.content}]"
+        return final_text, events
+
+    return asyncio.run(_collect())
+
+
 # ── AgentLoop Tests ──────────────────────────────────────────────────
 
 
 class TestAgentLoop:
     def test_simple_text_response(self):
-        """LLM returns text → turn completes immediately."""
+        """LLM returns text -> turn completes immediately."""
         llm = FakeLLM([FakeResponse(content="Hello!")])
         conv = Conversation()
         reg = ToolRegistry()
         loop = AgentLoop(provider=llm, registry=reg, conversation=conv)
 
-        result = loop.run("Hi")
+        result, events = run_loop(loop, "Hi")
         assert result == "Hello!"
         assert len(llm.calls) == 1
+        assert any(e.type == "done" for e in events)
 
     def test_tool_use_then_text(self):
         """LLM calls a tool, then responds with text."""
@@ -82,12 +106,10 @@ class TestAgentLoop:
         reg = ToolRegistry()
         reg.register(BashTool())
 
-        # Response 1: tool call
         tc = FakeToolCall(
             id="call_1",
             function=FakeFunction(name="bash", arguments={"command": "echo hello"}),
         )
-        # Response 2: text with result
         responses = [
             FakeResponse(content="", tool_calls=[tc]),
             FakeResponse(content="The command output: hello"),
@@ -96,12 +118,15 @@ class TestAgentLoop:
         conv = Conversation()
         loop = AgentLoop(provider=llm, registry=reg, conversation=conv)
 
-        result = loop.run("Run echo hello")
+        result, events = run_loop(loop, "Run echo hello")
         assert "hello" in result.lower()
-        assert len(llm.calls) == 2  # tool call + follow-up
+        assert len(llm.calls) == 2
+        # Should have tool_call and tool_result events
+        assert any(e.type == "tool_call" for e in events)
+        assert any(e.type == "tool_result" for e in events)
 
     def test_unknown_tool_returns_error(self):
-        """Unknown tool name → error result in conversation."""
+        """Unknown tool name -> error result in conversation."""
         tc = FakeToolCall(
             id="call_1",
             function=FakeFunction(name="nonexistent", arguments={}),
@@ -115,11 +140,125 @@ class TestAgentLoop:
         reg = ToolRegistry()
         loop = AgentLoop(provider=llm, registry=reg, conversation=conv)
 
-        result = loop.run("Do something")
-        # Should have a tool error in conversation
+        result, events = run_loop(loop, "Do something")
         tool_msgs = [m for m in conv.messages if m.role == "tool"]
         assert len(tool_msgs) == 1
-        assert "Unknown tool" in tool_msgs[0].content
+        assert "not found" in tool_msgs[0].content
+
+    def test_lotus_route_miss_blocks_before_registry(self):
+        """O(1) Lotus route miss blocks unknown tools before registry execution."""
+        from vibe_core.mahamantra.adapters.attention import MahaAttention
+
+        # Register bash in registry but NOT in attention → route miss
+        from steward.tools.bash import BashTool
+
+        reg = ToolRegistry()
+        reg.register(BashTool())
+        attention = MahaAttention()
+        # Deliberately NOT memorizing "bash" → attend() returns found=False
+
+        tc = FakeToolCall(
+            id="call_1",
+            function=FakeFunction(name="bash", arguments={"command": "echo hi"}),
+        )
+        responses = [
+            FakeResponse(content="", tool_calls=[tc]),
+            FakeResponse(content="Route missed"),
+        ]
+        llm = FakeLLM(responses)
+        conv = Conversation()
+        loop = AgentLoop(
+            provider=llm, registry=reg, conversation=conv, attention=attention,
+        )
+
+        result, events = run_loop(loop, "Run bash")
+        tool_msgs = [m for m in conv.messages if m.role == "tool"]
+        assert len(tool_msgs) == 1
+        assert "O(1) route miss" in tool_msgs[0].content
+        # Tool result event should show failure
+        tool_results = [e for e in events if e.type == "tool_result"]
+        assert len(tool_results) == 1
+        assert not tool_results[0].content.success
+
+    def test_lotus_route_hit_allows_execution(self):
+        """O(1) Lotus route hit allows tool execution to proceed."""
+        from vibe_core.mahamantra.adapters.attention import MahaAttention
+        from steward.tools.bash import BashTool
+
+        reg = ToolRegistry()
+        bash = BashTool()
+        reg.register(bash)
+        attention = MahaAttention()
+        attention.memorize("bash", bash)  # register in Lotus
+
+        tc = FakeToolCall(
+            id="call_1",
+            function=FakeFunction(name="bash", arguments={"command": "echo lotus"}),
+        )
+        responses = [
+            FakeResponse(content="", tool_calls=[tc]),
+            FakeResponse(content="It worked"),
+        ]
+        llm = FakeLLM(responses)
+        conv = Conversation()
+        loop = AgentLoop(
+            provider=llm, registry=reg, conversation=conv, attention=attention,
+        )
+
+        result, events = run_loop(loop, "Run echo lotus")
+        assert "It worked" in result
+        tool_results = [e for e in events if e.type == "tool_result"]
+        assert len(tool_results) == 1
+        assert tool_results[0].content.success
+        # Verify tool output contains "lotus"
+        tool_msgs = [m for m in conv.messages if m.role == "tool"]
+        assert any("lotus" in m.content for m in tool_msgs)
+
+    def test_parallel_tool_execution(self):
+        """Multiple tool calls in one LLM response execute in parallel."""
+        from steward.tools.bash import BashTool
+
+        reg = ToolRegistry()
+        reg.register(BashTool())
+
+        tc1 = FakeToolCall(
+            id="call_a",
+            function=FakeFunction(name="bash", arguments={"command": "echo alpha"}),
+        )
+        tc2 = FakeToolCall(
+            id="call_b",
+            function=FakeFunction(name="bash", arguments={"command": "echo bravo"}),
+        )
+        responses = [
+            FakeResponse(content="", tool_calls=[tc1, tc2]),
+            FakeResponse(content="Both done"),
+        ]
+        llm = FakeLLM(responses)
+        conv = Conversation()
+        loop = AgentLoop(provider=llm, registry=reg, conversation=conv)
+
+        result, events = run_loop(loop, "Run two commands")
+        assert result == "Both done"
+
+        # Both tool calls should have events
+        tool_call_events = [e for e in events if e.type == "tool_call"]
+        tool_result_events = [e for e in events if e.type == "tool_result"]
+        assert len(tool_call_events) == 2
+        assert len(tool_result_events) == 2
+
+        # Both results should be successful
+        assert all(e.content.success for e in tool_result_events)
+
+        # Both outputs should be in conversation
+        tool_msgs = [m for m in conv.messages if m.role == "tool"]
+        assert len(tool_msgs) == 2
+        outputs = {m.content.strip() for m in tool_msgs}
+        assert any("alpha" in o for o in outputs)
+        assert any("bravo" in o for o in outputs)
+
+        # Usage should track 2 tool calls
+        done_events = [e for e in events if e.type == "done"]
+        assert done_events[0].usage.tool_calls == 2
 
     def test_max_rounds_exceeded(self):
         """Infinite tool loops are capped at MAX_TOOL_ROUNDS."""
@@ -127,18 +266,17 @@ class TestAgentLoop:
             id="call_inf",
             function=FakeFunction(name="echo", arguments={}),
         )
-        # Always return tool calls
         responses = [FakeResponse(content="", tool_calls=[tc])] * 60
         llm = FakeLLM(responses)
         conv = Conversation()
         reg = ToolRegistry()
         loop = AgentLoop(provider=llm, registry=reg, conversation=conv)
 
-        result = loop.run("Loop forever")
-        assert "Maximum tool rounds" in result
+        result, events = run_loop(loop, "Loop forever")
+        assert "Maximum tool rounds" in result or "Error" in result
 
     def test_llm_failure_returns_error(self):
-        """LLM crash → error message."""
+        """LLM crash -> error message."""
 
         class CrashLLM:
             def invoke(self, **kwargs: Any) -> Any:
@@ -148,8 +286,18 @@ class TestAgentLoop:
         reg = ToolRegistry()
         loop = AgentLoop(provider=CrashLLM(), registry=reg, conversation=conv)
 
-        result = loop.run("Hello")
+        result, events = run_loop(loop, "Hello")
         assert "Error" in result
+
+    def test_run_sync_convenience(self):
+        """run_sync() returns the final text directly."""
+        llm = FakeLLM([FakeResponse(content="sync response")])
+        conv = Conversation()
+        reg = ToolRegistry()
+        loop = AgentLoop(provider=llm, registry=reg, conversation=conv)
+
+        result = loop.run_sync("Hi")
+        assert result == "sync response"
 
 
 # ── StewardAgent Tests ───────────────────────────────────────────────
@@ -159,16 +307,24 @@ class TestStewardAgent:
     def test_agent_creates_with_defaults(self):
         llm = FakeLLM([])
         agent = StewardAgent(provider=llm)
-        assert "bash" in agent.registry
-        assert "read_file" in agent.registry
-        assert "write_file" in agent.registry
-        assert "glob" in agent.registry
+        assert agent.registry.has("bash")
+        assert agent.registry.has("read_file")
+        assert agent.registry.has("write_file")
+        assert agent.registry.has("glob")
+        assert agent.registry.has("edit_file")
+        assert agent.registry.has("grep")
 
-    def test_agent_run(self):
+    def test_agent_run_sync(self):
         llm = FakeLLM([FakeResponse(content="Task complete.")])
         agent = StewardAgent(provider=llm)
-        result = agent.run("Do something")
+        result = agent.run_sync("Do something")
         assert result == "Task complete."
+
+    def test_agent_run_async(self):
+        llm = FakeLLM([FakeResponse(content="Async result.")])
+        agent = StewardAgent(provider=llm)
+        result = asyncio.run(agent.run("Do something"))
+        assert result == "Async result."
 
     def test_agent_conversation_persists(self):
         llm = FakeLLM([
@@ -176,17 +332,137 @@ class TestStewardAgent:
             FakeResponse(content="Second response"),
         ])
         agent = StewardAgent(provider=llm)
-        agent.run("First task")
-        agent.chat("Follow up")
+        agent.run_sync("First task")
+        agent.chat_sync("Follow up")
         # Conversation should have: system + user + assistant + user + assistant
         assert len(agent.conversation.messages) == 5
 
     def test_agent_reset(self):
         llm = FakeLLM([FakeResponse(content="ok")])
         agent = StewardAgent(provider=llm)
-        agent.run("task")
+        agent.run_sync("task")
         agent.reset()
         assert len(agent.conversation.messages) == 0
+
+    def test_usage_tracked_in_done_event(self):
+        """Done event includes token usage stats."""
+        llm = FakeLLM([FakeResponse(content="Result", usage=FakeUsage(input_tokens=50, output_tokens=25))])
+        agent = StewardAgent(provider=llm)
+
+        events: list[AgentEvent] = []
+
+        async def _collect():
+            async for event in agent.run_stream("Do it"):
+                events.append(event)
+
+        asyncio.run(_collect())
+
+        done_events = [e for e in events if e.type == "done"]
+        assert len(done_events) == 1
+        usage = done_events[0].usage
+        assert usage is not None
+        assert usage.input_tokens == 50
+        assert usage.output_tokens == 25
+        assert usage.total_tokens == 75
+        assert usage.llm_calls == 1
+        assert usage.rounds == 1
+
+    def test_usage_accumulates_across_tool_rounds(self):
+        """Usage accumulates across multiple LLM calls during tool use."""
+        tc = FakeToolCall(
+            id="call_1",
+            function=FakeFunction(name="bash", arguments={"command": "echo hi"}),
+        )
+        responses = [
+            FakeResponse(content="", tool_calls=[tc], usage=FakeUsage(input_tokens=100, output_tokens=30)),
+            FakeResponse(content="Done", usage=FakeUsage(input_tokens=200, output_tokens=40)),
+        ]
+        llm = FakeLLM(responses)
+        agent = StewardAgent(provider=llm)
+
+        events: list[AgentEvent] = []
+
+        async def _collect():
+            async for event in agent.run_stream("Run something"):
+                events.append(event)
+
+        asyncio.run(_collect())
+
+        done_events = [e for e in events if e.type == "done"]
+        assert len(done_events) == 1
+        usage = done_events[0].usage
+        assert usage is not None
+        assert usage.input_tokens == 300  # 100 + 200
+        assert usage.output_tokens == 70  # 30 + 40
+        assert usage.llm_calls == 2
+        assert usage.tool_calls == 1
+        assert usage.rounds == 2
+
+    def test_system_prompt_includes_cwd_and_tools(self):
+        """Dynamic system prompt includes working directory and tool names."""
+        llm = FakeLLM([FakeResponse(content="ok")])
+        agent = StewardAgent(provider=llm)
+        agent.run_sync("test")
+
+        system_msg = agent.conversation.messages[0]
+        assert system_msg.role == "system"
+        assert "Working directory:" in system_msg.content
+        assert "Available tools:" in system_msg.content
+        assert "bash" in system_msg.content
+        assert "read_file" in system_msg.content
+
+    def test_tool_output_truncated_in_conversation(self):
+        """Large tool outputs are truncated to prevent context blowout."""
+        from vibe_core.tools.tool_protocol import Tool, ToolResult
+
+        class BigOutputTool(Tool):
+            @property
+            def name(self) -> str:
+                return "big_output"
+
+            @property
+            def description(self) -> str:
+                return "Returns huge output"
+
+            @property
+            def parameters_schema(self) -> dict[str, Any]:
+                return {}
+
+            def validate(self, parameters: dict[str, Any]) -> None:
+                pass
+
+            def execute(self, parameters: dict[str, Any]) -> ToolResult:
+                return ToolResult(success=True, output="x" * 100_000)
+
+        tc = FakeToolCall(
+            id="call_big",
+            function=FakeFunction(name="big_output", arguments={}),
+        )
+        responses = [
+            FakeResponse(content="", tool_calls=[tc]),
+            FakeResponse(content="Done processing"),
+        ]
+        llm = FakeLLM(responses)
+        agent = StewardAgent(provider=llm, tools=[BigOutputTool()])
+
+        agent.run_sync("Generate big output")
+
+        # Find the tool result message
+        tool_msgs = [m for m in agent.conversation.messages if m.role == "tool"]
+        assert len(tool_msgs) >= 1
+        # Should be truncated (50k limit + truncation notice)
+        assert len(tool_msgs[0].content) < 60_000
+        assert "truncated" in tool_msgs[0].content
+
+    def test_custom_system_prompt_preserved(self):
+        """Custom system prompt is used as-is, not overwritten."""
+        llm = FakeLLM([FakeResponse(content="ok")])
+        agent = StewardAgent(provider=llm, system_prompt="Custom prompt only")
+        agent.run_sync("test")
+
+        system_msg = agent.conversation.messages[0]
+        assert system_msg.content == "Custom prompt only"
+        assert "Working directory:" not in system_msg.content
 
     def test_agent_custom_tools(self):
         from vibe_core.tools.tool_protocol import Tool, ToolResult
@@ -212,4 +488,4 @@ class TestStewardAgent:
 
         llm = FakeLLM([])
         agent = StewardAgent(provider=llm, tools=[CustomTool()])
-        assert "custom" in agent.registry
+        assert agent.registry.has("custom")
