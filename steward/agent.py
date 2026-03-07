@@ -23,12 +23,14 @@ from typing import AsyncIterator
 
 from vibe_core.di import ServiceRegistry
 from vibe_core.mahamantra.adapters.attention import MahaAttention
+from vibe_core.mahamantra.protocols._gad import GADBase
 from vibe_core.runtime.tool_safety_guard import ToolSafetyGuard
 from vibe_core.tools.tool_protocol import Tool
 from vibe_core.tools.tool_registry import ToolRegistry
 
 from vibe_core.protocols.memory import MemoryProtocol
 
+from steward import __version__
 from steward.config import StewardConfig, load_config
 from steward.context import SamskaraContext
 from steward.loop.engine import AgentLoop
@@ -160,8 +162,16 @@ def _build_system_prompt(
     return "\n".join(parts)
 
 
-class StewardAgent:
+class StewardAgent(GADBase):
     """Autonomous agent that executes tasks using LLM + tools.
+
+    GAD-000 compliant superagent:
+    - Discoverable: discover() returns capabilities
+    - Observable: get_state() returns full agent state
+    - Parseable: structured event stream
+    - Composable: tools are independent
+    - Idempotent: O(1) Lotus routing, deterministic
+    - Recoverable: session resume via samskara
 
     Args:
         provider: LLM provider (anything with invoke(**kwargs) -> response)
@@ -182,6 +192,7 @@ class StewardAgent:
         tools: list[Tool] | None = None,
         config: StewardConfig | None = None,
     ) -> None:
+        GADBase.__init__(self)
         self._provider = provider
         self._cwd = cwd or str(Path.cwd())
 
@@ -425,6 +436,60 @@ class StewardAgent:
         self._safety_guard.reset_session()
         self._memory.clear_session("steward")
         logger.info("Conversation reset")
+
+    # ── GAD-000 Protocol Implementation ──────────────────────────────
+
+    def discover(self) -> dict[str, object]:
+        """GAD-000 Discoverability — machine-readable capability description."""
+        return {
+            "name": "StewardAgent",
+            "version": __version__,
+            "type": "superagent",
+            "tools": self._registry.list_tools(),
+            "providers": len(self._provider) if hasattr(self._provider, "__len__") else 1,
+            "capabilities": [
+                "autonomous_coding",
+                "tool_execution",
+                "context_compaction",
+                "session_resume",
+                "multi_provider_failover",
+                "buddhi_reflection",
+            ],
+            "cwd": self._cwd,
+            "max_context_tokens": self._conversation.max_tokens,
+            "max_output_tokens": self._max_output_tokens,
+        }
+
+    def get_state(self) -> dict[str, object]:
+        """GAD-000 Observability — current agent state."""
+        return {
+            "conversation_messages": len(self._conversation.messages),
+            "conversation_tokens": self._conversation.total_tokens,
+            "context_budget_pct": int(
+                self._conversation.total_tokens / self._conversation.max_tokens * 100
+            ) if self._conversation.max_tokens else 0,
+            "tools_registered": self._registry.list_tools(),
+            "safety_guard_active": self._safety_guard is not None,
+            "memory_active": self._memory is not None,
+            "heartbeat_state": self.heartbeat.get_summary(),
+            "config": {
+                "model": self._config.model,
+                "auto_summarize": self._config.auto_summarize,
+                "persist_memory": self._config.persist_memory,
+            },
+        }
+
+    def test_tapas(self) -> bool:
+        """GAD-000 Austerity — are resources constrained?"""
+        # Tapas: context budget is within limits
+        return self._conversation.total_tokens <= self._conversation.max_tokens
+
+    def test_saucam(self) -> bool:
+        """GAD-000 Cleanliness — are connections authorized?"""
+        # Saucam: safety guard is active (Iron Dome)
+        return self._safety_guard is not None
+
+    # ── Private Helpers ────────────────────────────────────────────────
 
     def _builtin_tools(self) -> list[Tool]:
         """Build the default tool set."""
