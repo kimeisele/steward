@@ -50,6 +50,15 @@ MAX_TOOL_ROUNDS = 50
 # Maximum characters for tool output in conversation (prevents context blowout)
 MAX_TOOL_OUTPUT_CHARS = 50_000
 
+# Maximum characters for user input (hard boundary — never send unbounded text to LLM)
+MAX_INPUT_CHARS = 20_000
+
+# Maximum characters for LLM text response stored in conversation
+MAX_RESPONSE_CHARS = 100_000
+
+# Maximum characters per tool call parameter value
+MAX_PARAM_CHARS = 10_000
+
 
 class AgentLoop:
     """Execute the agentic tool-use loop for a single turn.
@@ -100,6 +109,9 @@ class AgentLoop:
         Adds the user message, runs the LLM loop until a text
         response is produced, yielding events along the way.
         """
+        # Hard boundary: truncate unbounded input (agent-city lesson)
+        if len(user_message) > MAX_INPUT_CHARS:
+            user_message = user_message[:MAX_INPUT_CHARS] + f"\n[truncated at {MAX_INPUT_CHARS} chars]"
         self._conversation.add(Message(role="user", content=user_message))
         usage = AgentUsage()
 
@@ -118,6 +130,8 @@ class AgentLoop:
             if not tool_calls:
                 # Pure text response — turn is done
                 text = self._extract_text(response)
+                if len(text) > MAX_RESPONSE_CHARS:
+                    text = text[:MAX_RESPONSE_CHARS] + f"\n[truncated at {MAX_RESPONSE_CHARS} chars]"
                 self._conversation.add(Message(role="assistant", content=text))
                 usage.rounds = round_num + 1
                 yield AgentEvent(type="text", content=text)
@@ -357,7 +371,9 @@ class AgentLoop:
 
             return await asyncio.to_thread(self._provider.invoke, **kwargs)
         except Exception as e:
-            logger.error("LLM call failed: %s", e, exc_info=True)
+            # Agent-city lesson: LLM failure is EXPECTED, not exceptional.
+            # Deterministic path continues — caller handles None gracefully.
+            logger.warning("LLM call failed (%s: %s) — deterministic path continues", type(e).__name__, e)
             return None
 
     @staticmethod
@@ -378,11 +394,26 @@ class AgentLoop:
         return ""
 
     @staticmethod
+    def _clamp_params(params: dict) -> dict:
+        """Clamp tool parameter values to prevent context blowout.
+
+        Agent-city lesson: every field has an explicit size cap.
+        """
+        clamped: dict = {}
+        for k, v in params.items():
+            if isinstance(v, str) and len(v) > MAX_PARAM_CHARS:
+                clamped[k] = v[:MAX_PARAM_CHARS] + f"[truncated at {MAX_PARAM_CHARS}]"
+            else:
+                clamped[k] = v
+        return clamped
+
+    @staticmethod
     def _extract_tool_calls(response: object) -> list[ToolUse]:
         """Extract tool calls from LLM response.
 
         Handles both OpenAI format (response.tool_calls) and
         Anthropic format (content blocks with type=tool_use).
+        Clamps all parameter values to MAX_PARAM_CHARS.
         """
         calls: list[ToolUse] = []
 
@@ -396,6 +427,8 @@ class AgentLoop:
                         params = json.loads(params)
                     except json.JSONDecodeError:
                         params = {"raw": params}
+                if isinstance(params, dict):
+                    params = AgentLoop._clamp_params(params)
                 calls.append(ToolUse(
                     id=tc.id if hasattr(tc, "id") else f"call_{id(tc)}",
                     name=func.name if hasattr(func, "name") else str(func),
@@ -407,10 +440,11 @@ class AgentLoop:
         if hasattr(response, "content") and isinstance(response.content, list):  # type: ignore[attr-defined]
             for block in response.content:  # type: ignore[attr-defined]
                 if hasattr(block, "type") and block.type == "tool_use":
+                    raw_params = block.input if hasattr(block, "input") else {}
                     calls.append(ToolUse(
                         id=block.id,
                         name=block.name,
-                        parameters=block.input if hasattr(block, "input") else {},
+                        parameters=AgentLoop._clamp_params(raw_params) if isinstance(raw_params, dict) else raw_params,
                     ))
 
         # Stop reason check (Anthropic: stop_reason == "tool_use")
