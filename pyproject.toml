@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "steward"
+version = "0.1.0"
+description = "Steward — Autonomous Agent Engine"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-timeout>=2.0",
+]
+substrate = [
+    "steward-protocol",
+]
+
+[tool.setuptools.packages.find]
+include = ["steward*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+timeout = 30
