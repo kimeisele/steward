@@ -53,9 +53,13 @@ class TestCLIFormatting:
     def test_format_done_with_usage(self, capsys):
         """Done event with usage shows stats."""
         usage = AgentUsage(
-            input_tokens=100, output_tokens=50,
-            llm_calls=2, tool_calls=3, rounds=2,
-            buddhi_action="IMPLEMENT", buddhi_guna="RAJAS",
+            input_tokens=100,
+            output_tokens=50,
+            llm_calls=2,
+            tool_calls=3,
+            rounds=2,
+            buddhi_action="IMPLEMENT",
+            buddhi_guna="RAJAS",
             buddhi_phase="EXECUTE",
         )
         _format_event(AgentEvent(type=EventType.DONE, usage=usage))

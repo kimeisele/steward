@@ -209,10 +209,10 @@ class TestSummarizerInLoop:
 
         conv.messages = [
             Message(role="system", content="sys"),
-            Message(role="user", content="a" * 200),      # ~50 tokens
+            Message(role="user", content="a" * 200),  # ~50 tokens
             Message(role="assistant", content="b" * 100),  # ~25 tokens
-            Message(role="user", content="c" * 40),        # ~10 tokens
-            Message(role="assistant", content="d" * 40),   # ~10 tokens
+            Message(role="user", content="c" * 40),  # ~10 tokens
+            Message(role="assistant", content="d" * 40),  # ~10 tokens
         ]
 
         loop = AgentLoop(provider=llm, registry=reg, conversation=conv)

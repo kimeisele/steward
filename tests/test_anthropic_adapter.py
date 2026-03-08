@@ -10,6 +10,7 @@ from steward.provider import AnthropicAdapter
 @dataclass
 class _FakeAnthropicResponse:
     """Simulates anthropic.types.Message."""
+
     content: list
     stop_reason: str = "end_turn"
     usage: object = None

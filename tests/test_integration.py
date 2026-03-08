@@ -100,16 +100,20 @@ class TestEndToEnd:
 
     def test_tool_call_then_text(self):
         """LLM calls a tool, gets result, then responds with text."""
-        llm = ScriptedLLM([
-            ToolCallResponse(
-                content="Let me check.",
-                tool_calls=[FakeToolCall(
-                    id="call_1",
-                    function=FakeFunction(name="glob", arguments='{"pattern": "*.py"}'),
-                )],
-            ),
-            TextResponse("I found some Python files."),
-        ])
+        llm = ScriptedLLM(
+            [
+                ToolCallResponse(
+                    content="Let me check.",
+                    tool_calls=[
+                        FakeToolCall(
+                            id="call_1",
+                            function=FakeFunction(name="glob", arguments='{"pattern": "*.py"}'),
+                        )
+                    ],
+                ),
+                TextResponse("I found some Python files."),
+            ]
+        )
         agent = StewardAgent(provider=llm, system_prompt="You are helpful.")
 
         result = agent.run_sync("Find Python files")
@@ -119,11 +123,13 @@ class TestEndToEnd:
 
     def test_multi_turn_conversation(self):
         """Multiple turns maintain conversation context."""
-        llm = ScriptedLLM([
-            TextResponse("I'll help with that."),
-            TextResponse("Sure, here's more info."),
-            TextResponse("All done!"),
-        ])
+        llm = ScriptedLLM(
+            [
+                TextResponse("I'll help with that."),
+                TextResponse("Sure, here's more info."),
+                TextResponse("All done!"),
+            ]
+        )
         agent = StewardAgent(provider=llm, system_prompt="You are helpful.")
 
         r1 = agent.run_sync("First question")
@@ -138,16 +144,20 @@ class TestEndToEnd:
 
     def test_event_stream_complete(self):
         """run_stream yields all expected event types."""
-        llm = ScriptedLLM([
-            ToolCallResponse(
-                content="Reading file.",
-                tool_calls=[FakeToolCall(
-                    id="call_1",
-                    function=FakeFunction(name="glob", arguments='{"pattern": "*.md"}'),
-                )],
-            ),
-            TextResponse("Done reading."),
-        ])
+        llm = ScriptedLLM(
+            [
+                ToolCallResponse(
+                    content="Reading file.",
+                    tool_calls=[
+                        FakeToolCall(
+                            id="call_1",
+                            function=FakeFunction(name="glob", arguments='{"pattern": "*.md"}'),
+                        )
+                    ],
+                ),
+                TextResponse("Done reading."),
+            ]
+        )
         agent = StewardAgent(provider=llm, system_prompt="test")
 
         events: list[AgentEvent] = []
@@ -171,10 +181,12 @@ class TestEndToEnd:
 
     def test_agent_reset_clears_state(self):
         """Reset clears conversation but keeps tools."""
-        llm = ScriptedLLM([
-            TextResponse("First response"),
-            TextResponse("After reset"),
-        ])
+        llm = ScriptedLLM(
+            [
+                TextResponse("First response"),
+                TextResponse("After reset"),
+            ]
+        )
         agent = StewardAgent(provider=llm, system_prompt="test")
 
         agent.run_sync("Hello")
@@ -188,9 +200,11 @@ class TestEndToEnd:
 
     def test_gad_audit_after_work(self):
         """GAD-000 audit still passes after agent does work."""
-        llm = ScriptedLLM([
-            TextResponse("Task complete."),
-        ])
+        llm = ScriptedLLM(
+            [
+                TextResponse("Task complete."),
+            ]
+        )
         agent = StewardAgent(provider=llm, system_prompt="test")
         agent.chant()  # activate heartbeat
 
@@ -246,89 +260,107 @@ class TestEndToEnd:
         with open(test_py, "w") as f:
             f.write("# test module\n")
 
-        llm = ScriptedLLM([
-            # Round 1: Read file → ORIENT
-            ToolCallResponse(
-                content="Let me read the code.",
-                tool_calls=[FakeToolCall(
-                    id="call_1",
-                    function=FakeFunction(
-                        name="read_file",
-                        arguments=json.dumps({"path": main_py}),
-                    ),
-                )],
-            ),
-            # Round 2: Read another file → 2 reads → EXECUTE
-            ToolCallResponse(
-                content="Let me check another file.",
-                tool_calls=[FakeToolCall(
-                    id="call_2",
-                    function=FakeFunction(
-                        name="read_file",
-                        arguments=json.dumps({"path": lib_py}),
-                    ),
-                )],
-            ),
-            # Round 3: Edit the file → stays EXECUTE
-            ToolCallResponse(
-                content="I'll fix the bug.",
-                tool_calls=[FakeToolCall(
-                    id="call_3",
-                    function=FakeFunction(
-                        name="edit_file",
-                        arguments=json.dumps({
-                            "path": main_py,
-                            "old_string": "old_value",
-                            "new_string": "new_value",
-                        }),
-                    ),
-                )],
-            ),
-            # Rounds 4-6: Read after write → push recent window past the write → VERIFY
-            ToolCallResponse(
-                content="Let me verify the change.",
-                tool_calls=[FakeToolCall(
-                    id="call_4",
-                    function=FakeFunction(
-                        name="read_file",
-                        arguments=json.dumps({"path": main_py}),
-                    ),
-                )],
-            ),
-            ToolCallResponse(
-                content="Checking more.",
-                tool_calls=[FakeToolCall(
-                    id="call_5",
-                    function=FakeFunction(
-                        name="read_file",
-                        arguments=json.dumps({"path": test_py}),
-                    ),
-                )],
-            ),
-            ToolCallResponse(
-                content="Reading lib.",
-                tool_calls=[FakeToolCall(
-                    id="call_6",
-                    function=FakeFunction(
-                        name="read_file",
-                        arguments=json.dumps({"path": lib_py}),
-                    ),
-                )],
-            ),
-            # Round 7: Run tests → COMPLETE
-            ToolCallResponse(
-                content="Running tests.",
-                tool_calls=[FakeToolCall(
-                    id="call_7",
-                    function=FakeFunction(
-                        name="bash",
-                        arguments=json.dumps({"command": "echo 'all tests passed'"}),
-                    ),
-                )],
-            ),
-            # Final: text response
-            TextResponse("All tests pass. Bug fixed."),
-        ])
+        llm = ScriptedLLM(
+            [
+                # Round 1: Read file → ORIENT
+                ToolCallResponse(
+                    content="Let me read the code.",
+                    tool_calls=[
+                        FakeToolCall(
+                            id="call_1",
+                            function=FakeFunction(
+                                name="read_file",
+                                arguments=json.dumps({"path": main_py}),
+                            ),
+                        )
+                    ],
+                ),
+                # Round 2: Read another file → 2 reads → EXECUTE
+                ToolCallResponse(
+                    content="Let me check another file.",
+                    tool_calls=[
+                        FakeToolCall(
+                            id="call_2",
+                            function=FakeFunction(
+                                name="read_file",
+                                arguments=json.dumps({"path": lib_py}),
+                            ),
+                        )
+                    ],
+                ),
+                # Round 3: Edit the file → stays EXECUTE
+                ToolCallResponse(
+                    content="I'll fix the bug.",
+                    tool_calls=[
+                        FakeToolCall(
+                            id="call_3",
+                            function=FakeFunction(
+                                name="edit_file",
+                                arguments=json.dumps(
+                                    {
+                                        "path": main_py,
+                                        "old_string": "old_value",
+                                        "new_string": "new_value",
+                                    }
+                                ),
+                            ),
+                        )
+                    ],
+                ),
+                # Rounds 4-6: Read after write → push recent window past the write → VERIFY
+                ToolCallResponse(
+                    content="Let me verify the change.",
+                    tool_calls=[
+                        FakeToolCall(
+                            id="call_4",
+                            function=FakeFunction(
+                                name="read_file",
+                                arguments=json.dumps({"path": main_py}),
+                            ),
+                        )
+                    ],
+                ),
+                ToolCallResponse(
+                    content="Checking more.",
+                    tool_calls=[
+                        FakeToolCall(
+                            id="call_5",
+                            function=FakeFunction(
+                                name="read_file",
+                                arguments=json.dumps({"path": test_py}),
+                            ),
+                        )
+                    ],
+                ),
+                ToolCallResponse(
+                    content="Reading lib.",
+                    tool_calls=[
+                        FakeToolCall(
+                            id="call_6",
+                            function=FakeFunction(
+                                name="read_file",
+                                arguments=json.dumps({"path": lib_py}),
+                            ),
+                        )
+                    ],
+                ),
+                # Round 7: Run tests → COMPLETE
+                ToolCallResponse(
+                    content="Running tests.",
+                    tool_calls=[
+                        FakeToolCall(
+                            id="call_7",
+                            function=FakeFunction(
+                                name="bash",
+                                arguments=json.dumps({"command": "echo 'all tests passed'"}),
+                            ),
+                        )
+                    ],
+                ),
+                # Final: text response
+                TextResponse("All tests pass. Bug fixed."),
+            ]
+        )
         agent = StewardAgent(provider=llm, system_prompt="You are a coding agent.")
 
         events: list[AgentEvent] = []
@@ -370,14 +402,12 @@ class TestEndToEnd:
                 assert "new_value" in f.read()
 
             # Verify Buddhi phase transition guidance was injected (EXECUTE → VERIFY)
-            buddhi_msgs = [
-                m for m in agent.conversation.messages
-                if m.role == "user" and "Buddhi" in m.content
-            ]
+            buddhi_msgs = [m for m in agent.conversation.messages if m.role == "user" and "Buddhi" in m.content]
             # At least one reflection from phase transition
             assert len(buddhi_msgs) >= 1
         finally:
             import shutil
+
             shutil.rmtree(tmpdir, ignore_errors=True)
 
     def test_buddhi_abort_on_consecutive_errors(self):
@@ -389,16 +419,20 @@ class TestEndToEnd:
         # Build responses that all fail (tools that don't exist)
         error_responses = []
         for i in range(6):
-            error_responses.append(ToolCallResponse(
-                content=f"Trying tool {i}.",
-                tool_calls=[FakeToolCall(
-                    id=f"call_{i}",
-                    function=FakeFunction(
-                        name="nonexistent_tool",
-                        arguments='{"x": "y"}',
-                    ),
-                )],
-            ))
+            error_responses.append(
+                ToolCallResponse(
+                    content=f"Trying tool {i}.",
+                    tool_calls=[
+                        FakeToolCall(
+                            id=f"call_{i}",
+                            function=FakeFunction(
+                                name="nonexistent_tool",
+                                arguments='{"x": "y"}',
+                            ),
+                        )
+                    ],
+                )
+            )
         error_responses.append(TextResponse("This shouldn't be reached."))
 
         llm = ScriptedLLM(error_responses)
@@ -426,13 +460,17 @@ class TestEndToEnd:
         """
         identical_responses = []
         for i in range(3):
-            identical_responses.append(ToolCallResponse(
-                content=f"Looking for files.",
-                tool_calls=[FakeToolCall(
-                    id=f"call_{i}",
-                    function=FakeFunction(name="glob", arguments='{"pattern": "*.py"}'),
-                )],
-            ))
+            identical_responses.append(
+                ToolCallResponse(
+                    content=f"Looking for files.",
+                    tool_calls=[
+                        FakeToolCall(
+                            id=f"call_{i}",
+                            function=FakeFunction(name="glob", arguments='{"pattern": "*.py"}'),
+                        )
+                    ],
+                )
+            )
         identical_responses.append(TextResponse("Ok, I'll try something else."))
 
         llm = ScriptedLLM(identical_responses)
@@ -448,13 +486,9 @@ class TestEndToEnd:
 
         # The conversation should have a Buddhi reflection message
         messages = agent.conversation.messages
-        buddhi_msgs = [
-            m for m in messages
-            if m.role == "user" and "Buddhi" in m.content
-        ]
+        buddhi_msgs = [m for m in messages if m.role == "user" and "Buddhi" in m.content]
         assert len(buddhi_msgs) >= 1
-        assert any("identical" in m.content.lower() or "same parameters" in m.content.lower()
-                    for m in buddhi_msgs)
+        assert any("identical" in m.content.lower() or "same parameters" in m.content.lower() for m in buddhi_msgs)
 
     def test_streaming_text_deltas(self):
         """Provider with invoke_stream yields text_delta events.
@@ -560,19 +594,23 @@ class TestEndToEnd:
         Turn 2: Edit same file → no write-without-read detection
         (because Chitta remembers the read from turn 1)
         """
-        llm = ScriptedLLM([
-            # Turn 1: read a file
-            ToolCallResponse(
-                content="Reading.",
-                tool_calls=[FakeToolCall(
-                    id="c1",
-                    function=FakeFunction(name="glob", arguments='{"pattern": "*.py"}'),
-                )],
-            ),
-            TextResponse("Found files."),
-            # Turn 2: just text
-            TextResponse("Ok, I understand the codebase."),
-        ])
+        llm = ScriptedLLM(
+            [
+                # Turn 1: read a file
+                ToolCallResponse(
+                    content="Reading.",
+                    tool_calls=[
+                        FakeToolCall(
+                            id="c1",
+                            function=FakeFunction(name="glob", arguments='{"pattern": "*.py"}'),
+                        )
+                    ],
+                ),
+                TextResponse("Found files."),
+                # Turn 2: just text
+                TextResponse("Ok, I understand the codebase."),
+            ]
+        )
         agent = StewardAgent(provider=llm, system_prompt="test")
 
         # Turn 1
@@ -590,10 +628,12 @@ class TestEndToEnd:
 
     def test_state_reflects_conversation_growth(self):
         """get_state() shows conversation growing across turns."""
-        llm = ScriptedLLM([
-            TextResponse("Response 1"),
-            TextResponse("Response 2"),
-        ])
+        llm = ScriptedLLM(
+            [
+                TextResponse("Response 1"),
+                TextResponse("Response 2"),
+            ]
+        )
         agent = StewardAgent(provider=llm, system_prompt="test")
 
         s1 = agent.get_state()

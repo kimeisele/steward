@@ -160,9 +160,7 @@ class TestAgentWithProjectInstructions:
         with tempfile.TemporaryDirectory() as tmp:
             steward_dir = Path(tmp) / ".steward"
             steward_dir.mkdir()
-            (steward_dir / "instructions.md").write_text(
-                "Use pytest-asyncio for all async tests"
-            )
+            (steward_dir / "instructions.md").write_text("Use pytest-asyncio for all async tests")
 
             llm = FakeLLM()
             agent = StewardAgent(provider=llm, cwd=tmp)

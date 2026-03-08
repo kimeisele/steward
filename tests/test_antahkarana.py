@@ -43,6 +43,7 @@ class TestManas:
         manas = Manas()
         p = manas.perceive("test")
         import pytest
+
         with pytest.raises(AttributeError):
             p.action = SemanticActionType.DEBUG  # type: ignore[misc]
 
@@ -130,10 +131,7 @@ class TestGandha:
         assert detect_patterns(imps) is None
 
     def test_consecutive_errors_detected(self):
-        imps = [
-            Impression("bash", i, False, f"error {i}")
-            for i in range(MAX_CONSECUTIVE_ERRORS)
-        ]
+        imps = [Impression("bash", i, False, f"error {i}") for i in range(MAX_CONSECUTIVE_ERRORS)]
         d = detect_patterns(imps)
         assert d is not None
         assert d.severity == "abort"
@@ -145,10 +143,7 @@ class TestGandha:
         assert detect_patterns(imps) is None
 
     def test_identical_calls_detected(self):
-        imps = [
-            Impression("bash", 42, True)
-            for _ in range(MAX_IDENTICAL_CALLS)
-        ]
+        imps = [Impression("bash", 42, True) for _ in range(MAX_IDENTICAL_CALLS)]
         d = detect_patterns(imps)
         assert d is not None
         assert d.severity == "reflect"
@@ -189,9 +184,7 @@ class TestGandha:
         assert d.pattern == "route_miss"
 
     def test_tool_streak_detected(self):
-        imps = [
-            Impression("bash", i, True) for i in range(MAX_SAME_TOOL_STREAK)
-        ]
+        imps = [Impression("bash", i, True) for i in range(MAX_SAME_TOOL_STREAK)]
         d = detect_patterns(imps)
         # bash with different params_hash won't trigger identical_calls
         # but WILL trigger tool_streak
@@ -200,9 +193,7 @@ class TestGandha:
         assert d.pattern == "tool_streak"
 
     def test_read_file_streak_exempt(self):
-        imps = [
-            Impression("read_file", i, True) for i in range(MAX_SAME_TOOL_STREAK)
-        ]
+        imps = [Impression("read_file", i, True) for i in range(MAX_SAME_TOOL_STREAK)]
         d = detect_patterns(imps)
         assert d is None  # read_file streaks are legitimate
 
@@ -309,6 +300,7 @@ class TestGandha:
     def test_detection_is_frozen(self):
         d = Detection(severity="abort", pattern="test", reason="test")
         import pytest
+
         with pytest.raises(AttributeError):
             d.severity = "reflect"  # type: ignore[misc]
 
@@ -506,11 +498,13 @@ class TestChittaCrossTurn:
     def test_load_summary_restores_prior_reads(self):
         """load_summary() restores prior_reads from a dict."""
         chitta = Chitta()
-        chitta.load_summary({
-            "prior_reads": ["/a.py", "/b.py"],
-            "files_written": ["/a.py"],
-            "last_phase": "VERIFY",
-        })
+        chitta.load_summary(
+            {
+                "prior_reads": ["/a.py", "/b.py"],
+                "files_written": ["/a.py"],
+                "last_phase": "VERIFY",
+            }
+        )
         assert chitta.prior_reads == frozenset({"/a.py", "/b.py"})
         assert chitta.was_file_read("/a.py") is True
 
@@ -564,10 +558,7 @@ class TestGandhaAvailableTools:
 
     def test_other_patterns_unaffected_by_available_tools(self):
         """Non-route-miss patterns work the same regardless of available_tools."""
-        imps = [
-            Impression("bash", i, False, f"err {i}")
-            for i in range(MAX_CONSECUTIVE_ERRORS)
-        ]
+        imps = [Impression("bash", i, False, f"err {i}") for i in range(MAX_CONSECUTIVE_ERRORS)]
         d = detect_patterns(imps, available_tools=frozenset({"bash", "read_file"}))
         assert d is not None
         assert d.pattern == "consecutive_errors"  # not affected by available_tools
@@ -693,7 +684,9 @@ class TestGandhaErrorRecovery:
     def test_file_not_found_recovery(self):
         """FileNotFoundError triggers glob suggestion."""
         imps = [
-            Impression("read_file", 1, False, "FileNotFoundError: [Errno 2] No such file or directory: '/src/missing.py'"),
+            Impression(
+                "read_file", 1, False, "FileNotFoundError: [Errno 2] No such file or directory: '/src/missing.py'"
+            ),
         ]
         d = detect_patterns(imps)
         assert d is not None
