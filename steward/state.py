@@ -92,7 +92,7 @@ def _msg_to_dict(msg: Message) -> dict[str, object]:
     return d
 
 
-def _dict_to_msg(d: dict) -> Message:  # type: ignore[type-arg]
+def _dict_to_msg(d: dict[str, object]) -> Message:
     tool_uses: list[ToolUse] = []
     raw_tool_uses = d.get("tool_uses")
     if isinstance(raw_tool_uses, list):

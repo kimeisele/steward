@@ -339,6 +339,7 @@ class ProviderChamber:
 
             # Check if provider supports streaming
             if not hasattr(payload.provider, "invoke_stream"):
+                logger.debug("'%s' lacks invoke_stream, falling back to non-streaming", payload.name)
                 # Fall back to non-streaming
                 call_kwargs = dict(kwargs)
                 call_kwargs["model"] = payload.model
