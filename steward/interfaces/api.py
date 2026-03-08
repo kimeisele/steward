@@ -5,10 +5,13 @@ Enables agent-city, agent-internet, and external services to call
 steward over HTTP. Same StewardAgent, different I/O channel.
 
 Endpoints:
-    POST /task          — execute a task, return result
-    POST /task/stream   — execute a task, stream events via SSE
-    GET  /health        — health check + provider status
-    GET  /stats         — session ledger stats + provider stats
+    POST /task                           — execute a task, return result
+    POST /task/stream                    — execute a task, stream events via SSE
+    GET  /health                         — health check + provider status
+    GET  /stats                          — session ledger stats + provider stats
+    GET  /federation/semantic/capabilities — proxy agent-internet semantic capability manifest
+    GET  /federation/semantic/contracts    — proxy agent-internet semantic contract descriptors
+    POST /federation/semantic/call         — generically invoke a semantic capability via agent-internet
 
 Authentication:
     Bearer token via STEWARD_API_TOKEN environment variable.
@@ -60,6 +63,11 @@ def create_app():
     from fastapi.responses import StreamingResponse
     from pydantic import BaseModel
 
+    from steward.interfaces.agent_internet import (
+        fetch_semantic_capabilities,
+        fetch_semantic_contracts,
+        invoke_semantic_http,
+    )
     from steward.agent import StewardAgent
     from steward.provider import build_chamber
     from steward.session_ledger import SessionLedger
@@ -78,9 +86,15 @@ def create_app():
 
     # Shared agent instance (created on first request)
     _state: dict = {"agent": None, "chamber": None}
+    _agent_lock = asyncio.Lock()
 
-    def _get_agent() -> StewardAgent:
-        if _state["agent"] is None:
+    async def _get_agent() -> StewardAgent:
+        if _state["agent"] is not None:
+            return _state["agent"]
+        async with _agent_lock:
+            # Double-check after acquiring lock
+            if _state["agent"] is not None:
+                return _state["agent"]
             chamber = build_chamber()
             if len(chamber) == 0:
                 raise HTTPException(
@@ -89,7 +103,7 @@ def create_app():
                 )
             _state["chamber"] = chamber
             _state["agent"] = StewardAgent(provider=chamber, cwd=_CWD)
-        return _state["agent"]
+            return _state["agent"]
 
     # ── Auth ─────────────────────────────────────────────────────────
 
@@ -121,12 +135,28 @@ def create_app():
         providers: int
         tools: list[str]
 
+    class SemanticCallRequest(BaseModel):
+        capability_id: str | None = None
+        contract_id: str | None = None
+        version: int | None = None
+        input_payload: dict[str, object] = {}
+
+    def _raise_proxy_error(exc: Exception) -> None:
+        message = str(exc)
+        if message.startswith("missing_agent_internet_"):
+            raise HTTPException(status_code=503, detail=message) from exc
+        if message.startswith("agent_internet_"):
+            raise HTTPException(status_code=502, detail=message) from exc
+        if message.startswith("missing_input:"):
+            raise HTTPException(status_code=400, detail=message) from exc
+        raise HTTPException(status_code=500, detail=message) from exc
+
     # ── Endpoints ────────────────────────────────────────────────────
 
     @app.post("/task", response_model=TaskResponse, dependencies=[Depends(_verify_token)])
     async def execute_task(req: TaskRequest):
         """Execute a task and return the result."""
-        agent = _get_agent()
+        agent = await _get_agent()
         t0 = time.monotonic()
 
         result_text = ""
@@ -157,7 +187,7 @@ def create_app():
     @app.post("/task/stream", dependencies=[Depends(_verify_token)])
     async def execute_task_stream(req: TaskRequest):
         """Execute a task and stream events via Server-Sent Events (SSE)."""
-        agent = _get_agent()
+        agent = await _get_agent()
 
         async def _event_stream():
             async for event in agent.run_stream(req.task):
@@ -194,7 +224,7 @@ def create_app():
         from steward import __version__
 
         try:
-            agent = _get_agent()
+            agent = await _get_agent()
             return HealthResponse(
                 status="ok",
                 version=__version__,
@@ -216,6 +246,43 @@ def create_app():
             result["providers"] = _state["chamber"].stats()
 
         return result
+
+    @app.get("/federation/semantic/capabilities", dependencies=[Depends(_verify_token)])
+    async def federation_semantic_capabilities():
+        """Proxy the published semantic capability manifest from agent-internet."""
+        try:
+            return fetch_semantic_capabilities()
+        except Exception as exc:
+            _raise_proxy_error(exc)
+
+    @app.get("/federation/semantic/contracts", dependencies=[Depends(_verify_token)])
+    async def federation_semantic_contracts(
+        capability_id: str | None = None,
+        contract_id: str | None = None,
+        version: int | None = None,
+    ):
+        """Proxy semantic contract descriptors from agent-internet."""
+        try:
+            return fetch_semantic_contracts(
+                capability_id=capability_id,
+                contract_id=contract_id,
+                version=version,
+            )
+        except Exception as exc:
+            _raise_proxy_error(exc)
+
+    @app.post("/federation/semantic/call", dependencies=[Depends(_verify_token)])
+    async def federation_semantic_call(req: SemanticCallRequest):
+        """Invoke a semantic capability generically through agent-internet."""
+        try:
+            return invoke_semantic_http(
+                capability_id=req.capability_id,
+                contract_id=req.contract_id,
+                version=req.version,
+                input_payload=dict(req.input_payload),
+            )
+        except Exception as exc:
+            _raise_proxy_error(exc)
 
     return app
 
