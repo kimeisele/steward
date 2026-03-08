@@ -46,7 +46,9 @@ def test_fetch_semantic_capabilities(mock_urlopen):
         {
             "agent_web_semantic_capabilities": {
                 "kind": "agent_web_semantic_capability_manifest",
-                "capabilities": [{"capability_id": "semantic_expand", "summary": "Expand queries", "mode": "read_only"}],
+                "capabilities": [
+                    {"capability_id": "semantic_expand", "summary": "Expand queries", "mode": "read_only"}
+                ],
             }
         }
     )
@@ -86,7 +88,9 @@ def test_invoke_semantic_http(mock_urlopen):
             {
                 "agent_web_semantic_capabilities": {
                     "standard_profile": {"profile_id": "agent_web_semantic_read_standard.v1"},
-                    "capabilities": [{"capability_id": "semantic_expand", "summary": "Expand queries", "mode": "read_only"}],
+                    "capabilities": [
+                        {"capability_id": "semantic_expand", "summary": "Expand queries", "mode": "read_only"}
+                    ],
                 }
             }
         ),

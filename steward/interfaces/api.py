@@ -30,8 +30,6 @@ Environment:
     GOOGLE_API_KEY      — (provider keys as usual)
 """
 
-from __future__ import annotations
-
 import asyncio
 import json
 import logging

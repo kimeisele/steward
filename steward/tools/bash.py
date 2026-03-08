@@ -21,7 +21,7 @@ _BLOCKED_PATTERNS = [
     "dd if=",
     "format c:",
     "> /dev/sd",
-    "chmod -R 777 /",
+    "chmod -r 777 /",
     ":(){ :|:& };:",
     "curl | bash",
     "curl | sh",
