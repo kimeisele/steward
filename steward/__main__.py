@@ -47,10 +47,15 @@ def _format_event(event: AgentEvent) -> None:
                 print(f"  {_RED}x {err}{_RESET}")
     elif event.type == "done" and event.usage:
         u = event.usage
+        buddhi = ""
+        if u.buddhi_action:
+            buddhi = f" | {u.buddhi_action}/{u.buddhi_guna}"
+            if u.buddhi_reflections:
+                buddhi += f" {u.buddhi_reflections}r"
         print(
             f"\n{_DIM}[{u.input_tokens}+{u.output_tokens} tokens, "
             f"{u.llm_calls} calls, {u.tool_calls} tools, "
-            f"{u.rounds} rounds]{_RESET}"
+            f"{u.rounds} rounds{buddhi}]{_RESET}"
         )
     elif event.type == "error":
         print(f"{_RED}Error: {event.content}{_RESET}", file=sys.stderr)

@@ -125,6 +125,9 @@ class AgentLoop:
         for round_num in range(MAX_TOOL_ROUNDS):
             # Buddhi pre-flight: deterministic tool selection + token budget
             directive = self._buddhi.pre_flight(user_message, round_num)
+            if round_num == 0:
+                usage.buddhi_action = directive.action.value
+                usage.buddhi_guna = directive.guna.value
             response = await self._call_llm(directive)
             usage.llm_calls += 1
             if response is None:
@@ -278,15 +281,18 @@ class AgentLoop:
                         all_results.append((raw_result.success, raw_result.error or ""))
 
             if all_calls:
+                usage.buddhi_errors += sum(1 for ok, _ in all_results if not ok)
                 verdict = self._buddhi.evaluate(all_calls, all_results)
                 if verdict.action == "abort":
                     usage.rounds = round_num + 1
+                    usage.buddhi_reflections += 1
                     yield AgentEvent(
                         type="error",
                         content=f"Buddhi abort: {verdict.reason}. {verdict.suggestion}",
                     )
                     return
                 if verdict.action in ("reflect", "redirect"):
+                    usage.buddhi_reflections += 1
                     # Inject guidance — LLM will reconsider approach
                     label = "reflection" if verdict.action == "reflect" else "redirect"
                     guidance = (

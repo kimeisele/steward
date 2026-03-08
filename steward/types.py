@@ -158,6 +158,11 @@ class AgentUsage:
     llm_calls: int = 0
     tool_calls: int = 0
     rounds: int = 0
+    # Buddhi diagnostics (observable cognition)
+    buddhi_action: str = ""     # SemanticActionType (e.g., "RESEARCH", "IMPLEMENT")
+    buddhi_guna: str = ""       # IntentGuna (e.g., "SATTVA", "RAJAS")
+    buddhi_errors: int = 0      # total tool errors detected by Buddhi
+    buddhi_reflections: int = 0 # number of reflect/redirect injections
 
     @property
     def total_tokens(self) -> int:
