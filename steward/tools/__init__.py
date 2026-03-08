@@ -8,6 +8,7 @@ from steward.tools.grep import GrepTool
 from steward.tools.http import HttpTool
 from steward.tools.read_file import ReadFileTool
 from steward.tools.sub_agent import SubAgentTool
+from steward.tools.web_search import WebSearchTool
 from steward.tools.write_file import WriteFileTool
 
 __all__ = [
@@ -19,5 +20,6 @@ __all__ = [
     "HttpTool",
     "ReadFileTool",
     "SubAgentTool",
+    "WebSearchTool",
     "WriteFileTool",
 ]
