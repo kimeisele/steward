@@ -168,6 +168,32 @@ class ProviderChamber:
 
         return clean + warned
 
+    def _sorted_providers(
+        self, *, tier: str = "", has_tools: bool = False,
+    ) -> list[MahaCellUnified[ProviderPayload]]:
+        """Sort alive providers by tier + feedback penalty.
+
+        Tier routing:
+            "pro"   → cost descending (most capable first)
+            "flash" → cost ascending (cheapest first)
+            ""      → prana descending, with tool-capable boost if has_tools
+        """
+        alive = [c for c in self._cells if c.is_alive]
+
+        if tier == "pro":
+            alive.sort(key=lambda c: c.payload.cost_per_mtok_input, reverse=True)
+        elif tier == "flash":
+            alive.sort(key=lambda c: c.payload.cost_per_mtok_input)
+        elif has_tools:
+            alive.sort(
+                key=lambda c: (c.payload.supports_tools, c.lifecycle.prana),
+                reverse=True,
+            )
+        else:
+            alive.sort(key=lambda c: c.lifecycle.prana, reverse=True)
+
+        return self._apply_feedback_penalty(alive)
+
     def invoke(self, **kwargs: object) -> object | None:
         """Try provider cells in tier-aware order until one succeeds.
 
@@ -198,29 +224,7 @@ class ProviderChamber:
             logger.warning("Quota exceeded — blocking request: %s", e)
             return None
 
-        alive = [c for c in self._cells if c.is_alive]
-        has_tools = bool(kwargs.get("tools"))
-
-        if tier == "pro":
-            # Complex task: sort by cost (highest = most capable first)
-            alive.sort(key=lambda c: c.payload.cost_per_mtok_input, reverse=True)
-            logger.debug("Tier routing: PRO → cost-ordered (capable first)")
-        elif tier == "flash":
-            # Simple task: sort by cost ascending (cheapest first)
-            alive.sort(key=lambda c: c.payload.cost_per_mtok_input)
-            logger.debug("Tier routing: FLASH → cost-ordered (cheapest first)")
-        elif has_tools:
-            # Tool-calling: prefer providers that support structured tools
-            alive.sort(
-                key=lambda c: (c.payload.supports_tools, c.lifecycle.prana),
-                reverse=True,
-            )
-            logger.debug("Tool-calling: preferring tool-capable providers")
-        else:
-            alive.sort(key=lambda c: c.lifecycle.prana, reverse=True)
-
-        # Feedback-based deprioritization (historical pattern penalty)
-        alive = self._apply_feedback_penalty(alive)
+        alive = self._sorted_providers(tier=tier, has_tools=bool(kwargs.get("tools")))
 
         for cell in alive:
             payload: ProviderPayload = cell.payload
@@ -313,18 +317,7 @@ class ProviderChamber:
             logger.warning("Quota exceeded — blocking stream: %s", e)
             return
 
-        alive = [c for c in self._cells if c.is_alive]
-        has_tools = bool(kwargs.get("tools"))
-        if has_tools:
-            alive.sort(
-                key=lambda c: (c.payload.supports_tools, c.lifecycle.prana),
-                reverse=True,
-            )
-        else:
-            alive.sort(key=lambda c: c.lifecycle.prana, reverse=True)
-
-        # Feedback-based deprioritization (historical pattern penalty)
-        alive = self._apply_feedback_penalty(alive)
+        alive = self._sorted_providers(has_tools=bool(kwargs.get("tools")))
 
         for cell in alive:
             payload: ProviderPayload = cell.payload
