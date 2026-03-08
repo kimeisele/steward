@@ -8,7 +8,7 @@ Public API:
     from steward.state import save_conversation, load_conversation
 """
 
-__version__ = "0.12.2"
+__version__ = "0.13.0"
 
 from steward.agent import StewardAgent
 from steward.types import AgentEvent, AgentUsage, Conversation, LLMProvider, Message, ToolUse

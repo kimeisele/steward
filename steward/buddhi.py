@@ -70,7 +70,7 @@ class ToolNamespace(StrEnum):
 
 # Namespace → tool names (runtime-mutable)
 _NAMESPACE_TOOLS: dict[ToolNamespace, set[str]] = {
-    ToolNamespace.OBSERVE: {"read_file", "glob", "grep"},
+    ToolNamespace.OBSERVE: {"read_file", "glob", "grep", "http"},
     ToolNamespace.MODIFY: {"write_file", "edit_file"},
     ToolNamespace.EXECUTE: {"bash"},
     ToolNamespace.DELEGATE: {"sub_agent"},
