@@ -4,11 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from steward.services import SVC_ATTENTION, SVC_TOOL_REGISTRY, boot
 from vibe_core.di import ServiceRegistry
 from vibe_core.mahamantra.adapters.attention import MahaAttention
 from vibe_core.tools.tool_protocol import Tool, ToolResult
-
-from steward.services import SVC_ATTENTION, SVC_TOOL_REGISTRY, boot
 
 
 class DummyTool(Tool):

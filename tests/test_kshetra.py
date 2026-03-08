@@ -1,10 +1,5 @@
 """Tests for the Kshetra — 25-element Sankhya mapping."""
 
-from vibe_core.protocols.mahajanas.kapila.samkhya import (
-    PrakritiCategory,
-    PrakritiElement,
-)
-
 from steward.kshetra import (
     JIVA,
     STEWARD_KSHETRA,
@@ -13,6 +8,10 @@ from steward.kshetra import (
     get_category_elements,
     get_element_mapping,
     get_layer_elements,
+)
+from vibe_core.protocols.mahajanas.kapila.samkhya import (
+    PrakritiCategory,
+    PrakritiElement,
 )
 
 

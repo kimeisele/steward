@@ -14,7 +14,6 @@ from steward.agent import (
     _load_project_instructions,
 )
 
-
 # ── Fake LLM ─────────────────────────────────────────────────────────
 
 

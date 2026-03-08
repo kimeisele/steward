@@ -5,12 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from vibe_core.di import ServiceRegistry
-from vibe_core.runtime.prompt_context import PromptContext
-
 from steward.agent import StewardAgent
 from steward.services import SVC_PROMPT_CONTEXT, boot
-
+from vibe_core.di import ServiceRegistry
+from vibe_core.runtime.prompt_context import PromptContext
 
 # ── Fake LLM ─────────────────────────────────────────────────────────
 

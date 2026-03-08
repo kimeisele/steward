@@ -58,14 +58,12 @@ def create_app():
     from fastapi.responses import StreamingResponse
     from pydantic import BaseModel
 
+    # ── App Setup ────────────────────────────────────────────────────
+    from steward import __version__
     from steward.agent import StewardAgent
     from steward.provider import build_chamber
     from steward.session_ledger import SessionLedger
     from steward.types import EventType
-
-    # ── App Setup ────────────────────────────────────────────────────
-
-    from steward import __version__
 
     app = FastAPI(
         title="Steward API",

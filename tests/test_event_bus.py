@@ -6,12 +6,10 @@ import asyncio
 from dataclasses import dataclass
 from typing import Any
 
-from vibe_core.di import ServiceRegistry
-from vibe_core.mahamantra.substrate.services.event_bus import EventBus
-
 from steward.agent import StewardAgent
 from steward.services import SVC_EVENT_BUS, boot
-
+from vibe_core.di import ServiceRegistry
+from vibe_core.mahamantra.substrate.services.event_bus import EventBus
 
 # ── Fake LLM ─────────────────────────────────────────────────────────
 

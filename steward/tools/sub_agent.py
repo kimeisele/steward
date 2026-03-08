@@ -11,10 +11,6 @@ import asyncio
 import logging
 from typing import Any
 
-from vibe_core.di import ServiceRegistry
-from vibe_core.tools.tool_protocol import Tool, ToolResult
-from vibe_core.tools.tool_registry import ToolRegistry
-
 from steward.buddhi import Buddhi
 from steward.loop.engine import AgentLoop
 from steward.services import (
@@ -25,6 +21,9 @@ from steward.services import (
     SVC_TOOL_REGISTRY,
 )
 from steward.types import Conversation, EventType
+from vibe_core.di import ServiceRegistry
+from vibe_core.tools.tool_protocol import Tool, ToolResult
+from vibe_core.tools.tool_registry import ToolRegistry
 
 logger = logging.getLogger("STEWARD.TOOL.SUBAGENT")
 

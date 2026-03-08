@@ -6,12 +6,10 @@ import asyncio
 from dataclasses import dataclass
 from typing import Any
 
-from vibe_core.di import ServiceRegistry
-from vibe_core.protocols.memory import InMemoryMemory
-
 from steward.agent import StewardAgent
 from steward.services import SVC_MEMORY, boot
-
+from vibe_core.di import ServiceRegistry
+from vibe_core.protocols.memory import InMemoryMemory
 
 # ── Fake LLM for tests ──────────────────────────────────────────────
 

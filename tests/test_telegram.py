@@ -16,7 +16,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-
 # ── Mock infrastructure ──────────────────────────────────────────
 # We need to mock steward.agent and friends before importing
 # the telegram module, since vibe_core may not be installed.

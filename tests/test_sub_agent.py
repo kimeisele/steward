@@ -9,13 +9,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from steward.services import SVC_PROVIDER, SVC_TOOL_REGISTRY
+from steward.tools.sub_agent import SUB_AGENT_TIMEOUT, SubAgentTool
 from vibe_core.di import ServiceRegistry
 from vibe_core.tools.tool_protocol import Tool, ToolResult
 from vibe_core.tools.tool_registry import ToolRegistry
-
-from steward.services import SVC_PROVIDER, SVC_TOOL_REGISTRY
-from steward.tools.sub_agent import SubAgentTool, SUB_AGENT_TIMEOUT
-
 
 # ── Fake Providers ───────────────────────────────────────────────────
 

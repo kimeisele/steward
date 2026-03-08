@@ -35,13 +35,12 @@ import logging
 from dataclasses import dataclass
 from enum import StrEnum
 
-from vibe_core.mahamantra.protocols.compression import IntentGuna
-from vibe_core.runtime.semantic_actions import SemanticActionType
-
 from steward.antahkarana.chitta import Chitta, ExecutionPhase
 from steward.antahkarana.gandha import VerdictAction, detect_patterns
 from steward.antahkarana.manas import Manas
 from steward.types import ToolUse
+from vibe_core.mahamantra.protocols.compression import IntentGuna
+from vibe_core.runtime.semantic_actions import SemanticActionType
 
 logger = logging.getLogger("STEWARD.BUDDHI")
 

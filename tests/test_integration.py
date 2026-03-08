@@ -244,8 +244,8 @@ class TestEndToEnd:
         Verifies phase transitions through AgentUsage.
         """
         import json
-        import tempfile
         import os
+        import tempfile
 
         # Create real temp files so tools actually succeed
         tmpdir = tempfile.mkdtemp()
@@ -462,7 +462,7 @@ class TestEndToEnd:
         for i in range(3):
             identical_responses.append(
                 ToolCallResponse(
-                    content=f"Looking for files.",
+                    content="Looking for files.",
                     tool_calls=[
                         FakeToolCall(
                             id=f"call_{i}",

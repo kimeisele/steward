@@ -8,16 +8,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from vibe_core.runtime.tool_safety_guard import ToolSafetyGuard
-from vibe_core.tools.tool_protocol import Tool, ToolResult
-from vibe_core.tools.tool_registry import ToolRegistry
-
 from steward.loop.engine import AgentLoop
 from steward.tools.edit import EditTool
 from steward.tools.read_file import ReadFileTool
 from steward.tools.write_file import WriteFileTool
 from steward.types import Conversation, EventType
-
+from vibe_core.runtime.tool_safety_guard import ToolSafetyGuard
+from vibe_core.tools.tool_protocol import Tool, ToolResult
+from vibe_core.tools.tool_registry import ToolRegistry
 
 # ── Fake LLM ─────────────────────────────────────────────────────────
 
@@ -226,8 +224,8 @@ class TestNarasimhaIntegration:
 
         Uses pure Python code so Narasimha's AST parser detects exec() → RED.
         """
-        from vibe_core.protocols.mahajanas.nrisimha.types.narasimha import NarasimhaProtocol
         from steward.tools.bash import BashTool
+        from vibe_core.protocols.mahajanas.nrisimha.types.narasimha import NarasimhaProtocol
 
         narasimha = NarasimhaProtocol()
         reg = ToolRegistry()
@@ -263,8 +261,8 @@ class TestNarasimhaIntegration:
 
     def test_narasimha_allows_safe_bash(self):
         """Normal bash commands are not blocked."""
-        from vibe_core.protocols.mahajanas.nrisimha.types.narasimha import NarasimhaProtocol
         from steward.tools.bash import BashTool
+        from vibe_core.protocols.mahajanas.nrisimha.types.narasimha import NarasimhaProtocol
 
         narasimha = NarasimhaProtocol()
         reg = ToolRegistry()
