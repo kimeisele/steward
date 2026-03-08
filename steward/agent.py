@@ -21,23 +21,15 @@ import subprocess
 from pathlib import Path
 from typing import AsyncIterator
 
-from vibe_core.di import ServiceRegistry
-from vibe_core.mahamantra.adapters.attention import MahaAttention
-from vibe_core.mahamantra.protocols._gad import GADBase
-from vibe_core.runtime.tool_safety_guard import ToolSafetyGuard
-from vibe_core.tools.tool_protocol import Tool
-from vibe_core.tools.tool_registry import ToolRegistry
-
-from vibe_core.protocols.memory import MemoryProtocol
-
 from steward import __version__
 from steward.buddhi import Buddhi
 from steward.config import StewardConfig, load_config
 from steward.context import SamskaraContext
 from steward.loop.engine import AgentLoop
-from steward.session_ledger import SessionLedger, SessionRecord
 from steward.services import (
     SVC_ATTENTION,
+    SVC_CACHE,
+    SVC_DIAMOND,
     SVC_EVENT_BUS,
     SVC_MEMORY,
     SVC_NARASIMHA,
@@ -47,9 +39,10 @@ from steward.services import (
     SVC_TOOL_REGISTRY,
     boot,
 )
+from steward.session_ledger import SessionLedger, SessionRecord
+from steward.tools.agent_internet import AgentInternetTool
 from steward.tools.bash import BashTool
 from steward.tools.edit import EditTool
-from steward.tools.agent_internet import AgentInternetTool
 from steward.tools.glob import GlobTool
 from steward.tools.grep import GrepTool
 from steward.tools.http import HttpTool
@@ -57,6 +50,13 @@ from steward.tools.read_file import ReadFileTool
 from steward.tools.sub_agent import SubAgentTool
 from steward.tools.write_file import WriteFileTool
 from steward.types import AgentEvent, AgentUsage, Conversation, EventType, LLMProvider
+from vibe_core.di import ServiceRegistry
+from vibe_core.mahamantra.adapters.attention import MahaAttention
+from vibe_core.mahamantra.protocols._gad import GADBase
+from vibe_core.protocols.memory import MemoryProtocol
+from vibe_core.runtime.tool_safety_guard import ToolSafetyGuard
+from vibe_core.tools.tool_protocol import Tool
+from vibe_core.tools.tool_registry import ToolRegistry
 
 logger = logging.getLogger("STEWARD.AGENT")
 
@@ -599,8 +599,15 @@ class StewardAgent(GADBase):
                 "multi_provider_failover",
                 "buddhi_phase_machine",
                 "gandha_pattern_detection",
+                "ephemeral_cache",
+                "diamond_tdd",
             ],
             "antahkarana": ["manas", "buddhi", "chitta", "gandha"],
+            "protocol_services": {
+                "cache": ServiceRegistry.get(SVC_CACHE) is not None,
+                "diamond": ServiceRegistry.get(SVC_DIAMOND) is not None,
+                "narasimha": ServiceRegistry.get(SVC_NARASIMHA) is not None,
+            },
             "cwd": self._cwd,
             "max_context_tokens": self._conversation.max_tokens,
             "max_output_tokens": self._max_output_tokens,
@@ -609,6 +616,8 @@ class StewardAgent(GADBase):
     def get_state(self) -> dict[str, object]:
         """GAD-000 Observability — current agent state."""
         session_stats = self._memory.recall("session_stats", session_id="steward") or {}
+        cache = ServiceRegistry.get(SVC_CACHE)
+        cache_stats = cache.get_stats() if cache and hasattr(cache, "get_stats") else {}
         return {
             "conversation_messages": len(self._conversation.messages),
             "conversation_tokens": self._conversation.total_tokens,
@@ -622,6 +631,7 @@ class StewardAgent(GADBase):
             "buddhi_phase": self._buddhi.phase,
             "chitta_stats": self._buddhi.stats,
             "session_stats": session_stats,
+            "cache_stats": cache_stats,
             "config": {
                 "model": self._config.model,
                 "auto_summarize": self._config.auto_summarize,

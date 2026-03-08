@@ -126,6 +126,7 @@ class AgentLoop:
         self._samskara = SamskaraContext()
         self._buddhi = buddhi or Buddhi()  # Use injected or create fresh
         self._compression = MahaCompression()
+        self._tool_descriptions_cache: list[dict[str, object]] | None = None  # Avoid rebuilding every LLM call
 
         # Ensure system prompt is first message
         if system_prompt and (not conversation.messages or conversation.messages[0].role != MessageRole.SYSTEM):
@@ -560,7 +561,10 @@ class AgentLoop:
         if directive:
             kwargs["tier"] = directive.tier.value
 
-        all_tools = tool_descriptions_for_llm(self._registry)
+        # Cache tool descriptions — tools don't change mid-turn (EphemeralStorage lesson)
+        if self._tool_descriptions_cache is None:
+            self._tool_descriptions_cache = tool_descriptions_for_llm(self._registry)
+        all_tools = self._tool_descriptions_cache
         if all_tools:
             if directive and directive.tool_names:
                 filtered = [
