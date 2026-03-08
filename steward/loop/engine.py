@@ -209,59 +209,18 @@ class AgentLoop:
                 usage.tool_calls += 1
                 yield AgentEvent(type=EventType.TOOL_CALL, tool_use=tc)
 
-                # O(1) Lotus route — verify tool exists before execution
-                if self._attention:
-                    route = self._attention.attend(tc.name)
-                    if not route.found:
-                        error_msg = f"Tool '{tc.name}' not found (O(1) route miss)"
-                        self._conversation.add(
-                            Message(role="tool", content=f"[Error] {error_msg}", tool_use_id=tc.id)
-                        )
-                        yield AgentEvent(
-                            type="tool_result",
-                            content=ToolResult(success=False, error=error_msg),
-                            tool_use=tc,
-                        )
-                        blocked.append((tc, error_msg))
-                        continue
-
-                # Narasimha killswitch: audit bash commands for dangerous patterns
-                if self._narasimha and tc.name == "bash":
-                    cmd = str(tc.parameters.get("command", ""))
-                    threat = self._narasimha.audit_agent(
-                        "steward", cmd, {"tool": tc.name},
+                block_reason = self._check_tool_gates(tc)
+                if block_reason:
+                    self._conversation.add(
+                        Message(role="tool", content=f"[Error] {block_reason}", tool_use_id=tc.id)
                     )
-                    if threat and _SEVERITY_RANK.get(threat.severity, 0) >= _SEVERITY_RANK[ThreatLevel.RED]:
-                        error_msg = f"Narasimha blocked: {threat.description}"
-                        self._conversation.add(
-                            Message(role="tool", content=f"[Error] {error_msg}", tool_use_id=tc.id)
-                        )
-                        yield AgentEvent(
-                            type="tool_result",
-                            content=ToolResult(success=False, error=error_msg),
-                            tool_use=tc,
-                        )
-                        blocked.append((tc, error_msg))
-                        logger.warning("Narasimha blocked bash: %s", threat.description)
-                        continue
-
-                # Iron Dome safety check
-                if self._safety_guard:
-                    allowed, violation = self._safety_guard.check_action(
-                        tc.name, tc.parameters
+                    yield AgentEvent(
+                        type=EventType.TOOL_RESULT,
+                        content=ToolResult(success=False, error=block_reason),
+                        tool_use=tc,
                     )
-                    if not allowed:
-                        error_msg = violation.message if violation else "Blocked by safety guard"
-                        self._conversation.add(
-                            Message(role="tool", content=f"[Error] {error_msg}", tool_use_id=tc.id)
-                        )
-                        yield AgentEvent(
-                            type="tool_result",
-                            content=ToolResult(success=False, error=error_msg),
-                            tool_use=tc,
-                        )
-                        blocked.append((tc, error_msg))
-                        continue
+                    blocked.append((tc, block_reason))
+                    continue
 
                 # Cleared for execution
                 proto_call = ProtoToolCall(
@@ -389,6 +348,38 @@ class AgentLoop:
             return final_text
 
         return asyncio.run(_collect())
+
+    def _check_tool_gates(self, tc: ToolUse) -> str | None:
+        """Check all pre-execution gates for a tool call.
+
+        Returns error message if blocked, None if cleared.
+        Gates (in order): O(1) Lotus route → Narasimha → Iron Dome.
+        """
+        # Gate 1: O(1) Lotus route — verify tool exists
+        if self._attention:
+            route = self._attention.attend(tc.name)
+            if not route.found:
+                return f"Tool '{tc.name}' not found (O(1) route miss)"
+
+        # Gate 2: Narasimha killswitch — audit bash for dangerous patterns
+        if self._narasimha and tc.name == "bash":
+            cmd = str(tc.parameters.get("command", ""))
+            threat = self._narasimha.audit_agent(
+                "steward", cmd, {"tool": tc.name},
+            )
+            if threat and _SEVERITY_RANK.get(threat.severity, 0) >= _SEVERITY_RANK[ThreatLevel.RED]:
+                logger.warning("Narasimha blocked bash: %s", threat.description)
+                return f"Narasimha blocked: {threat.description}"
+
+        # Gate 3: Iron Dome safety check
+        if self._safety_guard:
+            allowed, violation = self._safety_guard.check_action(
+                tc.name, tc.parameters,
+            )
+            if not allowed:
+                return violation.message if violation else "Blocked by safety guard"
+
+        return None  # All gates passed
 
     @staticmethod
     def _accumulate_usage(response: object, usage: AgentUsage) -> None:
