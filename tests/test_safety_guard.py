@@ -16,7 +16,7 @@ from steward.loop.engine import AgentLoop
 from steward.tools.edit import EditTool
 from steward.tools.read_file import ReadFileTool
 from steward.tools.write_file import WriteFileTool
-from steward.types import Conversation
+from steward.types import Conversation, EventType
 
 
 # ── Fake LLM ─────────────────────────────────────────────────────────
@@ -59,9 +59,9 @@ def _run(loop: AgentLoop, msg: str) -> tuple[str, list[object]]:
         text = ""
         async for ev in loop.run(msg):
             events.append(ev)
-            if ev.type == "text":
+            if ev.type == EventType.TEXT:
                 text = str(ev.content) if ev.content else ""
-            elif ev.type == "error":
+            elif ev.type == EventType.ERROR:
                 text = str(ev.content)
         return text, events
 
@@ -236,7 +236,7 @@ class TestNarasimhaIntegration:
         )
 
         _, events = _run(loop, "dangerous command")
-        tool_results = [e for e in events if e.type == "tool_result"]
+        tool_results = [e for e in events if e.type == EventType.TOOL_RESULT]
         assert len(tool_results) == 1
         assert not tool_results[0].content.success
         assert "Narasimha" in tool_results[0].content.error
@@ -268,7 +268,7 @@ class TestNarasimhaIntegration:
 
         text, events = _run(loop, "safe command")
         assert text == "done"
-        tool_results = [e for e in events if e.type == "tool_result"]
+        tool_results = [e for e in events if e.type == EventType.TOOL_RESULT]
         assert len(tool_results) == 1
         assert tool_results[0].content.success
 

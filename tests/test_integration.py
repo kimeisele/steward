@@ -12,7 +12,7 @@ import asyncio
 from dataclasses import dataclass
 
 from steward.agent import StewardAgent
-from steward.types import AgentEvent, Message
+from steward.types import AgentEvent, EventType, Message
 
 
 @dataclass
@@ -165,7 +165,7 @@ class TestEndToEnd:
         assert "done" in event_types
 
         # Done event has usage
-        done_event = [e for e in events if e.type == "done"][0]
+        done_event = [e for e in events if e.type == EventType.DONE][0]
         assert done_event.usage is not None
         assert done_event.usage.llm_calls >= 2
 
@@ -348,20 +348,20 @@ class TestEndToEnd:
             assert "done" in event_types
 
             # Verify multiple tool rounds happened
-            done_event = [e for e in events if e.type == "done"][0]
+            done_event = [e for e in events if e.type == EventType.DONE][0]
             assert done_event.usage is not None
             assert done_event.usage.llm_calls >= 7  # at least 7 LLM calls + final text
             assert done_event.usage.tool_calls >= 7  # at least 7 tool calls
 
             # Verify tool calls executed correctly
-            tool_call_events = [e for e in events if e.type == "tool_call"]
+            tool_call_events = [e for e in events if e.type == EventType.TOOL_CALL]
             tool_names = [e.tool_use.name for e in tool_call_events]
             assert "read_file" in tool_names
             assert "edit_file" in tool_names
             assert "bash" in tool_names
 
             # Verify final response
-            text_events = [e for e in events if e.type == "text"]
+            text_events = [e for e in events if e.type == EventType.TEXT]
             assert len(text_events) == 1
             assert "Bug fixed" in str(text_events[0].content)
 
@@ -413,7 +413,7 @@ class TestEndToEnd:
         asyncio.run(collect())
 
         # Should have an error event from Buddhi abort
-        error_events = [e for e in events if e.type == "error"]
+        error_events = [e for e in events if e.type == EventType.ERROR]
         assert len(error_events) >= 1
         # Check it mentions Buddhi
         assert any("Buddhi" in str(e.content) or "abort" in str(e.content).lower() for e in error_events)
@@ -500,13 +500,13 @@ class TestEndToEnd:
         assert "done" in event_types
 
         # Collect all text deltas
-        deltas = [str(e.content) for e in events if e.type == "text_delta"]
+        deltas = [str(e.content) for e in events if e.type == EventType.TEXT_DELTA]
         assert len(deltas) == 2
         assert deltas[0] == "Hello "
         assert deltas[1] == "world!"
 
         # No separate "text" event when we had deltas
-        text_events = [e for e in events if e.type == "text"]
+        text_events = [e for e in events if e.type == EventType.TEXT]
         assert len(text_events) == 0
 
     def test_streaming_fallback_to_non_streaming(self):

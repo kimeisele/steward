@@ -313,7 +313,7 @@ class AgentLoop:
                     usage.rounds = round_num + 1
                     usage.buddhi_reflections += 1
                     yield AgentEvent(
-                        type="error",
+                        type=EventType.ERROR,
                         content=f"Buddhi abort: {verdict.reason}. {verdict.suggestion}",
                     )
                     return
@@ -341,9 +341,9 @@ class AgentLoop:
         async def _collect() -> str:
             final_text = ""
             async for event in self.run(user_message):
-                if event.type == "text":
+                if event.type == EventType.TEXT:
                     final_text = str(event.content) if event.content else ""
-                elif event.type == "error":
+                elif event.type == EventType.ERROR:
                     return f"[Error: {event.content}]"
             return final_text
 

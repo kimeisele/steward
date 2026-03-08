@@ -10,7 +10,7 @@ import pytest
 
 from steward.agent import StewardAgent
 from steward.loop.engine import AgentLoop
-from steward.types import AgentEvent, Conversation, Message
+from steward.types import AgentEvent, Conversation, EventType, Message
 from vibe_core.tools.tool_registry import ToolRegistry
 
 
@@ -74,9 +74,9 @@ def run_loop(loop: AgentLoop, message: str) -> tuple[str, list[AgentEvent]]:
         final_text = ""
         async for event in loop.run(message):
             events.append(event)
-            if event.type == "text":
+            if event.type == EventType.TEXT:
                 final_text = event.content or ""
-            elif event.type == "error":
+            elif event.type == EventType.ERROR:
                 final_text = f"[Error: {event.content}]"
         return final_text, events
 
@@ -97,7 +97,7 @@ class TestAgentLoop:
         result, events = run_loop(loop, "Hi")
         assert result == "Hello!"
         assert len(llm.calls) == 1
-        assert any(e.type == "done" for e in events)
+        assert any(e.type == EventType.DONE for e in events)
 
     def test_tool_use_then_text(self):
         """LLM calls a tool, then responds with text."""
@@ -122,8 +122,8 @@ class TestAgentLoop:
         assert "hello" in result.lower()
         assert len(llm.calls) == 2
         # Should have tool_call and tool_result events
-        assert any(e.type == "tool_call" for e in events)
-        assert any(e.type == "tool_result" for e in events)
+        assert any(e.type == EventType.TOOL_CALL for e in events)
+        assert any(e.type == EventType.TOOL_RESULT for e in events)
 
     def test_unknown_tool_returns_error(self):
         """Unknown tool name -> error result in conversation."""
@@ -176,7 +176,7 @@ class TestAgentLoop:
         assert len(tool_msgs) == 1
         assert "O(1) route miss" in tool_msgs[0].content
         # Tool result event should show failure
-        tool_results = [e for e in events if e.type == "tool_result"]
+        tool_results = [e for e in events if e.type == EventType.TOOL_RESULT]
         assert len(tool_results) == 1
         assert not tool_results[0].content.success
 
@@ -207,7 +207,7 @@ class TestAgentLoop:
 
         result, events = run_loop(loop, "Run echo lotus")
         assert "It worked" in result
-        tool_results = [e for e in events if e.type == "tool_result"]
+        tool_results = [e for e in events if e.type == EventType.TOOL_RESULT]
         assert len(tool_results) == 1
         assert tool_results[0].content.success
         # Verify tool output contains "lotus"
@@ -241,8 +241,8 @@ class TestAgentLoop:
         assert result == "Both done"
 
         # Both tool calls should have events
-        tool_call_events = [e for e in events if e.type == "tool_call"]
-        tool_result_events = [e for e in events if e.type == "tool_result"]
+        tool_call_events = [e for e in events if e.type == EventType.TOOL_CALL]
+        tool_result_events = [e for e in events if e.type == EventType.TOOL_RESULT]
         assert len(tool_call_events) == 2
         assert len(tool_result_events) == 2
 
@@ -257,7 +257,7 @@ class TestAgentLoop:
         assert any("bravo" in o for o in outputs)
 
         # Usage should track 2 tool calls
-        done_events = [e for e in events if e.type == "done"]
+        done_events = [e for e in events if e.type == EventType.DONE]
         assert done_events[0].usage.tool_calls == 2
 
     def test_max_rounds_exceeded(self):
@@ -408,7 +408,7 @@ class TestStewardAgent:
 
         asyncio.run(_collect())
 
-        done_events = [e for e in events if e.type == "done"]
+        done_events = [e for e in events if e.type == EventType.DONE]
         assert len(done_events) == 1
         usage = done_events[0].usage
         assert usage is not None
@@ -439,7 +439,7 @@ class TestStewardAgent:
 
         asyncio.run(_collect())
 
-        done_events = [e for e in events if e.type == "done"]
+        done_events = [e for e in events if e.type == EventType.DONE]
         assert len(done_events) == 1
         usage = done_events[0].usage
         assert usage is not None
@@ -575,7 +575,7 @@ class TestLLMRetry:
         conv = Conversation()
         loop = AgentLoop(provider=AlwaysFailLLM(), registry=reg, conversation=conv)
         result, events = run_loop(loop, "test")
-        errors = [e for e in events if e.type == "error"]
+        errors = [e for e in events if e.type == EventType.ERROR]
         assert len(errors) >= 1
         assert "no response" in str(errors[0].content).lower()
 
@@ -627,7 +627,7 @@ class TestToolTimeout:
             conv = Conversation()
             loop = AgentLoop(provider=llm, registry=reg, conversation=conv)
             _, events = run_loop(loop, "test")
-            results = [e for e in events if e.type == "tool_result"]
+            results = [e for e in events if e.type == EventType.TOOL_RESULT]
             assert len(results) == 1
             assert not results[0].content.success
             assert "timed out" in str(results[0].content.error).lower()
