@@ -77,6 +77,13 @@ TOOL_TIMEOUT_SECONDS = 120
 # LLM retry attempts on transient failure
 LLM_MAX_RETRIES = 1
 
+# File operation dispatch — tool name → (op_type, safety_method)
+_FILE_OP_MAP: dict[str, str] = {
+    "read_file": "read",
+    "write_file": "write",
+    "edit_file": "write",
+}
+
 
 class AgentLoop:
     """Execute the agentic tool-use loop for a single turn.
@@ -245,30 +252,8 @@ class AgentLoop:
 
                 # Phase 3: Process results, record file ops, yield events
                 for (tc, _), raw_result in zip(to_execute, results):
-                    if isinstance(raw_result, asyncio.TimeoutError):
-                        result = ToolResult(
-                            success=False,
-                            error=f"Tool timed out after {TOOL_TIMEOUT_SECONDS}s",
-                        )
-                    elif isinstance(raw_result, BaseException):
-                        result = ToolResult(success=False, error=str(raw_result))
-                    else:
-                        result = raw_result
-
-                    # Record file operations for Iron Dome + Memory
-                    if result.success:
-                        if tc.name == "read_file":
-                            path = str(tc.parameters.get("path", ""))
-                            if self._safety_guard:
-                                self._safety_guard.record_file_read(path)
-                            if self._memory:
-                                self._record_file_op(path, "read")
-                        elif tc.name in ("write_file", "edit_file"):
-                            path = str(tc.parameters.get("path", ""))
-                            if self._safety_guard:
-                                self._safety_guard.record_file_write(path)
-                            if self._memory:
-                                self._record_file_op(path, "write")
+                    result = self._coerce_result(raw_result)
+                    self._record_tool_file_ops(tc, result)
 
                     output = result.output if result.success else f"{ERROR_MARKER} {result.error}"
                     output_str = str(output) if output else ""
@@ -290,46 +275,14 @@ class AgentLoop:
                     )
 
             # Phase 4: Buddhi evaluation — ALL tool outcomes (blocked + executed)
-            all_calls: list[ToolUse] = []
-            all_results: list[tuple[bool, str]] = []
-
-            # Include blocked tools (Lotus miss / Iron Dome)
-            for tc, error_msg in blocked:
-                all_calls.append(tc)
-                all_results.append((False, error_msg))
-
-            # Include executed tools
-            if to_execute:
-                for (tc, _), raw_result in zip(to_execute, results):
-                    all_calls.append(tc)
-                    if isinstance(raw_result, BaseException):
-                        all_results.append((False, str(raw_result)))
-                    else:
-                        all_results.append((raw_result.success, raw_result.error or ""))
-
-            if all_calls:
-                usage.buddhi_errors += sum(1 for ok, _ in all_results if not ok)
-                verdict = self._buddhi.evaluate(all_calls, all_results)
-                if verdict.action == VerdictAction.ABORT:
-                    usage.rounds = round_num + 1
-                    usage.buddhi_reflections += 1
-                    yield AgentEvent(
-                        type=EventType.ERROR,
-                        content=f"Buddhi abort: {verdict.reason}. {verdict.suggestion}",
-                    )
+            buddhi_event = self._apply_buddhi_verdict(
+                blocked, to_execute, results if to_execute else [], usage, round_num,
+            )
+            if buddhi_event:
+                if buddhi_event.type == EventType.ERROR:
+                    yield buddhi_event
                     return
-                if verdict.action in (VerdictAction.REFLECT, VerdictAction.REDIRECT):
-                    usage.buddhi_reflections += 1
-                    # Inject guidance — LLM will reconsider approach
-                    label = "reflection" if verdict.action == VerdictAction.REFLECT else "redirect"
-                    guidance = (
-                        f"[Buddhi {label}: {verdict.reason}] "
-                        f"{verdict.suggestion}"
-                    )
-                    self._conversation.add(
-                        Message(role=MessageRole.USER, content=guidance)
-                    )
-                    logger.info("Buddhi injected %s: %s", label, verdict.reason)
+                # Reflection/redirect: guidance injected, continue loop
 
         usage.rounds = MAX_TOOL_ROUNDS
         yield AgentEvent(type=EventType.ERROR, content="Maximum tool rounds exceeded")
@@ -405,6 +358,69 @@ class AgentLoop:
         if path not in existing:
             existing.append(path)
             self._memory.remember(key, existing, session_id="steward", tags=["file_ops"])
+
+    @staticmethod
+    def _coerce_result(raw: object) -> ToolResult:
+        """Convert raw asyncio.gather result to ToolResult."""
+        if isinstance(raw, asyncio.TimeoutError):
+            return ToolResult(success=False, error=f"Tool timed out after {TOOL_TIMEOUT_SECONDS}s")
+        if isinstance(raw, BaseException):
+            return ToolResult(success=False, error=str(raw))
+        return raw  # type: ignore[return-value]
+
+    def _record_tool_file_ops(self, tc: ToolUse, result: ToolResult) -> None:
+        """Record file read/write for Iron Dome + Memory (branchless dispatch)."""
+        file_op = _FILE_OP_MAP.get(tc.name) if result.success else None
+        if not file_op:
+            return
+        path = str(tc.parameters.get("path", ""))
+        if self._safety_guard:
+            getattr(self._safety_guard, f"record_file_{file_op}")(path)
+        if self._memory:
+            self._record_file_op(path, file_op)
+
+    def _apply_buddhi_verdict(
+        self,
+        blocked: list[tuple[ToolUse, str]],
+        to_execute: list[tuple[ToolUse, object]],
+        results: list[object],
+        usage: AgentUsage,
+        round_num: int,
+    ) -> AgentEvent | None:
+        """Evaluate all tool outcomes via Buddhi. Returns event if action needed."""
+        all_calls: list[ToolUse] = [tc for tc, _ in blocked]
+        all_outcomes: list[tuple[bool, str]] = [(False, err) for _, err in blocked]
+
+        for (tc, _), raw in zip(to_execute, results):
+            all_calls.append(tc)
+            if isinstance(raw, BaseException):
+                all_outcomes.append((False, str(raw)))
+            else:
+                all_outcomes.append((raw.success, raw.error or ""))
+
+        if not all_calls:
+            return None
+
+        usage.buddhi_errors += sum(1 for ok, _ in all_outcomes if not ok)
+        verdict = self._buddhi.evaluate(all_calls, all_outcomes)
+
+        if verdict.action == VerdictAction.ABORT:
+            usage.rounds = round_num + 1
+            usage.buddhi_reflections += 1
+            return AgentEvent(
+                type=EventType.ERROR,
+                content=f"Buddhi abort: {verdict.reason}. {verdict.suggestion}",
+            )
+
+        if verdict.action in (VerdictAction.REFLECT, VerdictAction.REDIRECT):
+            usage.buddhi_reflections += 1
+            label = verdict.action.value  # "reflect" or "redirect"
+            guidance = f"[Buddhi {label}: {verdict.reason}] {verdict.suggestion}"
+            self._conversation.add(Message(role=MessageRole.USER, content=guidance))
+            logger.info("Buddhi injected %s: %s", label, verdict.reason)
+            return AgentEvent(type=EventType.TEXT, content="")  # signal: continue loop
+
+        return None
 
     def _manage_context(self) -> None:
         """Context budget management — runs before every LLM call.
