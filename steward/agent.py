@@ -35,6 +35,7 @@ from steward.buddhi import Buddhi
 from steward.config import StewardConfig, load_config
 from steward.context import SamskaraContext
 from steward.loop.engine import AgentLoop
+from steward.session_ledger import SessionLedger, SessionRecord
 from steward.services import (
     SVC_ATTENTION,
     SVC_EVENT_BUS,
@@ -150,11 +151,12 @@ def _build_system_prompt(
     dynamic_context: dict[str, str] | None = None,
     project_instructions: str | None = None,
     git_status: str | None = None,
+    session_history: str | None = None,
 ) -> str:
     """Build system prompt with dynamic context.
 
     Injects working directory, tool list, project instructions,
-    git status, and any PromptContext resolver values.
+    git status, session history, and any PromptContext resolver values.
     """
     parts = [base.rstrip()]
     parts.append(f"\nWorking directory: {cwd}")
@@ -185,6 +187,9 @@ def _build_system_prompt(
 
     if git_status:
         parts.append(f"\nGit Status:\n{git_status}")
+
+    if session_history:
+        parts.append(f"\nSession History:\n{session_history}")
 
     return "\n".join(parts)
 
@@ -248,6 +253,9 @@ class StewardAgent(GADBase):
         self._buddhi = Buddhi()
         self._load_chitta_from_memory()
 
+        # Session ledger (cross-session learning)
+        self._ledger = SessionLedger(cwd=self._cwd)
+
         # Build system prompt (with dynamic context if not custom)
         if system_prompt is not None:
             self._system_prompt = system_prompt
@@ -255,6 +263,7 @@ class StewardAgent(GADBase):
             dynamic_ctx = self._resolve_dynamic_context()
             project_ctx = _load_project_instructions(self._cwd)
             git_ctx = _git_status_summary(self._cwd)
+            session_ctx = self._ledger.prompt_context()
             self._system_prompt = _build_system_prompt(
                 _BASE_SYSTEM_PROMPT,
                 self._cwd,
@@ -262,6 +271,7 @@ class StewardAgent(GADBase):
                 dynamic_context=dynamic_ctx,
                 project_instructions=project_ctx,
                 git_status=git_ctx,
+                session_history=session_ctx,
             )
 
         # Emit AGENT_STARTUP signal
@@ -333,6 +343,7 @@ class StewardAgent(GADBase):
             self._emit_event_bus(event)
             if event.type == EventType.DONE and event.usage:
                 self._record_session_stats(event.usage)
+                self._record_session_ledger(task, event.usage)
                 # Cross-turn: merge reads, clear impressions, persist
                 self._buddhi._chitta.end_turn()
                 self._save_chitta_to_memory()
@@ -481,6 +492,29 @@ class StewardAgent(GADBase):
             classifications[usage.buddhi_action] = classifications.get(usage.buddhi_action, 0) + 1
         stats["classifications"] = classifications
         self._memory.remember("session_stats", stats, session_id="steward", tags=["stats"])
+
+    def _record_session_ledger(self, task: str, usage: AgentUsage) -> None:
+        """Record this task in the session ledger for cross-session learning."""
+        chitta = self._buddhi._chitta
+        outcome = "error" if usage.buddhi_errors > usage.tool_calls // 2 else "success"
+        if usage.buddhi_errors > 0 and outcome == "success":
+            outcome = "partial"
+
+        self._ledger.record(
+            SessionRecord(
+                task=task,
+                outcome=outcome,
+                summary=f"{usage.buddhi_action or 'task'}: {usage.rounds} rounds, {usage.tool_calls} tools",
+                tokens=usage.input_tokens + usage.output_tokens,
+                tool_calls=usage.tool_calls,
+                rounds=usage.rounds,
+                files_read=chitta.files_read[:10],
+                files_written=chitta.files_written[:10],
+                buddhi_action=usage.buddhi_action or "",
+                buddhi_phase=str(usage.buddhi_phase) if usage.buddhi_phase else "",
+                errors=usage.buddhi_errors,
+            )
+        )
 
     def _resolve_dynamic_context(self) -> dict[str, str] | None:
         """Resolve dynamic context from PromptContext (git, time, etc.)."""
