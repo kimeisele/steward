@@ -61,6 +61,16 @@ class TestAPIApp:
         assert "/agent-internet/semantic/capabilities" in routes
         assert "/agent-internet/semantic/contracts" in routes
         assert "/agent-internet/semantic/call" in routes
+        assert "/agent-internet/repo-graph/capabilities" in routes
+        assert "/agent-internet/repo-graph/contracts" in routes
+        assert "/agent-internet/repo-graph" in routes
+        assert "/agent-internet/repo-graph/neighbors" in routes
+        assert "/agent-internet/repo-graph/context" in routes
+        assert "/agent-internet/public-graph" in routes
+        assert "/agent-internet/search-index" in routes
+        assert "/agent-internet/search" in routes
+        assert "/agent-internet/federated-index" in routes
+        assert "/agent-internet/federated-search" in routes
 
 
 class TestAPIWithoutDeps:
@@ -166,3 +176,58 @@ class TestAgentInternetProxyAPI:
         payload = response.json()
         assert payload["kind"] == "steward_agent_internet_semantic_proxy_invocation"
         assert payload["response"]["agent_web_semantic_expand"]["raw_query"] == "bazaar"
+
+    def test_agent_internet_repo_graph_proxy(self, monkeypatch):
+        from fastapi.testclient import TestClient
+
+        from steward.interfaces.api import create_app
+
+        monkeypatch.setenv("STEWARD_AGENT_INTERNET_BASE_URL", "https://agent.example")
+        monkeypatch.setenv("STEWARD_AGENT_INTERNET_TOKEN", "secret")
+        monkeypatch.delenv("STEWARD_API_TOKEN", raising=False)
+        monkeypatch.setattr(
+            "steward.interfaces.agent_internet.fetch_repo_graph_snapshot",
+            lambda **kwargs: {"kind": "agent_web_repo_graph_snapshot", "recorded_root": kwargs["root"]},
+        )
+
+        client = TestClient(create_app())
+        response = client.get("/agent-internet/repo-graph?root=/repo&limit=2")
+
+        assert response.status_code == 200
+        assert response.json()["kind"] == "agent_web_repo_graph_snapshot"
+
+    def test_agent_internet_public_graph_and_search_proxy(self, monkeypatch):
+        from fastapi.testclient import TestClient
+
+        from steward.interfaces.api import create_app
+
+        monkeypatch.setenv("STEWARD_AGENT_INTERNET_BASE_URL", "https://agent.example")
+        monkeypatch.setenv("STEWARD_AGENT_INTERNET_TOKEN", "secret")
+        monkeypatch.delenv("STEWARD_API_TOKEN", raising=False)
+        monkeypatch.setattr("steward.interfaces.agent_internet.fetch_public_graph", lambda **kwargs: {"kind": "agent_web_public_graph"})
+        monkeypatch.setattr("steward.interfaces.agent_internet.search_index", lambda **kwargs: {"kind": "agent_web_search_results", "results": [{"title": kwargs["query"]}]})
+
+        client = TestClient(create_app())
+        public_graph = client.get("/agent-internet/public-graph?root=/repo")
+        search = client.get("/agent-internet/search?root=/repo&q=marketplace&limit=3")
+
+        assert public_graph.status_code == 200
+        assert public_graph.json()["kind"] == "agent_web_public_graph"
+        assert search.status_code == 200
+        assert search.json()["results"][0]["title"] == "marketplace"
+
+    def test_agent_internet_federated_search_proxy(self, monkeypatch):
+        from fastapi.testclient import TestClient
+
+        from steward.interfaces.api import create_app
+
+        monkeypatch.setenv("STEWARD_AGENT_INTERNET_BASE_URL", "https://agent.example")
+        monkeypatch.setenv("STEWARD_AGENT_INTERNET_TOKEN", "secret")
+        monkeypatch.delenv("STEWARD_API_TOKEN", raising=False)
+        monkeypatch.setattr("steward.interfaces.agent_internet.search_federated_index", lambda **kwargs: {"results": [{"source_city_id": "city-b"}]})
+
+        client = TestClient(create_app())
+        response = client.get("/agent-internet/federated-search?q=bazaar&limit=2")
+
+        assert response.status_code == 200
+        assert response.json()["results"][0]["source_city_id"] == "city-b"

@@ -1,4 +1,4 @@
-"""Thin agent-internet semantic client used by steward tools and wrappers."""
+"""Thin agent-internet client used by steward tools and wrappers."""
 
 from __future__ import annotations
 
@@ -55,6 +55,133 @@ def fetch_semantic_contracts(
         config or load_agent_internet_proxy_config(), f"/v1/lotus/agent-web-semantic-contracts{suffix}"
     )
     return dict(payload["agent_web_semantic_contracts"])
+
+
+def fetch_repo_graph_capabilities(config: AgentInternetProxyConfig | None = None) -> dict:
+    payload = _request_json(config or load_agent_internet_proxy_config(), "/v1/lotus/agent-web-repo-graph-capabilities")
+    return dict(payload["agent_web_repo_graph_capabilities"])
+
+
+def fetch_repo_graph_contracts(
+    *,
+    config: AgentInternetProxyConfig | None = None,
+    capability_id: str | None = None,
+    contract_id: str | None = None,
+    version: int | None = None,
+) -> dict:
+    query = _query(capability_id=capability_id, contract_id=contract_id, version=version)
+    suffix = f"?{urllib.parse.urlencode(query)}" if query else ""
+    payload = _request_json(config or load_agent_internet_proxy_config(), f"/v1/lotus/agent-web-repo-graph-contracts{suffix}")
+    return dict(payload["agent_web_repo_graph_contracts"])
+
+
+def fetch_repo_graph_snapshot(
+    *,
+    config: AgentInternetProxyConfig | None = None,
+    root: str,
+    node_type: str | None = None,
+    domain: str | None = None,
+    query: str | None = None,
+    limit: int | None = None,
+) -> dict:
+    params = _query(root=root, node_type=node_type, domain=domain, query=query, limit=limit)
+    payload = _request_json(config or load_agent_internet_proxy_config(), f"/v1/lotus/agent-web-repo-graph?{urllib.parse.urlencode(params)}")
+    return dict(payload["agent_web_repo_graph"])
+
+
+def fetch_repo_graph_neighbors(
+    *,
+    config: AgentInternetProxyConfig | None = None,
+    root: str,
+    node_id: str,
+    relation: str | None = None,
+    depth: int | None = None,
+    limit: int | None = None,
+) -> dict:
+    params = _query(root=root, node_id=node_id, relation=relation, depth=depth, limit=limit)
+    payload = _request_json(
+        config or load_agent_internet_proxy_config(),
+        f"/v1/lotus/agent-web-repo-graph-neighbors?{urllib.parse.urlencode(params)}",
+    )
+    return dict(payload["agent_web_repo_graph_neighbors"])
+
+
+def fetch_repo_graph_context(*, config: AgentInternetProxyConfig | None = None, root: str, concept: str) -> dict:
+    params = _query(root=root, concept=concept)
+    payload = _request_json(
+        config or load_agent_internet_proxy_config(),
+        f"/v1/lotus/agent-web-repo-graph-context?{urllib.parse.urlencode(params)}",
+    )
+    return dict(payload["agent_web_repo_graph_context"])
+
+
+def fetch_public_graph(
+    *,
+    config: AgentInternetProxyConfig | None = None,
+    root: str,
+    city_id: str | None = None,
+    assistant_id: str | None = None,
+    heartbeat_source: str | None = None,
+) -> dict:
+    params = _query(root=root, city_id=city_id, assistant_id=assistant_id, heartbeat_source=heartbeat_source)
+    payload = _request_json(config or load_agent_internet_proxy_config(), f"/v1/lotus/agent-web-graph?{urllib.parse.urlencode(params)}")
+    return dict(payload["agent_web_graph"])
+
+
+def fetch_search_index(
+    *,
+    config: AgentInternetProxyConfig | None = None,
+    root: str,
+    city_id: str | None = None,
+    assistant_id: str | None = None,
+    heartbeat_source: str | None = None,
+) -> dict:
+    params = _query(root=root, city_id=city_id, assistant_id=assistant_id, heartbeat_source=heartbeat_source)
+    payload = _request_json(config or load_agent_internet_proxy_config(), f"/v1/lotus/agent-web-index?{urllib.parse.urlencode(params)}")
+    return dict(payload["agent_web_index"])
+
+
+def search_index(
+    *,
+    config: AgentInternetProxyConfig | None = None,
+    root: str,
+    query: str,
+    limit: int | None = None,
+    city_id: str | None = None,
+    assistant_id: str | None = None,
+    heartbeat_source: str | None = None,
+) -> dict:
+    params = _query(
+        root=root,
+        q=query,
+        limit=limit,
+        city_id=city_id,
+        assistant_id=assistant_id,
+        heartbeat_source=heartbeat_source,
+    )
+    payload = _request_json(config or load_agent_internet_proxy_config(), f"/v1/lotus/agent-web-search?{urllib.parse.urlencode(params)}")
+    return dict(payload["agent_web_search"])
+
+
+def fetch_federated_index(*, config: AgentInternetProxyConfig | None = None, index_path: str | None = None) -> dict:
+    params = _query(index_path=index_path)
+    suffix = f"?{urllib.parse.urlencode(params)}" if params else ""
+    payload = _request_json(config or load_agent_internet_proxy_config(), f"/v1/lotus/agent-web-federated-index{suffix}")
+    return dict(payload["agent_web_federated_index"])
+
+
+def search_federated_index(
+    *,
+    config: AgentInternetProxyConfig | None = None,
+    query: str,
+    limit: int | None = None,
+    index_path: str | None = None,
+    overlay_path: str | None = None,
+    wordnet_path: str | None = None,
+) -> dict:
+    params = _query(q=query, limit=limit, index_path=index_path, overlay_path=overlay_path, wordnet_path=wordnet_path)
+    payload = _request_json(config or load_agent_internet_proxy_config(), f"/v1/lotus/agent-web-federated-search?{urllib.parse.urlencode(params)}")
+    return dict(payload["agent_web_federated_search"])
 
 
 def invoke_semantic_http(
