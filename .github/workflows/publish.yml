@@ -1,12 +1,12 @@
-# Publish steward to PyPI on version tags (v0.12.0, v1.0.0, etc.)
+# Publish steward to PyPI on version tags (v0.15.0, v1.0.0, etc.)
 #
-# Uses Trusted Publishers — no API tokens needed.
-# Setup: https://docs.pypi.org/trusted-publishers/adding-a-publisher/
+# Flow: tag push → tests pass → build → publish
 #
-# Configure Trusted Publisher on PyPI:
-#   Owner: kimeisele
-#   Repository: steward
-#   Workflow: publish.yml
+# Uses Trusted Publishers (OIDC) — no API tokens needed.
+# One-time setup on https://pypi.org/manage/project/steward-agent/settings/publishing/:
+#   Owner:       kimeisele
+#   Repository:  steward
+#   Workflow:    publish.yml
 #   Environment: pypi
 
 name: Publish to PyPI
@@ -17,8 +17,27 @@ on:
       - "v*"
 
 jobs:
+  test:
+    name: Test before publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install steward-protocol[providers]
+          pip install -e ".[providers,api,dev]"
+
+      - name: Run tests
+        run: python -m pytest tests/ -x -q --timeout=30
+
   build:
     name: Build distribution
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

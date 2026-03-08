@@ -159,11 +159,13 @@ class TestEditTool:
         """LLM sends 'if  (x)' but file has 'if (x)' — fallback matches."""
         f = tmp_path / "ws.py"
         f.write_text("def foo():\n    if (x):\n        pass\n")
-        result = self.tool.execute({
-            "path": str(f),
-            "old_string": "if  (x):",  # extra space
-            "new_string": "if (y):",
-        })
+        result = self.tool.execute(
+            {
+                "path": str(f),
+                "old_string": "if  (x):",  # extra space
+                "new_string": "if (y):",
+            }
+        )
         assert result.success
         assert "whitespace-normalized" in result.output
         assert "if (y):" in f.read_text()
@@ -172,11 +174,13 @@ class TestEditTool:
         """File uses tabs, LLM sends spaces — fallback matches."""
         f = tmp_path / "tab.py"
         f.write_text("class Foo:\n\tdef bar(self):\n\t\treturn 1\n")
-        result = self.tool.execute({
-            "path": str(f),
-            "old_string": "    def bar(self):",  # 4 spaces instead of tab
-            "new_string": "\tdef baz(self):",
-        })
+        result = self.tool.execute(
+            {
+                "path": str(f),
+                "old_string": "    def bar(self):",  # 4 spaces instead of tab
+                "new_string": "\tdef baz(self):",
+            }
+        )
         assert result.success
         assert result.metadata.get("whitespace_fallback") is True
 
@@ -184,11 +188,13 @@ class TestEditTool:
         """If whitespace-normalized match is ambiguous, fail (don't guess)."""
         f = tmp_path / "amb.py"
         f.write_text("x = 1\nx  =  1\n")  # Both normalize to "x = 1"
-        result = self.tool.execute({
-            "path": str(f),
-            "old_string": "x   =   1",  # extra spaces, matches both normalized
-            "new_string": "x = 2",
-        })
+        result = self.tool.execute(
+            {
+                "path": str(f),
+                "old_string": "x   =   1",  # extra spaces, matches both normalized
+                "new_string": "x = 2",
+            }
+        )
         assert not result.success
         assert "not found" in result.error
 
@@ -196,22 +202,26 @@ class TestEditTool:
         """If content doesn't match even with normalized whitespace, fail."""
         f = tmp_path / "no.py"
         f.write_text("hello world\n")
-        result = self.tool.execute({
-            "path": str(f),
-            "old_string": "goodbye moon",
-            "new_string": "hi",
-        })
+        result = self.tool.execute(
+            {
+                "path": str(f),
+                "old_string": "goodbye moon",
+                "new_string": "hi",
+            }
+        )
         assert not result.success
 
     def test_edit_exact_match_preferred(self, tmp_path):
         """Exact match should be used when available (no fallback)."""
         f = tmp_path / "exact.py"
         f.write_text("x = 1\n")
-        result = self.tool.execute({
-            "path": str(f),
-            "old_string": "x = 1",
-            "new_string": "x = 2",
-        })
+        result = self.tool.execute(
+            {
+                "path": str(f),
+                "old_string": "x = 1",
+                "new_string": "x = 2",
+            }
+        )
         assert result.success
         assert "whitespace-normalized" not in result.output
 
