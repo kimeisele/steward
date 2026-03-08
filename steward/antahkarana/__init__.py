@@ -20,7 +20,14 @@ the others but doesn't do their work:
 This decomposition follows BG 13.6-7 (Kshetra elements).
 """
 
-from steward.antahkarana.chitta import Chitta, Impression
+from steward.antahkarana.chitta import (
+    PHASE_COMPLETE,
+    PHASE_EXECUTE,
+    PHASE_ORIENT,
+    PHASE_VERIFY,
+    Chitta,
+    Impression,
+)
 from steward.antahkarana.gandha import Detection, detect_patterns
 from steward.antahkarana.manas import Manas, ManasPerception
 
@@ -29,6 +36,10 @@ __all__ = [
     "ManasPerception",
     "Chitta",
     "Impression",
+    "PHASE_ORIENT",
+    "PHASE_EXECUTE",
+    "PHASE_VERIFY",
+    "PHASE_COMPLETE",
     "Detection",
     "detect_patterns",
 ]

@@ -219,22 +219,35 @@ class TestPreFlightSubstrate:
 
 
 class TestPreFlightPhaseEvolution:
-    """Tool set evolves as rounds progress."""
+    """Tool set evolves based on Chitta phase (not round counter)."""
 
-    def test_read_action_gains_write_after_3_rounds(self):
-        """Read-only action gains write tools after round 3."""
+    def test_orient_stays_read_only(self):
+        """ORIENT phase keeps read-only tools for SATTVA actions."""
         buddhi = Buddhi()
-        # Force a SATTVA action (RESEARCH/ANALYZE/REVIEW/MONITOR)
         buddhi._action = SemanticActionType.RESEARCH
         buddhi._guna = IntentGuna.SATTVA
         buddhi._function = "VISHNU"
         buddhi._approach = "MOKSHA"
 
-        d0 = buddhi.pre_flight("observe", 1)  # round > 0, no reclassify
-        assert "edit_file" not in d0.tool_names
+        d = buddhi.pre_flight("observe", 1)
+        assert "edit_file" not in d.tool_names
+        assert d.phase == "ORIENT"
 
-        d3 = buddhi.pre_flight("observe", 3)
-        assert "edit_file" in d3.tool_names
+    def test_execute_phase_unlocks_writes(self):
+        """After 2+ reads, phase evolves to EXECUTE, write tools added."""
+        buddhi = Buddhi()
+        buddhi._action = SemanticActionType.RESEARCH
+        buddhi._guna = IntentGuna.SATTVA
+        buddhi._function = "VISHNU"
+        buddhi._approach = "MOKSHA"
+
+        # Simulate 2 successful reads → Chitta phase becomes EXECUTE
+        buddhi.evaluate([_tc("read_file", path="/a.py")], [(True, "")])
+        buddhi.evaluate([_tc("glob", pattern="*.py")], [(True, "")])
+
+        d = buddhi.pre_flight("observe", 2)
+        assert "edit_file" in d.tool_names
+        assert d.phase == "EXECUTE"
 
     def test_errors_add_bash(self):
         """After 2+ recent errors, bash is added for debugging."""

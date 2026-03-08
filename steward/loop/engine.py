@@ -132,6 +132,7 @@ class AgentLoop:
             if round_num == 0:
                 usage.buddhi_action = directive.action.value
                 usage.buddhi_guna = directive.guna.value
+            usage.buddhi_phase = directive.phase
             response = await self._call_llm(directive)
             usage.llm_calls += 1
             if response is None:

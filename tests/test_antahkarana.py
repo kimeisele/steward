@@ -240,3 +240,155 @@ class TestGandha:
         assert d1 is not None and d2 is not None
         assert d1.severity == d2.severity
         assert d1.pattern == d2.pattern
+
+
+# ── Phase Machine Tests (Chitta self-awareness) ─────────────────────
+
+
+from steward.antahkarana.chitta import (
+    PHASE_COMPLETE,
+    PHASE_EXECUTE,
+    PHASE_ORIENT,
+    PHASE_VERIFY,
+)
+
+
+class TestChittaPhase:
+    """Test Chitta phase derivation from impressions."""
+
+    def test_empty_is_orient(self):
+        chitta = Chitta()
+        assert chitta.phase == PHASE_ORIENT
+
+    def test_single_read_is_orient(self):
+        chitta = Chitta()
+        chitta.record("read_file", 1, True)
+        assert chitta.phase == PHASE_ORIENT
+
+    def test_two_reads_becomes_execute(self):
+        chitta = Chitta()
+        chitta.record("read_file", 1, True)
+        chitta.record("glob", 2, True)
+        assert chitta.phase == PHASE_EXECUTE
+
+    def test_three_reads_stays_execute(self):
+        chitta = Chitta()
+        chitta.record("read_file", 1, True)
+        chitta.record("grep", 2, True)
+        chitta.record("read_file", 3, True)
+        assert chitta.phase == PHASE_EXECUTE
+
+    def test_write_is_execute(self):
+        chitta = Chitta()
+        chitta.record("edit_file", 1, True)
+        assert chitta.phase == PHASE_EXECUTE
+
+    def test_write_then_read_is_verify(self):
+        """After writes, if no recent writes → VERIFY."""
+        chitta = Chitta()
+        chitta.record("read_file", 1, True)
+        chitta.record("edit_file", 2, True)
+        chitta.record("read_file", 3, True)
+        chitta.record("read_file", 4, True)
+        chitta.record("read_file", 5, True)
+        # recent 3: [read, read, read] — no recent writes, but total writes > 0
+        assert chitta.phase == PHASE_VERIFY
+
+    def test_write_then_bash_ok_is_complete(self):
+        """After writes + successful bash → COMPLETE."""
+        chitta = Chitta()
+        chitta.record("read_file", 1, True)
+        chitta.record("edit_file", 2, True)
+        chitta.record("bash", 3, True)  # test pass
+        assert chitta.phase == PHASE_COMPLETE
+
+    def test_errors_regress_to_orient(self):
+        """2+ recent errors → back to ORIENT."""
+        chitta = Chitta()
+        chitta.record("read_file", 1, True)
+        chitta.record("read_file", 2, True)
+        # Now in EXECUTE phase
+        assert chitta.phase == PHASE_EXECUTE
+        chitta.record("edit_file", 3, False, "err")
+        chitta.record("edit_file", 4, False, "err")
+        # 2 recent errors → ORIENT
+        assert chitta.phase == PHASE_ORIENT
+
+    def test_bash_without_writes_stays_orient(self):
+        """Bash without prior writes doesn't trigger COMPLETE."""
+        chitta = Chitta()
+        chitta.record("bash", 1, True)
+        # No writes, so phase based on reads (0) → ORIENT
+        assert chitta.phase == PHASE_ORIENT
+
+    def test_phase_in_stats(self):
+        chitta = Chitta()
+        chitta.record("read_file", 1, True)
+        assert chitta.stats["phase"] == PHASE_ORIENT
+
+    def test_clear_resets_phase(self):
+        chitta = Chitta()
+        chitta.record("read_file", 1, True)
+        chitta.record("glob", 2, True)
+        assert chitta.phase == PHASE_EXECUTE
+        chitta.clear()
+        assert chitta.phase == PHASE_ORIENT
+
+
+class TestBuddhiPhaseGuidance:
+    """Test that Buddhi injects guidance at phase transitions."""
+
+    def test_execute_to_verify_injects_guidance(self):
+        """Transitioning EXECUTE → VERIFY nudges LLM to run tests."""
+        from steward.buddhi import Buddhi
+        from steward.types import ToolUse
+
+        buddhi = Buddhi()
+
+        # Read → ORIENT
+        buddhi.evaluate(
+            [ToolUse(id="1", name="read_file", parameters={"path": "/a.py"})],
+            [(True, "")],
+        )
+        # Read → ORIENT (still < 2 reads after the first one... wait, we had a read)
+        buddhi.evaluate(
+            [ToolUse(id="2", name="read_file", parameters={"path": "/b.py"})],
+            [(True, "")],
+        )
+        # Now EXECUTE (2 reads)
+        # Write → stays EXECUTE
+        buddhi.evaluate(
+            [ToolUse(id="3", name="edit_file", parameters={"path": "/a.py", "old": "x", "new": "y"})],
+            [(True, "")],
+        )
+        # Read (no recent write) → should transition to VERIFY
+        v = buddhi.evaluate(
+            [ToolUse(id="4", name="read_file", parameters={"path": "/c.py"})],
+            [(True, "")],
+        )
+        # But we need to check: recent 3 = [read, edit, read]
+        # recent_writes = 0 (only the read from id=4 counts as recent write? No, edit is a write)
+        # Hmm, let me think: impressions are [read, read, edit, read]
+        # recent 3 = [read, edit, read] — recent_writes: edit_file IS in _WRITE_NAMES, and it succeeded
+        # So recent_writes = 1 → still EXECUTE
+        # We need more reads after the write to get to VERIFY
+        v2 = buddhi.evaluate(
+            [ToolUse(id="5", name="read_file", parameters={"path": "/d.py"})],
+            [(True, "")],
+        )
+        v3 = buddhi.evaluate(
+            [ToolUse(id="6", name="read_file", parameters={"path": "/e.py"})],
+            [(True, "")],
+        )
+        # Now recent 3 = [read, read, read], no recent writes, total_writes=1 → VERIFY
+        # Phase transition: EXECUTE → VERIFY → reflect guidance
+        assert v3.action == "reflect"
+        assert "modified files" in v3.suggestion
+
+    def test_phase_appears_in_directive(self):
+        """BuddhiDirective includes the current phase."""
+        from steward.buddhi import Buddhi
+
+        buddhi = Buddhi()
+        d = buddhi.pre_flight("test something", 0)
+        assert d.phase in ("ORIENT", "EXECUTE", "VERIFY", "COMPLETE")

@@ -161,6 +161,7 @@ class AgentUsage:
     # Buddhi diagnostics (observable cognition)
     buddhi_action: str = ""     # SemanticActionType (e.g., "RESEARCH", "IMPLEMENT")
     buddhi_guna: str = ""       # IntentGuna (e.g., "SATTVA", "RAJAS")
+    buddhi_phase: str = ""      # Chitta phase (ORIENT/EXECUTE/VERIFY/COMPLETE)
     buddhi_errors: int = 0      # total tool errors detected by Buddhi
     buddhi_reflections: int = 0 # number of reflect/redirect injections
 

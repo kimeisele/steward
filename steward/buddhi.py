@@ -9,18 +9,19 @@ It doesn't perceive (that's Manas), doesn't store (that's Chitta),
 doesn't detect (that's Gandha). It DISCRIMINATES and DECIDES.
 
 Antahkarana Composition:
-    Manas  (#1, cognition) — perceives user intent → ManasPerception
-    Buddhi (#2, decision)  — discriminates → BuddhiDirective / BuddhiVerdict
-    Chitta (#4, awareness) — stores impressions → history
-    Gandha (#9, detect)    — detects patterns → Detection
+    Manas  (#1, cognition) — perceives user intent -> ManasPerception
+    Buddhi (#2, decision)  — discriminates -> BuddhiDirective / BuddhiVerdict
+    Chitta (#4, awareness) — stores impressions, derives phase
+    Gandha (#9, detect)    — detects patterns -> Detection
 
-Buddhi is thin. It:
-    1. Asks Manas to perceive (pre_flight, round 0)
-    2. Records impressions in Chitta (evaluate)
-    3. Asks Gandha to detect patterns (evaluate)
-    4. Makes the final verdict (continue/reflect/redirect/abort)
+Phase Machine (derived from Chitta):
+    ORIENT   — exploring/reading (context gathering)
+    EXECUTE  — making changes (writing/editing)
+    VERIFY   — checking work (running tests)
+    COMPLETE — task appears done (tests passed)
 
-80% deterministic / 20% LLM. LLM reflection only when stuck.
+Buddhi reads Chitta's phase and adjusts tool selection + guidance.
+No hardcoded round thresholds. The impressions determine the phase.
 
 Usage:
     buddhi = Buddhi()
@@ -36,8 +37,14 @@ from dataclasses import dataclass
 from vibe_core.mahamantra.protocols.compression import IntentGuna
 from vibe_core.runtime.semantic_actions import SemanticActionType
 
-from steward.antahkarana.chitta import Chitta
-from steward.antahkarana.gandha import Detection, detect_patterns
+from steward.antahkarana.chitta import (
+    PHASE_COMPLETE,
+    PHASE_EXECUTE,
+    PHASE_ORIENT,
+    PHASE_VERIFY,
+    Chitta,
+)
+from steward.antahkarana.gandha import detect_patterns
 from steward.antahkarana.manas import Manas
 from steward.types import ToolUse
 
@@ -45,9 +52,6 @@ logger = logging.getLogger("STEWARD.BUDDHI")
 
 
 # ── Semantic Tool Mapping (substrate-derived) ────────────────────────
-#
-# SemanticActionType → which tools are relevant.
-# Guna overlay: SATTVA=read, RAJAS=act, TAMAS=debug
 
 _READ_TOOLS = frozenset({"read_file", "glob", "grep"})
 _WRITE_TOOLS = frozenset({"read_file", "glob", "grep", "edit_file", "write_file", "bash"})
@@ -55,18 +59,15 @@ _DEBUG_TOOLS = frozenset({"read_file", "glob", "grep", "edit_file", "bash"})
 _ALL_TOOLS = frozenset()  # empty = send everything
 
 _ACTION_TOOLS: dict[SemanticActionType, frozenset[str]] = {
-    # SATTVA-aligned: observation
     SemanticActionType.RESEARCH:   _READ_TOOLS,
     SemanticActionType.ANALYZE:    _READ_TOOLS,
     SemanticActionType.MONITOR:    _READ_TOOLS,
     SemanticActionType.REVIEW:     _READ_TOOLS,
-    # RAJAS-aligned: action
     SemanticActionType.IMPLEMENT:  _WRITE_TOOLS,
     SemanticActionType.REFACTOR:   _WRITE_TOOLS,
     SemanticActionType.DESIGN:     _WRITE_TOOLS,
     SemanticActionType.PLAN:       _READ_TOOLS,
     SemanticActionType.SYNTHESIZE: _READ_TOOLS,
-    # TAMAS-aligned: fix/respond
     SemanticActionType.DEBUG:      _DEBUG_TOOLS,
     SemanticActionType.TEST:       frozenset({"bash", "read_file", "glob"}),
     SemanticActionType.RESPOND:    _DEBUG_TOOLS,
@@ -87,7 +88,6 @@ _ACTION_MAX_TOKENS: dict[SemanticActionType, int] = {
     SemanticActionType.RESPOND:    4096,
 }
 
-# Guna → fallback tool set (when action type is ambiguous)
 _GUNA_TOOLS: dict[IntentGuna, frozenset[str]] = {
     IntentGuna.SATTVA: _READ_TOOLS,
     IntentGuna.RAJAS:  _WRITE_TOOLS,
@@ -95,12 +95,34 @@ _GUNA_TOOLS: dict[IntentGuna, frozenset[str]] = {
     IntentGuna.SUDDHA: _ALL_TOOLS,
 }
 
+# ── Phase-Aware Tool Overlay ─────────────────────────────────────────
+# Phase adds tools ON TOP of action-based selection.
+# VERIFY ensures bash is available for tests.
+# EXECUTE ensures write tools even for SATTVA actions that explored enough.
+
+_PHASE_TOOL_OVERLAY: dict[str, frozenset[str]] = {
+    PHASE_ORIENT: frozenset(),
+    PHASE_EXECUTE: frozenset({"edit_file", "write_file", "bash"}),
+    PHASE_VERIFY: frozenset({"bash", "read_file"}),
+    PHASE_COMPLETE: frozenset(),
+}
+
+# Phase-based token budget (only applies when lower than action budget)
+# VERIFY and COMPLETE tighten budget — work should be winding down.
+# ORIENT and EXECUTE defer to the action's natural budget.
+_PHASE_MAX_TOKENS: dict[str, int] = {
+    PHASE_ORIENT: 4096,    # defer to action budget
+    PHASE_EXECUTE: 4096,   # full budget for active work
+    PHASE_VERIFY: 2048,    # tighten for test/check phase
+    PHASE_COMPLETE: 2048,  # tighten for wrap-up
+}
+
 
 @dataclass(frozen=True)
 class BuddhiDirective:
     """Pre-flight directive — what the LLM needs for THIS call.
 
-    Determined deterministically from substrate cognition.
+    Determined deterministically from substrate cognition + Chitta phase.
     """
 
     action: SemanticActionType
@@ -109,6 +131,7 @@ class BuddhiDirective:
     max_tokens: int
     function: str = ""
     approach: str = ""
+    phase: str = ""  # ORIENT | EXECUTE | VERIFY | COMPLETE
 
 
 @dataclass(frozen=True)
@@ -132,23 +155,29 @@ class Buddhi:
 
     Composes the Antahkarana elements:
         Manas  — perceives intent (classification)
-        Chitta — stores impressions (history)
+        Chitta — stores impressions, derives phase
         Gandha — detects patterns (stuck loops, errors)
 
-    Buddhi itself only DISCRIMINATES and DECIDES.
+    Phase machine (derived from Chitta):
+        ORIENT -> EXECUTE -> VERIFY -> COMPLETE
+        Errors regress to ORIENT.
+
+    Buddhi reads the phase, adjusts tools, and injects guidance
+    at phase transitions.
     """
 
     def __init__(self) -> None:
         self._manas = Manas()
         self._chitta = Chitta()
+        self._prev_phase: str = PHASE_ORIENT
 
     def pre_flight(
         self, user_message: str, round_num: int, context_pct: float = 0.0,
     ) -> BuddhiDirective:
-        """Pre-flight gate — Manas perception → Buddhi decision.
+        """Pre-flight gate — Manas perception + Chitta phase -> tool selection.
 
         Round 0: Manas perceives user intent (deterministic, zero LLM).
-        All rounds: Buddhi discriminates tool selection + token budget.
+        All rounds: Buddhi uses Chitta's phase for tool + token decisions.
 
         Args:
             user_message: The original user request
@@ -156,7 +185,7 @@ class Buddhi:
             context_pct: Current context budget usage (0.0 to 1.0)
 
         Returns:
-            BuddhiDirective with action, guna, tool_names, max_tokens
+            BuddhiDirective with action, guna, tool_names, max_tokens, phase
         """
         # Round 0: Manas perceives (classify intent once)
         if round_num == 0:
@@ -171,30 +200,32 @@ class Buddhi:
                 self._function, self._approach,
             )
 
-        # Buddhi discriminates: action → tool set, token budget
+        # Action-based tool selection (primary)
         base_tools = _ACTION_TOOLS.get(self._action, _ALL_TOOLS)
         max_tokens = _ACTION_MAX_TOKENS.get(self._action, 4096)
 
-        # Context-aware token budget: constrain at pressure thresholds
+        # Guna fallback if action tools are empty
+        if not base_tools:
+            base_tools = _GUNA_TOOLS.get(self._guna, _ALL_TOOLS)
+
+        # Phase-aware overlay: Chitta's phase adds tools on top
+        phase = self._chitta.phase
+        overlay = _PHASE_TOOL_OVERLAY.get(phase, frozenset())
+        if overlay:
+            base_tools = frozenset(base_tools | overlay)
+
+        # Phase-aware token budget
+        phase_max = _PHASE_MAX_TOKENS.get(phase, 4096)
+        max_tokens = min(max_tokens, phase_max)
+
+        # Context pressure: tighten budget further
         if context_pct >= 0.7:
             max_tokens = min(max_tokens, 1024)
         elif context_pct >= 0.5:
             max_tokens = min(max_tokens, 2048)
 
-        # Guna overlay: if action tools are empty, use guna fallback
-        if not base_tools:
-            base_tools = _GUNA_TOOLS.get(self._guna, _ALL_TOOLS)
-
-        # Phase evolution: later rounds may need different tools
+        # After errors, always grant bash for debugging
         if round_num > 0:
-            if self._action in (
-                SemanticActionType.RESEARCH, SemanticActionType.ANALYZE,
-                SemanticActionType.MONITOR, SemanticActionType.REVIEW,
-            ):
-                if round_num >= 3:
-                    base_tools = frozenset(base_tools | {"edit_file", "write_file", "bash"})
-
-            # After errors, grant bash for debugging
             recent_errors = sum(
                 1 for r in self._chitta.recent(3) if not r.success
             )
@@ -208,6 +239,7 @@ class Buddhi:
             max_tokens=max_tokens,
             function=self._function,
             approach=self._approach,
+            phase=phase,
         )
 
     def evaluate(
@@ -219,7 +251,8 @@ class Buddhi:
 
         1. Record impressions in Chitta
         2. Gandha detects patterns
-        3. Buddhi translates detection → verdict
+        3. Check for phase transitions -> inject guidance
+        4. Buddhi makes final verdict
 
         Args:
             tool_calls: Tools that were called this round
@@ -228,6 +261,7 @@ class Buddhi:
         Returns:
             BuddhiVerdict with recommended action
         """
+        prev_phase = self._chitta.phase
         self._chitta.advance_round()
 
         # Record impressions in Chitta
@@ -244,26 +278,72 @@ class Buddhi:
 
         # Gandha detects patterns in Chitta's impressions
         detection = detect_patterns(self._chitta.impressions)
-        if detection is None:
-            return BuddhiVerdict(action="continue")
+        if detection is not None:
+            verdict = BuddhiVerdict(
+                action=detection.severity,
+                reason=detection.reason,
+                suggestion=detection.suggestion,
+            )
+            logger.info(
+                "Buddhi verdict at round %d: %s — %s",
+                self._chitta.round, verdict.action, verdict.reason,
+            )
+            return verdict
 
-        # Buddhi translates detection → verdict
-        verdict = BuddhiVerdict(
-            action=detection.severity,
-            reason=detection.reason,
-            suggestion=detection.suggestion,
-        )
-        logger.info(
-            "Buddhi verdict at round %d: %s — %s",
-            self._chitta.round, verdict.action, verdict.reason,
-        )
-        return verdict
+        # Phase transition guidance
+        curr_phase = self._chitta.phase
+        if prev_phase != curr_phase:
+            logger.info(
+                "Buddhi phase transition: %s -> %s (round %d)",
+                prev_phase, curr_phase, self._chitta.round,
+            )
+            guidance = _phase_guidance(prev_phase, curr_phase, self._chitta)
+            if guidance:
+                return BuddhiVerdict(
+                    action="reflect",
+                    reason=f"Phase {prev_phase}->{curr_phase}",
+                    suggestion=guidance,
+                )
+
+        return BuddhiVerdict(action="continue")
+
+    @property
+    def phase(self) -> str:
+        """Current phase (delegates to Chitta)."""
+        return self._chitta.phase
 
     def reset(self) -> None:
         """Reset for a new task."""
         self._chitta.clear()
+        self._prev_phase = PHASE_ORIENT
 
     @property
     def stats(self) -> dict[str, object]:
         """Diagnostic stats — delegates to Chitta."""
         return self._chitta.stats
+
+
+def _phase_guidance(
+    prev: str,
+    curr: str,
+    chitta: Chitta,
+) -> str:
+    """Generate guidance for a phase transition.
+
+    Only injects guidance for FORWARD transitions that the LLM
+    needs to know about. Error regression is Gandha's job.
+
+    Returns guidance text or empty string (no guidance needed).
+    """
+    # EXECUTE -> VERIFY: nudge to run tests after modifications
+    if prev == PHASE_EXECUTE and curr == PHASE_VERIFY:
+        writes = sum(
+            1 for i in chitta.impressions
+            if i.name in ("edit_file", "write_file") and i.success
+        )
+        return (
+            f"You've modified files ({writes} write operations). "
+            f"Consider running tests to verify your changes work correctly."
+        )
+
+    return ""

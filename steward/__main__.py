@@ -49,7 +49,8 @@ def _format_event(event: AgentEvent) -> None:
         u = event.usage
         buddhi = ""
         if u.buddhi_action:
-            buddhi = f" | {u.buddhi_action}/{u.buddhi_guna}"
+            phase = f"/{u.buddhi_phase}" if u.buddhi_phase else ""
+            buddhi = f" | {u.buddhi_action}/{u.buddhi_guna}{phase}"
             if u.buddhi_reflections:
                 buddhi += f" {u.buddhi_reflections}r"
         print(
