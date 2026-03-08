@@ -25,7 +25,7 @@ import re
 
 from vibe_core.mahamantra.adapters.compression import MahaCompression
 
-from steward.types import Conversation, Message
+from steward.types import Conversation, Message, MessageRole
 
 logger = logging.getLogger("STEWARD.CONTEXT")
 
@@ -54,7 +54,7 @@ def _extract_structure(messages: list[Message]) -> str:
         # Extract file paths
         for match in _FILE_PATH_RE.finditer(content):
             path = match.group(1).strip()
-            if msg.role == "tool":
+            if msg.role == MessageRole.TOOL:
                 files_read.add(path)
             elif "write" in content.lower() or "edit" in content.lower():
                 files_written.add(path)
@@ -74,7 +74,7 @@ def _extract_structure(messages: list[Message]) -> str:
                         files_written.add(path)
 
         # Extract errors from tool results
-        if msg.role == "tool" and "[Error]" in content:
+        if msg.role == MessageRole.TOOL and "[Error]" in content:
             # Keep first line of error only
             error_line = content.split("\n")[0][:100]
             errors.append(error_line)
@@ -129,7 +129,7 @@ class SamskaraContext:
             return False  # not enough to compact
 
         # Split: system | older | recent
-        system_end = 1 if msgs[0].role == "system" else 0
+        system_end = 1 if msgs[0].role == MessageRole.SYSTEM else 0
         non_system = msgs[system_end:]
 
         if len(non_system) <= keep_recent:
@@ -165,7 +165,7 @@ class SamskaraContext:
             f"{structure}"
         )
 
-        samskara_msg = Message(role="user", content=samskara_content)
+        samskara_msg = Message(role=MessageRole.USER, content=samskara_content)
 
         # Rebuild conversation
         conversation.messages = msgs[:system_end] + [samskara_msg] + list(to_keep)

@@ -17,6 +17,18 @@ from typing import Protocol, runtime_checkable
 from vibe_core.tools.tool_protocol import ToolResult
 
 
+class MessageRole(StrEnum):
+    """Message roles — single source of truth.
+
+    StrEnum so values work as dict keys and in string comparisons.
+    """
+
+    SYSTEM = "system"
+    USER = "user"
+    ASSISTANT = "assistant"
+    TOOL = "tool"
+
+
 class EventType(StrEnum):
     """Agent event types — single source of truth.
 
@@ -148,7 +160,7 @@ class Conversation:
         # Phase 1: Drop oldest tool results first (they're biggest)
         while self.total_tokens > self.max_tokens and len(self.messages) > 2:
             for i, m in enumerate(self.messages):
-                if m.role == "tool":
+                if m.role == MessageRole.TOOL:
                     self.messages.pop(i)
                     trimmed_count += 1
                     break
@@ -158,7 +170,7 @@ class Conversation:
         # Phase 2: Drop oldest non-system messages
         while self.total_tokens > self.max_tokens and len(self.messages) > 2:
             for i, m in enumerate(self.messages):
-                if m.role != "system":
+                if m.role != MessageRole.SYSTEM:
                     self.messages.pop(i)
                     trimmed_count += 1
                     break
@@ -168,11 +180,11 @@ class Conversation:
         # Insert compaction marker after system message
         if trimmed_count > 0 and len(self.messages) >= 2:
             marker = Message(
-                role="user",
+                role=MessageRole.USER,
                 content=f"[{trimmed_count} earlier messages trimmed for context budget]",
             )
             # Insert after system prompt
-            insert_idx = 1 if self.messages[0].role == "system" else 0
+            insert_idx = 1 if self.messages[0].role == MessageRole.SYSTEM else 0
             self.messages.insert(insert_idx, marker)
 
 

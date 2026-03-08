@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 
-from steward.types import Conversation, LLMProvider, Message
+from steward.types import Conversation, LLMProvider, Message, MessageRole
 
 logger = logging.getLogger("STEWARD.SUMMARIZER")
 
@@ -76,7 +76,7 @@ class Summarizer:
             return False  # too few messages to summarize
 
         # Identify summarizable range: everything after system, before the last N
-        system_end = 1 if msgs[0].role == "system" else 0
+        system_end = 1 if msgs[0].role == MessageRole.SYSTEM else 0
         non_system = msgs[system_end:]
 
         # Keep the most recent messages intact
@@ -102,7 +102,7 @@ class Summarizer:
 
         # Replace summarized messages with a single summary
         summary_msg = Message(
-            role="user",
+            role=MessageRole.USER,
             content=(
                 f"[Summary of {len(to_summarize)} earlier messages]\n"
                 f"{summary_text}"
@@ -150,7 +150,7 @@ class Summarizer:
         lines: list[str] = []
         for m in messages:
             prefix = m.role.upper()
-            if m.role == "tool":
+            if m.role == MessageRole.TOOL:
                 # Truncate long tool outputs for the summary input
                 content = m.content[:500] if len(m.content) > 500 else m.content
                 lines.append(f"[TOOL RESULT] {content}")

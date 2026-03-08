@@ -42,7 +42,7 @@ from steward.buddhi import Buddhi, BuddhiDirective, BuddhiVerdict, ModelTier
 from steward.context import SamskaraContext
 from steward.services import tool_descriptions_for_llm
 from steward.summarizer import Summarizer, should_summarize
-from steward.types import AgentEvent, AgentUsage, Conversation, EventType, LLMProvider, Message, ToolUse
+from steward.types import AgentEvent, AgentUsage, Conversation, EventType, LLMProvider, Message, MessageRole, ToolUse
 
 # Narasimha severity ordinal rank — module-level constant (not recreated per call)
 _SEVERITY_RANK = {
@@ -120,9 +120,9 @@ class AgentLoop:
 
         # Ensure system prompt is first message
         if system_prompt and (
-            not conversation.messages or conversation.messages[0].role != "system"
+            not conversation.messages or conversation.messages[0].role != MessageRole.SYSTEM
         ):
-            conversation.messages.insert(0, Message(role="system", content=system_prompt))
+            conversation.messages.insert(0, Message(role=MessageRole.SYSTEM, content=system_prompt))
 
     async def run(self, user_message: str) -> AsyncIterator[AgentEvent]:
         """Execute one full agent turn as an async event stream.
@@ -138,7 +138,7 @@ class AgentLoop:
         cr = self._compression.compress(user_message)
         logger.debug("Input compressed: seed=%d, ratio=%.1f", cr.seed, cr.compression_ratio)
 
-        self._conversation.add(Message(role="user", content=user_message))
+        self._conversation.add(Message(role=MessageRole.USER, content=user_message))
         usage = AgentUsage()
 
         # Context management: once at turn start (not every round)
@@ -181,7 +181,7 @@ class AgentLoop:
                 text = self._extract_text(response)
                 if len(text) > MAX_RESPONSE_CHARS:
                     text = text[:MAX_RESPONSE_CHARS] + f"\n[truncated at {MAX_RESPONSE_CHARS} chars]"
-                self._conversation.add(Message(role="assistant", content=text))
+                self._conversation.add(Message(role=MessageRole.ASSISTANT, content=text))
                 usage.rounds = round_num + 1
                 # Only emit "text" if we didn't already stream deltas
                 if not streamed_text_deltas:
@@ -196,7 +196,7 @@ class AgentLoop:
             # Tool use response — add assistant message, then execute tools
             self._conversation.add(
                 Message(
-                    role="assistant",
+                    role=MessageRole.ASSISTANT,
                     content=self._extract_text(response),
                     tool_uses=tool_calls,
                 )
@@ -212,7 +212,7 @@ class AgentLoop:
                 block_reason = self._check_tool_gates(tc)
                 if block_reason:
                     self._conversation.add(
-                        Message(role="tool", content=f"[Error] {block_reason}", tool_use_id=tc.id)
+                        Message(role=MessageRole.TOOL, content=f"[Error] {block_reason}", tool_use_id=tc.id)
                     )
                     yield AgentEvent(
                         type=EventType.TOOL_RESULT,
@@ -278,7 +278,7 @@ class AgentLoop:
                             f"showing first {MAX_TOOL_OUTPUT_CHARS}]"
                         )
                     self._conversation.add(
-                        Message(role="tool", content=output_str, tool_use_id=tc.id)
+                        Message(role=MessageRole.TOOL, content=output_str, tool_use_id=tc.id)
                     )
                     yield AgentEvent(type=EventType.TOOL_RESULT, content=result, tool_use=tc)
                     logger.debug(
@@ -326,7 +326,7 @@ class AgentLoop:
                         f"{verdict.suggestion}"
                     )
                     self._conversation.add(
-                        Message(role="user", content=guidance)
+                        Message(role=MessageRole.USER, content=guidance)
                     )
                     logger.info("Buddhi injected %s: %s", label, verdict.reason)
 
