@@ -66,7 +66,7 @@ class BashTool(Tool):
             "timeout": {
                 "type": "integer",
                 "required": False,
-                "description": "Timeout in seconds (default: 120)",
+                "description": "Timeout in seconds (default: 120). Increase for long builds or tests.",
             },
         }
 

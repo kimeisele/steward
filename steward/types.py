@@ -94,6 +94,7 @@ class Message:
     content: str = ""  # text content
     tool_uses: list[ToolUse] = field(default_factory=list)  # assistant only
     tool_use_id: str | None = None  # tool only — correlates to ToolUse.id
+    metadata: dict[str, object] = field(default_factory=dict)  # structured data (errors, etc.)
 
     @property
     def estimated_tokens(self) -> int:
