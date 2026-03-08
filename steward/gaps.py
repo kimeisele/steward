@@ -3,11 +3,11 @@ GapTracker — Agent self-awareness of capability gaps.
 
 Tracks what the agent tried but couldn't do. Gaps are recorded when:
 - A tool returns an error (tool_gap)
-- A skill is needed but doesn't exist (skill_gap)
+- A capability is needed but doesn't exist (capability_gap)
 - A provider capability is missing (provider_gap)
 
 Gaps persist in memory and are surfaced in the system prompt so the
-agent can act on them — install a package, create a skill, or route
+agent can act on them — install a package, add a tool, or route
 to a different provider.
 
 This is what makes steward ALIVE — it knows what it doesn't know.
@@ -74,9 +74,9 @@ class GapTracker:
         ctx = f"parameters: {parameters}" if parameters else ""
         self.record("tool", desc, ctx)
 
-    def record_missing_skill(self, task_description: str) -> None:
-        """Record a gap when no skill matches a task."""
-        desc = f"No skill found for: {task_description[:200]}"
+    def record_missing_capability(self, task_description: str) -> None:
+        """Record a gap when no capability matches a task."""
+        desc = f"No capability found for: {task_description[:200]}"
         self.record("skill", desc)
 
     def record_provider_gap(self, capability: str, details: str = "") -> None:
@@ -127,7 +127,7 @@ class GapTracker:
                 return "increase timeout or break into smaller operations"
             return "try an alternative approach or tool"
         if gap.category == "skill":
-            return "create a skill: .steward/skills/<name>.md"
+            return "capability gap — may need new tool or sense"
         if gap.category == "provider":
             if "key" in desc or "api" in desc:
                 return "set the API key in environment"
