@@ -1,82 +1,59 @@
 """
-Buddhi — Discriminative Intelligence for the Agent Loop.
+Buddhi — Discriminative Intelligence (The Driver of the Chariot).
 
-In the Vedic Antahkarana model, Buddhi is the discriminative faculty
-that answers: "SHOULD I do this?" It's the driver of the chariot
-(Katha Upanishad), not the horses (Manas/senses).
+PrakritiElement #2 — Protocol Layer: decision
+Category: ANTAHKARANA (Internal Instrument)
 
-Architecture (80% deterministic / 20% LLM):
+In the Vedic model, Buddhi is the DRIVER of the chariot (Katha Upanishad).
+It doesn't perceive (that's Manas), doesn't store (that's Chitta),
+doesn't detect (that's Gandha). It DISCRIMINATES and DECIDES.
 
-    PRE-FLIGHT (before LLM call):
-        - MahaBuddhi.think() → cognitive frame (mode/function/approach)
-        - SemanticActionType from substrate → intent taxonomy
-        - Guna-based tool pre-selection (SATTVA=read, RAJAS=act, TAMAS=debug)
-        - Phase awareness: early rounds → exploration, late rounds → action
+Antahkarana Composition:
+    Manas  (#1, cognition) — perceives user intent → ManasPerception
+    Buddhi (#2, decision)  — discriminates → BuddhiDirective / BuddhiVerdict
+    Chitta (#4, awareness) — stores impressions → history
+    Gandha (#9, detect)    — detects patterns → Detection
 
-    POST-FLIGHT (after tool execution):
-        - Stuck loop detection (same tool+params repeated)
-        - Error pattern recognition (repeated failures)
-        - Tool sequence analysis (read before write, etc.)
+Buddhi is thin. It:
+    1. Asks Manas to perceive (pre_flight, round 0)
+    2. Records impressions in Chitta (evaluate)
+    3. Asks Gandha to detect patterns (evaluate)
+    4. Makes the final verdict (continue/reflect/redirect/abort)
 
-    LLM REFLECTION (only when stuck):
-        - Triggered ONLY after deterministic checks fail to resolve
-
-Uses REAL substrate primitives:
-    - SemanticActionType (not hardcoded enums)
-    - MahaBuddhi.think() (Lotus VM + MahaComposition, zero LLM)
-    - MahaCompression.decode_samskara_intent() (guna from seed)
-    - IntentGuna (SATTVA/RAJAS/TAMAS/SUDDHA)
+80% deterministic / 20% LLM. LLM reflection only when stuck.
 
 Usage:
     buddhi = Buddhi()
-
-    # Pre-flight: which tools does the LLM need?
     directive = buddhi.pre_flight(user_message, round_num)
-    tools = directive.tool_names  # send only these to LLM
-
-    # Post-flight: how did it go?
     verdict = buddhi.evaluate(tool_calls, tool_results)
 """
 
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
-from vibe_core.mahamantra.adapters.compression import MahaCompression
 from vibe_core.mahamantra.protocols.compression import IntentGuna
-from vibe_core.mahamantra.substrate.buddhi import MahaBuddhi, get_buddhi
 from vibe_core.runtime.semantic_actions import SemanticActionType
 
+from steward.antahkarana.chitta import Chitta
+from steward.antahkarana.gandha import Detection, detect_patterns
+from steward.antahkarana.manas import Manas
 from steward.types import ToolUse
 
 logger = logging.getLogger("STEWARD.BUDDHI")
-
-# Thresholds — deterministic, no magic numbers
-_MAX_IDENTICAL_CALLS = 3       # same tool + same params = stuck
-_MAX_CONSECUTIVE_ERRORS = 5    # too many errors in a row = abort
-_MAX_SAME_TOOL_STREAK = 8     # same tool name repeatedly = likely stuck
-_ERROR_RATIO_THRESHOLD = 0.7   # > 70% of calls failing = systemic issue
 
 
 # ── Semantic Tool Mapping (substrate-derived) ────────────────────────
 #
 # SemanticActionType → which tools are relevant.
-# The taxonomy comes from steward-protocol, the tool mapping is
-# steward-specific (steward knows its own tools).
-#
-# Guna overlay:
-#   SATTVA → read-only tools (safe, observational)
-#   RAJAS  → all tools (active, creative)
-#   TAMAS  → debug tools (fix, heal, respond)
-#
+# Guna overlay: SATTVA=read, RAJAS=act, TAMAS=debug
 
 _READ_TOOLS = frozenset({"read_file", "glob", "grep"})
 _WRITE_TOOLS = frozenset({"read_file", "glob", "grep", "edit_file", "write_file", "bash"})
 _DEBUG_TOOLS = frozenset({"read_file", "glob", "grep", "edit_file", "bash"})
 _ALL_TOOLS = frozenset()  # empty = send everything
 
-# SemanticActionType → tool set
 _ACTION_TOOLS: dict[SemanticActionType, frozenset[str]] = {
     # SATTVA-aligned: observation
     SemanticActionType.RESEARCH:   _READ_TOOLS,
@@ -95,7 +72,6 @@ _ACTION_TOOLS: dict[SemanticActionType, frozenset[str]] = {
     SemanticActionType.RESPOND:    _DEBUG_TOOLS,
 }
 
-# SemanticActionType → max_tokens
 _ACTION_MAX_TOKENS: dict[SemanticActionType, int] = {
     SemanticActionType.RESEARCH:   2048,
     SemanticActionType.ANALYZE:    2048,
@@ -116,24 +92,7 @@ _GUNA_TOOLS: dict[IntentGuna, frozenset[str]] = {
     IntentGuna.SATTVA: _READ_TOOLS,
     IntentGuna.RAJAS:  _WRITE_TOOLS,
     IntentGuna.TAMAS:  _DEBUG_TOOLS,
-    IntentGuna.SUDDHA: _ALL_TOOLS,  # transcendental = no restriction
-}
-
-# Trinity function → SemanticActionType affinity
-# BRAHMA = creation, VISHNU = maintenance, SHIVA = transformation
-_FUNCTION_AFFINITY: dict[str, SemanticActionType] = {
-    "BRAHMA": SemanticActionType.IMPLEMENT,
-    "VISHNU": SemanticActionType.MONITOR,
-    "SHIVA": SemanticActionType.REFACTOR,
-}
-
-# Approach → SemanticActionType affinity
-# GENESIS = build, DHARMA = maintain, KARMA = fix, MOKSHA = transcend
-_APPROACH_AFFINITY: dict[str, SemanticActionType] = {
-    "GENESIS": SemanticActionType.IMPLEMENT,
-    "DHARMA": SemanticActionType.REVIEW,
-    "KARMA": SemanticActionType.DEBUG,
-    "MOKSHA": SemanticActionType.RESEARCH,
+    IntentGuna.SUDDHA: _ALL_TOOLS,
 }
 
 
@@ -144,12 +103,12 @@ class BuddhiDirective:
     Determined deterministically from substrate cognition.
     """
 
-    action: SemanticActionType     # from substrate taxonomy
-    guna: IntentGuna               # from MahaCompression seed
-    tool_names: frozenset[str]     # only send these tool descriptions
-    max_tokens: int                # constrain LLM output budget
-    function: str = ""             # BRAHMA/VISHNU/SHIVA (from MahaBuddhi)
-    approach: str = ""             # GENESIS/DHARMA/KARMA/MOKSHA
+    action: SemanticActionType
+    guna: IntentGuna
+    tool_names: frozenset[str]
+    max_tokens: int
+    function: str = ""
+    approach: str = ""
 
 
 @dataclass(frozen=True)
@@ -163,76 +122,60 @@ class BuddhiVerdict:
         abort     — stop the loop (unrecoverable)
     """
 
-    action: str                 # "continue" | "reflect" | "redirect" | "abort"
-    reason: str = ""            # human-readable explanation
-    suggestion: str = ""        # alternative approach hint (for redirect/reflect)
-
-
-@dataclass
-class _ToolRecord:
-    """A recorded tool call + result for analysis."""
-
-    name: str
-    params_hash: int           # hash of parameters for identity
-    success: bool
-    error: str = ""
+    action: str  # "continue" | "reflect" | "redirect" | "abort"
+    reason: str = ""
+    suggestion: str = ""
 
 
 class Buddhi:
-    """Discriminative intelligence — evaluates agent actions.
+    """Discriminative intelligence — the Driver of the Chariot.
 
-    Uses REAL substrate primitives for cognition:
-    - MahaBuddhi.think() for cognitive frame (zero LLM, Lotus VM)
-    - MahaCompression.decode_samskara_intent() for guna classification
-    - SemanticActionType for intent taxonomy
+    Composes the Antahkarana elements:
+        Manas  — perceives intent (classification)
+        Chitta — stores impressions (history)
+        Gandha — detects patterns (stuck loops, errors)
 
-    PRE-FLIGHT (pre_flight):
-        Substrate cognition → tool selection → token budget.
-
-    POST-FLIGHT (evaluate):
-        Stuck loop detection, error patterns, tool streaks.
+    Buddhi itself only DISCRIMINATES and DECIDES.
     """
 
     def __init__(self) -> None:
-        self._history: list[_ToolRecord] = []
-        self._round: int = 0
-        self._action: SemanticActionType = SemanticActionType.IMPLEMENT
-        self._guna: IntentGuna = IntentGuna.RAJAS
-        self._function: str = ""
-        self._approach: str = ""
-        self._compression = MahaCompression()
-        self._maha_buddhi = get_buddhi()
+        self._manas = Manas()
+        self._chitta = Chitta()
 
     def pre_flight(
         self, user_message: str, round_num: int, context_pct: float = 0.0,
     ) -> BuddhiDirective:
-        """Pre-flight gate — substrate cognition → tool selection.
+        """Pre-flight gate — Manas perception → Buddhi decision.
 
-        Uses MahaBuddhi.think() + MahaCompression for classification.
-        Deterministic. Zero LLM tokens.
+        Round 0: Manas perceives user intent (deterministic, zero LLM).
+        All rounds: Buddhi discriminates tool selection + token budget.
 
         Args:
-            user_message: The original user request (for intent on round 0)
+            user_message: The original user request
             round_num: Current tool-use round (0 = first LLM call)
             context_pct: Current context budget usage (0.0 to 1.0)
 
         Returns:
-            BuddhiDirective with action type, guna, tool_names, max_tokens
+            BuddhiDirective with action, guna, tool_names, max_tokens
         """
-        # Classify intent only on first round (user message is stable)
+        # Round 0: Manas perceives (classify intent once)
         if round_num == 0:
-            self._classify(user_message)
+            perception = self._manas.perceive(user_message)
+            self._action = perception.action
+            self._guna = perception.guna
+            self._function = perception.function
+            self._approach = perception.approach
             logger.info(
                 "Buddhi pre-flight: action=%s guna=%s function=%s approach=%s",
                 self._action.value, self._guna.value,
                 self._function, self._approach,
             )
 
-        # Tool selection: action type → tool set
+        # Buddhi discriminates: action → tool set, token budget
         base_tools = _ACTION_TOOLS.get(self._action, _ALL_TOOLS)
         max_tokens = _ACTION_MAX_TOKENS.get(self._action, 4096)
 
-        # Context-aware token budget: constrain output when context is filling up
+        # Context-aware token budget: constrain at pressure thresholds
         if context_pct >= 0.7:
             max_tokens = min(max_tokens, 1024)
         elif context_pct >= 0.5:
@@ -244,7 +187,6 @@ class Buddhi:
 
         # Phase evolution: later rounds may need different tools
         if round_num > 0:
-            # After exploration, the LLM may need write/edit tools
             if self._action in (
                 SemanticActionType.RESEARCH, SemanticActionType.ANALYZE,
                 SemanticActionType.MONITOR, SemanticActionType.REVIEW,
@@ -253,7 +195,9 @@ class Buddhi:
                     base_tools = frozenset(base_tools | {"edit_file", "write_file", "bash"})
 
             # After errors, grant bash for debugging
-            recent_errors = sum(1 for r in self._history[-3:] if not r.success)
+            recent_errors = sum(
+                1 for r in self._chitta.recent(3) if not r.success
+            )
             if recent_errors >= 2:
                 base_tools = frozenset(base_tools | {"bash"})
 
@@ -266,38 +210,6 @@ class Buddhi:
             approach=self._approach,
         )
 
-    def _classify(self, message: str) -> None:
-        """Classify user intent using substrate primitives.
-
-        1. MahaCompression → seed → IntentGuna (SATTVA/RAJAS/TAMAS)
-        2. MahaBuddhi.think() → cognitive frame (function/approach)
-        3. Map cognitive frame → SemanticActionType
-        """
-        # Step 1: Compression → guna
-        cr = self._compression.compress(message)
-        self._guna = self._compression.decode_samskara_intent(cr.seed).guna
-
-        # Step 2: MahaBuddhi → cognitive frame
-        cognition = self._maha_buddhi.think(message)
-        self._function = cognition.function
-        self._approach = cognition.approach
-
-        # Step 3: Map to SemanticActionType
-        # Priority: approach affinity > function affinity > guna default
-        action = _APPROACH_AFFINITY.get(cognition.approach)
-        if action is None:
-            action = _FUNCTION_AFFINITY.get(cognition.function)
-        if action is None:
-            # Guna fallback
-            guna_defaults = {
-                IntentGuna.SATTVA: SemanticActionType.RESEARCH,
-                IntentGuna.RAJAS: SemanticActionType.IMPLEMENT,
-                IntentGuna.TAMAS: SemanticActionType.DEBUG,
-                IntentGuna.SUDDHA: SemanticActionType.IMPLEMENT,
-            }
-            action = guna_defaults.get(self._guna, SemanticActionType.IMPLEMENT)
-        self._action = action
-
     def evaluate(
         self,
         tool_calls: list[ToolUse],
@@ -305,202 +217,53 @@ class Buddhi:
     ) -> BuddhiVerdict:
         """Evaluate the outcome of a tool round.
 
+        1. Record impressions in Chitta
+        2. Gandha detects patterns
+        3. Buddhi translates detection → verdict
+
         Args:
             tool_calls: Tools that were called this round
-            results: List of (success, error_msg) tuples for each call
+            results: List of (success, error_msg) tuples
 
         Returns:
             BuddhiVerdict with recommended action
         """
-        self._round += 1
+        self._chitta.advance_round()
 
-        # Record this round
+        # Record impressions in Chitta
         for tc, (success, error) in zip(tool_calls, results):
             params_hash = hash(frozenset(
                 (k, str(v)) for k, v in sorted(tc.parameters.items())
             )) if tc.parameters else 0
-            self._history.append(_ToolRecord(
+            self._chitta.record(
                 name=tc.name,
                 params_hash=params_hash,
                 success=success,
                 error=error,
-            ))
+            )
 
-        # Run deterministic checks (ordered by severity)
-        checks = [
-            self._check_consecutive_errors,
-            self._check_identical_calls,
-            self._check_failure_redirect,
-            self._check_tool_streak,
-            self._check_error_ratio,
-        ]
-
-        for check in checks:
-            verdict = check()
-            if verdict.action != "continue":
-                logger.info(
-                    "Buddhi verdict at round %d: %s — %s",
-                    self._round, verdict.action, verdict.reason,
-                )
-                return verdict
-
-        return BuddhiVerdict(action="continue")
-
-    def _check_identical_calls(self) -> BuddhiVerdict:
-        """Detect repeated identical tool calls (same name + same params)."""
-        if len(self._history) < _MAX_IDENTICAL_CALLS:
+        # Gandha detects patterns in Chitta's impressions
+        detection = detect_patterns(self._chitta.impressions)
+        if detection is None:
             return BuddhiVerdict(action="continue")
 
-        recent = self._history[-_MAX_IDENTICAL_CALLS:]
-        if all(
-            r.name == recent[0].name and r.params_hash == recent[0].params_hash
-            for r in recent
-        ):
-            return BuddhiVerdict(
-                action="reflect",
-                reason=f"Identical call repeated {_MAX_IDENTICAL_CALLS}x: {recent[0].name}",
-                suggestion=(
-                    f"Tool '{recent[0].name}' called with same parameters "
-                    f"{_MAX_IDENTICAL_CALLS} times. Try a different approach or "
-                    f"different parameters."
-                ),
-            )
-        return BuddhiVerdict(action="continue")
-
-    def _check_consecutive_errors(self) -> BuddhiVerdict:
-        """Detect too many consecutive errors."""
-        if len(self._history) < _MAX_CONSECUTIVE_ERRORS:
-            return BuddhiVerdict(action="continue")
-
-        recent = self._history[-_MAX_CONSECUTIVE_ERRORS:]
-        if all(not r.success for r in recent):
-            # Extract unique error patterns
-            unique_errors = set(r.error[:80] for r in recent if r.error)
-            return BuddhiVerdict(
-                action="abort",
-                reason=f"{_MAX_CONSECUTIVE_ERRORS} consecutive errors",
-                suggestion=(
-                    f"Errors: {'; '.join(unique_errors) if unique_errors else 'unknown'}. "
-                    f"This approach is not working."
-                ),
-            )
-        return BuddhiVerdict(action="continue")
-
-    def _check_failure_redirect(self) -> BuddhiVerdict:
-        """Redirect to a better tool when failure patterns are recognizable.
-
-        Deterministic pattern matching — common failure modes have known fixes:
-        - edit_file failing with "not found" → read_file first
-        - write_file failing → read_file the target path first
-        - Repeated route misses → suggest available tools
-        """
-        if len(self._history) < 2:
-            return BuddhiVerdict(action="continue")
-
-        recent = self._history[-2:]
-
-        # Pattern: edit_file failed twice → need to read the file first
-        if all(
-            r.name == "edit_file" and not r.success
-            and ("not found" in r.error.lower() or "no match" in r.error.lower())
-            for r in recent
-        ):
-            return BuddhiVerdict(
-                action="redirect",
-                reason="edit_file failed 2x — old_string not found in file",
-                suggestion=(
-                    "Use read_file to see the current file contents, "
-                    "then retry edit_file with the exact string from the file."
-                ),
-            )
-
-        # Pattern: write_file failed twice → likely path or permission issue
-        if all(
-            r.name == "write_file" and not r.success
-            for r in recent
-        ):
-            return BuddhiVerdict(
-                action="redirect",
-                reason="write_file failed 2x",
-                suggestion=(
-                    "Use read_file or glob to verify the target path exists "
-                    "and is writable, then retry."
-                ),
-            )
-
-        # Pattern: route misses (tool not found) → suggest valid tools
-        if all(
-            "route miss" in r.error.lower() or "not found" in r.error.lower()
-            for r in recent if not r.success
-        ) and sum(1 for r in recent if not r.success) >= 2:
-            return BuddhiVerdict(
-                action="redirect",
-                reason="Repeated tool route misses — requesting non-existent tools",
-                suggestion=(
-                    "Available tools: bash, read_file, write_file, edit_file, "
-                    "glob, grep. Use only these tool names."
-                ),
-            )
-
-        return BuddhiVerdict(action="continue")
-
-    def _check_tool_streak(self) -> BuddhiVerdict:
-        """Detect using the same tool too many times in a row."""
-        if len(self._history) < _MAX_SAME_TOOL_STREAK:
-            return BuddhiVerdict(action="continue")
-
-        recent = self._history[-_MAX_SAME_TOOL_STREAK:]
-        if all(r.name == recent[0].name for r in recent):
-            # Exception: read_file streak is often legitimate (exploring codebase)
-            if recent[0].name == "read_file":
-                return BuddhiVerdict(action="continue")
-            return BuddhiVerdict(
-                action="reflect",
-                reason=f"Same tool '{recent[0].name}' used {_MAX_SAME_TOOL_STREAK}x consecutively",
-                suggestion=(
-                    f"Consider whether '{recent[0].name}' is the right tool. "
-                    f"Try reading files for context or using a different approach."
-                ),
-            )
-        return BuddhiVerdict(action="continue")
-
-    def _check_error_ratio(self) -> BuddhiVerdict:
-        """Check if the overall error rate is too high."""
-        if len(self._history) < 6:
-            return BuddhiVerdict(action="continue")
-
-        total = len(self._history)
-        errors = sum(1 for r in self._history if not r.success)
-        ratio = errors / total
-
-        if ratio >= _ERROR_RATIO_THRESHOLD:
-            return BuddhiVerdict(
-                action="reflect",
-                reason=f"Error ratio {ratio:.0%} exceeds threshold ({_ERROR_RATIO_THRESHOLD:.0%})",
-                suggestion=(
-                    f"{errors}/{total} tool calls failed. "
-                    f"Reconsider the overall approach."
-                ),
-            )
-        return BuddhiVerdict(action="continue")
+        # Buddhi translates detection → verdict
+        verdict = BuddhiVerdict(
+            action=detection.severity,
+            reason=detection.reason,
+            suggestion=detection.suggestion,
+        )
+        logger.info(
+            "Buddhi verdict at round %d: %s — %s",
+            self._chitta.round, verdict.action, verdict.reason,
+        )
+        return verdict
 
     def reset(self) -> None:
-        """Reset Buddhi state for a new task."""
-        self._history.clear()
-        self._round = 0
+        """Reset for a new task."""
+        self._chitta.clear()
 
     @property
     def stats(self) -> dict[str, object]:
-        """Return diagnostic stats."""
-        total = len(self._history)
-        errors = sum(1 for r in self._history if not r.success)
-        tool_counts: dict[str, int] = {}
-        for r in self._history:
-            tool_counts[r.name] = tool_counts.get(r.name, 0) + 1
-        return {
-            "rounds": self._round,
-            "total_calls": total,
-            "errors": errors,
-            "error_ratio": errors / total if total else 0.0,
-            "tool_distribution": tool_counts,
-        }
+        """Diagnostic stats — delegates to Chitta."""
+        return self._chitta.stats
