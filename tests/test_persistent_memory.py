@@ -96,9 +96,7 @@ class TestPersistentMemory:
         with tempfile.TemporaryDirectory() as tmp:
             steward_dir = Path(tmp) / ".steward"
             steward_dir.mkdir()
-            (steward_dir / "memory.json").write_text(
-                json.dumps({"version": 999, "entries": []})
-            )
+            (steward_dir / "memory.json").write_text(json.dumps({"version": 999, "entries": []}))
 
             mem = PersistentMemory(cwd=tmp)
             assert mem.recall("anything") is None

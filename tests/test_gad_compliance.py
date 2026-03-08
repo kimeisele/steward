@@ -103,10 +103,9 @@ class TestGADCompliance:
         )
         # Force context over budget
         from steward.types import Message
+
         for i in range(20):
-            agent._conversation.messages.append(
-                Message(role="user", content=f"Message {i} " * 50)
-            )
+            agent._conversation.messages.append(Message(role="user", content=f"Message {i} " * 50))
         assert agent.test_tapas() is False
 
     def test_is_healthy_after_chant(self):

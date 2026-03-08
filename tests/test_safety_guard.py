@@ -90,13 +90,18 @@ class TestSafetyGuard:
                 arguments={"path": path, "old_string": "hello", "new_string": "goodbye"},
             ),
         )
-        llm = FakeLLM([
-            FakeResponse(content="", tool_calls=[tc]),
-            FakeResponse(content="edit failed"),
-        ])
+        llm = FakeLLM(
+            [
+                FakeResponse(content="", tool_calls=[tc]),
+                FakeResponse(content="edit failed"),
+            ]
+        )
         conv = Conversation()
         loop = AgentLoop(
-            provider=llm, registry=reg, conversation=conv, safety_guard=guard,
+            provider=llm,
+            registry=reg,
+            conversation=conv,
+            safety_guard=guard,
         )
 
         _run(loop, "edit the file")
@@ -135,14 +140,19 @@ class TestSafetyGuard:
                 arguments={"path": path, "old_string": "hello", "new_string": "goodbye"},
             ),
         )
-        llm = FakeLLM([
-            FakeResponse(content="", tool_calls=[tc_read]),
-            FakeResponse(content="", tool_calls=[tc_edit]),
-            FakeResponse(content="done"),
-        ])
+        llm = FakeLLM(
+            [
+                FakeResponse(content="", tool_calls=[tc_read]),
+                FakeResponse(content="", tool_calls=[tc_edit]),
+                FakeResponse(content="done"),
+            ]
+        )
         conv = Conversation()
         loop = AgentLoop(
-            provider=llm, registry=reg, conversation=conv, safety_guard=guard,
+            provider=llm,
+            registry=reg,
+            conversation=conv,
+            safety_guard=guard,
         )
 
         result, _ = _run(loop, "read then edit")
@@ -170,13 +180,18 @@ class TestSafetyGuard:
                 arguments={"path": path, "content": "overwritten"},
             ),
         )
-        llm = FakeLLM([
-            FakeResponse(content="", tool_calls=[tc]),
-            FakeResponse(content="blocked"),
-        ])
+        llm = FakeLLM(
+            [
+                FakeResponse(content="", tool_calls=[tc]),
+                FakeResponse(content="blocked"),
+            ]
+        )
         conv = Conversation()
         loop = AgentLoop(
-            provider=llm, registry=reg, conversation=conv, safety_guard=guard,
+            provider=llm,
+            registry=reg,
+            conversation=conv,
+            safety_guard=guard,
         )
 
         _run(loop, "write file")
@@ -226,13 +241,18 @@ class TestNarasimhaIntegration:
                 arguments={"command": "exec(open('/etc/passwd').read())"},
             ),
         )
-        llm = FakeLLM([
-            FakeResponse(content="", tool_calls=[tc]),
-            FakeResponse(content="blocked"),
-        ])
+        llm = FakeLLM(
+            [
+                FakeResponse(content="", tool_calls=[tc]),
+                FakeResponse(content="blocked"),
+            ]
+        )
         conv = Conversation()
         loop = AgentLoop(
-            provider=llm, registry=reg, conversation=conv, narasimha=narasimha,
+            provider=llm,
+            registry=reg,
+            conversation=conv,
+            narasimha=narasimha,
         )
 
         _, events = _run(loop, "dangerous command")
@@ -257,13 +277,18 @@ class TestNarasimhaIntegration:
                 arguments={"command": "echo hello"},
             ),
         )
-        llm = FakeLLM([
-            FakeResponse(content="", tool_calls=[tc]),
-            FakeResponse(content="done"),
-        ])
+        llm = FakeLLM(
+            [
+                FakeResponse(content="", tool_calls=[tc]),
+                FakeResponse(content="done"),
+            ]
+        )
         conv = Conversation()
         loop = AgentLoop(
-            provider=llm, registry=reg, conversation=conv, narasimha=narasimha,
+            provider=llm,
+            registry=reg,
+            conversation=conv,
+            narasimha=narasimha,
         )
 
         text, events = _run(loop, "safe command")
@@ -283,10 +308,12 @@ class TestNarasimhaIntegration:
             id="call_bash",
             function=FakeFunction(name="bash", arguments={"command": "echo hi"}),
         )
-        llm = FakeLLM([
-            FakeResponse(content="", tool_calls=[tc]),
-            FakeResponse(content="done"),
-        ])
+        llm = FakeLLM(
+            [
+                FakeResponse(content="", tool_calls=[tc]),
+                FakeResponse(content="done"),
+            ]
+        )
         conv = Conversation()
         loop = AgentLoop(provider=llm, registry=reg, conversation=conv)
 

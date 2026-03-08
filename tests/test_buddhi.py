@@ -90,9 +90,14 @@ class TestConsecutiveErrors:
         # Mix errors and successes with varied tools to avoid streak trigger
         tools = ["bash", "grep", "glob", "read_file", "bash", "grep", "glob", "bash"]
         results = [
-            (False, "err"), (False, "err"), (False, "err"),
-            (True, ""), (True, ""), (True, ""),
-            (False, "err"), (False, "err"),
+            (False, "err"),
+            (False, "err"),
+            (False, "err"),
+            (True, ""),
+            (True, ""),
+            (True, ""),
+            (False, "err"),
+            (False, "err"),
         ]
         for name, result in zip(tools, results):
             v = buddhi.evaluate([_tc(name, path=f"/{name}")], [result])
@@ -402,9 +407,7 @@ class TestFailureRedirect:
         """edit_file succeeding after read → no redirect."""
         buddhi = Buddhi()
         # Read the file first (Gandha expects reads before writes)
-        buddhi.evaluate(
-            [_tc("read_file", path="/a.py")], [(True, "")]
-        )
+        buddhi.evaluate([_tc("read_file", path="/a.py")], [(True, "")])
         tc = _tc("edit_file", path="/a.py", old="foo", new="bar")
         buddhi.evaluate([tc], [(True, "")])
         v = buddhi.evaluate([tc], [(True, "")])
@@ -463,6 +466,7 @@ class TestModelTier:
     def test_action_tier_mapping_flash(self):
         """RESEARCH, MONITOR, TEST → FLASH tier."""
         from steward.buddhi import _ACTION_TIER
+
         assert _ACTION_TIER[SemanticActionType.RESEARCH] == ModelTier.FLASH
         assert _ACTION_TIER[SemanticActionType.MONITOR] == ModelTier.FLASH
         assert _ACTION_TIER[SemanticActionType.TEST] == ModelTier.FLASH
@@ -470,6 +474,7 @@ class TestModelTier:
     def test_action_tier_mapping_standard(self):
         """IMPLEMENT, DEBUG, REFACTOR → STANDARD tier."""
         from steward.buddhi import _ACTION_TIER
+
         assert _ACTION_TIER[SemanticActionType.IMPLEMENT] == ModelTier.STANDARD
         assert _ACTION_TIER[SemanticActionType.DEBUG] == ModelTier.STANDARD
         assert _ACTION_TIER[SemanticActionType.REFACTOR] == ModelTier.STANDARD
@@ -477,6 +482,7 @@ class TestModelTier:
     def test_action_tier_mapping_pro(self):
         """DESIGN, SYNTHESIZE → PRO tier."""
         from steward.buddhi import _ACTION_TIER
+
         assert _ACTION_TIER[SemanticActionType.DESIGN] == ModelTier.PRO
         assert _ACTION_TIER[SemanticActionType.SYNTHESIZE] == ModelTier.PRO
 
@@ -496,6 +502,7 @@ class TestModelTier:
     def test_all_actions_have_tier(self):
         """Every SemanticActionType has a tier mapping."""
         from steward.buddhi import _ACTION_TIER
+
         for action in SemanticActionType:
             assert action in _ACTION_TIER, f"{action} missing from _ACTION_TIER"
 
@@ -506,6 +513,7 @@ class TestToolNamespace:
     def test_namespace_enum_values(self):
         """All 4 namespaces exist with correct values."""
         from steward.buddhi import ToolNamespace
+
         assert ToolNamespace.OBSERVE == "observe"
         assert ToolNamespace.MODIFY == "modify"
         assert ToolNamespace.EXECUTE == "execute"
@@ -514,18 +522,21 @@ class TestToolNamespace:
     def test_resolve_single_namespace(self):
         """Resolve a single namespace to tool names."""
         from steward.buddhi import ToolNamespace, resolve_namespaces
+
         tools = resolve_namespaces(frozenset({ToolNamespace.OBSERVE}))
         assert tools == frozenset({"read_file", "glob", "grep", "http"})
 
     def test_resolve_multiple_namespaces(self):
         """Resolve combined namespaces — union of all tools."""
         from steward.buddhi import ToolNamespace, resolve_namespaces
+
         tools = resolve_namespaces(frozenset({ToolNamespace.OBSERVE, ToolNamespace.EXECUTE}))
         assert tools == frozenset({"read_file", "glob", "grep", "http", "bash"})
 
     def test_resolve_all_namespaces(self):
         """Resolving all namespaces gives all 8 tools."""
         from steward.buddhi import ToolNamespace, resolve_namespaces
+
         tools = resolve_namespaces(frozenset(ToolNamespace))
         assert "read_file" in tools
         assert "bash" in tools
@@ -536,6 +547,7 @@ class TestToolNamespace:
     def test_sub_agent_in_delegate_namespace(self):
         """sub_agent is in the DELEGATE namespace."""
         from steward.buddhi import ToolNamespace, _NAMESPACE_TOOLS
+
         assert "sub_agent" in _NAMESPACE_TOOLS[ToolNamespace.DELEGATE]
 
     def test_design_action_includes_sub_agent(self):
@@ -605,6 +617,7 @@ class TestToolNamespace:
     def test_all_actions_have_namespaces(self):
         """Every SemanticActionType has namespace mappings."""
         from steward.buddhi import _ACTION_NAMESPACES, resolve_namespaces
+
         for action in SemanticActionType:
             ns = _ACTION_NAMESPACES.get(action, frozenset())
             assert len(ns) > 0, f"{action} has no namespace mapping"
@@ -614,6 +627,7 @@ class TestToolNamespace:
     def test_implement_has_full_toolset(self):
         """IMPLEMENT action has OBSERVE + MODIFY + EXECUTE (no DELEGATE)."""
         from steward.buddhi import ToolNamespace, _ACTION_NAMESPACES
+
         ns = _ACTION_NAMESPACES[SemanticActionType.IMPLEMENT]
         assert ToolNamespace.OBSERVE in ns
         assert ToolNamespace.MODIFY in ns

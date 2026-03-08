@@ -4,6 +4,7 @@ import pytest
 
 try:
     from vibe_core.di import ServiceRegistry
+
     _HAS_VIBE_CORE = True
 except ImportError:
     _HAS_VIBE_CORE = False

@@ -57,11 +57,13 @@ class TestSignalBusWiring:
         received: list[Signal] = []
         bus.subscribe("test", SignalType.AGENT_STATUS_UPDATE, lambda s: received.append(s))
 
-        bus.emit(Signal(
-            signal_type=SignalType.AGENT_STATUS_UPDATE,
-            source_agent="steward",
-            payload={"action": "test"},
-        ))
+        bus.emit(
+            Signal(
+                signal_type=SignalType.AGENT_STATUS_UPDATE,
+                source_agent="steward",
+                payload={"action": "test"},
+            )
+        )
 
         assert len(received) == 1
         assert received[0].payload["action"] == "test"
@@ -133,10 +135,12 @@ class TestAgentSignalEmission:
                     self.arguments = {"command": "echo test"}
 
         tc = _FakeToolCall(function=_FakeFunc())
-        llm = _FakeLLM([
-            _FakeResponse(content="", tool_calls=[tc]),
-            _FakeResponse(content="Done"),
-        ])
+        llm = _FakeLLM(
+            [
+                _FakeResponse(content="", tool_calls=[tc]),
+                _FakeResponse(content="Done"),
+            ]
+        )
         agent = StewardAgent(provider=llm)
 
         bus: SignalBus = ServiceRegistry.require(SVC_SIGNAL_BUS)

@@ -257,6 +257,7 @@ class TestProviderChamber:
         )
 
         import steward.provider as pmod
+
         # Speed up retries for testing
         orig_delay = pmod._RETRY_BASE_DELAY
         pmod._RETRY_BASE_DELAY = 0.01
@@ -396,7 +397,9 @@ class TestOperationalQuota:
         # Set RPM to 1 — second request should be blocked
         limits = QuotaLimits(requests_per_minute=1)
         chamber = ProviderChamber()
-        chamber._quota = __import__("vibe_core.runtime.quota_manager", fromlist=["OperationalQuota"]).OperationalQuota(limits=limits)
+        chamber._quota = __import__("vibe_core.runtime.quota_manager", fromlist=["OperationalQuota"]).OperationalQuota(
+            limits=limits
+        )
         chamber.add_provider(
             name="test",
             provider=FakeProvider(),
@@ -436,6 +439,7 @@ class TestCircuitBreaker:
         )
 
         import steward.provider as pmod
+
         orig_delay = pmod._RETRY_BASE_DELAY
         pmod._RETRY_BASE_DELAY = 0.001
         try:
@@ -477,6 +481,7 @@ class TestCircuitBreaker:
         )
 
         import steward.provider as pmod
+
         orig_delay = pmod._RETRY_BASE_DELAY
         pmod._RETRY_BASE_DELAY = 0.001
         try:
@@ -523,6 +528,7 @@ class TestCircuitBreaker:
         )
 
         import steward.provider as pmod
+
         orig_delay = pmod._RETRY_BASE_DELAY
         pmod._RETRY_BASE_DELAY = 0.001
         try:
@@ -600,6 +606,7 @@ class TestFeedbackProtocol:
         )
 
         import steward.provider as pmod
+
         orig_delay = pmod._RETRY_BASE_DELAY
         pmod._RETRY_BASE_DELAY = 0.001
         try:
@@ -923,6 +930,7 @@ class TestNormalizeUsage:
 
     def test_normalize_none(self):
         from steward.provider import _normalize_usage
+
         u = _normalize_usage(None)
         assert u.input_tokens == 0
         assert u.output_tokens == 0
@@ -964,6 +972,7 @@ class TestNormalizeUsage:
         @dataclass
         class FakeChoice:
             message: object = None
+
             def __post_init__(self):
                 self.message = type("M", (), {"content": "hi", "tool_calls": None})()
 
@@ -971,6 +980,7 @@ class TestNormalizeUsage:
         class FakeRaw:
             choices: list = None
             usage: object = None
+
             def __post_init__(self):
                 self.choices = [FakeChoice()]
                 self.usage = type("U", (), {"prompt_tokens": 42, "completion_tokens": 13})()
@@ -987,4 +997,5 @@ class TestGroqCell:
     def test_groq_address_constant(self):
         """_ADDR_GROQ is defined correctly."""
         from steward.provider import _ADDR_GROQ
+
         assert _ADDR_GROQ == MAHA_QUANTUM * 14

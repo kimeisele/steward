@@ -75,12 +75,15 @@ class TestLoadConfig:
             return  # skip if PyYAML not installed
 
         with tempfile.TemporaryDirectory() as tmp:
-            self._write_yaml(tmp, """\
+            self._write_yaml(
+                tmp,
+                """\
 model: claude-sonnet-4-20250514
 max_output_tokens: 8192
 temperature: 0.3
 auto_summarize: false
-""")
+""",
+            )
             config = load_config(tmp)
             assert config.model == "claude-sonnet-4-20250514"
             assert config.max_output_tokens == 8192
@@ -129,11 +132,14 @@ auto_summarize: false
             return
 
         with tempfile.TemporaryDirectory() as tmp:
-            self._write_yaml(tmp, """\
+            self._write_yaml(
+                tmp,
+                """\
 tools_enabled:
   - read_file
   - grep
-""")
+""",
+            )
             config = load_config(tmp)
             assert config.tools_enabled == ["read_file", "grep"]
 

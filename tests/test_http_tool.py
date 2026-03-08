@@ -121,20 +121,20 @@ class TestHttpToolExecution:
         mock_resp.__exit__ = MagicMock(return_value=False)
         mock_urlopen.return_value = mock_resp
 
-        result = self.tool.execute({
-            "url": "https://api.example.com/items",
-            "method": "POST",
-            "body": '{"name": "test"}',
-        })
+        result = self.tool.execute(
+            {
+                "url": "https://api.example.com/items",
+                "method": "POST",
+                "body": '{"name": "test"}',
+            }
+        )
         assert result.success is True
         assert result.metadata["status_code"] == 201
 
     @patch("steward.tools.http.urllib.request.urlopen")
     @patch("steward.tools.http._is_private_ip", return_value=False)
     def test_http_error(self, mock_ip, mock_urlopen):
-        error = urllib.error.HTTPError(
-            "https://example.com", 404, "Not Found", {}, None
-        )
+        error = urllib.error.HTTPError("https://example.com", 404, "Not Found", {}, None)
         error.read = MagicMock(return_value=b"page not found")
         mock_urlopen.side_effect = error
 
@@ -189,10 +189,12 @@ class TestHttpToolExecution:
         mock_resp.__exit__ = MagicMock(return_value=False)
         mock_urlopen.return_value = mock_resp
 
-        result = self.tool.execute({
-            "url": "https://api.example.com",
-            "headers": {"Authorization": "Bearer token123"},
-        })
+        result = self.tool.execute(
+            {
+                "url": "https://api.example.com",
+                "headers": {"Authorization": "Bearer token123"},
+            }
+        )
         assert result.success is True
 
         # Verify the request was constructed with custom headers

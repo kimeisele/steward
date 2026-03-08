@@ -49,6 +49,7 @@ class SlowProvider:
 
     def invoke(self, **kwargs: object) -> FakeResponse:
         import time
+
         time.sleep(5)
         return FakeResponse()
 
@@ -187,6 +188,7 @@ class TestSubAgentExecution:
 
     def test_provider_exception_returns_error(self):
         """If the provider raises, sub-agent returns error gracefully."""
+
         class ExplodingProvider:
             def invoke(self, **kwargs: object) -> object:
                 raise RuntimeError("kaboom")
@@ -219,9 +221,11 @@ class TestSubAgentWiring:
     def test_sub_agent_in_builtin_tools(self):
         """SubAgentTool is included in StewardAgent's builtin tools."""
         from steward.tools import SubAgentTool as ExportedSubAgentTool
+
         assert ExportedSubAgentTool is SubAgentTool
 
     def test_sub_agent_in_tools_all(self):
         """SubAgentTool is exported from steward.tools."""
         from steward import tools
+
         assert "SubAgentTool" in tools.__all__

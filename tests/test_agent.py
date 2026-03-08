@@ -168,7 +168,10 @@ class TestAgentLoop:
         llm = FakeLLM(responses)
         conv = Conversation()
         loop = AgentLoop(
-            provider=llm, registry=reg, conversation=conv, attention=attention,
+            provider=llm,
+            registry=reg,
+            conversation=conv,
+            attention=attention,
         )
 
         result, events = run_loop(loop, "Run bash")
@@ -202,7 +205,10 @@ class TestAgentLoop:
         llm = FakeLLM(responses)
         conv = Conversation()
         loop = AgentLoop(
-            provider=llm, registry=reg, conversation=conv, attention=attention,
+            provider=llm,
+            registry=reg,
+            conversation=conv,
+            attention=attention,
         )
 
         result, events = run_loop(loop, "Run echo lotus")
@@ -378,10 +384,12 @@ class TestStewardAgent:
         assert result == "Async result."
 
     def test_agent_conversation_persists(self):
-        llm = FakeLLM([
-            FakeResponse(content="First response"),
-            FakeResponse(content="Second response"),
-        ])
+        llm = FakeLLM(
+            [
+                FakeResponse(content="First response"),
+                FakeResponse(content="Second response"),
+            ]
+        )
         agent = StewardAgent(provider=llm)
         agent.run_sync("First task")
         agent.chat_sync("Follow up")
@@ -593,6 +601,7 @@ class TestToolTimeout:
         engine_mod.TOOL_TIMEOUT_SECONDS = 0.1
 
         try:
+
             class SlowTool(Tool):
                 @property
                 def name(self) -> str:
@@ -615,15 +624,19 @@ class TestToolTimeout:
 
             reg = ToolRegistry()
             reg.register(SlowTool())
-            llm = FakeLLM([
-                FakeResponse(
-                    tool_calls=[FakeToolCall(
-                        id="c1",
-                        function=FakeFunction(name="slow_tool", arguments={}),
-                    )],
-                ),
-                FakeResponse(content="Timed out."),
-            ])
+            llm = FakeLLM(
+                [
+                    FakeResponse(
+                        tool_calls=[
+                            FakeToolCall(
+                                id="c1",
+                                function=FakeFunction(name="slow_tool", arguments={}),
+                            )
+                        ],
+                    ),
+                    FakeResponse(content="Timed out."),
+                ]
+            )
             conv = Conversation()
             loop = AgentLoop(provider=llm, registry=reg, conversation=conv)
             _, events = run_loop(loop, "test")

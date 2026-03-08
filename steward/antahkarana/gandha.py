@@ -237,8 +237,7 @@ _ERROR_RECOVERY: list[tuple[str, str, str]] = [
     (
         "permission denied",
         "permission_denied",
-        "Permission denied. Use `ls -la` to check ownership. "
-        "If you need elevated access, use `sudo` cautiously.",
+        "Permission denied. Use `ls -la` to check ownership. If you need elevated access, use `sudo` cautiously.",
     ),
     (
         "filenotfounderror",
@@ -249,8 +248,7 @@ _ERROR_RECOVERY: list[tuple[str, str, str]] = [
     (
         "no such file or directory",
         "file_not_found",
-        "Path does not exist. Use `glob` to find the correct path, "
-        "or create the directory with `mkdir -p`.",
+        "Path does not exist. Use `glob` to find the correct path, or create the directory with `mkdir -p`.",
     ),
     (
         "syntaxerror",
@@ -261,14 +259,12 @@ _ERROR_RECOVERY: list[tuple[str, str, str]] = [
     (
         "jsondecodeerror",
         "json_error",
-        "Malformed JSON. Use `read_file` to see the actual content, "
-        "then fix the JSON structure with `edit_file`.",
+        "Malformed JSON. Use `read_file` to see the actual content, then fix the JSON structure with `edit_file`.",
     ),
     (
         "command not found",
         "missing_command",
-        "Command not installed. Use `bash` with the system package manager "
-        "(brew/apt/pip) to install it.",
+        "Command not installed. Use `bash` with the system package manager (brew/apt/pip) to install it.",
     ),
     (
         "connectionrefusederror",
@@ -279,20 +275,17 @@ _ERROR_RECOVERY: list[tuple[str, str, str]] = [
     (
         "connection refused",
         "connection_refused",
-        "Service not responding. Verify the service is running and "
-        "the correct host:port is being used.",
+        "Service not responding. Verify the service is running and the correct host:port is being used.",
     ),
     (
         "timeouterror",
         "timeout",
-        "Operation timed out. Increase the timeout parameter, "
-        "or check network connectivity / service health.",
+        "Operation timed out. Increase the timeout parameter, or check network connectivity / service health.",
     ),
     (
         "timed out",
         "timeout",
-        "Request timed out. Try with a longer timeout, "
-        "or verify the target is reachable.",
+        "Request timed out. Try with a longer timeout, or verify the target is reachable.",
     ),
     (
         "importerror",
@@ -309,26 +302,22 @@ _ERROR_RECOVERY: list[tuple[str, str, str]] = [
     (
         "fatal: not a git repository",
         "not_git_repo",
-        "Not inside a git repository. Use `bash` with `git init` or "
-        "navigate to the correct directory.",
+        "Not inside a git repository. Use `bash` with `git init` or navigate to the correct directory.",
     ),
     (
         "address already in use",
         "port_in_use",
-        "Port already in use. Find the process with `lsof -i :<port>` "
-        "and stop it, or use a different port.",
+        "Port already in use. Find the process with `lsof -i :<port>` and stop it, or use a different port.",
     ),
     (
         "disk quota exceeded",
         "disk_full",
-        "Disk is full. Free space with `df -h` to check, "
-        "then remove unnecessary files.",
+        "Disk is full. Free space with `df -h` to check, then remove unnecessary files.",
     ),
     (
         "memoryerror",
         "out_of_memory",
-        "Out of memory. Reduce batch size, process data in chunks, "
-        "or close other applications.",
+        "Out of memory. Reduce batch size, process data in chunks, or close other applications.",
     ),
 ]
 

@@ -64,9 +64,7 @@ class TestNoAnyInCoreCode:
                 violations.append(f"  steward/{rel}:{lineno}")
 
         assert not violations, (
-            "`Any` imported in core code (files outside steward/tools/):\n"
-            + "\n".join(violations)
-            + "\n\n"
+            "`Any` imported in core code (files outside steward/tools/):\n" + "\n".join(violations) + "\n\n"
             "Use LLMProvider, Tool, object, or JsonValue instead.\n"
             "Only steward/tools/*.py may use Any (Tool ABC forces it)."
         )

@@ -139,9 +139,13 @@ class TestMemoryFileTracking:
             )
             tc_write = FakeToolCall(
                 id="call_write",
-                function=FakeFunction(name="write_file", arguments={
-                    "path": path, "content": "new content",
-                }),
+                function=FakeFunction(
+                    name="write_file",
+                    arguments={
+                        "path": path,
+                        "content": "new content",
+                    },
+                ),
             )
             responses = [
                 FakeResponse(content="", tool_calls=[tc_read]),
@@ -163,7 +167,10 @@ class TestMemoryFileTracking:
         llm = FakeLLM([])
         agent = StewardAgent(provider=llm)
         agent.memory.remember(
-            "files_read", ["/foo/bar.py"], session_id="steward", tags=["file_ops"],
+            "files_read",
+            ["/foo/bar.py"],
+            session_id="steward",
+            tags=["file_ops"],
         )
         results = agent.memory.search("file", session_id="steward")
         assert len(results) >= 1
