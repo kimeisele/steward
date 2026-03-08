@@ -11,9 +11,24 @@ LLMProvider: Protocol for LLM backends.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Protocol, runtime_checkable
 
 from vibe_core.tools.tool_protocol import ToolResult
+
+
+class EventType(StrEnum):
+    """Agent event types — single source of truth.
+
+    StrEnum so values work as dict keys and in string comparisons.
+    """
+
+    TEXT_DELTA = "text_delta"
+    TEXT = "text"
+    TOOL_CALL = "tool_call"
+    TOOL_RESULT = "tool_result"
+    ERROR = "error"
+    DONE = "done"
 
 # JSON value types — what LLM tool parameters contain
 JsonValue = str | int | float | bool | None | list | dict
@@ -196,7 +211,7 @@ class AgentEvent:
         done        — turn is complete (usage field populated)
     """
 
-    type: str  # "text_delta" | "text" | "tool_call" | "tool_result" | "error" | "done"
+    type: EventType
     content: str | ToolResult | None = None
     tool_use: ToolUse | None = None
     usage: AgentUsage | None = None

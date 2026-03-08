@@ -65,7 +65,8 @@ def load_conversation(cwd: str | None = None) -> Conversation | None:
 
         return Conversation(messages=messages, max_tokens=max_tokens)
 
-    except Exception:
+    except Exception as e:
+        logger.warning("Failed to load conversation state: %s", e)
         return None
 
 

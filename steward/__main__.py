@@ -24,7 +24,7 @@ from steward import __version__
 from steward.agent import StewardAgent
 from steward.provider import build_chamber
 from steward.state import clear_state, load_conversation, save_conversation
-from steward.types import AgentEvent, AgentUsage
+from steward.types import AgentEvent, AgentUsage, EventType
 
 # ── Console Setup ────────────────────────────────────────────────────
 
@@ -48,20 +48,20 @@ _err_console = Console(theme=_THEME, stderr=True, highlight=False)
 
 def _format_event(event: AgentEvent) -> None:
     """Render an AgentEvent to the terminal (human mode)."""
-    if event.type == "text_delta":
+    if event.type == EventType.TEXT_DELTA:
         _console.print(str(event.content or ""), end="")
         return
 
-    if event.type == "text":
+    if event.type == EventType.TEXT:
         _console.print(f"\n{event.content}")
 
-    elif event.type == "tool_call" and event.tool_use:
+    elif event.type == EventType.TOOL_CALL and event.tool_use:
         tc = event.tool_use
         # Extract the most informative parameter for display
         display = _tool_display(tc.name, tc.parameters)
         _console.print(f"  [tool.name]{escape(tc.name)}[/] [tool.param]{escape(display)}[/]")
 
-    elif event.type == "tool_result":
+    elif event.type == EventType.TOOL_RESULT:
         if event.content and hasattr(event.content, "success"):
             if event.content.success:  # type: ignore[union-attr]
                 output = getattr(event.content, "output", "")
@@ -71,10 +71,10 @@ def _format_event(event: AgentEvent) -> None:
                 err = getattr(event.content, "error", "failed")
                 _console.print(f"  [tool.err]x {escape(str(err))}[/]")
 
-    elif event.type == "done" and event.usage:
+    elif event.type == EventType.DONE and event.usage:
         _print_usage(event.usage)
 
-    elif event.type == "error":
+    elif event.type == EventType.ERROR:
         _err_console.print(f"[error]Error: {escape(str(event.content))}[/]")
 
 
@@ -116,19 +116,19 @@ def _print_usage(u: AgentUsage) -> None:
 
 def _format_event_json(event: AgentEvent) -> None:
     """Render an AgentEvent as JSON (machine mode)."""
-    obj: dict[str, object] = {"type": event.type}
+    obj: dict[str, object] = {"type": str(event.type)}
 
-    if event.type in ("text", "text_delta", "error"):
+    if event.type in (EventType.TEXT, EventType.TEXT_DELTA, EventType.ERROR):
         obj["content"] = str(event.content or "")
-    elif event.type == "tool_call" and event.tool_use:
+    elif event.type == EventType.TOOL_CALL and event.tool_use:
         obj["tool"] = event.tool_use.name
         obj["parameters"] = event.tool_use.parameters
         obj["call_id"] = event.tool_use.id
-    elif event.type == "tool_result" and event.content:
+    elif event.type == EventType.TOOL_RESULT and event.content:
         obj["success"] = getattr(event.content, "success", None)
         obj["output"] = str(getattr(event.content, "output", ""))[:500]
         obj["error"] = getattr(event.content, "error", None)
-    elif event.type == "done" and event.usage:
+    elif event.type == EventType.DONE and event.usage:
         u = event.usage
         obj["usage"] = {
             "input_tokens": u.input_tokens,

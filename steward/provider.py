@@ -258,44 +258,16 @@ class ProviderChamber:
                     response = payload.provider.invoke(**call_kwargs)
                     duration_ms = (time.monotonic() - t0) * 1000
 
-                    # CircuitBreaker: record success
-                    if breaker:
-                        breaker._record_success()
-
                     # Track usage (adapters normalize to LLMUsage)
-                    input_tokens = 0
-                    output_tokens = 0
-                    if hasattr(response, "usage") and response.usage:  # type: ignore[attr-defined]
-                        resp_usage = response.usage  # type: ignore[attr-defined]
-                        input_tokens = getattr(resp_usage, "input_tokens", 0) or 0
-                        output_tokens = getattr(resp_usage, "output_tokens", 0) or 0
-
-                    # Cell lifecycle: metabolize with token cost as energy drain.
-                    # metabolize() handles: METABOLIC_COST decay, age cycling,
-                    # starvation apoptosis, max-age apoptosis.
-                    total_tokens = input_tokens + output_tokens
-                    cell.metabolize(-total_tokens)  # negative = energy spent
-                    self._total_calls += 1
-
-                    # Post-flight quota recording
-                    cost = total_tokens / 1_000_000 * payload.cost_per_mtok_input
-                    self._quota.record_request(
-                        tokens_used=total_tokens,
-                        cost_usd=cost,
-                        operation=f"llm:{payload.name}",
+                    usage = _normalize_usage(getattr(response, "usage", None))
+                    self._record_call_success(
+                        cell, breaker,
+                        usage.input_tokens, usage.output_tokens, duration_ms,
                     )
-
-                    # FeedbackProtocol: signal success
-                    if self._feedback:
-                        self._feedback.signal_success(
-                            payload.name,
-                            {"model": payload.model, "cell_prana": cell.lifecycle.prana},
-                            duration_ms=duration_ms,
-                        )
 
                     logger.debug(
                         "'%s' responded (tokens: %d+%d, prana: %d, cycle: %d)",
-                        payload.name, input_tokens, output_tokens,
+                        payload.name, usage.input_tokens, usage.output_tokens,
                         cell.lifecycle.prana, cell.lifecycle.cycle,
                     )
                     return response
@@ -312,31 +284,10 @@ class ProviderChamber:
                         continue
                     break  # non-transient or retries exhausted → next provider
 
-            # All retries failed — metabolize failure as energy drain
+            # All retries failed — record and move to next provider
             if last_error is not None:
                 duration_ms = (time.monotonic() - t0) * 1000
-                self._total_failures += 1
-
-                # CircuitBreaker: record failure
-                if breaker:
-                    breaker._record_failure(last_error)
-
-                # Integrity degrades on failure (membrane damage)
-                cell.lifecycle.integrity = max(
-                    0, cell.lifecycle.integrity - (COSMIC_FRAME // 10)
-                )
-                # Failed call still costs metabolic energy
-                cell.metabolize(0)
-
-                # FeedbackProtocol: signal failure
-                if self._feedback:
-                    self._feedback.signal_failure(
-                        payload.name,
-                        f"{type(last_error).__name__}: {last_error}",
-                        {"model": payload.model, "cell_prana": cell.lifecycle.prana},
-                        duration_ms=duration_ms,
-                    )
-
+                self._record_call_failure(cell, breaker, last_error, duration_ms)
                 logger.info(
                     "'%s' failed (%s: %s), integrity->%d, prana->%d, trying next",
                     payload.name, type(last_error).__name__, last_error,
@@ -406,16 +357,10 @@ class ProviderChamber:
                 try:
                     response = payload.provider.invoke(**call_kwargs)
                     duration_ms = (time.monotonic() - t0) * 1000
-                    if breaker:
-                        breaker._record_success()
-                    self._total_calls += 1
-                    if self._feedback:
-                        self._feedback.signal_success(
-                            payload.name,
-                            {"model": payload.model, "stream": False},
-                            duration_ms=duration_ms,
-                        )
-                    # Yield complete text as single delta
+                    usage = _normalize_usage(getattr(response, "usage", None))
+                    self._record_call_success(
+                        cell, breaker, usage.input_tokens, usage.output_tokens, duration_ms,
+                    )
                     text = ""
                     if hasattr(response, "content"):
                         text = response.content if isinstance(response.content, str) else ""  # type: ignore[attr-defined]
@@ -425,19 +370,7 @@ class ProviderChamber:
                     return
                 except Exception as e:
                     duration_ms = (time.monotonic() - t0) * 1000
-                    self._total_failures += 1
-                    if breaker:
-                        breaker._record_failure(e)
-                    cell.lifecycle.integrity = max(
-                        0, cell.lifecycle.integrity - (COSMIC_FRAME // 10)
-                    )
-                    cell.metabolize(0)
-                    if self._feedback:
-                        self._feedback.signal_failure(
-                            payload.name, str(e),
-                            {"model": payload.model, "stream": False},
-                            duration_ms=duration_ms,
-                        )
+                    self._record_call_failure(cell, breaker, e, duration_ms)
                     logger.info("'%s' failed streaming fallback: %s", payload.name, e)
                     continue
 
@@ -449,47 +382,17 @@ class ProviderChamber:
                 for delta in payload.provider.invoke_stream(**call_kwargs):
                     if hasattr(delta, "type") and delta.type == "done":  # type: ignore[attr-defined]
                         duration_ms = (time.monotonic() - t0) * 1000
-                        if breaker:
-                            breaker._record_success()
-                        # Track usage from final response
                         final_resp = getattr(delta, "response", None)
-                        if final_resp:
-                            usage = getattr(final_resp, "usage", None)
-                            if usage:
-                                input_t = getattr(usage, "prompt_tokens", 0) or 0
-                                output_t = getattr(usage, "completion_tokens", 0) or 0
-                                total = input_t + output_t
-                                cell.metabolize(-total)
-                                cost = total / 1_000_000 * payload.cost_per_mtok_input
-                                self._quota.record_request(
-                                    tokens_used=total, cost_usd=cost,
-                                    operation=f"llm_stream:{payload.name}",
-                                )
-                        self._total_calls += 1
-                        if self._feedback:
-                            self._feedback.signal_success(
-                                payload.name,
-                                {"model": payload.model, "stream": True},
-                                duration_ms=duration_ms,
-                            )
+                        usage = _normalize_usage(getattr(final_resp, "usage", None)) if final_resp else LLMUsage()
+                        self._record_call_success(
+                            cell, breaker, usage.input_tokens, usage.output_tokens, duration_ms,
+                        )
                     yield delta
                 return  # Success
 
             except Exception as e:
                 duration_ms = (time.monotonic() - t0) * 1000
-                self._total_failures += 1
-                if breaker:
-                    breaker._record_failure(e)
-                cell.lifecycle.integrity = max(
-                    0, cell.lifecycle.integrity - (COSMIC_FRAME // 10)
-                )
-                cell.metabolize(0)
-                if self._feedback:
-                    self._feedback.signal_failure(
-                        payload.name, str(e),
-                        {"model": payload.model, "stream": True},
-                        duration_ms=duration_ms,
-                    )
+                self._record_call_failure(cell, breaker, e, duration_ms)
                 logger.info("'%s' streaming failed: %s, trying next", payload.name, e)
                 continue
 
@@ -530,6 +433,64 @@ class ProviderChamber:
                 ],
             }
         return result
+
+    def _record_call_success(
+        self,
+        cell: MahaCellUnified[ProviderPayload],
+        breaker: CircuitBreaker | None,
+        input_tokens: int,
+        output_tokens: int,
+        duration_ms: float,
+    ) -> None:
+        """Record a successful provider call — breaker, metabolize, quota, feedback."""
+        if breaker:
+            breaker._record_success()
+
+        total_tokens = input_tokens + output_tokens
+        cell.metabolize(-total_tokens)
+        self._total_calls += 1
+
+        cost = total_tokens / 1_000_000 * cell.payload.cost_per_mtok_input
+        self._quota.record_request(
+            tokens_used=total_tokens,
+            cost_usd=cost,
+            operation=f"llm:{cell.payload.name}",
+        )
+
+        if self._feedback:
+            self._feedback.signal_success(
+                cell.payload.name,
+                {"model": cell.payload.model, "cell_prana": cell.lifecycle.prana},
+                duration_ms=duration_ms,
+            )
+
+    def _record_call_failure(
+        self,
+        cell: MahaCellUnified[ProviderPayload],
+        breaker: CircuitBreaker | None,
+        error: Exception | str,
+        duration_ms: float,
+    ) -> None:
+        """Record a failed provider call — breaker, integrity damage, metabolize, feedback."""
+        self._total_failures += 1
+
+        if breaker:
+            err = error if isinstance(error, Exception) else Exception(error)
+            breaker._record_failure(err)
+
+        cell.lifecycle.integrity = max(
+            0, cell.lifecycle.integrity - (COSMIC_FRAME // 10)
+        )
+        cell.metabolize(0)
+
+        if self._feedback:
+            error_str = f"{type(error).__name__}: {error}" if isinstance(error, Exception) else str(error)
+            self._feedback.signal_failure(
+                cell.payload.name,
+                error_str,
+                {"model": cell.payload.model, "cell_prana": cell.lifecycle.prana},
+                duration_ms=duration_ms,
+            )
 
     @staticmethod
     def _is_within_quota(payload: ProviderPayload) -> bool:

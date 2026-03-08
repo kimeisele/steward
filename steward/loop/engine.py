@@ -13,7 +13,7 @@ agent loop that all autonomous agents follow:
     Parse response
        |
     If tool_use -> O(1) Lotus route -> safety check -> execute -> loop
-    If text     -> yield AgentEvent(type="text") -> done
+    If text     -> yield AgentEvent(type=EventType.TEXT) -> done
 
 Tool routing: MahaAttention (Lotus Router) is the PRIMARY dispatcher.
 O(1) lookup for any tool name, regardless of registry size.
@@ -42,7 +42,16 @@ from steward.buddhi import Buddhi, BuddhiDirective, BuddhiVerdict, ModelTier
 from steward.context import SamskaraContext
 from steward.services import tool_descriptions_for_llm
 from steward.summarizer import Summarizer, should_summarize
-from steward.types import AgentEvent, AgentUsage, Conversation, LLMProvider, Message, ToolUse
+from steward.types import AgentEvent, AgentUsage, Conversation, EventType, LLMProvider, Message, ToolUse
+
+# Narasimha severity ordinal rank — module-level constant (not recreated per call)
+_SEVERITY_RANK = {
+    ThreatLevel.GREEN: 0,
+    ThreatLevel.YELLOW: 1,
+    ThreatLevel.ORANGE: 2,
+    ThreatLevel.RED: 3,
+    ThreatLevel.APOCALYPSE: 4,
+}
 
 logger = logging.getLogger("STEWARD.LOOP")
 
@@ -155,12 +164,12 @@ class AgentLoop:
             )
             usage.llm_calls += 1
             if response is None:
-                yield AgentEvent(type="error", content="LLM returned no response")
+                yield AgentEvent(type=EventType.ERROR, content="LLM returned no response")
                 return
 
             # Yield text deltas that were collected during streaming
             for delta in streamed_text_deltas:
-                yield AgentEvent(type="text_delta", content=delta)
+                yield AgentEvent(type=EventType.TEXT_DELTA, content=delta)
 
             # Track tokens from LLM response
             self._accumulate_usage(response, usage)
@@ -176,8 +185,8 @@ class AgentLoop:
                 usage.rounds = round_num + 1
                 # Only emit "text" if we didn't already stream deltas
                 if not streamed_text_deltas:
-                    yield AgentEvent(type="text", content=text)
-                yield AgentEvent(type="done", usage=usage)
+                    yield AgentEvent(type=EventType.TEXT, content=text)
+                yield AgentEvent(type=EventType.DONE, usage=usage)
                 logger.debug(
                     "Turn complete after %d rounds (%d tokens)",
                     round_num + 1, usage.total_tokens,
@@ -198,7 +207,7 @@ class AgentLoop:
             blocked: list[tuple[ToolUse, str]] = []  # (tool_call, error_msg)
             for tc in tool_calls:
                 usage.tool_calls += 1
-                yield AgentEvent(type="tool_call", tool_use=tc)
+                yield AgentEvent(type=EventType.TOOL_CALL, tool_use=tc)
 
                 # O(1) Lotus route — verify tool exists before execution
                 if self._attention:
@@ -222,13 +231,6 @@ class AgentLoop:
                     threat = self._narasimha.audit_agent(
                         "steward", cmd, {"tool": tc.name},
                     )
-                    _SEVERITY_RANK = {
-                        ThreatLevel.GREEN: 0,
-                        ThreatLevel.YELLOW: 1,
-                        ThreatLevel.ORANGE: 2,
-                        ThreatLevel.RED: 3,
-                        ThreatLevel.APOCALYPSE: 4,
-                    }
                     if threat and _SEVERITY_RANK.get(threat.severity, 0) >= _SEVERITY_RANK[ThreatLevel.RED]:
                         error_msg = f"Narasimha blocked: {threat.description}"
                         self._conversation.add(
@@ -319,7 +321,7 @@ class AgentLoop:
                     self._conversation.add(
                         Message(role="tool", content=output_str, tool_use_id=tc.id)
                     )
-                    yield AgentEvent(type="tool_result", content=result, tool_use=tc)
+                    yield AgentEvent(type=EventType.TOOL_RESULT, content=result, tool_use=tc)
                     logger.debug(
                         "Tool %s: %s (round %d)",
                         tc.name,
@@ -370,7 +372,7 @@ class AgentLoop:
                     logger.info("Buddhi injected %s: %s", label, verdict.reason)
 
         usage.rounds = MAX_TOOL_ROUNDS
-        yield AgentEvent(type="error", content="Maximum tool rounds exceeded")
+        yield AgentEvent(type=EventType.ERROR, content="Maximum tool rounds exceeded")
 
     def run_sync(self, user_message: str) -> str:
         """Synchronous wrapper — runs the async loop and returns final text.

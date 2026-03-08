@@ -66,6 +66,10 @@ class SVC_NARASIMHA:
     """NarasimhaProtocol — hypervisor-level emergency killswitch."""
 
 
+class SVC_INTEGRITY:
+    """IntegrityChecker — boot-time validation of all services."""
+
+
 # ── Boot ─────────────────────────────────────────────────────────────
 
 
@@ -150,13 +154,61 @@ def boot(
     prompt_ctx = PromptContext(vibe_root=cwd_path)
     ServiceRegistry.register(SVC_PROMPT_CONTEXT, prompt_ctx)
 
+    # 11. IntegrityChecker — boot-time validation (catch lazy-load failures early)
+    from vibe_core.protocols.integrity import IntegrityChecker, IssueSeverity
+
+    checker = IntegrityChecker()
+    checker.register_checker(
+        "tool_registry",
+        lambda: _check_tools_registered(registry),
+        IssueSeverity.CRITICAL,
+    )
+    checker.register_checker(
+        "narasimha_protocol",
+        lambda: _check_narasimha(narasimha),
+        IssueSeverity.HIGH,
+    )
+    if provider is not None:
+        checker.register_checker(
+            "provider_chamber",
+            lambda: _check_provider(provider),
+            IssueSeverity.CRITICAL,
+        )
+    ServiceRegistry.register(SVC_INTEGRITY, checker)
+
+    # Run integrity check at boot
+    report = checker.check_all()
+    if report.issues:
+        for issue in report.issues:
+            logger.warning("Integrity: %s", issue)
     logger.info(
-        "Steward services booted (tools=%d, provider=%s)",
+        "Steward services booted (tools=%d, provider=%s, integrity=%d/%d in %.0fms)",
         len(registry),
         "yes" if provider else "none",
+        report.passed_count,
+        report.checked_count,
+        report.duration_ms,
     )
 
     return ServiceRegistry
+
+
+def _check_tools_registered(registry: ToolRegistry) -> None:
+    """Integrity check: at least one tool is registered."""
+    if len(registry) == 0:
+        raise RuntimeError("No tools registered")
+
+
+def _check_narasimha(narasimha: object) -> None:
+    """Integrity check: Narasimha protocol is functional."""
+    if not hasattr(narasimha, "audit_agent"):
+        raise RuntimeError("NarasimhaProtocol missing audit_agent()")
+
+
+def _check_provider(provider: object) -> None:
+    """Integrity check: provider can accept calls."""
+    if not hasattr(provider, "invoke"):
+        raise RuntimeError("Provider missing invoke()")
 
 
 # ── Helpers ──────────────────────────────────────────────────────────

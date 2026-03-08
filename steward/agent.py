@@ -53,7 +53,7 @@ from steward.tools.grep import GrepTool
 from steward.tools.read_file import ReadFileTool
 from steward.tools.sub_agent import SubAgentTool
 from steward.tools.write_file import WriteFileTool
-from steward.types import AgentEvent, AgentUsage, Conversation, LLMProvider
+from steward.types import AgentEvent, AgentUsage, Conversation, EventType, LLMProvider
 
 logger = logging.getLogger("STEWARD.AGENT")
 
@@ -270,11 +270,11 @@ class StewardAgent(GADBase):
         final_text = ""
         streamed_chunks: list[str] = []
         async for event in self.run_stream(task):
-            if event.type == "text_delta":
+            if event.type == EventType.TEXT_DELTA:
                 streamed_chunks.append(str(event.content) if event.content else "")
-            elif event.type == "text":
+            elif event.type == EventType.TEXT:
                 final_text = str(event.content) if event.content else ""
-            elif event.type == "error":
+            elif event.type == EventType.ERROR:
                 return f"[Error: {event.content}]"
         # If we got streaming chunks, assemble them
         if streamed_chunks:
@@ -319,7 +319,7 @@ class StewardAgent(GADBase):
         async for event in loop.run(task):
             self._emit_signal(event)
             self._emit_event_bus(event)
-            if event.type == "done" and event.usage:
+            if event.type == EventType.DONE and event.usage:
                 self._record_session_stats(event.usage)
                 # Cross-turn: merge reads, clear impressions, persist
                 self._buddhi._chitta.end_turn()
@@ -347,7 +347,7 @@ class StewardAgent(GADBase):
         if bus is None:
             return
 
-        if event.type == "tool_call":
+        if event.type == EventType.TOOL_CALL:
             bus.emit(Signal(
                 signal_type=SignalType.AGENT_STATUS_UPDATE,
                 source_agent="steward",
@@ -356,7 +356,7 @@ class StewardAgent(GADBase):
                     "tool": event.tool_use.name if event.tool_use else "",
                 },
             ))
-        elif event.type == "tool_result":
+        elif event.type == EventType.TOOL_RESULT:
             success = False
             if event.content and hasattr(event.content, "success"):
                 success = event.content.success  # type: ignore[union-attr]
@@ -365,13 +365,13 @@ class StewardAgent(GADBase):
                 source_agent="steward",
                 payload={"action": "tool_result", "success": success},
             ))
-        elif event.type == "error":
+        elif event.type == EventType.ERROR:
             bus.emit(Signal(
                 signal_type=SignalType.AGENT_ERROR,
                 source_agent="steward",
                 payload={"error": str(event.content)},
             ))
-        elif event.type == "done":
+        elif event.type == EventType.DONE:
             payload: dict[str, object] = {"action": "turn_complete"}
             if event.usage:
                 payload["tokens"] = event.usage.total_tokens
@@ -384,36 +384,36 @@ class StewardAgent(GADBase):
 
     def _emit_event_bus(self, event: AgentEvent) -> None:
         """Emit to real EventBus (Narada stream) for observability."""
-        from vibe_core.mahamantra.substrate.event_types import EventType
+        from vibe_core.mahamantra.substrate.event_types import EventType as SubstrateEventType
 
         event_bus = ServiceRegistry.get(SVC_EVENT_BUS)
         if event_bus is None:
             return
 
-        if event.type == "tool_call":
+        if event.type == EventType.TOOL_CALL:
             event_bus.emit_sync(
-                event_type=EventType.ACTION,
+                event_type=SubstrateEventType.ACTION,
                 agent_id="steward",
                 message=f"tool_call: {event.tool_use.name}" if event.tool_use else "tool_call",
             )
-        elif event.type == "tool_result":
+        elif event.type == EventType.TOOL_RESULT:
             success = False
             if event.content and hasattr(event.content, "success"):
                 success = event.content.success  # type: ignore[union-attr]
             event_bus.emit_sync(
-                event_type=EventType.ACTION if success else EventType.ERROR,
+                event_type=SubstrateEventType.ACTION if success else SubstrateEventType.ERROR,
                 agent_id="steward",
                 message=f"tool_result: {'ok' if success else 'error'}",
             )
-        elif event.type == "error":
+        elif event.type == EventType.ERROR:
             event_bus.emit_sync(
-                event_type=EventType.ERROR,
+                event_type=SubstrateEventType.ERROR,
                 agent_id="steward",
                 message=f"error: {event.content}",
             )
-        elif event.type == "text":
+        elif event.type == EventType.TEXT:
             event_bus.emit_sync(
-                event_type=EventType.THOUGHT,
+                event_type=SubstrateEventType.THOUGHT,
                 agent_id="steward",
                 message="text_response",
             )

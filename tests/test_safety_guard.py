@@ -302,3 +302,40 @@ class TestNarasimhaIntegration:
         narasimha = ServiceRegistry.get(SVC_NARASIMHA)
         assert narasimha is not None
         assert not narasimha.is_active()  # dormant until needed
+
+
+class TestIntegrityCheck:
+    """Tests for IntegrityChecker boot validation."""
+
+    def test_integrity_checker_booted(self):
+        """IntegrityChecker is wired and available after boot."""
+        from steward.services import SVC_INTEGRITY, boot
+        from vibe_core.di import ServiceRegistry
+
+        boot()
+        checker = ServiceRegistry.get(SVC_INTEGRITY)
+        assert checker is not None
+
+    def test_integrity_all_pass_with_tools(self):
+        """Integrity check passes when tools are registered."""
+        from steward.services import SVC_INTEGRITY, boot
+        from steward.tools.bash import BashTool
+        from vibe_core.di import ServiceRegistry
+
+        boot(tools=[BashTool()])
+        checker = ServiceRegistry.get(SVC_INTEGRITY)
+        report = checker.check_all()
+        assert report.passed_count >= 2  # tool_registry + narasimha
+        assert not report.has_critical
+
+    def test_integrity_fails_without_tools(self):
+        """Integrity check detects empty tool registry."""
+        from steward.services import SVC_INTEGRITY, boot
+        from vibe_core.di import ServiceRegistry
+
+        boot(tools=[])
+        checker = ServiceRegistry.get(SVC_INTEGRITY)
+        report = checker.check_all()
+        issues = [i for i in report.issues if i.component == "tool_registry"]
+        assert len(issues) == 1
+        assert "No tools" in issues[0].error

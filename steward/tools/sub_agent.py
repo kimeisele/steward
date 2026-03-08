@@ -24,7 +24,7 @@ from steward.services import (
     SVC_SAFETY_GUARD,
     SVC_TOOL_REGISTRY,
 )
-from steward.types import Conversation
+from steward.types import Conversation, EventType
 
 logger = logging.getLogger("STEWARD.TOOL.SUBAGENT")
 
@@ -174,11 +174,11 @@ class SubAgentTool(Tool):
         final_text = ""
         chunks: list[str] = []
         async for event in loop.run(task):
-            if event.type == "text_delta":
+            if event.type == EventType.TEXT_DELTA:
                 chunks.append(str(event.content) if event.content else "")
-            elif event.type == "text":
+            elif event.type == EventType.TEXT:
                 final_text = str(event.content) if event.content else ""
-            elif event.type == "error":
+            elif event.type == EventType.ERROR:
                 return False, str(event.content)
         text = "".join(chunks) if chunks else final_text
         return True, text
