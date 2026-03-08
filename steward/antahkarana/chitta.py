@@ -27,9 +27,9 @@ class ExecutionPhase(StrEnum):
     StrEnum so values work as dict keys and in string comparisons.
     """
 
-    ORIENT = "ORIENT"      # exploring/reading — gathering context
-    EXECUTE = "EXECUTE"    # making changes — writing/editing
-    VERIFY = "VERIFY"      # checking work — running tests
+    ORIENT = "ORIENT"  # exploring/reading — gathering context
+    EXECUTE = "EXECUTE"  # making changes — writing/editing
+    VERIFY = "VERIFY"  # checking work — running tests
     COMPLETE = "COMPLETE"  # wrapping up — tests passed after writes
 
 
@@ -87,13 +87,15 @@ class Chitta:
         path: str = "",
     ) -> None:
         """Record a tool execution impression."""
-        self._impressions.append(Impression(
-            name=name,
-            params_hash=params_hash,
-            success=success,
-            error=error,
-            path=path,
-        ))
+        self._impressions.append(
+            Impression(
+                name=name,
+                params_hash=params_hash,
+                success=success,
+                error=error,
+                path=path,
+            )
+        )
 
     def advance_round(self) -> int:
         """Advance to next round, return new round number."""
@@ -153,10 +155,7 @@ class Chitta:
             return PHASE_ORIENT
 
         # Aggregate counts
-        total_writes = sum(
-            1 for i in self._impressions
-            if i.name in _WRITE_NAMES and i.success
-        )
+        total_writes = sum(1 for i in self._impressions if i.name in _WRITE_NAMES and i.success)
 
         # Recent window (last 3 impressions)
         recent = self._impressions[-3:] if len(self._impressions) >= 3 else self._impressions
@@ -196,10 +195,7 @@ class Chitta:
         """Check if a file was read in current OR prior turns."""
         if path in self._prior_reads:
             return True
-        return any(
-            i.name in _READ_NAMES and i.success and i.path == path
-            for i in self._impressions
-        )
+        return any(i.name in _READ_NAMES and i.success and i.path == path for i in self._impressions)
 
     @property
     def files_read(self) -> list[str]:

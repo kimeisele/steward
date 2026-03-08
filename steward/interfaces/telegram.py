@@ -92,8 +92,7 @@ class TelegramBot:
             f"Steward Superagent\n"
             f"Status: {status}\n"
             f"Your ID: {user.id}\n\n"
-            f"Send any message to interact."
-            + ("" if is_owner else "\n\nNote: Only the owner can execute tasks.")
+            f"Send any message to interact." + ("" if is_owner else "\n\nNote: Only the owner can execute tasks.")
         )
 
     async def handle_help(self, update, context) -> None:  # noqa: ANN001
@@ -170,16 +169,12 @@ class TelegramBot:
 
         # Auth gate: non-owners get rejected
         if not self._is_owner(user):
-            await update.message.reply_text(
-                "Read-only mode. Only the owner can interact with the agent."
-            )
+            await update.message.reply_text("Read-only mode. Only the owner can interact with the agent.")
             return
 
         # Reject if already processing (non-blocking feedback)
         if self._busy:
-            await update.message.reply_text(
-                "Still processing previous request. Please wait."
-            )
+            await update.message.reply_text("Still processing previous request. Please wait.")
             return
 
         # Owner: run through StewardAgent
@@ -190,9 +185,7 @@ class TelegramBot:
                 agent = self._ensure_agent()
 
                 # Keep typing indicator alive during processing
-                typing_task = asyncio.create_task(
-                    self._keep_typing(update.message.chat)
-                )
+                typing_task = asyncio.create_task(self._keep_typing(update.message.chat))
 
                 # Collect response
                 response_parts: list[str] = []
@@ -276,9 +269,7 @@ class TelegramBot:
         app.add_handler(CommandHandler("save", self.handle_save))
 
         # Text messages
-        app.add_handler(
-            MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message)
-        )
+        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
 
         logger.info("Telegram bot starting (owner_id=%d)", self._owner_id)
         app.run_polling(drop_pending_updates=True)

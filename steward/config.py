@@ -31,25 +31,32 @@ class StewardConfig:
     """
 
     # LLM settings
-    model: str = "auto"                     # "auto" = ProviderChamber picks, or specific model
-    max_output_tokens: int = 4096           # Max tokens per LLM response
-    max_context_tokens: int = 100_000       # Context window budget
-    temperature: float = 0.0                # LLM temperature
+    model: str = "auto"  # "auto" = ProviderChamber picks, or specific model
+    max_output_tokens: int = 4096  # Max tokens per LLM response
+    max_context_tokens: int = 100_000  # Context window budget
+    temperature: float = 0.0  # LLM temperature
 
     # Tool settings
-    tools_enabled: list[str] = field(default_factory=lambda: [
-        "bash", "read_file", "write_file", "glob", "edit_file", "grep",
-    ])
+    tools_enabled: list[str] = field(
+        default_factory=lambda: [
+            "bash",
+            "read_file",
+            "write_file",
+            "glob",
+            "edit_file",
+            "grep",
+        ]
+    )
 
     # Behavior
-    auto_summarize: bool = True             # LLM-based summarization at 70%
-    summarize_threshold: float = 0.7        # Context % that triggers summarization
-    confirm_destructive: bool = True        # Ask before rm, git push --force, etc.
-    max_tool_rounds: int = 50               # Max tool-use iterations per turn
+    auto_summarize: bool = True  # LLM-based summarization at 70%
+    summarize_threshold: float = 0.7  # Context % that triggers summarization
+    confirm_destructive: bool = True  # Ask before rm, git push --force, etc.
+    max_tool_rounds: int = 50  # Max tool-use iterations per turn
 
     # Persistence
-    persist_memory: bool = True             # Use PersistentMemory (JSON-backed)
-    persist_conversation: bool = True       # Save conversation state between sessions
+    persist_memory: bool = True  # Use PersistentMemory (JSON-backed)
+    persist_conversation: bool = True  # Save conversation state between sessions
 
 
 def load_config(cwd: str | None = None) -> StewardConfig:

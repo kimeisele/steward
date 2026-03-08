@@ -103,10 +103,7 @@ class Summarizer:
         # Replace summarized messages with a single summary
         summary_msg = Message(
             role=MessageRole.USER,
-            content=(
-                f"[Summary of {len(to_summarize)} earlier messages]\n"
-                f"{summary_text}"
-            ),
+            content=(f"[Summary of {len(to_summarize)} earlier messages]\n{summary_text}"),
         )
 
         # Rebuild: system + summary + kept messages
@@ -136,11 +133,7 @@ class Summarizer:
             if isinstance(content, str):
                 return content
             if isinstance(content, list):
-                texts = [
-                    b.text if hasattr(b, "text") else str(b)
-                    for b in content
-                    if hasattr(b, "text")
-                ]
+                texts = [b.text if hasattr(b, "text") else str(b) for b in content if hasattr(b, "text")]
                 return "\n".join(texts)
         return ""
 
@@ -156,8 +149,7 @@ class Summarizer:
                 lines.append(f"[TOOL RESULT] {content}")
             elif m.tool_uses:
                 tools = ", ".join(
-                    f"{tu.name}({', '.join(f'{k}={v}' for k, v in tu.parameters.items())})"
-                    for tu in m.tool_uses
+                    f"{tu.name}({', '.join(f'{k}={v}' for k, v in tu.parameters.items())})" for tu in m.tool_uses
                 )
                 text = m.content[:200] if m.content else ""
                 lines.append(f"{prefix}: {text} [called: {tools}]")

@@ -62,49 +62,51 @@ logger = logging.getLogger("STEWARD.BUDDHI")
 class ToolNamespace(StrEnum):
     """Semantic tool capability domains (Shakti → business English)."""
 
-    OBSERVE = "observe"    # JNANA: read, search, discover
-    MODIFY = "modify"      # PALANA: write, edit, create
-    EXECUTE = "execute"    # KSHATRA: bash, system commands
+    OBSERVE = "observe"  # JNANA: read, search, discover
+    MODIFY = "modify"  # PALANA: write, edit, create
+    EXECUTE = "execute"  # KSHATRA: bash, system commands
     DELEGATE = "delegate"  # UDDHARA: sub-agent, task delegation
 
 
 # Namespace → tool names (runtime-mutable)
 _NAMESPACE_TOOLS: dict[ToolNamespace, set[str]] = {
-    ToolNamespace.OBSERVE:  {"read_file", "glob", "grep"},
-    ToolNamespace.MODIFY:   {"write_file", "edit_file"},
-    ToolNamespace.EXECUTE:  {"bash"},
+    ToolNamespace.OBSERVE: {"read_file", "glob", "grep"},
+    ToolNamespace.MODIFY: {"write_file", "edit_file"},
+    ToolNamespace.EXECUTE: {"bash"},
     ToolNamespace.DELEGATE: {"sub_agent"},
 }
 
 # Action → namespaces (which capability domains are needed)
 _ACTION_NAMESPACES: dict[SemanticActionType, frozenset[ToolNamespace]] = {
-    SemanticActionType.RESEARCH:   frozenset({ToolNamespace.OBSERVE}),
-    SemanticActionType.ANALYZE:    frozenset({ToolNamespace.OBSERVE}),
-    SemanticActionType.MONITOR:    frozenset({ToolNamespace.OBSERVE}),
-    SemanticActionType.REVIEW:     frozenset({ToolNamespace.OBSERVE}),
-    SemanticActionType.IMPLEMENT:  frozenset({ToolNamespace.OBSERVE, ToolNamespace.MODIFY, ToolNamespace.EXECUTE}),
-    SemanticActionType.REFACTOR:   frozenset({ToolNamespace.OBSERVE, ToolNamespace.MODIFY, ToolNamespace.EXECUTE}),
-    SemanticActionType.DESIGN:     frozenset({ToolNamespace.OBSERVE, ToolNamespace.MODIFY, ToolNamespace.EXECUTE, ToolNamespace.DELEGATE}),
-    SemanticActionType.PLAN:       frozenset({ToolNamespace.OBSERVE, ToolNamespace.DELEGATE}),
+    SemanticActionType.RESEARCH: frozenset({ToolNamespace.OBSERVE}),
+    SemanticActionType.ANALYZE: frozenset({ToolNamespace.OBSERVE}),
+    SemanticActionType.MONITOR: frozenset({ToolNamespace.OBSERVE}),
+    SemanticActionType.REVIEW: frozenset({ToolNamespace.OBSERVE}),
+    SemanticActionType.IMPLEMENT: frozenset({ToolNamespace.OBSERVE, ToolNamespace.MODIFY, ToolNamespace.EXECUTE}),
+    SemanticActionType.REFACTOR: frozenset({ToolNamespace.OBSERVE, ToolNamespace.MODIFY, ToolNamespace.EXECUTE}),
+    SemanticActionType.DESIGN: frozenset(
+        {ToolNamespace.OBSERVE, ToolNamespace.MODIFY, ToolNamespace.EXECUTE, ToolNamespace.DELEGATE}
+    ),
+    SemanticActionType.PLAN: frozenset({ToolNamespace.OBSERVE, ToolNamespace.DELEGATE}),
     SemanticActionType.SYNTHESIZE: frozenset({ToolNamespace.OBSERVE, ToolNamespace.DELEGATE}),
-    SemanticActionType.DEBUG:      frozenset({ToolNamespace.OBSERVE, ToolNamespace.MODIFY, ToolNamespace.EXECUTE}),
-    SemanticActionType.TEST:       frozenset({ToolNamespace.OBSERVE, ToolNamespace.EXECUTE}),
-    SemanticActionType.RESPOND:    frozenset({ToolNamespace.OBSERVE, ToolNamespace.MODIFY, ToolNamespace.EXECUTE}),
+    SemanticActionType.DEBUG: frozenset({ToolNamespace.OBSERVE, ToolNamespace.MODIFY, ToolNamespace.EXECUTE}),
+    SemanticActionType.TEST: frozenset({ToolNamespace.OBSERVE, ToolNamespace.EXECUTE}),
+    SemanticActionType.RESPOND: frozenset({ToolNamespace.OBSERVE, ToolNamespace.MODIFY, ToolNamespace.EXECUTE}),
 }
 
 # Guna → namespaces (fallback when action tools are empty)
 _GUNA_NAMESPACES: dict[IntentGuna, frozenset[ToolNamespace]] = {
     IntentGuna.SATTVA: frozenset({ToolNamespace.OBSERVE}),
-    IntentGuna.RAJAS:  frozenset({ToolNamespace.OBSERVE, ToolNamespace.MODIFY, ToolNamespace.EXECUTE}),
-    IntentGuna.TAMAS:  frozenset({ToolNamespace.OBSERVE, ToolNamespace.MODIFY, ToolNamespace.EXECUTE}),
+    IntentGuna.RAJAS: frozenset({ToolNamespace.OBSERVE, ToolNamespace.MODIFY, ToolNamespace.EXECUTE}),
+    IntentGuna.TAMAS: frozenset({ToolNamespace.OBSERVE, ToolNamespace.MODIFY, ToolNamespace.EXECUTE}),
     IntentGuna.SUDDHA: frozenset(ToolNamespace),  # all namespaces
 }
 
 # Phase → namespace overlays (add capabilities during specific phases)
 _PHASE_NS_OVERLAY: dict[ExecutionPhase, frozenset[ToolNamespace]] = {
-    ExecutionPhase.ORIENT:   frozenset(),
-    ExecutionPhase.EXECUTE:  frozenset({ToolNamespace.MODIFY, ToolNamespace.EXECUTE}),
-    ExecutionPhase.VERIFY:   frozenset({ToolNamespace.EXECUTE, ToolNamespace.OBSERVE}),
+    ExecutionPhase.ORIENT: frozenset(),
+    ExecutionPhase.EXECUTE: frozenset({ToolNamespace.MODIFY, ToolNamespace.EXECUTE}),
+    ExecutionPhase.VERIFY: frozenset({ToolNamespace.EXECUTE, ToolNamespace.OBSERVE}),
     ExecutionPhase.COMPLETE: frozenset(),
 }
 
@@ -128,18 +130,18 @@ def unregister_tool(namespace: ToolNamespace, tool_name: str) -> None:
 
 
 _ACTION_MAX_TOKENS: dict[SemanticActionType, int] = {
-    SemanticActionType.RESEARCH:   2048,
-    SemanticActionType.ANALYZE:    2048,
-    SemanticActionType.MONITOR:    2048,
-    SemanticActionType.REVIEW:     2048,
-    SemanticActionType.IMPLEMENT:  4096,
-    SemanticActionType.REFACTOR:   4096,
-    SemanticActionType.DESIGN:     4096,
-    SemanticActionType.PLAN:       2048,
+    SemanticActionType.RESEARCH: 2048,
+    SemanticActionType.ANALYZE: 2048,
+    SemanticActionType.MONITOR: 2048,
+    SemanticActionType.REVIEW: 2048,
+    SemanticActionType.IMPLEMENT: 4096,
+    SemanticActionType.REFACTOR: 4096,
+    SemanticActionType.DESIGN: 4096,
+    SemanticActionType.PLAN: 2048,
     SemanticActionType.SYNTHESIZE: 2048,
-    SemanticActionType.DEBUG:      4096,
-    SemanticActionType.TEST:       2048,
-    SemanticActionType.RESPOND:    4096,
+    SemanticActionType.DEBUG: 4096,
+    SemanticActionType.TEST: 2048,
+    SemanticActionType.RESPOND: 4096,
 }
 
 # ── ModelTier — cost-aware LLM routing ─────────────────────────────
@@ -159,18 +161,18 @@ class ModelTier(StrEnum):
 
 
 _ACTION_TIER: dict[SemanticActionType, ModelTier] = {
-    SemanticActionType.RESEARCH:   ModelTier.FLASH,
-    SemanticActionType.ANALYZE:    ModelTier.STANDARD,
-    SemanticActionType.MONITOR:    ModelTier.FLASH,
-    SemanticActionType.REVIEW:     ModelTier.STANDARD,
-    SemanticActionType.IMPLEMENT:  ModelTier.STANDARD,
-    SemanticActionType.REFACTOR:   ModelTier.STANDARD,
-    SemanticActionType.DESIGN:     ModelTier.PRO,
-    SemanticActionType.PLAN:       ModelTier.STANDARD,
+    SemanticActionType.RESEARCH: ModelTier.FLASH,
+    SemanticActionType.ANALYZE: ModelTier.STANDARD,
+    SemanticActionType.MONITOR: ModelTier.FLASH,
+    SemanticActionType.REVIEW: ModelTier.STANDARD,
+    SemanticActionType.IMPLEMENT: ModelTier.STANDARD,
+    SemanticActionType.REFACTOR: ModelTier.STANDARD,
+    SemanticActionType.DESIGN: ModelTier.PRO,
+    SemanticActionType.PLAN: ModelTier.STANDARD,
     SemanticActionType.SYNTHESIZE: ModelTier.PRO,
-    SemanticActionType.DEBUG:      ModelTier.STANDARD,
-    SemanticActionType.TEST:       ModelTier.FLASH,
-    SemanticActionType.RESPOND:    ModelTier.STANDARD,
+    SemanticActionType.DEBUG: ModelTier.STANDARD,
+    SemanticActionType.TEST: ModelTier.FLASH,
+    SemanticActionType.RESPOND: ModelTier.STANDARD,
 }
 
 
@@ -178,9 +180,9 @@ _ACTION_TIER: dict[SemanticActionType, ModelTier] = {
 # VERIFY and COMPLETE tighten budget — work should be winding down.
 # ORIENT and EXECUTE defer to the action's natural budget.
 _PHASE_MAX_TOKENS: dict[ExecutionPhase, int] = {
-    ExecutionPhase.ORIENT: 4096,    # defer to action budget
-    ExecutionPhase.EXECUTE: 4096,   # full budget for active work
-    ExecutionPhase.VERIFY: 2048,    # tighten for test/check phase
+    ExecutionPhase.ORIENT: 4096,  # defer to action budget
+    ExecutionPhase.EXECUTE: 4096,  # full budget for active work
+    ExecutionPhase.VERIFY: 2048,  # tighten for test/check phase
     ExecutionPhase.COMPLETE: 2048,  # tighten for wrap-up
 }
 
@@ -240,7 +242,10 @@ class Buddhi:
         self._prev_phase = ExecutionPhase.ORIENT
 
     def pre_flight(
-        self, user_message: str, round_num: int, context_pct: float = 0.0,
+        self,
+        user_message: str,
+        round_num: int,
+        context_pct: float = 0.0,
     ) -> BuddhiDirective:
         """Pre-flight gate — Manas perception + Chitta phase -> tool selection.
 
@@ -264,8 +269,10 @@ class Buddhi:
             self._approach = perception.approach
             logger.info(
                 "Buddhi pre-flight: action=%s guna=%s function=%s approach=%s",
-                self._action.value, self._guna.value,
-                self._function, self._approach,
+                self._action.value,
+                self._guna.value,
+                self._function,
+                self._approach,
             )
 
         # Action-based namespace selection (primary)
@@ -296,9 +303,7 @@ class Buddhi:
 
         # After errors, always grant bash for debugging
         if round_num > 0:
-            recent_errors = sum(
-                1 for r in self._chitta.recent(3) if not r.success
-            )
+            recent_errors = sum(1 for r in self._chitta.recent(3) if not r.success)
             if recent_errors >= 2:
                 base_tools = frozenset(base_tools | {"bash"})
 
@@ -346,9 +351,7 @@ class Buddhi:
 
         # Record impressions in Chitta (with file paths for tracking)
         for tc, (success, error) in zip(tool_calls, results):
-            params_hash = hash(frozenset(
-                (k, str(v)) for k, v in sorted(tc.parameters.items())
-            )) if tc.parameters else 0
+            params_hash = hash(frozenset((k, str(v)) for k, v in sorted(tc.parameters.items()))) if tc.parameters else 0
             path = str(tc.parameters.get("path", "")) if tc.parameters else ""
             self._chitta.record(
                 name=tc.name,
@@ -373,7 +376,9 @@ class Buddhi:
             )
             logger.info(
                 "Buddhi verdict at round %d: %s — %s",
-                self._chitta.round, verdict.action, verdict.reason,
+                self._chitta.round,
+                verdict.action,
+                verdict.reason,
             )
             return verdict
 
@@ -382,7 +387,9 @@ class Buddhi:
         if prev_phase != curr_phase:
             logger.info(
                 "Buddhi phase transition: %s -> %s (round %d)",
-                prev_phase, curr_phase, self._chitta.round,
+                prev_phase,
+                curr_phase,
+                self._chitta.round,
             )
             guidance = _phase_guidance(prev_phase, curr_phase, self._chitta)
             if guidance:
@@ -428,10 +435,7 @@ def _phase_guidance(
         if modified:
             file_list = ", ".join(modified[:5])
             extra = f" (+{len(modified) - 5} more)" if len(modified) > 5 else ""
-            return (
-                f"You've modified: {file_list}{extra}. "
-                f"Consider running tests to verify your changes work correctly."
-            )
+            return f"You've modified: {file_list}{extra}. Consider running tests to verify your changes work correctly."
         return "You've made changes. Consider running tests to verify."
 
     return ""

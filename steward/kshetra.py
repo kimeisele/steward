@@ -37,20 +37,18 @@ class TattvaMapping:
     """Maps a Sankhya element to its steward implementation."""
 
     element: PrakritiElement
-    layer: str          # protocol layer (from ELEMENT_PROTOCOL_LAYER)
-    module: str         # steward module path
-    component: str      # class or function name
-    role: str           # what it does in steward
+    layer: str  # protocol layer (from ELEMENT_PROTOCOL_LAYER)
+    module: str  # steward module path
+    component: str  # class or function name
+    role: str  # what it does in steward
 
 
 # ── The Kshetra: 24 Prakriti Elements → Steward Modules ──────────────
 
 STEWARD_KSHETRA: Final[dict[PrakritiElement, TattvaMapping]] = {
-
     # ═══════════════════════════════════════════════════════════════════
     # ANTAHKARANA — 4 Internal Instruments (the cognitive pipeline)
     # ═══════════════════════════════════════════════════════════════════
-
     PrakritiElement.MANAS: TattvaMapping(
         element=PrakritiElement.MANAS,
         layer=ELEMENT_PROTOCOL_LAYER[PrakritiElement.MANAS],
@@ -79,11 +77,9 @@ STEWARD_KSHETRA: Final[dict[PrakritiElement, TattvaMapping]] = {
         component="Chitta",
         role="Store tool execution impressions (awareness/state)",
     ),
-
     # ═══════════════════════════════════════════════════════════════════
     # TANMATRA — 5 Subtle Elements (signals and sensing)
     # ═══════════════════════════════════════════════════════════════════
-
     PrakritiElement.SHABDA: TattvaMapping(
         element=PrakritiElement.SHABDA,
         layer=ELEMENT_PROTOCOL_LAYER[PrakritiElement.SHABDA],
@@ -119,11 +115,9 @@ STEWARD_KSHETRA: Final[dict[PrakritiElement, TattvaMapping]] = {
         component="detect_patterns",
         role="Detect failure patterns in tool history",
     ),
-
     # ═══════════════════════════════════════════════════════════════════
     # JNANENDRIYA — 5 Knowledge Senses (information acquisition)
     # ═══════════════════════════════════════════════════════════════════
-
     PrakritiElement.SHROTRA: TattvaMapping(
         element=PrakritiElement.SHROTRA,
         layer=ELEMENT_PROTOCOL_LAYER[PrakritiElement.SHROTRA],
@@ -159,11 +153,9 @@ STEWARD_KSHETRA: Final[dict[PrakritiElement, TattvaMapping]] = {
         component="ToolSafetyGuard",
         role="Audit tool calls for safety violations (Iron Dome)",
     ),
-
     # ═══════════════════════════════════════════════════════════════════
     # KARMENDRIYA — 5 Working Senses (actions and output)
     # ═══════════════════════════════════════════════════════════════════
-
     PrakritiElement.VAK: TattvaMapping(
         element=PrakritiElement.VAK,
         layer=ELEMENT_PROTOCOL_LAYER[PrakritiElement.VAK],
@@ -199,11 +191,9 @@ STEWARD_KSHETRA: Final[dict[PrakritiElement, TattvaMapping]] = {
         component="boot",
         role="Create and wire services (genesis)",
     ),
-
     # ═══════════════════════════════════════════════════════════════════
     # MAHABHUTA — 5 Gross Elements (infrastructure)
     # ═══════════════════════════════════════════════════════════════════
-
     PrakritiElement.AKASHA: TattvaMapping(
         element=PrakritiElement.AKASHA,
         layer=ELEMENT_PROTOCOL_LAYER[PrakritiElement.AKASHA],
@@ -264,24 +254,28 @@ def enumerate_kshetra() -> list[dict[str, str]]:
     """
     result: list[dict[str, str]] = []
     for element, mapping in STEWARD_KSHETRA.items():
-        result.append({
-            "element": element.name,
-            "number": str(element.value),
-            "category": _element_category(element),
-            "layer": mapping.layer,
-            "module": mapping.module,
-            "component": mapping.component,
-            "role": mapping.role,
-        })
-    result.append({
-        "element": "JIVA",
-        "number": "25",
-        "category": "para_prakriti",
-        "layer": JIVA.layer,
-        "module": JIVA.module,
-        "component": JIVA.component,
-        "role": JIVA.role,
-    })
+        result.append(
+            {
+                "element": element.name,
+                "number": str(element.value),
+                "category": _element_category(element),
+                "layer": mapping.layer,
+                "module": mapping.module,
+                "component": mapping.component,
+                "role": mapping.role,
+            }
+        )
+    result.append(
+        {
+            "element": "JIVA",
+            "number": "25",
+            "category": "para_prakriti",
+            "layer": JIVA.layer,
+            "module": JIVA.module,
+            "component": JIVA.component,
+            "role": JIVA.role,
+        }
+    )
     return result
 
 
@@ -305,11 +299,7 @@ def get_category_elements(category: PrakritiCategory) -> list[TattvaMapping]:
         PrakritiCategory.MAHABHUTA: range(20, 25),
     }
     element_range = ranges.get(category, range(0))
-    return [
-        STEWARD_KSHETRA[PrakritiElement(i)]
-        for i in element_range
-        if PrakritiElement(i) in STEWARD_KSHETRA
-    ]
+    return [STEWARD_KSHETRA[PrakritiElement(i)] for i in element_range if PrakritiElement(i) in STEWARD_KSHETRA]
 
 
 # Element value → category (branchless dispatch via range thresholds)

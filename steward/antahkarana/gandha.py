@@ -42,11 +42,11 @@ class VerdictAction(StrEnum):
     StrEnum so values flow directly from Gandha to Buddhi.
     """
 
-    CONTINUE = "continue"   # proceed normally (verdict only)
-    REFLECT = "reflect"     # inject reflection prompt
-    REDIRECT = "redirect"   # suggest alternative approach
-    ABORT = "abort"         # stop the loop (unrecoverable)
-    INFO = "info"           # informational only (detection only)
+    CONTINUE = "continue"  # proceed normally (verdict only)
+    REFLECT = "reflect"  # inject reflection prompt
+    REDIRECT = "redirect"  # suggest alternative approach
+    ABORT = "abort"  # stop the loop (unrecoverable)
+    INFO = "info"  # informational only (detection only)
 
 
 @dataclass(frozen=True)
@@ -116,8 +116,7 @@ def _check_consecutive_errors(impressions: list[Impression]) -> Detection | None
             pattern="consecutive_errors",
             reason=f"{MAX_CONSECUTIVE_ERRORS} consecutive errors",
             suggestion=(
-                f"Errors: {'; '.join(unique_errors) if unique_errors else 'unknown'}. "
-                f"This approach is not working."
+                f"Errors: {'; '.join(unique_errors) if unique_errors else 'unknown'}. This approach is not working."
             ),
         )
     return None
@@ -129,10 +128,7 @@ def _check_identical_calls(impressions: list[Impression]) -> Detection | None:
         return None
 
     recent = impressions[-MAX_IDENTICAL_CALLS:]
-    if all(
-        r.name == recent[0].name and r.params_hash == recent[0].params_hash
-        for r in recent
-    ):
+    if all(r.name == recent[0].name and r.params_hash == recent[0].params_hash for r in recent):
         return Detection(
             severity=VerdictAction.REFLECT,
             pattern="identical_calls",
@@ -164,9 +160,7 @@ def _check_failure_redirect(
 
     # Pattern: edit_file failed twice -> need to read the file first
     if all(
-        r.name == "edit_file"
-        and not r.success
-        and ("not found" in r.error.lower() or "no match" in r.error.lower())
+        r.name == "edit_file" and not r.success and ("not found" in r.error.lower() or "no match" in r.error.lower())
         for r in recent
     ):
         return Detection(
@@ -185,22 +179,19 @@ def _check_failure_redirect(
             severity=VerdictAction.REDIRECT,
             pattern="write_path_issue",
             reason="write_file failed 2x",
-            suggestion=(
-                "Use read_file or glob to verify the target path exists "
-                "and is writable, then retry."
-            ),
+            suggestion=("Use read_file or glob to verify the target path exists and is writable, then retry."),
         )
 
     # Pattern: route misses (tool not found) -> suggest valid tools
     if (
-        all(
-            "route miss" in r.error.lower() or "not found" in r.error.lower()
-            for r in recent
-            if not r.success
-        )
+        all("route miss" in r.error.lower() or "not found" in r.error.lower() for r in recent if not r.success)
         and sum(1 for r in recent if not r.success) >= 2
     ):
-        tool_list = ", ".join(sorted(available_tools)) if available_tools else "bash, read_file, write_file, edit_file, glob, grep, sub_agent"
+        tool_list = (
+            ", ".join(sorted(available_tools))
+            if available_tools
+            else "bash, read_file, write_file, edit_file, glob, grep, sub_agent"
+        )
         return Detection(
             severity=VerdictAction.REDIRECT,
             pattern="route_miss",
@@ -243,11 +234,7 @@ def _check_write_without_read(
 
     # Check current turn
     for imp in impressions[:-1]:
-        if (
-            imp.name in _READ_TOOL_NAMES
-            and imp.success
-            and imp.path == last.path
-        ):
+        if imp.name in _READ_TOOL_NAMES and imp.success and imp.path == last.path:
             return None  # File was read this turn — all good
 
     return Detection(
@@ -277,11 +264,7 @@ def _check_duplicate_read(impressions: list[Impression]) -> Detection | None:
 
     # Check if this path was already read successfully earlier
     for imp in impressions[:-1]:
-        if (
-            imp.name == "read_file"
-            and imp.success
-            and imp.path == last.path
-        ):
+        if imp.name == "read_file" and imp.success and imp.path == last.path:
             return Detection(
                 severity=VerdictAction.REDIRECT,
                 pattern="duplicate_read",
@@ -331,9 +314,6 @@ def _check_error_ratio(impressions: list[Impression]) -> Detection | None:
             severity=VerdictAction.REFLECT,
             pattern="error_ratio",
             reason=f"Error ratio {ratio:.0%} exceeds threshold ({ERROR_RATIO_THRESHOLD:.0%})",
-            suggestion=(
-                f"{errors}/{total} tool calls failed. "
-                f"Reconsider the overall approach."
-            ),
+            suggestion=(f"{errors}/{total} tool calls failed. Reconsider the overall approach."),
         )
     return None

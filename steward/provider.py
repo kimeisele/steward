@@ -34,22 +34,31 @@ logger = logging.getLogger("STEWARD.PROVIDER")
 
 # ── Provider Source Addresses (deterministic, SSOT-derived) ──────────
 
-_ADDR_GOOGLE = MAHA_QUANTUM * 10      # 1370
-_ADDR_MISTRAL = MAHA_QUANTUM * 11     # 1507
-_ADDR_DEEPSEEK = MAHA_QUANTUM * 12    # 1644
-_ADDR_ANTHROPIC = MAHA_QUANTUM * 13   # 1781
-_ADDR_GROQ = MAHA_QUANTUM * 14        # 1918
+_ADDR_GOOGLE = MAHA_QUANTUM * 10  # 1370
+_ADDR_MISTRAL = MAHA_QUANTUM * 11  # 1507
+_ADDR_DEEPSEEK = MAHA_QUANTUM * 12  # 1644
+_ADDR_ANTHROPIC = MAHA_QUANTUM * 13  # 1781
+_ADDR_GROQ = MAHA_QUANTUM * 14  # 1918
 
 # ── Prana Budgets ────────────────────────────────────────────────────
 
-_PRANA_FREE = MAHA_QUANTUM * 100      # 13700 (free tier = full energy)
-_PRANA_CHEAP = MAHA_QUANTUM * 10      # 1370  (paid = less energy = lower priority)
+_PRANA_FREE = MAHA_QUANTUM * 100  # 13700 (free tier = full energy)
+_PRANA_CHEAP = MAHA_QUANTUM * 10  # 1370  (paid = less energy = lower priority)
 
 # Transient errors that warrant retry (not provider switch)
 _TRANSIENT_ERRORS = (
-    "timeout", "timed out", "rate limit", "429", "503", "502",
-    "connection reset", "connection refused", "temporary",
-    "overloaded", "capacity", "retry",
+    "timeout",
+    "timed out",
+    "rate limit",
+    "429",
+    "503",
+    "502",
+    "connection reset",
+    "connection refused",
+    "temporary",
+    "overloaded",
+    "capacity",
+    "retry",
 )
 
 _MAX_RETRIES = 2
@@ -66,8 +75,8 @@ class ProviderPayload:
     name: str
     provider: LLMProvider
     model: str
-    daily_call_limit: int = 0     # 0 = unlimited
-    daily_token_limit: int = 0    # 0 = unlimited
+    daily_call_limit: int = 0  # 0 = unlimited
+    daily_token_limit: int = 0  # 0 = unlimited
     cost_per_mtok_input: float = 0.0
     calls_today: int = 0
     tokens_today: int = 0
@@ -141,7 +150,8 @@ class ProviderChamber:
         self._feedback = feedback
 
     def _apply_feedback_penalty(
-        self, cells: list[MahaCellUnified[ProviderPayload]],
+        self,
+        cells: list[MahaCellUnified[ProviderPayload]],
     ) -> list[MahaCellUnified[ProviderPayload]]:
         """Deprioritize providers with high failure rates.
 
@@ -158,7 +168,8 @@ class ProviderChamber:
         warned: list[MahaCellUnified[ProviderPayload]] = []
         for cell in cells:
             warning = self._feedback.should_warn(
-                cell.payload.name, {"model": cell.payload.model},
+                cell.payload.name,
+                {"model": cell.payload.model},
             )
             if warning:
                 warned.append(cell)
@@ -169,7 +180,10 @@ class ProviderChamber:
         return clean + warned
 
     def _sorted_providers(
-        self, *, tier: str = "", has_tools: bool = False,
+        self,
+        *,
+        tier: str = "",
+        has_tools: bool = False,
     ) -> list[MahaCellUnified[ProviderPayload]]:
         """Sort alive providers by tier + feedback penalty.
 
@@ -243,8 +257,7 @@ class ProviderChamber:
             # Membrane gate: signal() checks integrity before accepting work.
             # Returns None if membrane too damaged — skip this provider.
             if cell.signal(payload.name) is None:
-                logger.info("'%s' membrane too weak (integrity=%d), skipping",
-                            payload.name, cell.lifecycle.integrity)
+                logger.info("'%s' membrane too weak (integrity=%d), skipping", payload.name, cell.lifecycle.integrity)
                 continue
 
             call_kwargs = dict(kwargs)
@@ -261,24 +274,34 @@ class ProviderChamber:
                     # Track usage (adapters normalize to LLMUsage)
                     usage = _normalize_usage(getattr(response, "usage", None))
                     self._record_call_success(
-                        cell, breaker,
-                        usage.input_tokens, usage.output_tokens, duration_ms,
+                        cell,
+                        breaker,
+                        usage.input_tokens,
+                        usage.output_tokens,
+                        duration_ms,
                     )
 
                     logger.debug(
                         "'%s' responded (tokens: %d+%d, prana: %d, cycle: %d)",
-                        payload.name, usage.input_tokens, usage.output_tokens,
-                        cell.lifecycle.prana, cell.lifecycle.cycle,
+                        payload.name,
+                        usage.input_tokens,
+                        usage.output_tokens,
+                        cell.lifecycle.prana,
+                        cell.lifecycle.cycle,
                     )
                     return response
 
                 except Exception as e:
                     last_error = e
                     if attempt < _MAX_RETRIES and _is_transient(e):
-                        delay = _RETRY_BASE_DELAY * (2 ** attempt)
+                        delay = _RETRY_BASE_DELAY * (2**attempt)
                         logger.info(
                             "'%s' transient error (%s), retry %d/%d in %.1fs",
-                            payload.name, e, attempt + 1, _MAX_RETRIES, delay,
+                            payload.name,
+                            e,
+                            attempt + 1,
+                            _MAX_RETRIES,
+                            delay,
                         )
                         time.sleep(delay)
                         continue
@@ -290,8 +313,11 @@ class ProviderChamber:
                 self._record_call_failure(cell, breaker, last_error, duration_ms)
                 logger.info(
                     "'%s' failed (%s: %s), integrity->%d, prana->%d, trying next",
-                    payload.name, type(last_error).__name__, last_error,
-                    cell.lifecycle.integrity, cell.lifecycle.prana,
+                    payload.name,
+                    type(last_error).__name__,
+                    last_error,
+                    cell.lifecycle.integrity,
+                    cell.lifecycle.prana,
                 )
                 continue
 
@@ -349,7 +375,11 @@ class ProviderChamber:
                     duration_ms = (time.monotonic() - t0) * 1000
                     usage = _normalize_usage(getattr(response, "usage", None))
                     self._record_call_success(
-                        cell, breaker, usage.input_tokens, usage.output_tokens, duration_ms,
+                        cell,
+                        breaker,
+                        usage.input_tokens,
+                        usage.output_tokens,
+                        duration_ms,
                     )
                     text = ""
                     if hasattr(response, "content"):
@@ -375,7 +405,11 @@ class ProviderChamber:
                         final_resp = getattr(delta, "response", None)
                         usage = _normalize_usage(getattr(final_resp, "usage", None)) if final_resp else LLMUsage()
                         self._record_call_success(
-                            cell, breaker, usage.input_tokens, usage.output_tokens, duration_ms,
+                            cell,
+                            breaker,
+                            usage.input_tokens,
+                            usage.output_tokens,
+                            duration_ms,
                         )
                     yield delta
                 return  # Success
@@ -404,7 +438,8 @@ class ProviderChamber:
                     "cycle": c.lifecycle.cycle,
                     "alive": c.is_alive,
                     "breaker": self._breakers[c.payload.name].get_status()
-                    if c.payload.name in self._breakers else None,
+                    if c.payload.name in self._breakers
+                    else None,
                 }
                 for c in self._cells
             ],
@@ -468,9 +503,7 @@ class ProviderChamber:
             err = error if isinstance(error, Exception) else Exception(error)
             breaker._record_failure(err)
 
-        cell.lifecycle.integrity = max(
-            0, cell.lifecycle.integrity - (COSMIC_FRAME // 10)
-        )
+        cell.lifecycle.integrity = max(0, cell.lifecycle.integrity - (COSMIC_FRAME // 10))
         cell.metabolize(0)
 
         if self._feedback:
@@ -776,14 +809,18 @@ class AnthropicAdapter:
                     system = str(msg.get("content", ""))
                 elif role == "tool":
                     # Anthropic: tool results are user messages with tool_result blocks
-                    api_messages.append({
-                        "role": "user",
-                        "content": [{
-                            "type": "tool_result",
-                            "tool_use_id": str(msg.get("tool_call_id", "")),
-                            "content": str(msg.get("content", "")),
-                        }],
-                    })
+                    api_messages.append(
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "tool_result",
+                                    "tool_use_id": str(msg.get("tool_call_id", "")),
+                                    "content": str(msg.get("content", "")),
+                                }
+                            ],
+                        }
+                    )
                 elif role == "assistant" and msg.get("tool_calls"):
                     # Anthropic: tool calls are content blocks on assistant message
                     content_blocks: list[dict[str, object]] = []
@@ -796,12 +833,14 @@ class AnthropicAdapter:
                             if isinstance(tc, dict):
                                 func = tc.get("function", {})
                                 if isinstance(func, dict):
-                                    content_blocks.append({
-                                        "type": "tool_use",
-                                        "id": tc.get("id", ""),
-                                        "name": func.get("name", ""),
-                                        "input": func.get("arguments", {}),
-                                    })
+                                    content_blocks.append(
+                                        {
+                                            "type": "tool_use",
+                                            "id": tc.get("id", ""),
+                                            "name": func.get("name", ""),
+                                            "input": func.get("arguments", {}),
+                                        }
+                                    )
                     api_messages.append({"role": "assistant", "content": content_blocks})
                 else:
                     api_messages.append({"role": str(role), "content": msg.get("content", "")})
@@ -815,11 +854,13 @@ class AnthropicAdapter:
                 if isinstance(tool, dict) and tool.get("type") == "function":
                     func = tool.get("function")
                     if isinstance(func, dict):
-                        anthropic_tools.append({
-                            "name": func.get("name", ""),
-                            "description": func.get("description", ""),
-                            "input_schema": func.get("parameters", {}),
-                        })
+                        anthropic_tools.append(
+                            {
+                                "name": func.get("name", ""),
+                                "description": func.get("description", ""),
+                                "input_schema": func.get("parameters", {}),
+                            }
+                        )
 
         create_kwargs: dict[str, object] = {
             "model": model,
@@ -912,8 +953,8 @@ def build_chamber() -> ProviderChamber:
                 model="llama-3.3-70b-versatile",
                 source_address=_ADDR_GROQ,
                 prana=_PRANA_FREE,
-                daily_call_limit=1000,       # Free tier: 1K RPD
-                daily_token_limit=100_000,   # Free tier: 100K TPD
+                daily_call_limit=1000,  # Free tier: 1K RPD
+                daily_token_limit=100_000,  # Free tier: 100K TPD
                 cost_per_mtok=0.0,
                 supports_tools=True,
             )

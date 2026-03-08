@@ -127,9 +127,7 @@ class AgentLoop:
         self._compression = MahaCompression()
 
         # Ensure system prompt is first message
-        if system_prompt and (
-            not conversation.messages or conversation.messages[0].role != MessageRole.SYSTEM
-        ):
+        if system_prompt and (not conversation.messages or conversation.messages[0].role != MessageRole.SYSTEM):
             conversation.messages.insert(0, Message(role=MessageRole.SYSTEM, content=system_prompt))
 
     async def run(self, user_message: str) -> AsyncIterator[AgentEvent]:
@@ -156,7 +154,8 @@ class AgentLoop:
             # Buddhi pre-flight: deterministic tool selection + token budget
             context_pct = (
                 self._conversation.total_tokens / self._conversation.max_tokens
-                if self._conversation.max_tokens else 0.0
+                if self._conversation.max_tokens
+                else 0.0
             )
             directive = self._buddhi.pre_flight(user_message, round_num, context_pct)
             if round_num == 0:
@@ -167,9 +166,7 @@ class AgentLoop:
 
             # Try streaming if provider supports it
             streamed_text_deltas: list[str] = []
-            response = await self._call_llm_streaming(
-                directive, streamed_text_deltas
-            )
+            response = await self._call_llm_streaming(directive, streamed_text_deltas)
             usage.llm_calls += 1
             if response is None:
                 yield AgentEvent(type=EventType.ERROR, content="LLM returned no response")
@@ -197,7 +194,8 @@ class AgentLoop:
                 yield AgentEvent(type=EventType.DONE, usage=usage)
                 logger.debug(
                     "Turn complete after %d rounds (%d tokens)",
-                    round_num + 1, usage.total_tokens,
+                    round_num + 1,
+                    usage.total_tokens,
                 )
                 return
 
@@ -259,13 +257,10 @@ class AgentLoop:
                     output_str = str(output) if output else ""
                     if len(output_str) > MAX_TOOL_OUTPUT_CHARS:
                         output_str = (
-                            output_str[:MAX_TOOL_OUTPUT_CHARS]
-                            + f"\n\n[truncated — {len(output_str)} chars total, "
+                            output_str[:MAX_TOOL_OUTPUT_CHARS] + f"\n\n[truncated — {len(output_str)} chars total, "
                             f"showing first {MAX_TOOL_OUTPUT_CHARS}]"
                         )
-                    self._conversation.add(
-                        Message(role=MessageRole.TOOL, content=output_str, tool_use_id=tc.id)
-                    )
+                    self._conversation.add(Message(role=MessageRole.TOOL, content=output_str, tool_use_id=tc.id))
                     yield AgentEvent(type=EventType.TOOL_RESULT, content=result, tool_use=tc)
                     logger.debug(
                         "Tool %s: %s (round %d)",
@@ -276,7 +271,11 @@ class AgentLoop:
 
             # Phase 4: Buddhi evaluation — ALL tool outcomes (blocked + executed)
             buddhi_event = self._apply_buddhi_verdict(
-                blocked, to_execute, results if to_execute else [], usage, round_num,
+                blocked,
+                to_execute,
+                results if to_execute else [],
+                usage,
+                round_num,
             )
             if buddhi_event:
                 if buddhi_event.type == EventType.ERROR:
@@ -292,6 +291,7 @@ class AgentLoop:
 
         For simple usage and testing. Use run() for streaming events.
         """
+
         async def _collect() -> str:
             final_text = ""
             async for event in self.run(user_message):
@@ -319,7 +319,9 @@ class AgentLoop:
         if self._narasimha and tc.name == "bash":
             cmd = str(tc.parameters.get("command", ""))
             threat = self._narasimha.audit_agent(
-                "steward", cmd, {"tool": tc.name},
+                "steward",
+                cmd,
+                {"tool": tc.name},
             )
             if threat and _SEVERITY_RANK.get(threat.severity, 0) >= _SEVERITY_RANK[ThreatLevel.RED]:
                 logger.warning("Narasimha blocked bash: %s", threat.description)
@@ -328,7 +330,8 @@ class AgentLoop:
         # Gate 3: Iron Dome safety check
         if self._safety_guard:
             allowed, violation = self._safety_guard.check_action(
-                tc.name, tc.parameters,
+                tc.name,
+                tc.parameters,
             )
             if not allowed:
                 return violation.message if violation else "Blocked by safety guard"
@@ -478,14 +481,17 @@ class AgentLoop:
         if all_tools:
             if directive and directive.tool_names:
                 filtered = [
-                    t for t in all_tools
+                    t
+                    for t in all_tools
                     if t.get("function", {}).get("name") in directive.tool_names  # type: ignore[union-attr]
                 ]
                 kwargs["tools"] = filtered or all_tools
                 if len(filtered) < len(all_tools):
                     logger.debug(
                         "Buddhi pre-flight: %d/%d tools selected (%s)",
-                        len(filtered), len(all_tools), directive.action.value,
+                        len(filtered),
+                        len(all_tools),
+                        directive.action.value,
                     )
             else:
                 kwargs["tools"] = all_tools
@@ -525,6 +531,7 @@ class AgentLoop:
         kwargs = self._build_llm_kwargs(directive)
 
         try:
+
             def _stream() -> object | None:
                 response = None
                 for delta in self._provider.invoke_stream(**kwargs):  # type: ignore[attr-defined]
@@ -594,11 +601,13 @@ class AgentLoop:
                         params = {"raw": params}
                 if isinstance(params, dict):
                     params = AgentLoop._clamp_params(params)
-                calls.append(ToolUse(
-                    id=tc.id if hasattr(tc, "id") else f"call_{id(tc)}",
-                    name=func.name if hasattr(func, "name") else str(func),
-                    parameters=params,
-                ))
+                calls.append(
+                    ToolUse(
+                        id=tc.id if hasattr(tc, "id") else f"call_{id(tc)}",
+                        name=func.name if hasattr(func, "name") else str(func),
+                        parameters=params,
+                    )
+                )
             return calls
 
         # Anthropic format: content blocks with type="tool_use"
@@ -606,11 +615,15 @@ class AgentLoop:
             for block in response.content:  # type: ignore[attr-defined]
                 if hasattr(block, "type") and block.type == "tool_use":
                     raw_params = block.input if hasattr(block, "input") else {}
-                    calls.append(ToolUse(
-                        id=block.id,
-                        name=block.name,
-                        parameters=AgentLoop._clamp_params(raw_params) if isinstance(raw_params, dict) else raw_params,
-                    ))
+                    calls.append(
+                        ToolUse(
+                            id=block.id,
+                            name=block.name,
+                            parameters=AgentLoop._clamp_params(raw_params)
+                            if isinstance(raw_params, dict)
+                            else raw_params,
+                        )
+                    )
 
         # Stop reason check (Anthropic: stop_reason == "tool_use")
         if not calls and hasattr(response, "stop_reason"):

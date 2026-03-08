@@ -28,16 +28,18 @@ from steward.types import AgentEvent, AgentUsage, EventType
 
 # ── Console Setup ────────────────────────────────────────────────────
 
-_THEME = Theme({
-    "tool.name": "bold cyan",
-    "tool.param": "dim",
-    "tool.ok": "green",
-    "tool.err": "red",
-    "stats": "dim",
-    "prompt": "bold cyan",
-    "heading": "bold",
-    "error": "red bold",
-})
+_THEME = Theme(
+    {
+        "tool.name": "bold cyan",
+        "tool.param": "dim",
+        "tool.ok": "green",
+        "tool.err": "red",
+        "stats": "dim",
+        "prompt": "bold cyan",
+        "heading": "bold",
+        "error": "red bold",
+    }
+)
 
 _console = Console(theme=_THEME, highlight=False)
 _err_console = Console(theme=_THEME, stderr=True, highlight=False)
@@ -199,11 +201,14 @@ def main() -> None:
     parser.add_argument("--cwd", help="Working directory (default: current)")
     parser.add_argument("--max-tokens", type=int, default=4096, help="Max output tokens per response")
     parser.add_argument(
-        "--output", choices=["human", "json"], default="human",
+        "--output",
+        choices=["human", "json"],
+        default="human",
         help="Output format (default: human)",
     )
     parser.add_argument(
-        "--telegram", action="store_true",
+        "--telegram",
+        action="store_true",
         help="Run as Telegram bot (requires TELEGRAM_BOT_TOKEN)",
     )
 
@@ -212,6 +217,7 @@ def main() -> None:
     # Telegram mode — delegate to telegram interface
     if args.telegram:
         from steward.interfaces.telegram import main as telegram_main
+
         telegram_main()
         return
 

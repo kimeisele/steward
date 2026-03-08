@@ -83,10 +83,7 @@ def clear_state(cwd: str | None = None) -> None:
 def _msg_to_dict(msg: Message) -> dict[str, object]:
     d: dict[str, object] = {"role": msg.role, "content": msg.content}
     if msg.tool_uses:
-        d["tool_uses"] = [
-            {"id": tu.id, "name": tu.name, "parameters": tu.parameters}
-            for tu in msg.tool_uses
-        ]
+        d["tool_uses"] = [{"id": tu.id, "name": tu.name, "parameters": tu.parameters} for tu in msg.tool_uses]
     if msg.tool_use_id:
         d["tool_use_id"] = msg.tool_use_id
     return d
@@ -101,11 +98,13 @@ def _dict_to_msg(d: dict[str, object]) -> Message:
                 params = tu_dict.get("parameters", {})
                 if not isinstance(params, dict):
                     params = {}
-                tool_uses.append(ToolUse(
-                    id=str(tu_dict.get("id", "")),
-                    name=str(tu_dict.get("name", "")),
-                    parameters=params,
-                ))
+                tool_uses.append(
+                    ToolUse(
+                        id=str(tu_dict.get("id", "")),
+                        name=str(tu_dict.get("name", "")),
+                        parameters=params,
+                    )
+                )
 
     tool_use_id = d.get("tool_use_id")
     return Message(
