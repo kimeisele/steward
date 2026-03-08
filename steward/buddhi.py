@@ -264,16 +264,18 @@ class Buddhi:
         prev_phase = self._chitta.phase
         self._chitta.advance_round()
 
-        # Record impressions in Chitta
+        # Record impressions in Chitta (with file paths for tracking)
         for tc, (success, error) in zip(tool_calls, results):
             params_hash = hash(frozenset(
                 (k, str(v)) for k, v in sorted(tc.parameters.items())
             )) if tc.parameters else 0
+            path = str(tc.parameters.get("path", "")) if tc.parameters else ""
             self._chitta.record(
                 name=tc.name,
                 params_hash=params_hash,
                 success=success,
                 error=error,
+                path=path,
             )
 
         # Gandha detects patterns in Chitta's impressions
@@ -337,13 +339,14 @@ def _phase_guidance(
     """
     # EXECUTE -> VERIFY: nudge to run tests after modifications
     if prev == PHASE_EXECUTE and curr == PHASE_VERIFY:
-        writes = sum(
-            1 for i in chitta.impressions
-            if i.name in ("edit_file", "write_file") and i.success
-        )
-        return (
-            f"You've modified files ({writes} write operations). "
-            f"Consider running tests to verify your changes work correctly."
-        )
+        modified = chitta.files_written
+        if modified:
+            file_list = ", ".join(modified[:5])
+            extra = f" (+{len(modified) - 5} more)" if len(modified) > 5 else ""
+            return (
+                f"You've modified: {file_list}{extra}. "
+                f"Consider running tests to verify your changes work correctly."
+            )
+        return "You've made changes. Consider running tests to verify."
 
     return ""

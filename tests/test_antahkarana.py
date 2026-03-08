@@ -334,6 +334,27 @@ class TestChittaPhase:
         chitta.clear()
         assert chitta.phase == PHASE_ORIENT
 
+    def test_files_read_tracked(self):
+        chitta = Chitta()
+        chitta.record("read_file", 1, True, path="/src/main.py")
+        chitta.record("read_file", 2, True, path="/src/lib.py")
+        chitta.record("read_file", 3, False, "err", path="/bad.py")  # failed, excluded
+        assert chitta.files_read == ["/src/main.py", "/src/lib.py"]
+
+    def test_files_written_tracked(self):
+        chitta = Chitta()
+        chitta.record("edit_file", 1, True, path="/src/main.py")
+        chitta.record("write_file", 2, True, path="/src/new.py")
+        chitta.record("edit_file", 3, True, path="/src/main.py")  # duplicate, deduped
+        assert chitta.files_written == ["/src/main.py", "/src/new.py"]
+
+    def test_files_no_path_excluded(self):
+        chitta = Chitta()
+        chitta.record("read_file", 1, True)  # no path
+        chitta.record("bash", 2, True)  # not a read tool
+        assert chitta.files_read == []
+        assert chitta.files_written == []
+
 
 class TestBuddhiPhaseGuidance:
     """Test that Buddhi injects guidance at phase transitions."""
@@ -383,7 +404,7 @@ class TestBuddhiPhaseGuidance:
         # Now recent 3 = [read, read, read], no recent writes, total_writes=1 → VERIFY
         # Phase transition: EXECUTE → VERIFY → reflect guidance
         assert v3.action == "reflect"
-        assert "modified files" in v3.suggestion
+        assert "modified" in v3.suggestion.lower()
 
     def test_phase_appears_in_directive(self):
         """BuddhiDirective includes the current phase."""

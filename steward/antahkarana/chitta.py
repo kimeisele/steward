@@ -42,6 +42,7 @@ class Impression:
     params_hash: int  # hash of parameters for identity
     success: bool
     error: str = ""
+    path: str = ""  # file path (for read/write/edit tools)
 
 
 class Chitta:
@@ -67,6 +68,7 @@ class Chitta:
         params_hash: int,
         success: bool,
         error: str = "",
+        path: str = "",
     ) -> None:
         """Record a tool execution impression."""
         self._impressions.append(Impression(
@@ -74,6 +76,7 @@ class Chitta:
             params_hash=params_hash,
             success=success,
             error=error,
+            path=path,
         ))
 
     def advance_round(self) -> int:
@@ -150,6 +153,28 @@ class Chitta:
             return PHASE_EXECUTE
 
         return PHASE_ORIENT
+
+    @property
+    def files_read(self) -> list[str]:
+        """Unique file paths read (from read_file impressions)."""
+        seen: set[str] = set()
+        result: list[str] = []
+        for i in self._impressions:
+            if i.name in _READ_NAMES and i.success and i.path and i.path not in seen:
+                seen.add(i.path)
+                result.append(i.path)
+        return result
+
+    @property
+    def files_written(self) -> list[str]:
+        """Unique file paths written (from edit_file/write_file impressions)."""
+        seen: set[str] = set()
+        result: list[str] = []
+        for i in self._impressions:
+            if i.name in _WRITE_NAMES and i.success and i.path and i.path not in seen:
+                seen.add(i.path)
+                result.append(i.path)
+        return result
 
     @property
     def stats(self) -> dict[str, object]:
