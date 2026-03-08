@@ -13,6 +13,8 @@ import json
 import logging
 from pathlib import Path
 
+from vibe_core.utils.atomic_io import atomic_write_json
+
 from steward.types import Conversation, Message, ToolUse
 
 logger = logging.getLogger("STEWARD.STATE")
@@ -34,19 +36,13 @@ def _state_file(cwd: str | None = None) -> Path:
 def save_conversation(conv: Conversation, cwd: str | None = None) -> None:
     """Save conversation to disk (atomic write, Phoenix pattern)."""
     try:
-        state_dir = _state_dir(cwd)
-        state_dir.mkdir(parents=True, exist_ok=True)
-
         data = {
             "version": _STATE_VERSION,
             "max_tokens": conv.max_tokens,
             "messages": [_msg_to_dict(m) for m in conv.messages],
         }
 
-        state_file = _state_file(cwd)
-        temp = state_file.with_suffix(".tmp")
-        temp.write_text(json.dumps(data, indent=2))
-        temp.replace(state_file)
+        atomic_write_json(_state_file(cwd), data)
 
     except Exception as e:
         logger.error("Failed to save state: %s", e)

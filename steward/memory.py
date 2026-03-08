@@ -27,6 +27,7 @@ from vibe_core.protocols.memory import (
     MemoryEntry,
     MemoryStats,
 )
+from vibe_core.utils.atomic_io import atomic_write_json
 
 logger = logging.getLogger("STEWARD.MEMORY")
 
@@ -129,10 +130,7 @@ class PersistentMemory(InMemoryMemory):
                 "entities": entity_data,
             }
 
-            # Atomic write
-            temp = self._state_file.with_suffix(".tmp")
-            temp.write_text(json.dumps(data, indent=2, default=str))
-            temp.replace(self._state_file)
+            atomic_write_json(self._state_file, data)
 
         except Exception as e:
             logger.warning("Memory save failed: %s", e)

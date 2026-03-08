@@ -16,6 +16,8 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from vibe_core.utils.atomic_io import safe_read_yaml
+
 logger = logging.getLogger("STEWARD.CONFIG")
 
 _CONFIG_FILENAME = "config.yaml"
@@ -58,21 +60,10 @@ def load_config(cwd: str | None = None) -> StewardConfig:
     cwd_path = Path(cwd) if cwd else Path.cwd()
     config_file = cwd_path / ".steward" / _CONFIG_FILENAME
 
-    if not config_file.is_file():
-        return StewardConfig()
-
     try:
-        import yaml
-    except ImportError:
-        logger.debug("PyYAML not installed, using defaults")
-        return StewardConfig()
-
-    try:
-        raw = yaml.safe_load(config_file.read_text(encoding="utf-8"))
-        if not isinstance(raw, dict):
-            logger.warning("Config file is not a YAML mapping, using defaults")
+        raw = safe_read_yaml(config_file)
+        if not raw:
             return StewardConfig()
-
         return _parse_config(raw)
 
     except Exception as e:
