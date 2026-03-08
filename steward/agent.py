@@ -50,7 +50,7 @@ from steward.tools.glob import GlobTool
 from steward.tools.grep import GrepTool
 from steward.tools.read_file import ReadFileTool
 from steward.tools.write_file import WriteFileTool
-from steward.types import AgentEvent, Conversation, LLMProvider
+from steward.types import AgentEvent, AgentUsage, Conversation, LLMProvider
 
 logger = logging.getLogger("STEWARD.AGENT")
 
@@ -288,6 +288,7 @@ class StewardAgent(GADBase):
 
         Emits to both SignalBus (simple) and EventBus (full Narada stream).
         Passes Memory to AgentLoop for cross-turn file tracking.
+        Records cumulative session stats in Memory after each turn.
         """
         loop = AgentLoop(
             provider=self._provider,
@@ -302,6 +303,8 @@ class StewardAgent(GADBase):
         async for event in loop.run(task):
             self._emit_signal(event)
             self._emit_event_bus(event)
+            if event.type == "done" and event.usage:
+                self._record_session_stats(event.usage)
             yield event
 
     def _emit_startup_signal(self) -> None:
@@ -396,6 +399,28 @@ class StewardAgent(GADBase):
                 message="text_response",
             )
 
+    def _record_session_stats(self, usage: AgentUsage) -> None:
+        """Record cumulative session stats in Memory (Chitta).
+
+        Tracks tokens, tool calls, and Buddhi classifications across turns.
+        Persists across sessions via PersistentMemory.
+        """
+        existing = self._memory.recall("session_stats", session_id="steward") or {}
+        stats = {
+            "turns": existing.get("turns", 0) + 1,
+            "total_input_tokens": existing.get("total_input_tokens", 0) + usage.input_tokens,
+            "total_output_tokens": existing.get("total_output_tokens", 0) + usage.output_tokens,
+            "total_tool_calls": existing.get("total_tool_calls", 0) + usage.tool_calls,
+            "total_errors": existing.get("total_errors", 0) + usage.buddhi_errors,
+            "total_reflections": existing.get("total_reflections", 0) + usage.buddhi_reflections,
+        }
+        # Track Buddhi classification distribution
+        classifications = existing.get("classifications", {})
+        if usage.buddhi_action:
+            classifications[usage.buddhi_action] = classifications.get(usage.buddhi_action, 0) + 1
+        stats["classifications"] = classifications
+        self._memory.remember("session_stats", stats, session_id="steward", tags=["stats"])
+
     def _resolve_dynamic_context(self) -> dict[str, str] | None:
         """Resolve dynamic context from PromptContext (git, time, etc.)."""
         prompt_ctx = ServiceRegistry.get(SVC_PROMPT_CONTEXT)
@@ -477,6 +502,7 @@ class StewardAgent(GADBase):
 
     def get_state(self) -> dict[str, object]:
         """GAD-000 Observability — current agent state."""
+        session_stats = self._memory.recall("session_stats", session_id="steward") or {}
         return {
             "conversation_messages": len(self._conversation.messages),
             "conversation_tokens": self._conversation.total_tokens,
@@ -487,6 +513,7 @@ class StewardAgent(GADBase):
             "safety_guard_active": self._safety_guard is not None,
             "memory_active": self._memory is not None,
             "heartbeat_state": self.heartbeat.get_summary(),
+            "session_stats": session_stats,
             "config": {
                 "model": self._config.model,
                 "auto_summarize": self._config.auto_summarize,
