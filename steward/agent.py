@@ -147,11 +147,26 @@ def _build_system_prompt(
     parts.append(f"\nWorking directory: {cwd}")
     parts.append(f"Available tools: {', '.join(sorted(tool_names))}")
 
+    # Multi-line context goes as separate sections
+    _SECTION_KEYS = {"project_structure", "recent_commits"}
     if dynamic_context:
-        parts.append("\nEnvironment:")
-        for key, value in dynamic_context.items():
-            if value and not value.startswith("["):
+        # Inline key-value pairs (branch, time)
+        inline = {k: v for k, v in dynamic_context.items()
+                  if k not in _SECTION_KEYS and v and not v.startswith("[")}
+        if inline:
+            parts.append("\nEnvironment:")
+            for key, value in inline.items():
                 parts.append(f"  {key}: {value}")
+
+        # Project structure as its own section
+        structure = dynamic_context.get("project_structure", "")
+        if structure and not structure.startswith("["):
+            parts.append(f"\nProject Structure:\n{structure}")
+
+        # Recent commits
+        commits = dynamic_context.get("recent_commits", "")
+        if commits and not commits.startswith("["):
+            parts.append(f"\nRecent Commits:\n{commits}")
 
     if project_instructions:
         parts.append(f"\nProject Instructions:\n{project_instructions}")
@@ -387,7 +402,7 @@ class StewardAgent(GADBase):
         if prompt_ctx is None:
             return None
         try:
-            return prompt_ctx.resolve(["current_branch", "system_time"])
+            return prompt_ctx.resolve(["current_branch", "system_time", "project_structure", "recent_commits"])
         except Exception:
             logger.debug("PromptContext resolve failed, skipping dynamic context")
             return None
