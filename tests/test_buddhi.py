@@ -267,7 +267,7 @@ class TestPreFlightTokenSavings:
     """Verify that pre-flight saves tokens with substrate routing."""
 
     def test_read_action_sends_fewer_tools(self):
-        """RESEARCH/ANALYZE sends 3 tools, not 6."""
+        """RESEARCH/ANALYZE sends OBSERVE tools (read_file, glob, grep, http)."""
         buddhi = Buddhi()
         buddhi._action = SemanticActionType.RESEARCH
         buddhi._guna = IntentGuna.SATTVA
@@ -275,10 +275,11 @@ class TestPreFlightTokenSavings:
         buddhi._approach = "MOKSHA"
 
         d = buddhi.pre_flight("research", 1)
-        assert len(d.tool_names) == 3
+        assert len(d.tool_names) == 4
+        assert "http" in d.tool_names
 
     def test_test_action_sends_fewer_tools(self):
-        """TEST sends OBSERVE + EXECUTE = 4 tools (read_file, glob, grep, bash)."""
+        """TEST sends OBSERVE + EXECUTE = 5 tools (read_file, glob, grep, http, bash)."""
         buddhi = Buddhi()
         buddhi._action = SemanticActionType.TEST
         buddhi._guna = IntentGuna.TAMAS
@@ -286,7 +287,7 @@ class TestPreFlightTokenSavings:
         buddhi._approach = "KARMA"
 
         d = buddhi.pre_flight("test", 1)
-        assert len(d.tool_names) == 4
+        assert len(d.tool_names) == 5
         assert "bash" in d.tool_names
         assert "grep" in d.tool_names
 
@@ -514,22 +515,23 @@ class TestToolNamespace:
         """Resolve a single namespace to tool names."""
         from steward.buddhi import ToolNamespace, resolve_namespaces
         tools = resolve_namespaces(frozenset({ToolNamespace.OBSERVE}))
-        assert tools == frozenset({"read_file", "glob", "grep"})
+        assert tools == frozenset({"read_file", "glob", "grep", "http"})
 
     def test_resolve_multiple_namespaces(self):
         """Resolve combined namespaces — union of all tools."""
         from steward.buddhi import ToolNamespace, resolve_namespaces
         tools = resolve_namespaces(frozenset({ToolNamespace.OBSERVE, ToolNamespace.EXECUTE}))
-        assert tools == frozenset({"read_file", "glob", "grep", "bash"})
+        assert tools == frozenset({"read_file", "glob", "grep", "http", "bash"})
 
     def test_resolve_all_namespaces(self):
-        """Resolving all namespaces gives all 7 tools."""
+        """Resolving all namespaces gives all 8 tools."""
         from steward.buddhi import ToolNamespace, resolve_namespaces
         tools = resolve_namespaces(frozenset(ToolNamespace))
         assert "read_file" in tools
         assert "bash" in tools
+        assert "http" in tools
         assert "sub_agent" in tools
-        assert len(tools) == 7
+        assert len(tools) == 8
 
     def test_sub_agent_in_delegate_namespace(self):
         """sub_agent is in the DELEGATE namespace."""

@@ -95,6 +95,11 @@ def detect_patterns(
     if result is not None:
         return result
 
+    # Error recovery — match error text against known fix patterns
+    result = _check_error_recovery(impressions)
+    if result is not None:
+        return result
+
     # Cross-turn aware checks
     result = _check_write_without_read(impressions, prior_reads)
     if result is not None:
@@ -198,6 +203,158 @@ def _check_failure_redirect(
             reason="Repeated tool route misses — requesting non-existent tools",
             suggestion=f"Available tools: {tool_list}. Use only these tool names.",
         )
+
+    return None
+
+
+# ── Error Recovery Patterns ──────────────────────────────────────────
+#
+# Deterministic mapping: error text pattern → concrete fix suggestion.
+# Gandha reads the error, suggests the fix. Zero LLM tokens.
+# Patterns are checked in order — first match wins.
+
+_ERROR_RECOVERY: list[tuple[str, str, str]] = [
+    # (error_substring, pattern_name, fix_suggestion)
+    (
+        "modulenotfounderror",
+        "missing_module",
+        "Install the missing module: run `bash` with `pip install <module_name>`. "
+        "Check the error for the exact module name.",
+    ),
+    (
+        "no module named",
+        "missing_module",
+        "Module not installed. Use `bash` to run `pip install <module>`. "
+        "If it's a local module, check the import path.",
+    ),
+    (
+        "permissionerror",
+        "permission_denied",
+        "Permission denied. Check file ownership with `ls -la`. "
+        "For directories, try `mkdir -p` before writing. "
+        "Avoid `chmod 777` — use minimal permissions.",
+    ),
+    (
+        "permission denied",
+        "permission_denied",
+        "Permission denied. Use `ls -la` to check ownership. "
+        "If you need elevated access, use `sudo` cautiously.",
+    ),
+    (
+        "filenotfounderror",
+        "file_not_found",
+        "File or directory not found. Use `glob` to search for the file, "
+        "or `bash` with `mkdir -p` to create missing directories.",
+    ),
+    (
+        "no such file or directory",
+        "file_not_found",
+        "Path does not exist. Use `glob` to find the correct path, "
+        "or create the directory with `mkdir -p`.",
+    ),
+    (
+        "syntaxerror",
+        "syntax_error",
+        "File has a syntax error. Use `read_file` to inspect the file, "
+        "then `edit_file` to fix the syntax. Run the linter/interpreter to verify.",
+    ),
+    (
+        "jsondecodeerror",
+        "json_error",
+        "Malformed JSON. Use `read_file` to see the actual content, "
+        "then fix the JSON structure with `edit_file`.",
+    ),
+    (
+        "command not found",
+        "missing_command",
+        "Command not installed. Use `bash` with the system package manager "
+        "(brew/apt/pip) to install it.",
+    ),
+    (
+        "connectionrefusederror",
+        "connection_refused",
+        "Service not running or port not open. Check if the service is up "
+        "with `bash` (e.g., `lsof -i :<port>` or `docker ps`).",
+    ),
+    (
+        "connection refused",
+        "connection_refused",
+        "Service not responding. Verify the service is running and "
+        "the correct host:port is being used.",
+    ),
+    (
+        "timeouterror",
+        "timeout",
+        "Operation timed out. Increase the timeout parameter, "
+        "or check network connectivity / service health.",
+    ),
+    (
+        "timed out",
+        "timeout",
+        "Request timed out. Try with a longer timeout, "
+        "or verify the target is reachable.",
+    ),
+    (
+        "importerror",
+        "import_error",
+        "Import failed — wrong package version or missing dependency. "
+        "Run `pip show <package>` to check version, `pip install --upgrade` if needed.",
+    ),
+    (
+        "merge conflict",
+        "git_conflict",
+        "Git merge conflict. Use `read_file` to see conflict markers, "
+        "then `edit_file` to resolve them. Run `git add` + `git commit` after.",
+    ),
+    (
+        "fatal: not a git repository",
+        "not_git_repo",
+        "Not inside a git repository. Use `bash` with `git init` or "
+        "navigate to the correct directory.",
+    ),
+    (
+        "address already in use",
+        "port_in_use",
+        "Port already in use. Find the process with `lsof -i :<port>` "
+        "and stop it, or use a different port.",
+    ),
+    (
+        "disk quota exceeded",
+        "disk_full",
+        "Disk is full. Free space with `df -h` to check, "
+        "then remove unnecessary files.",
+    ),
+    (
+        "memoryerror",
+        "out_of_memory",
+        "Out of memory. Reduce batch size, process data in chunks, "
+        "or close other applications.",
+    ),
+]
+
+
+def _check_error_recovery(impressions: list[Impression]) -> Detection | None:
+    """Match the most recent error against known fix patterns.
+
+    Only triggers on the latest impression if it's a failure.
+    Scans error text against _ERROR_RECOVERY patterns (first match wins).
+    """
+    if not impressions:
+        return None
+
+    last = impressions[-1]
+    if last.success or not last.error:
+        return None
+
+    error_lower = last.error.lower()
+    for substring, pattern_name, suggestion in _ERROR_RECOVERY:
+        if substring in error_lower:
+            return Detection(
+                severity=VerdictAction.REDIRECT,
+                pattern=f"error_recovery:{pattern_name}",
+                reason=f"Recognized error: {pattern_name} in {last.name}",
+                suggestion=suggestion,
+            )
 
     return None
 

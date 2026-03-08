@@ -260,11 +260,14 @@ class TestGandha:
         assert detect_patterns(imps) is None
 
     def test_write_without_read_failed_write_ok(self):
-        """Failed writes are not flagged (they didn't actually write)."""
+        """Failed writes are not flagged as write-without-read
+        (they didn't actually write). Error recovery may still trigger."""
         imps = [
             Impression("edit_file", 1, False, "permission denied", path="/src/main.py"),
         ]
-        assert detect_patterns(imps) is None
+        d = detect_patterns(imps)
+        # Error recovery fires for "permission denied", but NOT write-without-read
+        assert d is None or d.pattern != "write_without_read"
 
     def test_duplicate_read_detected(self):
         """Reading the same file twice is a redirect."""
@@ -650,3 +653,182 @@ class TestBuddhiPhaseGuidance:
         buddhi = Buddhi()
         d = buddhi.pre_flight("test something", 0)
         assert d.phase in ("ORIENT", "EXECUTE", "VERIFY", "COMPLETE")
+
+
+# ── Error Recovery Pattern Tests ─────────────────────────────────────
+
+
+class TestGandhaErrorRecovery:
+    """Test Gandha error recovery — deterministic error→fix mapping."""
+
+    def test_module_not_found_recovery(self):
+        """ModuleNotFoundError triggers pip install suggestion."""
+        imps = [
+            Impression("bash", 1, False, "ModuleNotFoundError: No module named 'requests'"),
+        ]
+        d = detect_patterns(imps)
+        assert d is not None
+        assert d.pattern == "error_recovery:missing_module"
+        assert "pip install" in d.suggestion
+
+    def test_no_module_named_recovery(self):
+        """'No module named' variant also triggers recovery."""
+        imps = [
+            Impression("bash", 1, False, "ImportError: No module named 'flask'"),
+        ]
+        d = detect_patterns(imps)
+        assert d is not None
+        assert d.pattern == "error_recovery:missing_module"
+
+    def test_permission_error_recovery(self):
+        """PermissionError triggers chmod/ls suggestion."""
+        imps = [
+            Impression("write_file", 1, False, "PermissionError: [Errno 13] Permission denied: '/etc/config'"),
+        ]
+        d = detect_patterns(imps)
+        assert d is not None
+        assert d.pattern == "error_recovery:permission_denied"
+        assert "ls -la" in d.suggestion
+
+    def test_file_not_found_recovery(self):
+        """FileNotFoundError triggers glob suggestion."""
+        imps = [
+            Impression("read_file", 1, False, "FileNotFoundError: [Errno 2] No such file or directory: '/src/missing.py'"),
+        ]
+        d = detect_patterns(imps)
+        assert d is not None
+        assert d.pattern == "error_recovery:file_not_found"
+        assert "glob" in d.suggestion
+
+    def test_no_such_file_recovery(self):
+        """'No such file or directory' variant also triggers."""
+        imps = [
+            Impression("bash", 1, False, "ls: /nonexistent: No such file or directory"),
+        ]
+        d = detect_patterns(imps)
+        assert d is not None
+        assert d.pattern == "error_recovery:file_not_found"
+
+    def test_syntax_error_recovery(self):
+        """SyntaxError triggers read-and-fix suggestion."""
+        imps = [
+            Impression("bash", 1, False, "SyntaxError: invalid syntax (main.py, line 42)"),
+        ]
+        d = detect_patterns(imps)
+        assert d is not None
+        assert d.pattern == "error_recovery:syntax_error"
+        assert "read_file" in d.suggestion
+
+    def test_json_decode_error_recovery(self):
+        """JSONDecodeError triggers read-and-fix-json suggestion."""
+        imps = [
+            Impression("bash", 1, False, "json.decoder.JSONDecodeError: Expecting value: line 1 column 1"),
+        ]
+        d = detect_patterns(imps)
+        assert d is not None
+        assert d.pattern == "error_recovery:json_error"
+
+    def test_command_not_found_recovery(self):
+        """'command not found' triggers install suggestion."""
+        imps = [
+            Impression("bash", 1, False, "bash: ruff: command not found"),
+        ]
+        d = detect_patterns(imps)
+        assert d is not None
+        assert d.pattern == "error_recovery:missing_command"
+        assert "install" in d.suggestion
+
+    def test_connection_refused_recovery(self):
+        """ConnectionRefusedError triggers service check."""
+        imps = [
+            Impression("bash", 1, False, "ConnectionRefusedError: [Errno 111] Connection refused"),
+        ]
+        d = detect_patterns(imps)
+        assert d is not None
+        assert d.pattern == "error_recovery:connection_refused"
+
+    def test_timeout_recovery(self):
+        """TimeoutError triggers timeout increase suggestion."""
+        imps = [
+            Impression("http", 1, False, "Request timed out after 30s"),
+        ]
+        d = detect_patterns(imps)
+        assert d is not None
+        assert d.pattern == "error_recovery:timeout"
+        assert "timeout" in d.suggestion
+
+    def test_import_error_recovery(self):
+        """ImportError triggers version check suggestion."""
+        imps = [
+            Impression("bash", 1, False, "ImportError: cannot import name 'NewFeature' from 'pkg'"),
+        ]
+        d = detect_patterns(imps)
+        assert d is not None
+        assert d.pattern == "error_recovery:import_error"
+        assert "pip show" in d.suggestion
+
+    def test_git_conflict_recovery(self):
+        """Merge conflict triggers resolution flow."""
+        imps = [
+            Impression("bash", 1, False, "CONFLICT (content): Merge conflict in src/main.py"),
+        ]
+        d = detect_patterns(imps)
+        assert d is not None
+        assert d.pattern == "error_recovery:git_conflict"
+        assert "read_file" in d.suggestion
+
+    def test_port_in_use_recovery(self):
+        """Address already in use triggers port investigation."""
+        imps = [
+            Impression("bash", 1, False, "OSError: [Errno 98] Address already in use"),
+        ]
+        d = detect_patterns(imps)
+        assert d is not None
+        assert d.pattern == "error_recovery:port_in_use"
+        assert "lsof" in d.suggestion
+
+    def test_success_does_not_trigger(self):
+        """Successful operations don't trigger error recovery."""
+        imps = [
+            Impression("bash", 1, True),
+        ]
+        d = detect_patterns(imps)
+        assert d is None
+
+    def test_unknown_error_no_match(self):
+        """Unknown errors don't produce false-positive matches."""
+        imps = [
+            Impression("bash", 1, False, "Something completely unexpected happened"),
+        ]
+        d = detect_patterns(imps)
+        assert d is None
+
+    def test_first_match_wins(self):
+        """When error matches multiple patterns, the first one wins."""
+        # 'No module named' comes before 'importerror' in the list
+        imps = [
+            Impression("bash", 1, False, "ImportError: No module named 'xyz'"),
+        ]
+        d = detect_patterns(imps)
+        assert d is not None
+        assert d.pattern == "error_recovery:missing_module"
+
+    def test_case_insensitive_matching(self):
+        """Error matching is case-insensitive."""
+        imps = [
+            Impression("bash", 1, False, "PERMISSIONERROR: access denied"),
+        ]
+        d = detect_patterns(imps)
+        assert d is not None
+        assert d.pattern == "error_recovery:permission_denied"
+
+    def test_higher_severity_patterns_take_priority(self):
+        """Consecutive errors (abort) take priority over error recovery (redirect)."""
+        # 5 consecutive errors → abort (checked before error recovery)
+        imps = [
+            Impression("bash", i, False, "ModuleNotFoundError: No module named 'x'")
+            for i in range(MAX_CONSECUTIVE_ERRORS)
+        ]
+        d = detect_patterns(imps)
+        assert d is not None
+        assert d.pattern == "consecutive_errors"  # abort takes priority
