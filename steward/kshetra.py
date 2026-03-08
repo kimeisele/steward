@@ -312,15 +312,19 @@ def get_category_elements(category: PrakritiCategory) -> list[TattvaMapping]:
     ]
 
 
+# Element value → category (branchless dispatch via range thresholds)
+_ELEMENT_CATEGORIES = (
+    (4, "antahkarana"),
+    (9, "tanmatra"),
+    (14, "jnanendriya"),
+    (19, "karmendriya"),
+)
+
+
 def _element_category(element: PrakritiElement) -> str:
-    """Get category name for an element."""
-    if 1 <= element.value <= 4:
-        return "antahkarana"
-    elif 5 <= element.value <= 9:
-        return "tanmatra"
-    elif 10 <= element.value <= 14:
-        return "jnanendriya"
-    elif 15 <= element.value <= 19:
-        return "karmendriya"
-    else:
-        return "mahabhuta"
+    """Get category name for an element (branchless threshold scan)."""
+    v = element.value
+    for threshold, category in _ELEMENT_CATEGORIES:
+        if v <= threshold:
+            return category
+    return "mahabhuta"

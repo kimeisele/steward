@@ -33,6 +33,13 @@ logger = logging.getLogger("STEWARD.CONTEXT")
 _FILE_PATH_RE = re.compile(r"(?:^|[\s\"'])((?:/[\w./-]+|\.[\w./-]+)\.(?:py|js|ts|yaml|yml|json|md|txt|toml|cfg|sh|rs|go|c|h|cpp|java))")
 ERROR_MARKER = "[Error]"
 
+# Tool name → file set key (branchless dispatch)
+_TOOL_FILE_SET: dict[str, str] = {
+    "read_file": "read",
+    "write_file": "written",
+    "edit_file": "written",
+}
+
 
 def _extract_structure(messages: list[Message]) -> str:
     """Extract deterministic structure from messages without LLM.
@@ -66,13 +73,12 @@ def _extract_structure(messages: list[Message]) -> str:
         if msg.tool_uses:
             for tu in msg.tool_uses:
                 tools_used[tu.name] = tools_used.get(tu.name, 0) + 1
-                # Track file operations from tool parameters
+                # Track file operations from tool parameters (branchless dispatch)
                 path = str(tu.parameters.get("path", ""))
-                if path:
-                    if tu.name == "read_file":
-                        files_read.add(path)
-                    elif tu.name in ("write_file", "edit_file"):
-                        files_written.add(path)
+                file_set_key = _TOOL_FILE_SET.get(tu.name)
+                if path and file_set_key:
+                    target = files_read if file_set_key == "read" else files_written
+                    target.add(path)
 
         # Extract errors from tool results
         if msg.role == MessageRole.TOOL and ERROR_MARKER in content:
