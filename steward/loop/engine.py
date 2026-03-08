@@ -37,7 +37,7 @@ from vibe_core.runtime.tool_safety_guard import ToolSafetyGuard
 from vibe_core.tools.tool_protocol import ToolCall as ProtoToolCall, ToolResult
 from vibe_core.tools.tool_registry import ToolRegistry
 
-from steward.buddhi import Buddhi, BuddhiDirective
+from steward.buddhi import Buddhi, BuddhiDirective, BuddhiVerdict
 from steward.context import SamskaraContext
 from steward.services import tool_descriptions_for_llm
 from steward.summarizer import Summarizer, should_summarize
@@ -87,6 +87,7 @@ class AgentLoop:
         safety_guard: ToolSafetyGuard | None = None,
         attention: MahaAttention | None = None,
         memory: MemoryProtocol | None = None,
+        buddhi: Buddhi | None = None,
     ) -> None:
         self._provider = provider
         self._registry = registry
@@ -96,7 +97,7 @@ class AgentLoop:
         self._attention = attention
         self._memory = memory
         self._samskara = SamskaraContext()
-        self._buddhi = Buddhi()
+        self._buddhi = buddhi or Buddhi()  # Use injected or create fresh
         self._compression = MahaCompression()
 
         # Ensure system prompt is first message
@@ -133,11 +134,20 @@ class AgentLoop:
                 usage.buddhi_action = directive.action.value
                 usage.buddhi_guna = directive.guna.value
             usage.buddhi_phase = directive.phase
-            response = await self._call_llm(directive)
+
+            # Try streaming if provider supports it
+            streamed_text_deltas: list[str] = []
+            response = await self._call_llm_streaming(
+                directive, streamed_text_deltas
+            )
             usage.llm_calls += 1
             if response is None:
                 yield AgentEvent(type="error", content="LLM returned no response")
                 return
+
+            # Yield text deltas that were collected during streaming
+            for delta in streamed_text_deltas:
+                yield AgentEvent(type="text_delta", content=delta)
 
             # Track tokens from LLM response
             self._accumulate_usage(response, usage)
@@ -151,7 +161,9 @@ class AgentLoop:
                     text = text[:MAX_RESPONSE_CHARS] + f"\n[truncated at {MAX_RESPONSE_CHARS} chars]"
                 self._conversation.add(Message(role="assistant", content=text))
                 usage.rounds = round_num + 1
-                yield AgentEvent(type="text", content=text)
+                # Only emit "text" if we didn't already stream deltas
+                if not streamed_text_deltas:
+                    yield AgentEvent(type="text", content=text)
                 yield AgentEvent(type="done", usage=usage)
                 logger.debug(
                     "Turn complete after %d rounds (%d tokens)",
@@ -428,6 +440,71 @@ class AgentLoop:
             # Deterministic path continues — caller handles None gracefully.
             logger.warning("LLM call failed (%s: %s) — deterministic path continues", type(e).__name__, e)
             return None
+
+    async def _call_llm_streaming(
+        self,
+        directive: BuddhiDirective | None = None,
+        text_deltas: list[str] | None = None,
+    ) -> object | None:
+        """Call LLM with streaming if provider supports it.
+
+        Collects text_delta chunks into text_deltas list for the caller
+        to yield as AgentEvents. Returns the final complete response.
+
+        Falls back to non-streaming _call_llm if provider doesn't support it.
+        """
+        if not hasattr(self._provider, "invoke_stream"):
+            return await self._call_llm(directive)
+
+        # Run context management (same as _call_llm)
+        if self._samskara.should_compact(self._conversation, threshold=0.5):
+            if self._samskara.compact(self._conversation):
+                logger.info("Samskara compacted before stream")
+
+        if should_summarize(self._conversation, threshold=0.7):
+            try:
+                summarizer = Summarizer(self._provider)
+                summarizer.summarize(self._conversation)
+            except Exception:
+                pass
+
+        max_tokens = self._max_tokens
+        if directive and directive.max_tokens:
+            max_tokens = directive.max_tokens
+
+        try:
+            kwargs: dict[str, object] = {
+                "messages": self._conversation.to_dicts(),
+                "max_tokens": max_tokens,
+            }
+
+            all_tools = tool_descriptions_for_llm(self._registry)
+            if all_tools:
+                if directive and directive.tool_names:
+                    filtered = [
+                        t for t in all_tools
+                        if t.get("function", {}).get("name") in directive.tool_names  # type: ignore[union-attr]
+                    ]
+                    kwargs["tools"] = filtered or all_tools
+                else:
+                    kwargs["tools"] = all_tools
+
+            # Stream in a thread (providers are sync)
+            def _stream() -> object | None:
+                response = None
+                for delta in self._provider.invoke_stream(**kwargs):  # type: ignore[attr-defined]
+                    if hasattr(delta, "type"):
+                        if delta.type == "text_delta" and text_deltas is not None:  # type: ignore[attr-defined]
+                            text_deltas.append(delta.text)  # type: ignore[attr-defined]
+                        elif delta.type == "done":  # type: ignore[attr-defined]
+                            response = getattr(delta, "response", None)
+                return response
+
+            return await asyncio.to_thread(_stream)
+
+        except Exception as e:
+            logger.warning("Stream failed (%s: %s) — falling back", type(e).__name__, e)
+            return await self._call_llm(directive)
 
     @staticmethod
     def _extract_text(response: object) -> str:

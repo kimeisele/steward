@@ -25,6 +25,8 @@ from vibe_core.mahamantra.substrate.cell_system.cell import (
 )
 from vibe_core.runtime.quota_manager import OperationalQuota, QuotaExceededError, QuotaLimits
 
+from typing import Iterator
+
 from steward.types import LLMProvider
 
 logger = logging.getLogger("STEWARD.PROVIDER")
@@ -254,6 +256,105 @@ class ProviderChamber:
         logger.warning("ALL providers exhausted or failed")
         return None
 
+    def invoke_stream(self, **kwargs: object) -> Iterator[object]:
+        """Streaming invoke — yields _StreamDelta chunks.
+
+        Uses the first alive provider that supports invoke_stream.
+        Falls back to non-streaming invoke if no provider supports streaming.
+        Quota checks, retries, and cell lifecycle apply as in invoke().
+        """
+        self._maybe_reset_daily()
+        kwargs.pop("prefer_capable", None)
+
+        try:
+            self._quota.check_before_request(
+                estimated_tokens=int(kwargs.get("max_tokens", 4096)),  # type: ignore[arg-type]
+                operation="llm_stream",
+            )
+        except QuotaExceededError as e:
+            logger.warning("Quota exceeded — blocking stream: %s", e)
+            return
+
+        alive = [c for c in self._cells if c.is_alive]
+        has_tools = bool(kwargs.get("tools"))
+        if has_tools:
+            alive.sort(
+                key=lambda c: (c.payload.supports_tools, c.lifecycle.prana),
+                reverse=True,
+            )
+        else:
+            alive.sort(key=lambda c: c.lifecycle.prana, reverse=True)
+
+        for cell in alive:
+            payload: ProviderPayload = cell.payload
+            if not self._is_within_quota(payload):
+                continue
+
+            if cell.signal(payload.name) is None:
+                continue
+
+            # Check if provider supports streaming
+            if not hasattr(payload.provider, "invoke_stream"):
+                # Fall back to non-streaming
+                call_kwargs = dict(kwargs)
+                call_kwargs["model"] = payload.model
+                call_kwargs.pop("max_retries", None)
+                try:
+                    response = payload.provider.invoke(**call_kwargs)
+                    self._total_calls += 1
+                    # Yield complete text as single delta
+                    text = ""
+                    if hasattr(response, "content"):
+                        text = response.content if isinstance(response.content, str) else ""  # type: ignore[attr-defined]
+                    if text:
+                        yield _StreamDelta(type="text_delta", text=text)
+                    yield _StreamDelta(type="done", response=response)
+                    return
+                except Exception as e:
+                    self._total_failures += 1
+                    cell.lifecycle.integrity = max(
+                        0, cell.lifecycle.integrity - (COSMIC_FRAME // 10)
+                    )
+                    cell.metabolize(0)
+                    logger.info("'%s' failed streaming fallback: %s", payload.name, e)
+                    continue
+
+            call_kwargs = dict(kwargs)
+            call_kwargs["model"] = payload.model
+            call_kwargs.pop("max_retries", None)
+
+            try:
+                for delta in payload.provider.invoke_stream(**call_kwargs):
+                    if hasattr(delta, "type") and delta.type == "done":  # type: ignore[attr-defined]
+                        # Track usage from final response
+                        final_resp = getattr(delta, "response", None)
+                        if final_resp:
+                            usage = getattr(final_resp, "usage", None)
+                            if usage:
+                                input_t = getattr(usage, "prompt_tokens", 0) or 0
+                                output_t = getattr(usage, "completion_tokens", 0) or 0
+                                total = input_t + output_t
+                                cell.metabolize(-total)
+                                cost = total / 1_000_000 * payload.cost_per_mtok_input
+                                self._quota.record_request(
+                                    tokens_used=total, cost_usd=cost,
+                                    operation=f"llm_stream:{payload.name}",
+                                )
+                        self._total_calls += 1
+                    yield delta
+                return  # Success
+
+            except Exception as e:
+                self._total_failures += 1
+                cell.lifecycle.integrity = max(
+                    0, cell.lifecycle.integrity - (COSMIC_FRAME // 10)
+                )
+                cell.metabolize(0)
+                logger.info("'%s' streaming failed: %s, trying next", payload.name, e)
+                continue
+
+        logger.warning("ALL providers exhausted for streaming")
+
     @property
     def quota(self) -> OperationalQuota:
         """Access the operational quota manager."""
@@ -377,6 +478,126 @@ class MistralAdapter:
 
         response = self._client.chat.completions.create(**create_kwargs)  # type: ignore[attr-defined]
         return _AdapterResponse(response)
+
+    def invoke_stream(self, **kwargs: object) -> Iterator[object]:
+        """Stream LLM response, yielding _StreamDelta chunks.
+
+        Each chunk has .type ("text_delta"|"tool_call_delta"|"done")
+        and .text (for text_delta) or accumulated response (for done).
+        """
+        messages = kwargs.get("messages")
+        model = str(kwargs.get("model", "mistral-small-latest"))
+        max_tokens = int(kwargs.get("max_tokens", 512))  # type: ignore[arg-type]
+        temperature = float(kwargs.get("temperature", 0.3))  # type: ignore[arg-type]
+        timeout = kwargs.get("timeout")
+
+        if messages is None:
+            prompt = str(kwargs.get("prompt", ""))
+            messages = [{"role": "user", "content": prompt}]
+
+        create_kwargs: dict[str, object] = {
+            "model": model,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "stream": True,
+        }
+        if timeout:
+            create_kwargs["timeout"] = timeout
+
+        tools = kwargs.get("tools")
+        if tools:
+            create_kwargs["tools"] = tools
+            create_kwargs["tool_choice"] = "auto"
+
+        stream = self._client.chat.completions.create(**create_kwargs)  # type: ignore[attr-defined]
+
+        # Accumulate full content + tool calls for final response
+        full_text = ""
+        tool_calls: list[object] = []
+        usage = None
+
+        for chunk in stream:
+            delta = chunk.choices[0].delta if chunk.choices else None  # type: ignore[attr-defined]
+            if delta and getattr(delta, "content", None):
+                full_text += delta.content
+                yield _StreamDelta(type="text_delta", text=delta.content)
+            if delta and getattr(delta, "tool_calls", None):
+                # Tool call deltas need assembly (OpenAI accumulation)
+                for tc_delta in delta.tool_calls:
+                    idx = getattr(tc_delta, "index", 0)
+                    while len(tool_calls) <= idx:
+                        tool_calls.append(_ToolCallAccumulator())
+                    tool_calls[idx].accumulate(tc_delta)  # type: ignore[attr-defined]
+            if hasattr(chunk, "usage") and chunk.usage is not None:  # type: ignore[attr-defined]
+                usage = chunk.usage  # type: ignore[attr-defined]
+
+        # Build final response object compatible with _AdapterResponse
+        yield _StreamDelta(
+            type="done",
+            response=_StreamedResponse(
+                text=full_text,
+                tool_calls=[tc.build() for tc in tool_calls] if tool_calls else None,  # type: ignore[attr-defined]
+                usage=usage,
+            ),
+        )
+
+
+@dataclass
+class _StreamDelta:
+    """A streaming chunk from invoke_stream."""
+
+    type: str  # "text_delta" | "done"
+    text: str = ""
+    response: object = None  # Final _StreamedResponse (on type="done")
+
+
+class _ToolCallAccumulator:
+    """Accumulates tool call deltas from OpenAI streaming."""
+
+    def __init__(self) -> None:
+        self.id = ""
+        self.name = ""
+        self.arguments = ""
+
+    def accumulate(self, delta: object) -> None:
+        if hasattr(delta, "id") and delta.id:
+            self.id = delta.id
+        func = getattr(delta, "function", None)
+        if func:
+            if getattr(func, "name", None):
+                self.name += func.name
+            if getattr(func, "arguments", None):
+                self.arguments += func.arguments
+
+    def build(self) -> object:
+        return _BuiltToolCall(id=self.id, name=self.name, arguments=self.arguments)
+
+
+@dataclass
+class _BuiltToolCall:
+    """Assembled tool call from streaming deltas."""
+
+    id: str
+    name: str
+    arguments: str
+
+    @property
+    def function(self) -> object:
+        return self
+
+
+@dataclass
+class _StreamedResponse:
+    """Final response assembled from streaming chunks."""
+
+    text: str
+    tool_calls: list | None = None
+    usage: object = None
+
+    @property
+    def content(self) -> str:
+        return self.text
 
 
 @dataclass

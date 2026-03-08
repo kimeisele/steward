@@ -56,11 +56,15 @@ class Chitta:
     Phase derivation: Chitta knows its own phase from its impressions.
     ORIENT -> EXECUTE -> VERIFY -> COMPLETE
     Regression: errors pull back to ORIENT.
+
+    Cross-turn awareness: prior_reads tracks files read in previous turns,
+    enabling Gandha to detect blind writes across turn boundaries.
     """
 
     def __init__(self) -> None:
         self._impressions: list[Impression] = []
         self._round: int = 0
+        self._prior_reads: set[str] = set()  # files read in prior turns
 
     def record(
         self,
@@ -101,7 +105,24 @@ class Chitta:
         return list(self._impressions)
 
     def clear(self) -> None:
-        """Clear all impressions and reset round counter."""
+        """Clear all impressions and reset round counter.
+
+        Also clears prior_reads — full reset for new session.
+        """
+        self._impressions.clear()
+        self._round = 0
+        self._prior_reads.clear()
+
+    def end_turn(self) -> None:
+        """End current turn — merge reads into prior, clear impressions.
+
+        Call this between turns to retain cross-turn file awareness
+        while clearing per-turn impression history.
+        """
+        # Merge current turn's reads into prior_reads
+        for imp in self._impressions:
+            if imp.name in _READ_NAMES and imp.success and imp.path:
+                self._prior_reads.add(imp.path)
         self._impressions.clear()
         self._round = 0
 
@@ -155,8 +176,22 @@ class Chitta:
         return PHASE_ORIENT
 
     @property
+    def prior_reads(self) -> frozenset[str]:
+        """Files read in previous turns (cross-turn awareness)."""
+        return frozenset(self._prior_reads)
+
+    def was_file_read(self, path: str) -> bool:
+        """Check if a file was read in current OR prior turns."""
+        if path in self._prior_reads:
+            return True
+        return any(
+            i.name in _READ_NAMES and i.success and i.path == path
+            for i in self._impressions
+        )
+
+    @property
     def files_read(self) -> list[str]:
-        """Unique file paths read (from read_file impressions)."""
+        """Unique file paths read (from read_file impressions, current turn only)."""
         seen: set[str] = set()
         result: list[str] = []
         for i in self._impressions:
@@ -176,6 +211,33 @@ class Chitta:
                 result.append(i.path)
         return result
 
+    def to_summary(self) -> dict[str, object]:
+        """Serialize cross-turn state for persistence.
+
+        Only saves what's needed for cross-turn awareness:
+        - prior_reads: all files ever read (for Gandha write-without-read)
+        - files_written: files modified (for session awareness)
+        - last_phase: where the session ended
+
+        NOT saved: raw impressions (ephemeral, per-turn only).
+        """
+        # Merge current reads into snapshot
+        all_reads = set(self._prior_reads)
+        for imp in self._impressions:
+            if imp.name in _READ_NAMES and imp.success and imp.path:
+                all_reads.add(imp.path)
+        return {
+            "prior_reads": sorted(all_reads),
+            "files_written": self.files_written,
+            "last_phase": self.phase,
+        }
+
+    def load_summary(self, summary: dict[str, object]) -> None:
+        """Restore cross-turn state from a persisted summary."""
+        prior = summary.get("prior_reads", [])
+        if isinstance(prior, list):
+            self._prior_reads = set(prior)
+
     @property
     def stats(self) -> dict[str, object]:
         """Diagnostic stats from accumulated impressions."""
@@ -191,4 +253,5 @@ class Chitta:
             "error_ratio": errors / total if total else 0.0,
             "tool_distribution": tool_counts,
             "phase": self.phase,
+            "prior_reads": len(self._prior_reads),
         }

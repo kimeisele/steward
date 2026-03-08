@@ -175,14 +175,15 @@ class AgentEvent:
     """Event yielded by the async agent loop.
 
     Types:
-        text        — final text response from LLM
+        text_delta  — streaming text chunk (real-time output)
+        text        — final complete text response from LLM
         tool_call   — LLM requested a tool invocation
         tool_result — tool execution completed
         error       — something went wrong
         done        — turn is complete (usage field populated)
     """
 
-    type: str  # "text" | "tool_call" | "tool_result" | "error" | "done"
+    type: str  # "text_delta" | "text" | "tool_call" | "tool_result" | "error" | "done"
     content: str | ToolResult | None = None
     tool_use: ToolUse | None = None
     usage: AgentUsage | None = None

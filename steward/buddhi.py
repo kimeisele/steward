@@ -278,8 +278,11 @@ class Buddhi:
                 path=path,
             )
 
-        # Gandha detects patterns in Chitta's impressions
-        detection = detect_patterns(self._chitta.impressions)
+        # Gandha detects patterns in Chitta's impressions (cross-turn aware)
+        detection = detect_patterns(
+            self._chitta.impressions,
+            prior_reads=self._chitta.prior_reads,
+        )
         if detection is not None:
             verdict = BuddhiVerdict(
                 action=detection.severity,

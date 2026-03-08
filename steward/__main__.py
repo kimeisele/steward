@@ -31,7 +31,12 @@ _BOLD = "\033[1m"
 
 def _format_event(event: AgentEvent) -> None:
     """Print an AgentEvent to the terminal."""
+    if event.type == "text_delta":
+        # Streaming: print chunk immediately without newline
+        print(event.content, end="", flush=True)
+        return
     if event.type == "text":
+        # Non-streaming fallback or final text
         print(f"\n{event.content}")
     elif event.type == "tool_call" and event.tool_use:
         params = " ".join(f"{k}={v!r}" for k, v in event.tool_use.parameters.items())

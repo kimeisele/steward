@@ -223,6 +223,49 @@ class TestGandha:
         d = detect_patterns(imps)
         assert d is None
 
+    def test_write_without_read_detected(self):
+        """Writing a file without reading it first is a redirect."""
+        imps = [
+            Impression("glob", 1, True),
+            Impression("edit_file", 2, True, path="/src/main.py"),
+        ]
+        d = detect_patterns(imps)
+        assert d is not None
+        assert d.severity == "redirect"
+        assert d.pattern == "write_without_read"
+        assert "main.py" in d.suggestion
+
+    def test_write_after_read_ok(self):
+        """Writing a file after reading it is fine."""
+        imps = [
+            Impression("read_file", 1, True, path="/src/main.py"),
+            Impression("edit_file", 2, True, path="/src/main.py"),
+        ]
+        assert detect_patterns(imps) is None
+
+    def test_write_without_read_only_on_last(self):
+        """Only the most recent impression triggers write-without-read."""
+        imps = [
+            Impression("edit_file", 1, True, path="/src/a.py"),  # blind write
+            Impression("read_file", 2, True, path="/src/b.py"),  # different file
+        ]
+        # Last impression is a read, not a write — no detection
+        assert detect_patterns(imps) is None
+
+    def test_write_without_read_new_file_ok(self):
+        """write_file to a new file (no path) is not flagged."""
+        imps = [
+            Impression("write_file", 1, True),  # no path
+        ]
+        assert detect_patterns(imps) is None
+
+    def test_write_without_read_failed_write_ok(self):
+        """Failed writes are not flagged (they didn't actually write)."""
+        imps = [
+            Impression("edit_file", 1, False, "permission denied", path="/src/main.py"),
+        ]
+        assert detect_patterns(imps) is None
+
     def test_duplicate_read_detected(self):
         """Reading the same file twice is a redirect."""
         imps = [
@@ -391,6 +434,125 @@ class TestChittaPhase:
         chitta.record("bash", 2, True)  # not a read tool
         assert chitta.files_read == []
         assert chitta.files_written == []
+
+
+class TestChittaCrossTurn:
+    """Test cross-turn Chitta persistence (prior_reads, end_turn, serialization)."""
+
+    def test_end_turn_merges_reads(self):
+        """end_turn() moves current reads into prior_reads."""
+        chitta = Chitta()
+        chitta.record("read_file", 1, True, path="/src/main.py")
+        chitta.record("read_file", 2, True, path="/src/lib.py")
+        chitta.record("edit_file", 3, True, path="/src/main.py")
+
+        chitta.end_turn()
+
+        assert chitta.prior_reads == frozenset({"/src/main.py", "/src/lib.py"})
+        assert len(chitta.impressions) == 0  # impressions cleared
+        assert chitta.round == 0  # round reset
+
+    def test_prior_reads_accumulate_across_turns(self):
+        """Prior reads accumulate across multiple turns."""
+        chitta = Chitta()
+        chitta.record("read_file", 1, True, path="/a.py")
+        chitta.end_turn()
+
+        chitta.record("read_file", 2, True, path="/b.py")
+        chitta.end_turn()
+
+        assert chitta.prior_reads == frozenset({"/a.py", "/b.py"})
+
+    def test_was_file_read_current_turn(self):
+        """was_file_read checks current turn impressions."""
+        chitta = Chitta()
+        chitta.record("read_file", 1, True, path="/src/main.py")
+        assert chitta.was_file_read("/src/main.py") is True
+        assert chitta.was_file_read("/src/other.py") is False
+
+    def test_was_file_read_prior_turn(self):
+        """was_file_read checks prior turns too."""
+        chitta = Chitta()
+        chitta.record("read_file", 1, True, path="/src/main.py")
+        chitta.end_turn()
+
+        # New turn — no current impressions, but prior_reads has it
+        assert chitta.was_file_read("/src/main.py") is True
+
+    def test_clear_resets_prior_reads(self):
+        """Full clear resets prior_reads too."""
+        chitta = Chitta()
+        chitta.record("read_file", 1, True, path="/src/main.py")
+        chitta.end_turn()
+        assert len(chitta.prior_reads) == 1
+
+        chitta.clear()
+        assert len(chitta.prior_reads) == 0
+
+    def test_to_summary_serialization(self):
+        """to_summary() produces a serializable dict."""
+        chitta = Chitta()
+        chitta.record("read_file", 1, True, path="/a.py")
+        chitta.record("edit_file", 2, True, path="/a.py")
+
+        summary = chitta.to_summary()
+        assert "/a.py" in summary["prior_reads"]
+        assert "/a.py" in summary["files_written"]
+        assert summary["last_phase"] in ("ORIENT", "EXECUTE", "VERIFY", "COMPLETE")
+
+    def test_load_summary_restores_prior_reads(self):
+        """load_summary() restores prior_reads from a dict."""
+        chitta = Chitta()
+        chitta.load_summary({
+            "prior_reads": ["/a.py", "/b.py"],
+            "files_written": ["/a.py"],
+            "last_phase": "VERIFY",
+        })
+        assert chitta.prior_reads == frozenset({"/a.py", "/b.py"})
+        assert chitta.was_file_read("/a.py") is True
+
+    def test_roundtrip_serialization(self):
+        """to_summary → load_summary preserves data."""
+        c1 = Chitta()
+        c1.record("read_file", 1, True, path="/x.py")
+        c1.record("read_file", 2, True, path="/y.py")
+        c1.end_turn()
+        summary = c1.to_summary()
+
+        c2 = Chitta()
+        c2.load_summary(summary)
+        assert c2.prior_reads == c1.prior_reads
+        assert c2.was_file_read("/x.py") is True
+
+    def test_stats_includes_prior_reads_count(self):
+        """Stats show how many prior reads are tracked."""
+        chitta = Chitta()
+        chitta.record("read_file", 1, True, path="/a.py")
+        chitta.end_turn()
+        assert chitta.stats["prior_reads"] == 1
+
+
+class TestGandhaCrossTurn:
+    """Test Gandha cross-turn awareness (write-without-read with prior_reads)."""
+
+    def test_write_ok_if_read_in_prior_turn(self):
+        """Writing a file that was read in a prior turn is safe."""
+        imps = [
+            Impression("edit_file", 1, True, path="/src/main.py"),
+        ]
+        prior = frozenset({"/src/main.py"})
+        d = detect_patterns(imps, prior_reads=prior)
+        assert d is None  # No detection — file was read in prior turn
+
+    def test_write_flagged_if_never_read(self):
+        """Writing a file never read (current or prior) is detected."""
+        imps = [
+            Impression("edit_file", 1, True, path="/src/main.py"),
+        ]
+        prior = frozenset({"/src/other.py"})  # different file
+        d = detect_patterns(imps, prior_reads=prior)
+        assert d is not None
+        assert d.pattern == "write_without_read"
 
 
 class TestBuddhiPhaseGuidance:

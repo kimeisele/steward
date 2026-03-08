@@ -11,6 +11,8 @@ Gandha examines Chitta's impressions and detects:
     - Stuck loops (identical calls repeated)
     - Error cascades (consecutive failures)
     - Failure redirects (known fix patterns)
+    - Blind writes (writing without reading first)
+    - Duplicate reads (same file read twice)
     - Tool streaks (same tool overused)
     - Error ratio (systemic failure)
 
@@ -52,13 +54,21 @@ class Detection:
     suggestion: str = ""  # what to do about it
 
 
-def detect_patterns(impressions: list[Impression]) -> Detection | None:
+def detect_patterns(
+    impressions: list[Impression],
+    prior_reads: frozenset[str] = frozenset(),
+) -> Detection | None:
     """Run all detection checks against impressions.
 
     Returns the first detected pattern (ordered by severity),
     or None if no patterns detected. Stateless — pure function.
+
+    Args:
+        impressions: Current turn's recorded tool impressions
+        prior_reads: Files read in previous turns (cross-turn awareness)
     """
-    checks = [
+    # Standard checks (no cross-turn context needed)
+    simple_checks = [
         _check_consecutive_errors,
         _check_identical_calls,
         _check_failure_redirect,
@@ -67,10 +77,16 @@ def detect_patterns(impressions: list[Impression]) -> Detection | None:
         _check_error_ratio,
     ]
 
-    for check in checks:
+    for check in simple_checks:
         result = check(impressions)
         if result is not None:
             return result
+
+    # Cross-turn aware checks
+    result = _check_write_without_read(impressions, prior_reads)
+    if result is not None:
+        return result
+
     return None
 
 
@@ -179,6 +195,57 @@ def _check_failure_redirect(impressions: list[Impression]) -> Detection | None:
         )
 
     return None
+
+
+_WRITE_TOOL_NAMES = frozenset({"edit_file", "write_file"})
+_READ_TOOL_NAMES = frozenset({"read_file"})
+
+
+def _check_write_without_read(
+    impressions: list[Impression],
+    prior_reads: frozenset[str] = frozenset(),
+) -> Detection | None:
+    """Detect writing/editing a file that was never read — blind write.
+
+    Only triggers if the MOST RECENT impression is a successful write/edit
+    to a file that was never read in this turn OR in prior turns.
+
+    Cross-turn aware: if you read a file last turn and edit it this turn,
+    Gandha knows it's safe.
+
+    ToolSafetyGuard (Iron Dome) blocks at the tool level.
+    Gandha detects the PATTERN and gives better guidance.
+    """
+    if not impressions:
+        return None
+
+    last = impressions[-1]
+    if last.name not in _WRITE_TOOL_NAMES or not last.success or not last.path:
+        return None
+
+    # Check prior turns first (cross-turn awareness)
+    if last.path in prior_reads:
+        return None  # Read in a previous turn — safe
+
+    # Check current turn
+    for imp in impressions[:-1]:
+        if (
+            imp.name in _READ_TOOL_NAMES
+            and imp.success
+            and imp.path == last.path
+        ):
+            return None  # File was read this turn — all good
+
+    return Detection(
+        severity="redirect",
+        pattern="write_without_read",
+        reason=f"Blind write to '{last.path}' — file was never read first",
+        suggestion=(
+            f"You wrote to '{last.path}' without reading it first. "
+            f"Use read_file to understand the current contents before "
+            f"making changes. This prevents incorrect edits."
+        ),
+    )
 
 
 def _check_duplicate_read(impressions: list[Impression]) -> Detection | None:

@@ -396,8 +396,12 @@ class TestFailureRedirect:
         assert "read_file" in v.suggestion
 
     def test_edit_file_success_no_redirect(self):
-        """edit_file succeeding → no redirect."""
+        """edit_file succeeding after read → no redirect."""
         buddhi = Buddhi()
+        # Read the file first (Gandha expects reads before writes)
+        buddhi.evaluate(
+            [_tc("read_file", path="/a.py")], [(True, "")]
+        )
         tc = _tc("edit_file", path="/a.py", old="foo", new="bar")
         buddhi.evaluate([tc], [(True, "")])
         v = buddhi.evaluate([tc], [(True, "")])

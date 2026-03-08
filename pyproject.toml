@@ -4,17 +4,24 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "steward"
-version = "0.7.0"
-description = "Steward — Autonomous Agent Engine"
+version = "0.10.0"
+description = "Steward — Autonomous Superagent Engine (Sankhya-25 Architecture)"
 requires-python = ">=3.11"
+license = "MIT"
 dependencies = [
     "steward-protocol",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
+providers = [
+    "openai>=1.0",
+    "anthropic>=0.30",
+]
 dev = [
     "pytest>=8.0",
     "pytest-timeout>=2.0",
+    "pytest-asyncio>=0.23",
 ]
 
 [project.scripts]

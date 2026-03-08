@@ -31,6 +31,7 @@ from vibe_core.tools.tool_registry import ToolRegistry
 from vibe_core.protocols.memory import MemoryProtocol
 
 from steward import __version__
+from steward.buddhi import Buddhi
 from steward.config import StewardConfig, load_config
 from steward.context import SamskaraContext
 from steward.loop.engine import AgentLoop
@@ -232,6 +233,10 @@ class StewardAgent(GADBase):
         self._attention: MahaAttention = ServiceRegistry.require(SVC_ATTENTION)
         self._memory: MemoryProtocol = ServiceRegistry.require(SVC_MEMORY)
 
+        # Buddhi persists across turns (cross-turn Chitta awareness)
+        self._buddhi = Buddhi()
+        self._load_chitta_from_memory()
+
         # Build system prompt (with dynamic context if not custom)
         if system_prompt is not None:
             self._system_prompt = system_prompt
@@ -261,11 +266,17 @@ class StewardAgent(GADBase):
         text response. Returns the agent's response.
         """
         final_text = ""
+        streamed_chunks: list[str] = []
         async for event in self.run_stream(task):
-            if event.type == "text":
+            if event.type == "text_delta":
+                streamed_chunks.append(str(event.content) if event.content else "")
+            elif event.type == "text":
                 final_text = str(event.content) if event.content else ""
             elif event.type == "error":
                 return f"[Error: {event.content}]"
+        # If we got streaming chunks, assemble them
+        if streamed_chunks:
+            return "".join(streamed_chunks)
         return final_text
 
     def run_sync(self, task: str) -> str:
@@ -288,6 +299,7 @@ class StewardAgent(GADBase):
 
         Emits to both SignalBus (simple) and EventBus (full Narada stream).
         Passes Memory to AgentLoop for cross-turn file tracking.
+        Buddhi persists across turns — Chitta retains file awareness.
         Records cumulative session stats in Memory after each turn.
         """
         loop = AgentLoop(
@@ -299,12 +311,16 @@ class StewardAgent(GADBase):
             safety_guard=self._safety_guard,
             attention=self._attention,
             memory=self._memory,
+            buddhi=self._buddhi,
         )
         async for event in loop.run(task):
             self._emit_signal(event)
             self._emit_event_bus(event)
             if event.type == "done" and event.usage:
                 self._record_session_stats(event.usage)
+                # Cross-turn: merge reads, clear impressions, persist
+                self._buddhi._chitta.end_turn()
+                self._save_chitta_to_memory()
             yield event
 
     def _emit_startup_signal(self) -> None:
@@ -399,6 +415,24 @@ class StewardAgent(GADBase):
                 message="text_response",
             )
 
+    def _load_chitta_from_memory(self) -> None:
+        """Restore Chitta's cross-turn state from PersistentMemory."""
+        summary = self._memory.recall("chitta_summary", session_id="steward")
+        if summary and isinstance(summary, dict):
+            self._buddhi._chitta.load_summary(summary)
+            logger.debug(
+                "Chitta restored: %d prior reads",
+                len(self._buddhi._chitta.prior_reads),
+            )
+
+    def _save_chitta_to_memory(self) -> None:
+        """Persist Chitta's cross-turn state to PersistentMemory."""
+        summary = self._buddhi._chitta.to_summary()
+        self._memory.remember(
+            "chitta_summary", summary,
+            session_id="steward", tags=["chitta"],
+        )
+
     def _record_session_stats(self, usage: AgentUsage) -> None:
         """Record cumulative session stats in Memory (Chitta).
 
@@ -471,9 +505,10 @@ class StewardAgent(GADBase):
         )
 
     def reset(self) -> None:
-        """Clear conversation history, safety guard, and session memory."""
+        """Clear conversation history, safety guard, Buddhi, and session memory."""
         self._conversation = Conversation(max_tokens=self._conversation.max_tokens)
         self._safety_guard.reset_session()
+        self._buddhi.reset()
         self._memory.clear_session("steward")
         logger.info("Conversation reset")
 
@@ -522,6 +557,8 @@ class StewardAgent(GADBase):
             "safety_guard_active": self._safety_guard is not None,
             "memory_active": self._memory is not None,
             "heartbeat_state": self.heartbeat.get_summary(),
+            "buddhi_phase": self._buddhi.phase,
+            "chitta_stats": self._buddhi.stats,
             "session_stats": session_stats,
             "config": {
                 "model": self._config.model,
