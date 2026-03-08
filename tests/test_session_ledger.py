@@ -197,3 +197,105 @@ class TestSessionLedger:
 
             ledger = SessionLedger(cwd=tmpdir)
             assert len(ledger.sessions) == 0  # Version mismatch = start fresh
+
+
+class TestSkillCandidates:
+    """Test find_skill_candidates — post-task learning pattern extraction."""
+
+    def test_no_candidates_too_few_sessions(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ledger = SessionLedger(cwd=tmpdir)
+            ledger.record(
+                SessionRecord(task="Fix bug", outcome="success", summary="ok", tool_calls=3, buddhi_action="debug")
+            )
+            assert ledger.find_skill_candidates() == []
+
+    def test_no_candidates_all_failures(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ledger = SessionLedger(cwd=tmpdir)
+            for i in range(5):
+                ledger.record(
+                    SessionRecord(
+                        task=f"Task {i}", outcome="error", summary="fail", tool_calls=3, buddhi_action="debug"
+                    )
+                )
+            assert ledger.find_skill_candidates() == []
+
+    def test_candidate_from_repeated_action(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ledger = SessionLedger(cwd=tmpdir)
+            ledger.record(
+                SessionRecord(
+                    task="Fix failing tests in auth module",
+                    outcome="success",
+                    summary="ok",
+                    tool_calls=5,
+                    rounds=3,
+                    buddhi_action="debug",
+                    files_read=["auth.py"],
+                    files_written=["auth.py"],
+                )
+            )
+            ledger.record(
+                SessionRecord(
+                    task="Debug failing tests in login",
+                    outcome="success",
+                    summary="ok",
+                    tool_calls=4,
+                    rounds=2,
+                    buddhi_action="debug",
+                    files_read=["auth.py"],
+                    files_written=["auth.py"],
+                )
+            )
+            candidates = ledger.find_skill_candidates()
+            assert len(candidates) == 1
+            assert candidates[0]["action"] == "debug"
+            assert candidates[0]["frequency"] == 2
+            assert "auth.py" in candidates[0]["common_files"]
+
+    def test_no_candidate_if_single_action(self):
+        """Need 2+ sessions with same action to create candidate."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ledger = SessionLedger(cwd=tmpdir)
+            ledger.record(
+                SessionRecord(task="Fix auth", outcome="success", summary="ok", tool_calls=3, buddhi_action="debug")
+            )
+            ledger.record(
+                SessionRecord(
+                    task="Add feature", outcome="success", summary="ok", tool_calls=3, buddhi_action="implement"
+                )
+            )
+            assert ledger.find_skill_candidates() == []
+
+    def test_candidate_has_sample_tasks(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ledger = SessionLedger(cwd=tmpdir)
+            for i in range(3):
+                ledger.record(
+                    SessionRecord(
+                        task=f"Deploy version {i}",
+                        outcome="success",
+                        summary="ok",
+                        tool_calls=3,
+                        rounds=2,
+                        buddhi_action="deploy",
+                    )
+                )
+            candidates = ledger.find_skill_candidates()
+            assert len(candidates) == 1
+            assert len(candidates[0]["sample_tasks"]) == 3
+            assert candidates[0]["avg_rounds"] == 2
+            assert candidates[0]["avg_tools"] == 3
+
+    def test_low_tool_calls_filtered(self):
+        """Sessions with fewer than 2 tool calls are ignored."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ledger = SessionLedger(cwd=tmpdir)
+            for _ in range(3):
+                ledger.record(
+                    SessionRecord(
+                        task="Simple query", outcome="success", summary="ok", tool_calls=1, buddhi_action="query"
+                    )
+                )
+            assert ledger.find_skill_candidates() == []

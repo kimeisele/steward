@@ -108,13 +108,31 @@ class GapTracker:
 
         parts = ["\n## Known Capability Gaps"]
         for gap in active[:5]:  # Top 5 only
-            parts.append(f"- [{gap.category}] {gap.description}")
+            suggestion = self._suggest_resolution(gap)
+            line = f"- [{gap.category}] {gap.description}"
+            if suggestion:
+                line += f" → {suggestion}"
+            parts.append(line)
 
-        parts.append(
-            "\nConsider addressing these gaps by installing packages, "
-            "creating skills, or finding alternative approaches."
-        )
         return "\n".join(parts)
+
+    @staticmethod
+    def _suggest_resolution(gap: Gap) -> str:
+        """Suggest a resolution based on gap category and description."""
+        desc = gap.description.lower()
+        if gap.category == "tool":
+            if "import" in desc or "module" in desc:
+                return "try: pip install <package>"
+            if "timeout" in desc:
+                return "increase timeout or break into smaller operations"
+            return "try an alternative approach or tool"
+        if gap.category == "skill":
+            return "create a skill: .steward/skills/<name>.md"
+        if gap.category == "provider":
+            if "key" in desc or "api" in desc:
+                return "set the API key in environment"
+            return "add a provider with the required capability"
+        return ""
 
     def to_dict(self) -> list[dict]:
         """Serialize gaps for persistence."""
