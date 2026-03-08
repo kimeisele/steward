@@ -13,7 +13,6 @@ from steward.loop.engine import AgentLoop
 from steward.types import AgentEvent, Conversation, EventType, Message
 from vibe_core.tools.tool_registry import ToolRegistry
 
-
 # ── Fake LLM Provider ────────────────────────────────────────────────
 
 
@@ -147,10 +146,9 @@ class TestAgentLoop:
 
     def test_lotus_route_miss_blocks_before_registry(self):
         """O(1) Lotus route miss blocks unknown tools before registry execution."""
-        from vibe_core.mahamantra.adapters.attention import MahaAttention
-
         # Register bash in registry but NOT in attention → route miss
         from steward.tools.bash import BashTool
+        from vibe_core.mahamantra.adapters.attention import MahaAttention
 
         reg = ToolRegistry()
         reg.register(BashTool())
@@ -185,8 +183,8 @@ class TestAgentLoop:
 
     def test_lotus_route_hit_allows_execution(self):
         """O(1) Lotus route hit allows tool execution to proceed."""
-        from vibe_core.mahamantra.adapters.attention import MahaAttention
         from steward.tools.bash import BashTool
+        from vibe_core.mahamantra.adapters.attention import MahaAttention
 
         reg = ToolRegistry()
         bash = BashTool()
@@ -595,6 +593,7 @@ class TestToolTimeout:
     def test_timeout_produces_error_result(self):
         """A tool that exceeds timeout gets a timeout error."""
         import time
+
         from steward.loop import engine as engine_mod
         from vibe_core.tools.tool_protocol import Tool, ToolResult
 
@@ -785,3 +784,133 @@ class TestToolSchemaConstraints:
         from steward.tools.grep import GrepTool
 
         assert "500" in GrepTool().description
+
+
+class TestDependencyAwareExecution:
+    """Test write→read dependency detection for parallel tool execution.
+
+    Protocol lesson from ActionStep.depends_on: if tool A writes a file
+    that tool B reads/tests, B must wait for A to complete.
+    """
+
+    def test_no_writes_single_wave(self):
+        """All reads — single wave, all parallel."""
+        from steward.types import ToolUse
+
+        to_execute = [
+            (ToolUse(id="1", name="read_file", parameters={"path": "a.py"}), None),
+            (ToolUse(id="2", name="read_file", parameters={"path": "b.py"}), None),
+            (ToolUse(id="3", name="bash", parameters={"command": "echo hi"}), None),
+        ]
+        waves = AgentLoop._partition_by_dependency(to_execute)
+        assert len(waves) == 1
+        assert waves[0] == [0, 1, 2]
+
+    def test_write_plus_independent_single_wave(self):
+        """Write + unrelated read — single wave (no dependency)."""
+        from steward.types import ToolUse
+
+        to_execute = [
+            (ToolUse(id="1", name="write_file", parameters={"path": "a.py", "content": "x"}), None),
+            (ToolUse(id="2", name="read_file", parameters={"path": "b.py"}), None),
+        ]
+        waves = AgentLoop._partition_by_dependency(to_execute)
+        assert len(waves) == 1
+
+    def test_write_then_read_same_file_two_waves(self):
+        """write_file(a.py) + read_file(a.py) → 2 waves."""
+        from steward.types import ToolUse
+
+        to_execute = [
+            (ToolUse(id="1", name="write_file", parameters={"path": "/tmp/a.py", "content": "x"}), None),
+            (ToolUse(id="2", name="read_file", parameters={"path": "/tmp/a.py"}), None),
+        ]
+        waves = AgentLoop._partition_by_dependency(to_execute)
+        assert len(waves) == 2
+        assert 0 in waves[0]  # writer in wave 1
+        assert 1 in waves[1]  # reader in wave 2
+
+    def test_edit_then_bash_test_two_waves(self):
+        """edit_file(foo.py) + bash(pytest foo.py) → 2 waves."""
+        from steward.types import ToolUse
+
+        to_execute = [
+            (ToolUse(id="1", name="edit_file", parameters={"path": "src/foo.py", "old_string": "a", "new_string": "b"}), None),
+            (ToolUse(id="2", name="bash", parameters={"command": "pytest src/foo.py"}), None),
+        ]
+        waves = AgentLoop._partition_by_dependency(to_execute)
+        assert len(waves) == 2
+        assert 0 in waves[0]  # editor in wave 1
+        assert 1 in waves[1]  # tester in wave 2
+
+    def test_write_plus_independent_bash_single_wave(self):
+        """write_file(a.py) + bash(echo hi) → 1 wave (bash doesn't reference a.py)."""
+        from steward.types import ToolUse
+
+        to_execute = [
+            (ToolUse(id="1", name="write_file", parameters={"path": "a.py", "content": "x"}), None),
+            (ToolUse(id="2", name="bash", parameters={"command": "echo hello"}), None),
+        ]
+        waves = AgentLoop._partition_by_dependency(to_execute)
+        assert len(waves) == 1
+
+    def test_single_tool_single_wave(self):
+        """Single tool — always 1 wave."""
+        from steward.types import ToolUse
+
+        to_execute = [
+            (ToolUse(id="1", name="write_file", parameters={"path": "a.py", "content": "x"}), None),
+        ]
+        waves = AgentLoop._partition_by_dependency(to_execute)
+        assert len(waves) == 1
+
+    def test_multiple_writes_dependent_reads(self):
+        """Two writes, one dependent read — 2 waves, correct partitioning."""
+        from steward.types import ToolUse
+
+        to_execute = [
+            (ToolUse(id="1", name="write_file", parameters={"path": "a.py", "content": "x"}), None),
+            (ToolUse(id="2", name="edit_file", parameters={"path": "b.py", "old_string": "a", "new_string": "b"}), None),
+            (ToolUse(id="3", name="bash", parameters={"command": "pytest a.py b.py"}), None),
+            (ToolUse(id="4", name="read_file", parameters={"path": "c.py"}), None),
+        ]
+        waves = AgentLoop._partition_by_dependency(to_execute)
+        assert len(waves) == 2
+        # Wave 1: writers (0, 1) + independent reader (3)
+        assert set(waves[0]) == {0, 1, 3}
+        # Wave 2: dependent bash (2) — references both a.py and b.py
+        assert waves[1] == [2]
+
+    def test_end_to_end_write_then_test(self):
+        """Full AgentLoop: write + test serialized correctly."""
+        from steward.tools.bash import BashTool
+        from steward.tools.write_file import WriteFileTool
+
+        reg = ToolRegistry()
+        reg.register(WriteFileTool())
+        reg.register(BashTool())
+
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            target = f"{td}/hello.py"
+            tc1 = FakeToolCall(
+                id="w1",
+                function=FakeFunction(name="write_file", arguments={"path": target, "content": "print('hello')"}),
+            )
+            tc2 = FakeToolCall(
+                id="t1",
+                function=FakeFunction(name="bash", arguments={"command": f"python {target}"}),
+            )
+            responses = [
+                FakeResponse(content="", tool_calls=[tc1, tc2]),
+                FakeResponse(content="Done"),
+            ]
+            llm = FakeLLM(responses)
+            conv = Conversation()
+            loop = AgentLoop(provider=llm, registry=reg, conversation=conv)
+
+            _, events = run_loop(loop, "Write and test")
+            results = [e for e in events if e.type == EventType.TOOL_RESULT]
+            assert len(results) == 2
+            # Both should succeed because write completes before bash runs
+            assert all(r.content.success for r in results)

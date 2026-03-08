@@ -6,6 +6,7 @@ ToolSafetyGuard enforced: the file must be read before editing.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -69,6 +70,15 @@ class EditTool(Tool):
 
             count = content.count(old_string)
             if count == 0:
+                # Whitespace-normalized fallback (protocol lesson: reduces LLM retry loops)
+                fallback = self._whitespace_fallback(content, old_string, new_string)
+                if fallback is not None:
+                    path.write_text(fallback, encoding="utf-8")
+                    return ToolResult(
+                        success=True,
+                        output=f"Edited {path} (whitespace-normalized match)",
+                        metadata={"path": str(path), "whitespace_fallback": True},
+                    )
                 return ToolResult(
                     success=False,
                     error="old_string not found in file",
@@ -90,3 +100,35 @@ class EditTool(Tool):
             )
         except Exception as e:
             return ToolResult(success=False, error=str(e))
+
+    @staticmethod
+    def _whitespace_fallback(content: str, old_string: str, new_string: str) -> str | None:
+        """Try matching with flexible whitespace when exact match fails.
+
+        Turns old_string into a regex where whitespace runs match any whitespace.
+        Only succeeds if there's exactly one match (uniqueness preserved).
+
+        Protocol lesson from steward-protocol file_tools: reduce expensive
+        LLM retry loops when the only difference is indentation/spacing.
+        """
+        # Split into whitespace and non-whitespace segments
+        parts = re.split(r"(\s+)", old_string)
+        if not any(p.strip() for p in parts):
+            return None  # All whitespace — can't match meaningfully
+
+        pattern_parts = []
+        for part in parts:
+            if not part:
+                continue
+            if part.isspace():
+                pattern_parts.append(r"\s+")
+            else:
+                pattern_parts.append(re.escape(part))
+
+        pattern = "".join(pattern_parts)
+        matches = list(re.finditer(pattern, content))
+        if len(matches) != 1:
+            return None  # No match or ambiguous — don't guess
+
+        m = matches[0]
+        return content[: m.start()] + new_string + content[m.end() :]

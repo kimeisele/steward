@@ -1,8 +1,12 @@
 """
 Bash Tool — Execute shell commands.
 
-Safety: Commands run in a subprocess with timeout.
-No shell=True escaping issues because we use subprocess directly.
+Safety model:
+    - Subprocess with timeout (prevents hung commands)
+    - Narasimha hypervisor (Gate 2 in AgentLoop._check_tool_gates) audits
+      every bash invocation for threats. This is the REAL security boundary.
+    - No blocklist theater — pattern matching is trivially bypassed and
+      gives false confidence. Narasimha does proper threat analysis.
 """
 
 from __future__ import annotations
@@ -13,29 +17,11 @@ from typing import Any
 from vibe_core.tools.tool_protocol import Tool, ToolResult
 
 
-# Commands that are NEVER allowed — destructive or dangerous
-_BLOCKED_PATTERNS = [
-    "rm -rf /",
-    "rm -rf /*",
-    "mkfs",
-    "dd if=",
-    "format c:",
-    "> /dev/sd",
-    "chmod -r 777 /",
-    ":(){ :|:& };:",
-    "curl | bash",
-    "curl | sh",
-    "wget | bash",
-    "wget | sh",
-    "eval $(curl",
-    "eval $(wget",
-]
-
-
 class BashTool(Tool):
     """Execute a bash command and return stdout/stderr.
 
-    Safety: Blocks known destructive commands. Runs in subprocess with timeout.
+    Security: Narasimha (Gate 2) audits commands before execution.
+    Timeout prevents runaway processes.
     """
 
     def __init__(self, timeout: int = 120, cwd: str | None = None) -> None:
@@ -77,11 +63,6 @@ class BashTool(Tool):
             raise TypeError("command must be a string")
         if not parameters["command"].strip():
             raise ValueError("command must not be empty")
-        # Block known destructive commands
-        cmd_lower = parameters["command"].lower()
-        for pattern in _BLOCKED_PATTERNS:
-            if pattern in cmd_lower:
-                raise ValueError(f"Blocked dangerous command pattern: {pattern}")
 
     def execute(self, parameters: dict[str, Any]) -> ToolResult:
         command = parameters["command"]
