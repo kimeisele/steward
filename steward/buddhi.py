@@ -199,7 +199,7 @@ class BuddhiDirective:
     tier: ModelTier = ModelTier.STANDARD
     function: str = ""
     approach: str = ""
-    phase: str = ""  # ORIENT | EXECUTE | VERIFY | COMPLETE
+    phase: ExecutionPhase | str = ""  # defaults to "" before Chitta derives it
 
 
 @dataclass(frozen=True)
