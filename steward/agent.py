@@ -271,6 +271,7 @@ class StewardAgent(GADBase):
         self._persona = self._load_persona()
 
         # Build system prompt (with dynamic context if not custom)
+        self._custom_prompt = system_prompt is not None
         if system_prompt is not None:
             self._system_prompt = system_prompt
         else:
@@ -346,17 +347,17 @@ class StewardAgent(GADBase):
         Records cumulative session stats in Memory after each turn.
         Injects matched skills and gap context per-turn.
         """
-        # Inject skills matched to this task
+        # Inject skills and gap awareness (skip for custom system prompts)
         effective_prompt = self._system_prompt
-        matched_skills = self._skills.match(task)
-        if matched_skills:
-            effective_prompt += self._skills.format_for_prompt(matched_skills)
-            logger.debug("Injected %d skills for task", len(matched_skills))
+        if not self._custom_prompt:
+            matched_skills = self._skills.match(task)
+            if matched_skills:
+                effective_prompt += self._skills.format_for_prompt(matched_skills)
+                logger.debug("Injected %d skills for task", len(matched_skills))
 
-        # Inject gap awareness
-        gap_ctx = self._gaps.format_for_prompt()
-        if gap_ctx:
-            effective_prompt += gap_ctx
+            gap_ctx = self._gaps.format_for_prompt()
+            if gap_ctx:
+                effective_prompt += gap_ctx
 
         loop = AgentLoop(
             provider=self._provider,
