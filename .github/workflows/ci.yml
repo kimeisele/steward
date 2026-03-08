@@ -23,11 +23,6 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install steward-protocol from source
-        run: |
-          git clone https://github.com/kimeisele/steward-protocol.git /tmp/steward-protocol
-          pip install -e "/tmp/steward-protocol[providers]"
-
       - name: Install steward with dev deps
         run: pip install -e ".[providers,dev]"
 

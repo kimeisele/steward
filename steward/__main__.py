@@ -87,6 +87,7 @@ _TOOL_PARAM_KEY: dict[str, str] = {
     "bash": "command",
     "glob": "pattern",
     "grep": "pattern",
+    "http": "url",
     "sub_agent": "task",
 }
 
