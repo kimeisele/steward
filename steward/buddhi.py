@@ -321,6 +321,7 @@ class Buddhi:
         checks = [
             self._check_consecutive_errors,
             self._check_identical_calls,
+            self._check_failure_redirect,
             self._check_tool_streak,
             self._check_error_ratio,
         ]
@@ -374,6 +375,64 @@ class Buddhi:
                     f"This approach is not working."
                 ),
             )
+        return BuddhiVerdict(action="continue")
+
+    def _check_failure_redirect(self) -> BuddhiVerdict:
+        """Redirect to a better tool when failure patterns are recognizable.
+
+        Deterministic pattern matching — common failure modes have known fixes:
+        - edit_file failing with "not found" → read_file first
+        - write_file failing → read_file the target path first
+        - Repeated route misses → suggest available tools
+        """
+        if len(self._history) < 2:
+            return BuddhiVerdict(action="continue")
+
+        recent = self._history[-2:]
+
+        # Pattern: edit_file failed twice → need to read the file first
+        if all(
+            r.name == "edit_file" and not r.success
+            and ("not found" in r.error.lower() or "no match" in r.error.lower())
+            for r in recent
+        ):
+            return BuddhiVerdict(
+                action="redirect",
+                reason="edit_file failed 2x — old_string not found in file",
+                suggestion=(
+                    "Use read_file to see the current file contents, "
+                    "then retry edit_file with the exact string from the file."
+                ),
+            )
+
+        # Pattern: write_file failed twice → likely path or permission issue
+        if all(
+            r.name == "write_file" and not r.success
+            for r in recent
+        ):
+            return BuddhiVerdict(
+                action="redirect",
+                reason="write_file failed 2x",
+                suggestion=(
+                    "Use read_file or glob to verify the target path exists "
+                    "and is writable, then retry."
+                ),
+            )
+
+        # Pattern: route misses (tool not found) → suggest valid tools
+        if all(
+            "route miss" in r.error.lower() or "not found" in r.error.lower()
+            for r in recent if not r.success
+        ) and sum(1 for r in recent if not r.success) >= 2:
+            return BuddhiVerdict(
+                action="redirect",
+                reason="Repeated tool route misses — requesting non-existent tools",
+                suggestion=(
+                    "Available tools: bash, read_file, write_file, edit_file, "
+                    "glob, grep. Use only these tool names."
+                ),
+            )
+
         return BuddhiVerdict(action="continue")
 
     def _check_tool_streak(self) -> BuddhiVerdict:

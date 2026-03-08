@@ -162,6 +162,7 @@ class AgentLoop:
 
             # Phase 1: O(1) route + safety check (fast, sequential)
             to_execute: list[tuple[ToolUse, ProtoToolCall]] = []
+            blocked: list[tuple[ToolUse, str]] = []  # (tool_call, error_msg)
             for tc in tool_calls:
                 usage.tool_calls += 1
                 yield AgentEvent(type="tool_call", tool_use=tc)
@@ -179,6 +180,7 @@ class AgentLoop:
                             content=ToolResult(success=False, error=error_msg),
                             tool_use=tc,
                         )
+                        blocked.append((tc, error_msg))
                         continue
 
                 # Iron Dome safety check
@@ -196,6 +198,7 @@ class AgentLoop:
                             content=ToolResult(success=False, error=error_msg),
                             tool_use=tc,
                         )
+                        blocked.append((tc, error_msg))
                         continue
 
                 # Cleared for execution
@@ -256,19 +259,26 @@ class AgentLoop:
                         round_num + 1,
                     )
 
-            # Phase 4: Buddhi evaluation — discriminative intelligence
+            # Phase 4: Buddhi evaluation — ALL tool outcomes (blocked + executed)
+            all_calls: list[ToolUse] = []
+            all_results: list[tuple[bool, str]] = []
+
+            # Include blocked tools (Lotus miss / Iron Dome)
+            for tc, error_msg in blocked:
+                all_calls.append(tc)
+                all_results.append((False, error_msg))
+
+            # Include executed tools
             if to_execute:
-                buddhi_results = [
-                    (
-                        not isinstance(r, BaseException) and r.success,
-                        str(r) if isinstance(r, BaseException) else (r.error or ""),
-                    )
-                    for r in results
-                ]
-                verdict = self._buddhi.evaluate(
-                    [tc for tc, _ in to_execute],
-                    buddhi_results,
-                )
+                for (tc, _), raw_result in zip(to_execute, results):
+                    all_calls.append(tc)
+                    if isinstance(raw_result, BaseException):
+                        all_results.append((False, str(raw_result)))
+                    else:
+                        all_results.append((raw_result.success, raw_result.error or ""))
+
+            if all_calls:
+                verdict = self._buddhi.evaluate(all_calls, all_results)
                 if verdict.action == "abort":
                     usage.rounds = round_num + 1
                     yield AgentEvent(
@@ -276,16 +286,17 @@ class AgentLoop:
                         content=f"Buddhi abort: {verdict.reason}. {verdict.suggestion}",
                     )
                     return
-                if verdict.action == "reflect":
-                    # Inject reflection prompt — LLM will reconsider approach
-                    reflection = (
-                        f"[Buddhi reflection: {verdict.reason}] "
+                if verdict.action in ("reflect", "redirect"):
+                    # Inject guidance — LLM will reconsider approach
+                    label = "reflection" if verdict.action == "reflect" else "redirect"
+                    guidance = (
+                        f"[Buddhi {label}: {verdict.reason}] "
                         f"{verdict.suggestion}"
                     )
                     self._conversation.add(
-                        Message(role="user", content=reflection)
+                        Message(role="user", content=guidance)
                     )
-                    logger.info("Buddhi injected reflection: %s", verdict.reason)
+                    logger.info("Buddhi injected %s: %s", label, verdict.reason)
 
         usage.rounds = MAX_TOOL_ROUNDS
         yield AgentEvent(type="error", content="Maximum tool rounds exceeded")

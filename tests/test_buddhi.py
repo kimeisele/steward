@@ -316,3 +316,71 @@ class TestBuddhiInLoop:
         assert v.action == "continue"
         assert buddhi.stats["total_calls"] == 3
         assert buddhi.stats["errors"] == 1
+
+
+class TestFailureRedirect:
+    """Redirect patterns — deterministic fix suggestions for known failure modes."""
+
+    def test_edit_file_not_found_redirects_to_read(self):
+        """edit_file failing 2x with 'not found' → redirect to read_file."""
+        buddhi = Buddhi()
+        tc1 = _tc("edit_file", path="/a.py", old="foo", new="bar")
+        tc2 = _tc("edit_file", path="/a.py", old="baz", new="qux")
+        buddhi.evaluate([tc1], [(False, "old_string not found")])
+        v = buddhi.evaluate([tc2], [(False, "no match in file")])
+        assert v.action == "redirect"
+        assert "read_file" in v.suggestion
+
+    def test_edit_file_success_no_redirect(self):
+        """edit_file succeeding → no redirect."""
+        buddhi = Buddhi()
+        tc = _tc("edit_file", path="/a.py", old="foo", new="bar")
+        buddhi.evaluate([tc], [(True, "")])
+        v = buddhi.evaluate([tc], [(True, "")])
+        assert v.action == "continue"
+
+    def test_write_file_fails_redirects_to_read(self):
+        """write_file failing 2x → redirect to verify path."""
+        buddhi = Buddhi()
+        tc1 = _tc("write_file", path="/bad/path.py", content="x")
+        tc2 = _tc("write_file", path="/bad/path2.py", content="y")
+        buddhi.evaluate([tc1], [(False, "permission denied")])
+        v = buddhi.evaluate([tc2], [(False, "no such directory")])
+        assert v.action == "redirect"
+        assert "glob" in v.suggestion or "read_file" in v.suggestion
+
+    def test_route_misses_redirect_to_valid_tools(self):
+        """Repeated route misses → redirect with available tool names."""
+        buddhi = Buddhi()
+        tc1 = _tc("search_code", query="foo")
+        tc2 = _tc("find_files", pattern="*.py")
+        buddhi.evaluate([tc1], [(False, "Tool 'search_code' not found (O(1) route miss)")])
+        v = buddhi.evaluate([tc2], [(False, "Tool 'find_files' not found (O(1) route miss)")])
+        assert v.action == "redirect"
+        assert "Available tools" in v.suggestion
+
+    def test_single_failure_no_redirect(self):
+        """Single failure is not enough for redirect."""
+        buddhi = Buddhi()
+        tc = _tc("edit_file", path="/a.py", old="foo", new="bar")
+        v = buddhi.evaluate([tc], [(False, "old_string not found")])
+        assert v.action == "continue"
+
+    def test_redirect_before_identical_check(self):
+        """Redirect fires before identical-call reflect (lower severity)."""
+        buddhi = Buddhi()
+        # Same edit_file call 3x with 'not found' — redirect at 2, not reflect at 3
+        tc = _tc("edit_file", path="/a.py", old="foo", new="bar")
+        buddhi.evaluate([tc], [(False, "old_string not found")])
+        v = buddhi.evaluate([tc], [(False, "old_string not found")])
+        # Redirect fires at 2 (before identical-call reflect which needs 3)
+        assert v.action == "redirect"
+
+    def test_blocked_tools_tracked_in_stats(self):
+        """Blocked tools (route miss) are tracked in stats like normal tools."""
+        buddhi = Buddhi()
+        tc = _tc("nonexistent_tool", query="x")
+        buddhi.evaluate([tc], [(False, "route miss")])
+        assert buddhi.stats["total_calls"] == 1
+        assert buddhi.stats["errors"] == 1
+        assert buddhi.stats["tool_distribution"] == {"nonexistent_tool": 1}
