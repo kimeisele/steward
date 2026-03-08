@@ -12,13 +12,12 @@ from __future__ import annotations
 
 import logging
 
+from steward.types import LLMProvider
 from vibe_core.di import ServiceRegistry
 from vibe_core.mahamantra.adapters.attention import MahaAttention
 from vibe_core.runtime.tool_safety_guard import ToolSafetyGuard
 from vibe_core.tools.tool_protocol import Tool
 from vibe_core.tools.tool_registry import ToolRegistry
-
-from steward.types import LLMProvider
 
 logger = logging.getLogger("STEWARD.SERVICES")
 
@@ -68,6 +67,14 @@ class SVC_NARASIMHA:
 
 class SVC_INTEGRITY:
     """IntegrityChecker — boot-time validation of all services."""
+
+
+class SVC_CACHE:
+    """EphemeralStorage — TTL cache to avoid redundant work (protocol: playbook)."""
+
+
+class SVC_DIAMOND:
+    """NagaDiamondProtocol — TDD enforcement with RED/GREEN gates (protocol: naga)."""
 
 
 # ── Boot ─────────────────────────────────────────────────────────────
@@ -154,7 +161,23 @@ def boot(
     prompt_ctx = PromptContext(vibe_root=cwd_path)
     ServiceRegistry.register(SVC_PROMPT_CONTEXT, prompt_ctx)
 
-    # 11. IntegrityChecker — boot-time validation (catch lazy-load failures early)
+    # 11. EphemeralStorage (session-level TTL cache — avoids redundant LLM work)
+    from vibe_core.playbook.ephemeral_storage import EphemeralStorage
+
+    cache = EphemeralStorage(max_entries=500, default_ttl=300)
+    ServiceRegistry.register(SVC_CACHE, cache)
+
+    # 12. NagaDiamondProtocol (TDD enforcement — RED/GREEN gates)
+    from vibe_core.naga.diamond import NagaDiamondProtocol
+
+    diamond = NagaDiamondProtocol(
+        workspace=cwd_path,
+        auto_heal=False,  # Never auto-heal without consent
+        timeout_seconds=30,
+    )
+    ServiceRegistry.register(SVC_DIAMOND, diamond)
+
+    # 13. IntegrityChecker — boot-time validation (catch lazy-load failures early)
     from vibe_core.protocols.integrity import IntegrityChecker, IssueSeverity
 
     checker = IntegrityChecker()
@@ -174,6 +197,24 @@ def boot(
             lambda: _check_provider(provider),
             IssueSeverity.CRITICAL,
         )
+
+    # Vajra wiring checks — verify all services are actually registered
+    checker.register_checker(
+        "vajra_cache_wired",
+        lambda: _check_service_wired(SVC_CACHE, "EphemeralStorage"),
+        IssueSeverity.HIGH,
+    )
+    checker.register_checker(
+        "vajra_diamond_wired",
+        lambda: _check_service_wired(SVC_DIAMOND, "NagaDiamondProtocol"),
+        IssueSeverity.HIGH,
+    )
+    checker.register_checker(
+        "vajra_attention_wired",
+        lambda: _check_service_wired(SVC_ATTENTION, "MahaAttention"),
+        IssueSeverity.CRITICAL,
+    )
+
     ServiceRegistry.register(SVC_INTEGRITY, checker)
 
     # Run integrity check at boot
@@ -209,6 +250,13 @@ def _check_provider(provider: object) -> None:
     """Integrity check: provider can accept calls."""
     if not hasattr(provider, "invoke"):
         raise RuntimeError("Provider missing invoke()")
+
+
+def _check_service_wired(svc_key: type, name: str) -> None:
+    """Vajra wiring check: verify a service is registered and non-None."""
+    svc = ServiceRegistry.get(svc_key)
+    if svc is None:
+        raise RuntimeError(f"VAJRA: {name} not wired (SVC key: {svc_key.__name__})")
 
 
 # ── Helpers ──────────────────────────────────────────────────────────

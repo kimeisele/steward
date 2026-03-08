@@ -6,11 +6,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from vibe_core.di import ServiceRegistry
-from vibe_core.tools.tool_protocol import Tool, ToolResult
-
 from steward.services import (
     SVC_ATTENTION,
+    SVC_CACHE,
+    SVC_DIAMOND,
     SVC_EVENT_BUS,
     SVC_FEEDBACK,
     SVC_INTEGRITY,
@@ -24,6 +23,8 @@ from steward.services import (
     boot,
     tool_descriptions_for_llm,
 )
+from vibe_core.di import ServiceRegistry
+from vibe_core.tools.tool_protocol import Tool, ToolResult
 
 
 class _DummyTool(Tool):
@@ -192,3 +193,105 @@ class TestToolDescriptionsForLLM:
         registry = ServiceRegistry.get(SVC_TOOL_REGISTRY)
         descs = tool_descriptions_for_llm(registry)
         assert descs == []
+
+
+class TestEphemeralStorageWiring:
+    """Test EphemeralStorage (SVC_CACHE) wiring."""
+
+    def test_boot_registers_cache(self):
+        boot(tools=[_DummyTool()])
+        cache = ServiceRegistry.get(SVC_CACHE)
+        assert cache is not None
+
+    def test_cache_is_ephemeral_storage(self):
+        from vibe_core.playbook.ephemeral_storage import EphemeralStorage
+
+        boot(tools=[_DummyTool()])
+        cache = ServiceRegistry.get(SVC_CACHE)
+        assert isinstance(cache, EphemeralStorage)
+
+    def test_cache_set_and_get(self):
+        boot(tools=[_DummyTool()])
+        cache = ServiceRegistry.get(SVC_CACHE)
+        cache.set("test_key", {"value": 42}, ttl_seconds=60)
+        result = cache.get("test_key")
+        assert result == {"value": 42}
+
+    def test_cache_stats(self):
+        boot(tools=[_DummyTool()])
+        cache = ServiceRegistry.get(SVC_CACHE)
+        cache.set("k1", "v1")
+        cache.get("k1")  # hit
+        cache.get("missing")  # miss
+        stats = cache.get_stats()
+        assert stats["hits"] >= 1
+        assert stats["misses"] >= 1
+        assert stats["hit_rate"] > 0
+
+    def test_cache_make_key_deterministic(self):
+        from vibe_core.playbook.ephemeral_storage import EphemeralStorage
+
+        k1 = EphemeralStorage.make_cache_key("tool_descriptions", "steward")
+        k2 = EphemeralStorage.make_cache_key("tool_descriptions", "steward")
+        assert k1 == k2  # Same inputs → same key
+
+
+class TestDiamondProtocolWiring:
+    """Test NagaDiamondProtocol (SVC_DIAMOND) wiring."""
+
+    def test_boot_registers_diamond(self):
+        boot(tools=[_DummyTool()])
+        diamond = ServiceRegistry.get(SVC_DIAMOND)
+        assert diamond is not None
+
+    def test_diamond_is_naga_protocol(self):
+        from vibe_core.naga.diamond import NagaDiamondProtocol
+
+        boot(tools=[_DummyTool()])
+        diamond = ServiceRegistry.get(SVC_DIAMOND)
+        assert isinstance(diamond, NagaDiamondProtocol)
+
+    def test_diamond_auto_heal_disabled(self):
+        """Auto-heal must be OFF by default (safety)."""
+        boot(tools=[_DummyTool()])
+        diamond = ServiceRegistry.get(SVC_DIAMOND)
+        assert diamond._auto_heal is False
+
+    def test_diamond_timeout_configured(self):
+        boot(tools=[_DummyTool()])
+        diamond = ServiceRegistry.get(SVC_DIAMOND)
+        assert diamond._timeout == 30
+
+
+class TestVajraWiringChecks:
+    """Test Vajra-style wiring integrity checks."""
+
+    def test_integrity_checks_cache_wired(self):
+        boot(tools=[_DummyTool()])
+        checker = ServiceRegistry.get(SVC_INTEGRITY)
+        report = checker.check_all()
+        # vajra_cache_wired should pass
+        names = [i.checker_name for i in report.issues]
+        assert "vajra_cache_wired" not in names  # No issue = pass
+
+    def test_integrity_checks_diamond_wired(self):
+        boot(tools=[_DummyTool()])
+        checker = ServiceRegistry.get(SVC_INTEGRITY)
+        report = checker.check_all()
+        names = [i.checker_name for i in report.issues]
+        assert "vajra_diamond_wired" not in names
+
+    def test_integrity_checks_attention_wired(self):
+        boot(tools=[_DummyTool()])
+        checker = ServiceRegistry.get(SVC_INTEGRITY)
+        report = checker.check_all()
+        names = [i.checker_name for i in report.issues]
+        assert "vajra_attention_wired" not in names
+
+    def test_all_vajra_checks_pass(self):
+        """All Vajra wiring checks should pass after clean boot."""
+        boot(tools=[_DummyTool()])
+        checker = ServiceRegistry.get(SVC_INTEGRITY)
+        report = checker.check_all()
+        vajra_issues = [i for i in report.issues if "vajra" in i.checker_name]
+        assert len(vajra_issues) == 0, f"Vajra violations: {vajra_issues}"
