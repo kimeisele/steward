@@ -212,6 +212,11 @@ def main() -> None:
         action="store_true",
         help="Run as Telegram bot (requires TELEGRAM_BOT_TOKEN)",
     )
+    parser.add_argument(
+        "--api",
+        action="store_true",
+        help="Run as HTTP API server (requires pip install steward-agent[api])",
+    )
 
     args = parser.parse_args()
 
@@ -220,6 +225,13 @@ def main() -> None:
         from steward.interfaces.telegram import main as telegram_main
 
         telegram_main()
+        return
+
+    # API mode — delegate to API server
+    if args.api:
+        from steward.interfaces.api import main as api_main
+
+        api_main()
         return
 
     # Build provider chamber from environment

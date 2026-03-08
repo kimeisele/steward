@@ -33,6 +33,10 @@ providers = [
 telegram = [
     "python-telegram-bot>=22.0",
 ]
+api = [
+    "fastapi>=0.104",
+    "uvicorn>=0.24",
+]
 dev = [
     "pytest>=8.0",
     "pytest-timeout>=2.0",
@@ -42,6 +46,7 @@ dev = [
 [project.scripts]
 steward = "steward.__main__:main"
 steward-telegram = "steward.interfaces.telegram:main"
+steward-api = "steward.interfaces.api:main"
 
 [project.urls]
 Source = "https://github.com/kimeisele/steward"
