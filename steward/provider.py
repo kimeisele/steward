@@ -144,6 +144,34 @@ class ProviderChamber:
         """Wire FeedbackProtocol for outcome tracking."""
         self._feedback = feedback
 
+    def _apply_feedback_penalty(
+        self, cells: list[MahaCellUnified[ProviderPayload]],
+    ) -> list[MahaCellUnified[ProviderPayload]]:
+        """Deprioritize providers with high failure rates.
+
+        Feedback-based soft penalty: providers with >60% failure rate
+        are moved to end of sort order (still available, just tried last).
+
+        Complementary to CircuitBreaker (temporal skip) and cell integrity
+        (lifetime degradation). This is historical pattern-based.
+        """
+        if not self._feedback:
+            return cells
+
+        clean: list[MahaCellUnified[ProviderPayload]] = []
+        warned: list[MahaCellUnified[ProviderPayload]] = []
+        for cell in cells:
+            warning = self._feedback.should_warn(
+                cell.payload.name, {"model": cell.payload.model},
+            )
+            if warning:
+                warned.append(cell)
+                logger.debug("Feedback penalty: %s (%s)", cell.payload.name, warning)
+            else:
+                clean.append(cell)
+
+        return clean + warned
+
     def invoke(self, **kwargs: object) -> object | None:
         """Try provider cells in tier-aware order until one succeeds.
 
@@ -194,6 +222,9 @@ class ProviderChamber:
             logger.debug("Tool-calling: preferring tool-capable providers")
         else:
             alive.sort(key=lambda c: c.lifecycle.prana, reverse=True)
+
+        # Feedback-based deprioritization (historical pattern penalty)
+        alive = self._apply_feedback_penalty(alive)
 
         for cell in alive:
             payload: ProviderPayload = cell.payload
@@ -351,6 +382,9 @@ class ProviderChamber:
         else:
             alive.sort(key=lambda c: c.lifecycle.prana, reverse=True)
 
+        # Feedback-based deprioritization (historical pattern penalty)
+        alive = self._apply_feedback_penalty(alive)
+
         for cell in alive:
             payload: ProviderPayload = cell.payload
             if not self._is_within_quota(payload):
@@ -473,7 +507,7 @@ class ProviderChamber:
         return self._quota
 
     def stats(self) -> dict[str, object]:
-        return {
+        result: dict[str, object] = {
             "providers": [
                 {
                     "name": c.payload.name,
@@ -491,6 +525,17 @@ class ProviderChamber:
             "total_failures": self._total_failures,
             "quota": self._quota.get_status(),
         }
+        if self._feedback:
+            fb_stats = self._feedback.get_stats()
+            result["feedback"] = {
+                "total_signals": fb_stats.total_signals,
+                "success_rate": fb_stats.success_rate,
+                "failure_patterns": [
+                    {"provider": p.command, "error": p.error_pattern[:80], "frequency": p.frequency}
+                    for p in self._feedback.get_failure_patterns()[:5]
+                ],
+            }
+        return result
 
     @staticmethod
     def _is_within_quota(payload: ProviderPayload) -> bool:

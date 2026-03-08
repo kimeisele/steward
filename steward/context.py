@@ -31,7 +31,6 @@ logger = logging.getLogger("STEWARD.CONTEXT")
 
 # Patterns for deterministic extraction
 _FILE_PATH_RE = re.compile(r"(?:^|[\s\"'])((?:/[\w./-]+|\.[\w./-]+)\.(?:py|js|ts|yaml|yml|json|md|txt|toml|cfg|sh|rs|go|c|h|cpp|java))")
-_TOOL_NAME_RE = re.compile(r"\b(read_file|write_file|edit_file|bash|glob|grep)\b")
 
 
 def _extract_structure(messages: list[Message]) -> str:

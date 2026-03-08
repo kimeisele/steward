@@ -743,6 +743,181 @@ class TestModelTierRouting:
         assert r.content == "expensive response"
 
 
+class TestFeedbackAdaptiveRouting:
+    """Tests for feedback-based adaptive routing (closed loop)."""
+
+    def test_warned_provider_deprioritized(self):
+        """Provider with >60% failure rate is tried last, not first."""
+        feedback = InMemoryFeedback()
+        chamber = ProviderChamber()
+        chamber.set_feedback(feedback)
+
+        flaky = FakeProvider("flaky")
+        reliable = FakeProvider("reliable")
+
+        chamber.add_provider(
+            name="flaky",
+            provider=flaky,
+            model="flaky-v1",
+            source_address=MAHA_QUANTUM * 10,
+            prana=_PRANA_FREE,
+        )
+        chamber.add_provider(
+            name="reliable",
+            provider=reliable,
+            model="reliable-v1",
+            source_address=MAHA_QUANTUM * 11,
+            prana=_PRANA_FREE,
+        )
+
+        # Poison "flaky" with failures (>60% rate triggers warning)
+        for _ in range(3):
+            feedback.signal_failure("flaky", "timeout", {"model": "flaky-v1"})
+
+        # Now invoke — reliable should be tried first despite same prana
+        r = chamber.invoke(messages=[])
+        assert r is not None
+        assert r.content == "reliable response"
+        assert reliable.call_count == 1
+        assert flaky.call_count == 0  # deprioritized, not needed
+
+    def test_warned_provider_still_available(self):
+        """Warned provider is deprioritized but NOT skipped entirely."""
+        feedback = InMemoryFeedback()
+        chamber = ProviderChamber()
+        chamber.set_feedback(feedback)
+
+        flaky = FakeProvider("flaky")
+
+        chamber.add_provider(
+            name="flaky",
+            provider=flaky,
+            model="flaky-v1",
+            source_address=MAHA_QUANTUM * 10,
+            prana=_PRANA_FREE,
+        )
+
+        # Poison with failures
+        for _ in range(3):
+            feedback.signal_failure("flaky", "timeout", {"model": "flaky-v1"})
+
+        # Only provider — still used despite warning
+        r = chamber.invoke(messages=[])
+        assert r is not None
+        assert r.content == "flaky response"
+        assert flaky.call_count == 1
+
+    def test_no_feedback_no_change(self):
+        """Without feedback wired, routing is unchanged."""
+        chamber = ProviderChamber()
+        provider = FakeProvider("test")
+
+        chamber.add_provider(
+            name="test",
+            provider=provider,
+            model="test-v1",
+            source_address=MAHA_QUANTUM * 10,
+        )
+
+        r = chamber.invoke(messages=[])
+        assert r is not None
+        assert r.content == "test response"
+
+    def test_clean_provider_unaffected(self):
+        """Provider with good track record is not penalized."""
+        feedback = InMemoryFeedback()
+        chamber = ProviderChamber()
+        chamber.set_feedback(feedback)
+
+        good = FakeProvider("good")
+
+        chamber.add_provider(
+            name="good",
+            provider=good,
+            model="good-v1",
+            source_address=MAHA_QUANTUM * 10,
+            prana=_PRANA_FREE,
+        )
+
+        # Good track record (100% success)
+        for _ in range(5):
+            feedback.signal_success("good", {"model": "good-v1"})
+
+        r = chamber.invoke(messages=[])
+        assert r is not None
+        assert r.content == "good response"
+
+    def test_feedback_stats_in_stats(self):
+        """stats() includes feedback section when feedback is wired."""
+        feedback = InMemoryFeedback()
+        chamber = ProviderChamber()
+        chamber.set_feedback(feedback)
+        chamber.add_provider(
+            name="test",
+            provider=FakeProvider(),
+            model="test-v1",
+            source_address=MAHA_QUANTUM * 10,
+        )
+
+        chamber.invoke(messages=[])
+
+        stats = chamber.stats()
+        assert "feedback" in stats
+        fb = stats["feedback"]
+        assert fb["total_signals"] == 1
+        assert fb["success_rate"] == 1.0
+        assert isinstance(fb["failure_patterns"], list)
+
+    def test_feedback_stats_absent_without_feedback(self):
+        """stats() has no feedback key when feedback is not wired."""
+        chamber = ProviderChamber()
+        chamber.add_provider(
+            name="test",
+            provider=FakeProvider(),
+            model="test-v1",
+            source_address=MAHA_QUANTUM * 10,
+        )
+
+        stats = chamber.stats()
+        assert "feedback" not in stats
+
+    def test_feedback_penalty_preserves_tier_sort(self):
+        """Feedback penalty applies AFTER tier sort — both compose."""
+        feedback = InMemoryFeedback()
+        chamber = ProviderChamber()
+        chamber.set_feedback(feedback)
+
+        cheap_flaky = FakeProvider("cheap_flaky")
+        expensive_clean = FakeProvider("expensive_clean")
+
+        chamber.add_provider(
+            name="cheap_flaky",
+            provider=cheap_flaky,
+            model="cheap-v1",
+            source_address=MAHA_QUANTUM * 10,
+            prana=_PRANA_FREE,
+            cost_per_mtok=0.0,
+        )
+        chamber.add_provider(
+            name="expensive_clean",
+            provider=expensive_clean,
+            model="exp-v1",
+            source_address=MAHA_QUANTUM * 11,
+            prana=_PRANA_FREE,
+            cost_per_mtok=3.0,
+        )
+
+        # Poison cheap_flaky
+        for _ in range(3):
+            feedback.signal_failure("cheap_flaky", "error", {"model": "cheap-v1"})
+
+        # Flash tier would normally prefer cheap first,
+        # but feedback penalty pushes flaky to end
+        r = chamber.invoke(messages=[], tier="flash")
+        assert r is not None
+        assert r.content == "expensive_clean response"
+
+
 class TestGroqCell:
     """Tests for Groq provider cell in build_chamber."""
 

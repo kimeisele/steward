@@ -52,27 +52,86 @@ from steward.types import ToolUse
 logger = logging.getLogger("STEWARD.BUDDHI")
 
 
-# ── Semantic Tool Mapping (substrate-derived) ────────────────────────
+# ── ToolNamespace — Shakti-derived capability domains ────────────────
+#
+# Vedic mapping (Shakti → Domain):
+#   JNANA  (knowledge)     → OBSERVE  — read, search, discover
+#   PALANA (maintenance)   → MODIFY   — write, edit, create
+#   KSHATRA (enforcement)  → EXECUTE  — bash, system commands
+#   UDDHARA (rescue/spawn) → DELEGATE — sub-agent, task delegation
+#
+# This is the composable layer: actions select NAMESPACES, not tools.
+# New tools register into a namespace → automatically participate.
+# Runtime-mutable: add/remove tools without code changes.
 
-_READ_TOOLS = frozenset({"read_file", "glob", "grep"})
-_WRITE_TOOLS = frozenset({"read_file", "glob", "grep", "edit_file", "write_file", "bash"})
-_DEBUG_TOOLS = frozenset({"read_file", "glob", "grep", "edit_file", "bash"})
-_ALL_TOOLS = frozenset()  # empty = send everything
 
-_ACTION_TOOLS: dict[SemanticActionType, frozenset[str]] = {
-    SemanticActionType.RESEARCH:   _READ_TOOLS,
-    SemanticActionType.ANALYZE:    _READ_TOOLS,
-    SemanticActionType.MONITOR:    _READ_TOOLS,
-    SemanticActionType.REVIEW:     _READ_TOOLS,
-    SemanticActionType.IMPLEMENT:  _WRITE_TOOLS,
-    SemanticActionType.REFACTOR:   _WRITE_TOOLS,
-    SemanticActionType.DESIGN:     _WRITE_TOOLS,
-    SemanticActionType.PLAN:       _READ_TOOLS,
-    SemanticActionType.SYNTHESIZE: _READ_TOOLS,
-    SemanticActionType.DEBUG:      _DEBUG_TOOLS,
-    SemanticActionType.TEST:       frozenset({"bash", "read_file", "glob"}),
-    SemanticActionType.RESPOND:    _DEBUG_TOOLS,
+class ToolNamespace(StrEnum):
+    """Semantic tool capability domains (Shakti → business English)."""
+
+    OBSERVE = "observe"    # JNANA: read, search, discover
+    MODIFY = "modify"      # PALANA: write, edit, create
+    EXECUTE = "execute"    # KSHATRA: bash, system commands
+    DELEGATE = "delegate"  # UDDHARA: sub-agent, task delegation
+
+
+# Namespace → tool names (runtime-mutable)
+_NAMESPACE_TOOLS: dict[ToolNamespace, set[str]] = {
+    ToolNamespace.OBSERVE:  {"read_file", "glob", "grep"},
+    ToolNamespace.MODIFY:   {"write_file", "edit_file"},
+    ToolNamespace.EXECUTE:  {"bash"},
+    ToolNamespace.DELEGATE: {"sub_agent"},
 }
+
+# Action → namespaces (which capability domains are needed)
+_ACTION_NAMESPACES: dict[SemanticActionType, frozenset[ToolNamespace]] = {
+    SemanticActionType.RESEARCH:   frozenset({ToolNamespace.OBSERVE}),
+    SemanticActionType.ANALYZE:    frozenset({ToolNamespace.OBSERVE}),
+    SemanticActionType.MONITOR:    frozenset({ToolNamespace.OBSERVE}),
+    SemanticActionType.REVIEW:     frozenset({ToolNamespace.OBSERVE}),
+    SemanticActionType.IMPLEMENT:  frozenset({ToolNamespace.OBSERVE, ToolNamespace.MODIFY, ToolNamespace.EXECUTE}),
+    SemanticActionType.REFACTOR:   frozenset({ToolNamespace.OBSERVE, ToolNamespace.MODIFY, ToolNamespace.EXECUTE}),
+    SemanticActionType.DESIGN:     frozenset({ToolNamespace.OBSERVE, ToolNamespace.MODIFY, ToolNamespace.EXECUTE, ToolNamespace.DELEGATE}),
+    SemanticActionType.PLAN:       frozenset({ToolNamespace.OBSERVE, ToolNamespace.DELEGATE}),
+    SemanticActionType.SYNTHESIZE: frozenset({ToolNamespace.OBSERVE, ToolNamespace.DELEGATE}),
+    SemanticActionType.DEBUG:      frozenset({ToolNamespace.OBSERVE, ToolNamespace.MODIFY, ToolNamespace.EXECUTE}),
+    SemanticActionType.TEST:       frozenset({ToolNamespace.OBSERVE, ToolNamespace.EXECUTE}),
+    SemanticActionType.RESPOND:    frozenset({ToolNamespace.OBSERVE, ToolNamespace.MODIFY, ToolNamespace.EXECUTE}),
+}
+
+# Guna → namespaces (fallback when action tools are empty)
+_GUNA_NAMESPACES: dict[IntentGuna, frozenset[ToolNamespace]] = {
+    IntentGuna.SATTVA: frozenset({ToolNamespace.OBSERVE}),
+    IntentGuna.RAJAS:  frozenset({ToolNamespace.OBSERVE, ToolNamespace.MODIFY, ToolNamespace.EXECUTE}),
+    IntentGuna.TAMAS:  frozenset({ToolNamespace.OBSERVE, ToolNamespace.MODIFY, ToolNamespace.EXECUTE}),
+    IntentGuna.SUDDHA: frozenset(ToolNamespace),  # all namespaces
+}
+
+# Phase → namespace overlays (add capabilities during specific phases)
+_PHASE_NS_OVERLAY: dict[str, frozenset[ToolNamespace]] = {
+    PHASE_ORIENT:   frozenset(),
+    PHASE_EXECUTE:  frozenset({ToolNamespace.MODIFY, ToolNamespace.EXECUTE}),
+    PHASE_VERIFY:   frozenset({ToolNamespace.EXECUTE, ToolNamespace.OBSERVE}),
+    PHASE_COMPLETE: frozenset(),
+}
+
+
+def resolve_namespaces(namespaces: frozenset[ToolNamespace]) -> frozenset[str]:
+    """Resolve namespace set to concrete tool names (O(N) where N=namespaces, not tools)."""
+    tools: set[str] = set()
+    for ns in namespaces:
+        tools.update(_NAMESPACE_TOOLS.get(ns, set()))
+    return frozenset(tools)
+
+
+def register_tool(namespace: ToolNamespace, tool_name: str) -> None:
+    """Register a tool into a namespace (runtime composition)."""
+    _NAMESPACE_TOOLS[namespace].add(tool_name)
+
+
+def unregister_tool(namespace: ToolNamespace, tool_name: str) -> None:
+    """Remove a tool from a namespace (runtime composition)."""
+    _NAMESPACE_TOOLS[namespace].discard(tool_name)
+
 
 _ACTION_MAX_TOKENS: dict[SemanticActionType, int] = {
     SemanticActionType.RESEARCH:   2048,
@@ -87,25 +146,6 @@ _ACTION_MAX_TOKENS: dict[SemanticActionType, int] = {
     SemanticActionType.DEBUG:      4096,
     SemanticActionType.TEST:       2048,
     SemanticActionType.RESPOND:    4096,
-}
-
-_GUNA_TOOLS: dict[IntentGuna, frozenset[str]] = {
-    IntentGuna.SATTVA: _READ_TOOLS,
-    IntentGuna.RAJAS:  _WRITE_TOOLS,
-    IntentGuna.TAMAS:  _DEBUG_TOOLS,
-    IntentGuna.SUDDHA: _ALL_TOOLS,
-}
-
-# ── Phase-Aware Tool Overlay ─────────────────────────────────────────
-# Phase adds tools ON TOP of action-based selection.
-# VERIFY ensures bash is available for tests.
-# EXECUTE ensures write tools even for SATTVA actions that explored enough.
-
-_PHASE_TOOL_OVERLAY: dict[str, frozenset[str]] = {
-    PHASE_ORIENT: frozenset(),
-    PHASE_EXECUTE: frozenset({"edit_file", "write_file", "bash"}),
-    PHASE_VERIFY: frozenset({"bash", "read_file"}),
-    PHASE_COMPLETE: frozenset(),
 }
 
 # ── ModelTier — cost-aware LLM routing ─────────────────────────────
@@ -234,19 +274,21 @@ class Buddhi:
                 self._function, self._approach,
             )
 
-        # Action-based tool selection (primary)
-        base_tools = _ACTION_TOOLS.get(self._action, _ALL_TOOLS)
+        # Action-based namespace selection (primary)
+        action_ns = _ACTION_NAMESPACES.get(self._action, frozenset())
         max_tokens = _ACTION_MAX_TOKENS.get(self._action, 4096)
+        base_tools = resolve_namespaces(action_ns)
 
-        # Guna fallback if action tools are empty
+        # Guna fallback if no namespaces for action
         if not base_tools:
-            base_tools = _GUNA_TOOLS.get(self._guna, _ALL_TOOLS)
+            guna_ns = _GUNA_NAMESPACES.get(self._guna, frozenset(ToolNamespace))
+            base_tools = resolve_namespaces(guna_ns)
 
-        # Phase-aware overlay: Chitta's phase adds tools on top
+        # Phase-aware overlay: Chitta's phase adds namespace capabilities
         phase = self._chitta.phase
-        overlay = _PHASE_TOOL_OVERLAY.get(phase, frozenset())
-        if overlay:
-            base_tools = frozenset(base_tools | overlay)
+        phase_ns = _PHASE_NS_OVERLAY.get(phase, frozenset())
+        if phase_ns:
+            base_tools = frozenset(base_tools | resolve_namespaces(phase_ns))
 
         # Phase-aware token budget
         phase_max = _PHASE_MAX_TOKENS.get(phase, 4096)

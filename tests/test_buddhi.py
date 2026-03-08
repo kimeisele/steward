@@ -278,7 +278,7 @@ class TestPreFlightTokenSavings:
         assert len(d.tool_names) == 3
 
     def test_test_action_sends_fewer_tools(self):
-        """TEST sends 3 tools, not 6."""
+        """TEST sends OBSERVE + EXECUTE = 4 tools (read_file, glob, grep, bash)."""
         buddhi = Buddhi()
         buddhi._action = SemanticActionType.TEST
         buddhi._guna = IntentGuna.TAMAS
@@ -286,7 +286,9 @@ class TestPreFlightTokenSavings:
         buddhi._approach = "KARMA"
 
         d = buddhi.pre_flight("test", 1)
-        assert len(d.tool_names) == 3
+        assert len(d.tool_names) == 4
+        assert "bash" in d.tool_names
+        assert "grep" in d.tool_names
 
 
 class TestContextAwareTokenBudget:
@@ -495,3 +497,123 @@ class TestModelTier:
         from steward.buddhi import _ACTION_TIER
         for action in SemanticActionType:
             assert action in _ACTION_TIER, f"{action} missing from _ACTION_TIER"
+
+
+class TestToolNamespace:
+    """Tests for ToolNamespace — semantic capability domains."""
+
+    def test_namespace_enum_values(self):
+        """All 4 namespaces exist with correct values."""
+        from steward.buddhi import ToolNamespace
+        assert ToolNamespace.OBSERVE == "observe"
+        assert ToolNamespace.MODIFY == "modify"
+        assert ToolNamespace.EXECUTE == "execute"
+        assert ToolNamespace.DELEGATE == "delegate"
+
+    def test_resolve_single_namespace(self):
+        """Resolve a single namespace to tool names."""
+        from steward.buddhi import ToolNamespace, resolve_namespaces
+        tools = resolve_namespaces(frozenset({ToolNamespace.OBSERVE}))
+        assert tools == frozenset({"read_file", "glob", "grep"})
+
+    def test_resolve_multiple_namespaces(self):
+        """Resolve combined namespaces — union of all tools."""
+        from steward.buddhi import ToolNamespace, resolve_namespaces
+        tools = resolve_namespaces(frozenset({ToolNamespace.OBSERVE, ToolNamespace.EXECUTE}))
+        assert tools == frozenset({"read_file", "glob", "grep", "bash"})
+
+    def test_resolve_all_namespaces(self):
+        """Resolving all namespaces gives all 7 tools."""
+        from steward.buddhi import ToolNamespace, resolve_namespaces
+        tools = resolve_namespaces(frozenset(ToolNamespace))
+        assert "read_file" in tools
+        assert "bash" in tools
+        assert "sub_agent" in tools
+        assert len(tools) == 7
+
+    def test_sub_agent_in_delegate_namespace(self):
+        """sub_agent is in the DELEGATE namespace."""
+        from steward.buddhi import ToolNamespace, _NAMESPACE_TOOLS
+        assert "sub_agent" in _NAMESPACE_TOOLS[ToolNamespace.DELEGATE]
+
+    def test_design_action_includes_sub_agent(self):
+        """DESIGN action includes DELEGATE namespace → sub_agent visible."""
+        buddhi = Buddhi()
+        buddhi._action = SemanticActionType.DESIGN
+        buddhi._guna = IntentGuna.RAJAS
+        buddhi._function = "BRAHMA"
+        buddhi._approach = "GENESIS"
+
+        d = buddhi.pre_flight("design the architecture", 1)
+        assert "sub_agent" in d.tool_names
+
+    def test_plan_action_includes_sub_agent(self):
+        """PLAN action includes DELEGATE namespace → sub_agent visible."""
+        buddhi = Buddhi()
+        buddhi._action = SemanticActionType.PLAN
+        buddhi._guna = IntentGuna.SATTVA
+        buddhi._function = "VISHNU"
+        buddhi._approach = "DHARMA"
+
+        d = buddhi.pre_flight("plan the approach", 1)
+        assert "sub_agent" in d.tool_names
+
+    def test_synthesize_action_includes_sub_agent(self):
+        """SYNTHESIZE action includes DELEGATE namespace → sub_agent visible."""
+        buddhi = Buddhi()
+        buddhi._action = SemanticActionType.SYNTHESIZE
+        buddhi._guna = IntentGuna.SATTVA
+        buddhi._function = "VISHNU"
+        buddhi._approach = "MOKSHA"
+
+        d = buddhi.pre_flight("synthesize findings", 1)
+        assert "sub_agent" in d.tool_names
+
+    def test_research_excludes_sub_agent(self):
+        """RESEARCH action uses only OBSERVE → no sub_agent."""
+        buddhi = Buddhi()
+        buddhi._action = SemanticActionType.RESEARCH
+        buddhi._guna = IntentGuna.SATTVA
+        buddhi._function = "VISHNU"
+        buddhi._approach = "MOKSHA"
+
+        d = buddhi.pre_flight("research the topic", 1)
+        assert "sub_agent" not in d.tool_names
+
+    def test_register_tool_runtime(self):
+        """Register a new tool into a namespace at runtime."""
+        from steward.buddhi import ToolNamespace, register_tool, unregister_tool, resolve_namespaces
+
+        register_tool(ToolNamespace.OBSERVE, "semantic_search")
+        try:
+            tools = resolve_namespaces(frozenset({ToolNamespace.OBSERVE}))
+            assert "semantic_search" in tools
+        finally:
+            unregister_tool(ToolNamespace.OBSERVE, "semantic_search")
+
+    def test_unregister_tool_runtime(self):
+        """Remove a tool from a namespace at runtime."""
+        from steward.buddhi import ToolNamespace, register_tool, unregister_tool, resolve_namespaces
+
+        register_tool(ToolNamespace.EXECUTE, "docker_run")
+        unregister_tool(ToolNamespace.EXECUTE, "docker_run")
+        tools = resolve_namespaces(frozenset({ToolNamespace.EXECUTE}))
+        assert "docker_run" not in tools
+
+    def test_all_actions_have_namespaces(self):
+        """Every SemanticActionType has namespace mappings."""
+        from steward.buddhi import _ACTION_NAMESPACES, resolve_namespaces
+        for action in SemanticActionType:
+            ns = _ACTION_NAMESPACES.get(action, frozenset())
+            assert len(ns) > 0, f"{action} has no namespace mapping"
+            tools = resolve_namespaces(ns)
+            assert len(tools) > 0, f"{action} resolves to no tools"
+
+    def test_implement_has_full_toolset(self):
+        """IMPLEMENT action has OBSERVE + MODIFY + EXECUTE (no DELEGATE)."""
+        from steward.buddhi import ToolNamespace, _ACTION_NAMESPACES
+        ns = _ACTION_NAMESPACES[SemanticActionType.IMPLEMENT]
+        assert ToolNamespace.OBSERVE in ns
+        assert ToolNamespace.MODIFY in ns
+        assert ToolNamespace.EXECUTE in ns
+        assert ToolNamespace.DELEGATE not in ns

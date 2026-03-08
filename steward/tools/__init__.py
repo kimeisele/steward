@@ -5,6 +5,7 @@ from steward.tools.edit import EditTool
 from steward.tools.glob import GlobTool
 from steward.tools.grep import GrepTool
 from steward.tools.read_file import ReadFileTool
+from steward.tools.sub_agent import SubAgentTool
 from steward.tools.write_file import WriteFileTool
 
 __all__ = [
@@ -13,5 +14,6 @@ __all__ = [
     "GlobTool",
     "GrepTool",
     "ReadFileTool",
+    "SubAgentTool",
     "WriteFileTool",
 ]

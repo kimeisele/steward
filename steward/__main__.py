@@ -89,6 +89,9 @@ def _tool_display(name: str, params: dict) -> str:
         return str(params.get("pattern", ""))
     if name == "grep":
         return str(params.get("pattern", ""))
+    if name == "sub_agent":
+        task = str(params.get("task", ""))
+        return task[:80] + ("..." if len(task) > 80 else "")
     # Fallback: show all params compactly
     return " ".join(f"{k}={v!r}" for k, v in params.items())[:100]
 
