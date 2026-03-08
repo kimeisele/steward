@@ -6,81 +6,163 @@ Usage:
     python -m steward                               # interactive REPL
     python -m steward --resume "Follow up"          # resume session
     python -m steward --version                     # print version
+    python -m steward --output json "task"          # JSON output (machine)
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import sys
+
+from rich.console import Console
+from rich.markup import escape
+from rich.theme import Theme
 
 from steward import __version__
 from steward.agent import StewardAgent
 from steward.provider import build_chamber
 from steward.state import clear_state, load_conversation, save_conversation
-from steward.types import AgentEvent
+from steward.types import AgentEvent, AgentUsage
 
-# ANSI escape codes (no external dependencies)
-_DIM = "\033[2m"
-_GREEN = "\033[32m"
-_RED = "\033[31m"
-_CYAN = "\033[36m"
-_RESET = "\033[0m"
-_BOLD = "\033[1m"
+# ── Console Setup ────────────────────────────────────────────────────
+
+_THEME = Theme({
+    "tool.name": "bold cyan",
+    "tool.param": "dim",
+    "tool.ok": "green",
+    "tool.err": "red",
+    "stats": "dim",
+    "prompt": "bold cyan",
+    "heading": "bold",
+    "error": "red bold",
+})
+
+_console = Console(theme=_THEME, highlight=False)
+_err_console = Console(theme=_THEME, stderr=True, highlight=False)
+
+
+# ── Human-Readable Event Rendering ──────────────────────────────────
 
 
 def _format_event(event: AgentEvent) -> None:
-    """Print an AgentEvent to the terminal."""
+    """Render an AgentEvent to the terminal (human mode)."""
     if event.type == "text_delta":
-        # Streaming: print chunk immediately without newline
-        print(event.content, end="", flush=True)
+        _console.print(str(event.content or ""), end="")
         return
+
     if event.type == "text":
-        # Non-streaming fallback or final text
-        print(f"\n{event.content}")
+        _console.print(f"\n{event.content}")
+
     elif event.type == "tool_call" and event.tool_use:
-        params = " ".join(f"{k}={v!r}" for k, v in event.tool_use.parameters.items())
-        print(f"  {_DIM}[{event.tool_use.name}] {params}{_RESET}")
+        tc = event.tool_use
+        # Extract the most informative parameter for display
+        display = _tool_display(tc.name, tc.parameters)
+        _console.print(f"  [tool.name]{escape(tc.name)}[/] [tool.param]{escape(display)}[/]")
+
     elif event.type == "tool_result":
         if event.content and hasattr(event.content, "success"):
             if event.content.success:  # type: ignore[union-attr]
                 output = getattr(event.content, "output", "")
                 preview = str(output)[:120] if output else "ok"
-                print(f"  {_GREEN}>{_RESET} {_DIM}{preview}{_RESET}")
+                _console.print(f"  [tool.ok]>[/] [stats]{escape(preview)}[/]")
             else:
                 err = getattr(event.content, "error", "failed")
-                print(f"  {_RED}x {err}{_RESET}")
+                _console.print(f"  [tool.err]x {escape(str(err))}[/]")
+
+    elif event.type == "done" and event.usage:
+        _print_usage(event.usage)
+
+    elif event.type == "error":
+        _err_console.print(f"[error]Error: {escape(str(event.content))}[/]")
+
+
+def _tool_display(name: str, params: dict) -> str:
+    """Extract the most informative param for compact tool display."""
+    if name in ("read_file", "write_file", "edit_file"):
+        return str(params.get("path", ""))
+    if name == "bash":
+        cmd = str(params.get("command", ""))
+        return cmd[:80] + ("..." if len(cmd) > 80 else "")
+    if name == "glob":
+        return str(params.get("pattern", ""))
+    if name == "grep":
+        return str(params.get("pattern", ""))
+    # Fallback: show all params compactly
+    return " ".join(f"{k}={v!r}" for k, v in params.items())[:100]
+
+
+def _print_usage(u: AgentUsage) -> None:
+    """Print turn statistics."""
+    buddhi = ""
+    if u.buddhi_action:
+        phase = f"/{u.buddhi_phase}" if u.buddhi_phase else ""
+        buddhi = f" | {u.buddhi_action}/{u.buddhi_guna}{phase}"
+        if u.buddhi_reflections:
+            buddhi += f" {u.buddhi_reflections}r"
+    _console.print(
+        f"\n[stats][{u.input_tokens}+{u.output_tokens} tokens, "
+        f"{u.llm_calls} calls, {u.tool_calls} tools, "
+        f"{u.rounds} rounds{buddhi}][/]"
+    )
+
+
+# ── JSON Event Rendering ────────────────────────────────────────────
+
+
+def _format_event_json(event: AgentEvent) -> None:
+    """Render an AgentEvent as JSON (machine mode)."""
+    obj: dict[str, object] = {"type": event.type}
+
+    if event.type in ("text", "text_delta", "error"):
+        obj["content"] = str(event.content or "")
+    elif event.type == "tool_call" and event.tool_use:
+        obj["tool"] = event.tool_use.name
+        obj["parameters"] = event.tool_use.parameters
+        obj["call_id"] = event.tool_use.id
+    elif event.type == "tool_result" and event.content:
+        obj["success"] = getattr(event.content, "success", None)
+        obj["output"] = str(getattr(event.content, "output", ""))[:500]
+        obj["error"] = getattr(event.content, "error", None)
     elif event.type == "done" and event.usage:
         u = event.usage
-        buddhi = ""
-        if u.buddhi_action:
-            phase = f"/{u.buddhi_phase}" if u.buddhi_phase else ""
-            buddhi = f" | {u.buddhi_action}/{u.buddhi_guna}{phase}"
-            if u.buddhi_reflections:
-                buddhi += f" {u.buddhi_reflections}r"
-        print(
-            f"\n{_DIM}[{u.input_tokens}+{u.output_tokens} tokens, "
-            f"{u.llm_calls} calls, {u.tool_calls} tools, "
-            f"{u.rounds} rounds{buddhi}]{_RESET}"
-        )
-    elif event.type == "error":
-        print(f"{_RED}Error: {event.content}{_RESET}", file=sys.stderr)
+        obj["usage"] = {
+            "input_tokens": u.input_tokens,
+            "output_tokens": u.output_tokens,
+            "llm_calls": u.llm_calls,
+            "tool_calls": u.tool_calls,
+            "rounds": u.rounds,
+            "buddhi_action": u.buddhi_action,
+            "buddhi_guna": u.buddhi_guna,
+            "buddhi_phase": u.buddhi_phase,
+        }
+
+    print(json.dumps(obj), flush=True)
 
 
-async def _run_task(agent: StewardAgent, task: str) -> None:
+# ── Entry Points ─────────────────────────────────────────────────────
+
+
+async def _run_task(
+    agent: StewardAgent,
+    task: str,
+    output_json: bool = False,
+) -> None:
+    formatter = _format_event_json if output_json else _format_event
     async for event in agent.run_stream(task):
-        _format_event(event)
+        formatter(event)
 
 
 async def _interactive(agent: StewardAgent, cwd: str | None = None) -> None:
-    print(f"{_BOLD}Steward v{__version__}{_RESET} — autonomous agent")
-    print(f"{_DIM}Type 'exit' to quit, 'reset' to clear conversation{_RESET}\n")
+    _console.print(f"[heading]Steward v{__version__}[/] — autonomous agent")
+    _console.print("[stats]Type 'exit' to quit, 'reset' to clear conversation[/]\n")
 
     while True:
         try:
-            user_input = input(f"{_CYAN}steward>{_RESET} ")
+            user_input = _console.input("[prompt]steward>[/] ")
         except (EOFError, KeyboardInterrupt):
-            print()
+            _console.print()
             break
 
         text = user_input.strip()
@@ -91,7 +173,7 @@ async def _interactive(agent: StewardAgent, cwd: str | None = None) -> None:
         if text == "reset":
             agent.reset()
             clear_state(cwd=cwd)
-            print(f"{_DIM}Conversation reset{_RESET}")
+            _console.print("[stats]Conversation reset[/]")
             continue
 
         async for event in agent.run_stream(text):
@@ -103,23 +185,26 @@ async def _interactive(agent: StewardAgent, cwd: str | None = None) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="steward",
-        description="Steward — Autonomous Agent Engine",
+        description="Steward — Autonomous Superagent Engine",
     )
     parser.add_argument("task", nargs="?", help="Task to execute (omit for interactive mode)")
     parser.add_argument("--version", action="version", version=f"steward {__version__}")
     parser.add_argument("--resume", action="store_true", help="Resume previous session")
     parser.add_argument("--cwd", help="Working directory (default: current)")
     parser.add_argument("--max-tokens", type=int, default=4096, help="Max output tokens per response")
+    parser.add_argument(
+        "--output", choices=["human", "json"], default="human",
+        help="Output format (default: human)",
+    )
 
     args = parser.parse_args()
 
     # Build provider chamber from environment
     chamber = build_chamber()
     if len(chamber) == 0:
-        print(
-            f"{_RED}No LLM providers configured.{_RESET}\n"
-            "Set at least one: GOOGLE_API_KEY, MISTRAL_API_KEY, OPENROUTER_API_KEY",
-            file=sys.stderr,
+        _err_console.print(
+            "[error]No LLM providers configured.[/]\n"
+            "Set at least one: GOOGLE_API_KEY, MISTRAL_API_KEY, OPENROUTER_API_KEY"
         )
         sys.exit(1)
 
@@ -134,12 +219,14 @@ def main() -> None:
         conv = load_conversation(cwd=args.cwd)
         if conv:
             agent.resume(conv)
-            print(f"{_DIM}Resumed session ({len(conv.messages)} messages){_RESET}")
+            _console.print(f"[stats]Resumed session ({len(conv.messages)} messages)[/]")
         else:
-            print(f"{_DIM}No previous session found{_RESET}")
+            _console.print("[stats]No previous session found[/]")
+
+    output_json = args.output == "json"
 
     if args.task:
-        asyncio.run(_run_task(agent, args.task))
+        asyncio.run(_run_task(agent, args.task, output_json=output_json))
         save_conversation(agent.conversation, cwd=args.cwd)
     else:
         asyncio.run(_interactive(agent, cwd=args.cwd))
