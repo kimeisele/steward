@@ -60,6 +60,12 @@ MAX_RESPONSE_CHARS = 100_000
 # Maximum characters per tool call parameter value
 MAX_PARAM_CHARS = 10_000
 
+# Tool execution timeout (seconds) — prevents hung bash commands
+TOOL_TIMEOUT_SECONDS = 120
+
+# LLM retry attempts on transient failure
+LLM_MAX_RETRIES = 1
+
 
 class AgentLoop:
     """Execute the agentic tool-use loop for a single turn.
@@ -230,17 +236,25 @@ class AgentLoop:
                 )
                 to_execute.append((tc, proto_call))
 
-            # Phase 2: Execute all cleared tools in parallel
+            # Phase 2: Execute all cleared tools in parallel (with timeout)
             if to_execute:
                 tasks = [
-                    asyncio.to_thread(self._registry.execute, pc)
+                    asyncio.wait_for(
+                        asyncio.to_thread(self._registry.execute, pc),
+                        timeout=TOOL_TIMEOUT_SECONDS,
+                    )
                     for _, pc in to_execute
                 ]
                 results = await asyncio.gather(*tasks, return_exceptions=True)
 
                 # Phase 3: Process results, record file ops, yield events
                 for (tc, _), raw_result in zip(to_execute, results):
-                    if isinstance(raw_result, BaseException):
+                    if isinstance(raw_result, asyncio.TimeoutError):
+                        result = ToolResult(
+                            success=False,
+                            error=f"Tool timed out after {TOOL_TIMEOUT_SECONDS}s",
+                        )
+                    elif isinstance(raw_result, BaseException):
                         result = ToolResult(success=False, error=str(raw_result))
                     else:
                         result = raw_result
@@ -368,18 +382,14 @@ class AgentLoop:
             existing.append(path)
             self._memory.remember(key, existing, session_id="steward", tags=["file_ops"])
 
-    async def _call_llm(self, directive: BuddhiDirective | None = None) -> object | None:
-        """Call the LLM provider with current conversation + tools.
+    def _manage_context(self) -> None:
+        """Context budget management — runs before every LLM call.
 
-        Uses BuddhiDirective for tool pre-selection and token budget.
-        Only sends relevant tools = fewer input tokens per call.
-
-        Context budget management (80% infra / 20% LLM):
-        1. At 50%: Samskara compaction (deterministic, zero tokens)
+        Three-tier defense (80% infra / 20% LLM):
+        1. At 50%: Samskara compaction (deterministic, zero cost)
         2. At 70%: LLM summarization (fallback, costs tokens)
-        3. Over 100%: _trim() evicts oldest messages (last resort)
+        3. Over 100%: _trim() evicts oldest messages (last resort, in Conversation)
         """
-        # Phase 1: Samskara compaction at 50% — FREE, deterministic
         if self._samskara.should_compact(self._conversation, threshold=0.5):
             pct = int(self._conversation.total_tokens / self._conversation.max_tokens * 100)
             logger.info("Context at %d%% — samskara compaction (free)", pct)
@@ -390,7 +400,6 @@ class AgentLoop:
                     int(self._conversation.total_tokens / self._conversation.max_tokens * 100),
                 )
 
-        # Phase 2: LLM summarization at 70% — fallback, costs tokens
         if should_summarize(self._conversation, threshold=0.7):
             pct = int(self._conversation.total_tokens / self._conversation.max_tokens * 100)
             logger.info("Context at %d%% — LLM summarization (fallback)", pct)
@@ -405,91 +414,74 @@ class AgentLoop:
             except Exception as e:
                 logger.warning("Summarization failed: %s — _trim() will handle overflow", e)
 
-        # Token budget: use directive's constraint or default
+    def _build_llm_kwargs(self, directive: BuddhiDirective | None = None) -> dict[str, object]:
+        """Build kwargs for LLM call — messages, tools, token budget.
+
+        Buddhi directive controls tool pre-selection and token budget.
+        Only sends relevant tools = fewer input tokens per call.
+        """
         max_tokens = self._max_tokens
         if directive and directive.max_tokens:
             max_tokens = directive.max_tokens
 
-        try:
-            kwargs: dict[str, object] = {
-                "messages": self._conversation.to_dicts(),
-                "max_tokens": max_tokens,
-            }
+        kwargs: dict[str, object] = {
+            "messages": self._conversation.to_dicts(),
+            "max_tokens": max_tokens,
+        }
 
-            # Buddhi tool pre-selection: only send relevant tools
-            all_tools = tool_descriptions_for_llm(self._registry)
-            if all_tools:
-                if directive and directive.tool_names:
-                    # Filter to only tools Buddhi says are relevant
-                    filtered = [
-                        t for t in all_tools
-                        if t.get("function", {}).get("name") in directive.tool_names  # type: ignore[union-attr]
-                    ]
-                    kwargs["tools"] = filtered or all_tools  # fallback to all if filter empties
-                    if len(filtered) < len(all_tools):
-                        logger.debug(
-                            "Buddhi pre-flight: %d/%d tools selected (%s)",
-                            len(filtered), len(all_tools), directive.action.value,
-                        )
-                else:
-                    kwargs["tools"] = all_tools
+        all_tools = tool_descriptions_for_llm(self._registry)
+        if all_tools:
+            if directive and directive.tool_names:
+                filtered = [
+                    t for t in all_tools
+                    if t.get("function", {}).get("name") in directive.tool_names  # type: ignore[union-attr]
+                ]
+                kwargs["tools"] = filtered or all_tools
+                if len(filtered) < len(all_tools):
+                    logger.debug(
+                        "Buddhi pre-flight: %d/%d tools selected (%s)",
+                        len(filtered), len(all_tools), directive.action.value,
+                    )
+            else:
+                kwargs["tools"] = all_tools
 
-            return await asyncio.to_thread(self._provider.invoke, **kwargs)
-        except Exception as e:
-            # Agent-city lesson: LLM failure is EXPECTED, not exceptional.
-            # Deterministic path continues — caller handles None gracefully.
-            logger.warning("LLM call failed (%s: %s) — deterministic path continues", type(e).__name__, e)
-            return None
+        return kwargs
+
+    async def _call_llm(self, directive: BuddhiDirective | None = None) -> object | None:
+        """Call the LLM provider (non-streaming).
+
+        Retries once on transient failure before returning None.
+        """
+        self._manage_context()
+        kwargs = self._build_llm_kwargs(directive)
+
+        for attempt in range(1 + LLM_MAX_RETRIES):
+            try:
+                return await asyncio.to_thread(self._provider.invoke, **kwargs)
+            except Exception as e:
+                if attempt < LLM_MAX_RETRIES:
+                    logger.warning("LLM call failed (attempt %d): %s — retrying", attempt + 1, e)
+                    continue
+                logger.warning("LLM call failed (%s: %s) — no retries left", type(e).__name__, e)
+                return None
 
     async def _call_llm_streaming(
         self,
         directive: BuddhiDirective | None = None,
         text_deltas: list[str] | None = None,
     ) -> object | None:
-        """Call LLM with streaming if provider supports it.
+        """Call LLM with streaming, falling back to non-streaming.
 
         Collects text_delta chunks into text_deltas list for the caller
         to yield as AgentEvents. Returns the final complete response.
-
-        Falls back to non-streaming _call_llm if provider doesn't support it.
         """
         if not hasattr(self._provider, "invoke_stream"):
             return await self._call_llm(directive)
 
-        # Run context management (same as _call_llm)
-        if self._samskara.should_compact(self._conversation, threshold=0.5):
-            if self._samskara.compact(self._conversation):
-                logger.info("Samskara compacted before stream")
-
-        if should_summarize(self._conversation, threshold=0.7):
-            try:
-                summarizer = Summarizer(self._provider)
-                summarizer.summarize(self._conversation)
-            except Exception:
-                pass
-
-        max_tokens = self._max_tokens
-        if directive and directive.max_tokens:
-            max_tokens = directive.max_tokens
+        self._manage_context()
+        kwargs = self._build_llm_kwargs(directive)
 
         try:
-            kwargs: dict[str, object] = {
-                "messages": self._conversation.to_dicts(),
-                "max_tokens": max_tokens,
-            }
-
-            all_tools = tool_descriptions_for_llm(self._registry)
-            if all_tools:
-                if directive and directive.tool_names:
-                    filtered = [
-                        t for t in all_tools
-                        if t.get("function", {}).get("name") in directive.tool_names  # type: ignore[union-attr]
-                    ]
-                    kwargs["tools"] = filtered or all_tools
-                else:
-                    kwargs["tools"] = all_tools
-
-            # Stream in a thread (providers are sync)
             def _stream() -> object | None:
                 response = None
                 for delta in self._provider.invoke_stream(**kwargs):  # type: ignore[attr-defined]

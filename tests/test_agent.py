@@ -540,3 +540,96 @@ class TestStewardAgent:
         llm = FakeLLM([])
         agent = StewardAgent(provider=llm, tools=[CustomTool()])
         assert agent.registry.has("custom")
+
+
+class TestLLMRetry:
+    """LLM call retries on transient failure."""
+
+    def test_retry_on_first_failure(self):
+        """LLM fails once, retries, succeeds on second attempt."""
+        call_count = 0
+
+        class RetryLLM:
+            def invoke(self, **kwargs):
+                nonlocal call_count
+                call_count += 1
+                if call_count == 1:
+                    raise ConnectionError("transient failure")
+                return FakeResponse(content="recovered!")
+
+        reg = ToolRegistry()
+        conv = Conversation()
+        loop = AgentLoop(provider=RetryLLM(), registry=reg, conversation=conv)
+        result, events = run_loop(loop, "test")
+        assert result == "recovered!"
+        assert call_count == 2
+
+    def test_retry_exhausted_returns_error(self):
+        """LLM fails on all attempts → error event."""
+
+        class AlwaysFailLLM:
+            def invoke(self, **kwargs):
+                raise ConnectionError("permanent failure")
+
+        reg = ToolRegistry()
+        conv = Conversation()
+        loop = AgentLoop(provider=AlwaysFailLLM(), registry=reg, conversation=conv)
+        result, events = run_loop(loop, "test")
+        errors = [e for e in events if e.type == "error"]
+        assert len(errors) >= 1
+        assert "no response" in str(errors[0].content).lower()
+
+
+class TestToolTimeout:
+    """Tool execution respects timeout."""
+
+    def test_timeout_produces_error_result(self):
+        """A tool that exceeds timeout gets a timeout error."""
+        import time
+        from steward.loop import engine as engine_mod
+        from vibe_core.tools.tool_protocol import Tool, ToolResult
+
+        original = engine_mod.TOOL_TIMEOUT_SECONDS
+        engine_mod.TOOL_TIMEOUT_SECONDS = 0.1
+
+        try:
+            class SlowTool(Tool):
+                @property
+                def name(self) -> str:
+                    return "slow_tool"
+
+                @property
+                def description(self) -> str:
+                    return "A tool that takes too long"
+
+                @property
+                def parameters_schema(self) -> dict[str, Any]:
+                    return {}
+
+                def validate(self, parameters: dict[str, Any]) -> None:
+                    pass
+
+                def execute(self, parameters: dict[str, Any]) -> ToolResult:
+                    time.sleep(5)
+                    return ToolResult(success=True, output="done")
+
+            reg = ToolRegistry()
+            reg.register(SlowTool())
+            llm = FakeLLM([
+                FakeResponse(
+                    tool_calls=[FakeToolCall(
+                        id="c1",
+                        function=FakeFunction(name="slow_tool", arguments={}),
+                    )],
+                ),
+                FakeResponse(content="Timed out."),
+            ])
+            conv = Conversation()
+            loop = AgentLoop(provider=llm, registry=reg, conversation=conv)
+            _, events = run_loop(loop, "test")
+            results = [e for e in events if e.type == "tool_result"]
+            assert len(results) == 1
+            assert not results[0].content.success
+            assert "timed out" in str(results[0].content.error).lower()
+        finally:
+            engine_mod.TOOL_TIMEOUT_SECONDS = original
