@@ -11,7 +11,7 @@ from __future__ import annotations
 from vibe_core.mahamantra.protocols.compression import IntentGuna
 from vibe_core.runtime.semantic_actions import SemanticActionType
 
-from steward.buddhi import Buddhi, BuddhiDirective, BuddhiVerdict
+from steward.buddhi import Buddhi, BuddhiDirective, BuddhiVerdict, ModelTier
 from steward.types import ToolUse
 
 
@@ -452,3 +452,46 @@ class TestFailureRedirect:
         assert buddhi.stats["total_calls"] == 1
         assert buddhi.stats["errors"] == 1
         assert buddhi.stats["tool_distribution"] == {"nonexistent_tool": 1}
+
+
+class TestModelTier:
+    """Tests for ModelTier routing in BuddhiDirective."""
+
+    def test_action_tier_mapping_flash(self):
+        """RESEARCH, MONITOR, TEST → FLASH tier."""
+        from steward.buddhi import _ACTION_TIER
+        assert _ACTION_TIER[SemanticActionType.RESEARCH] == ModelTier.FLASH
+        assert _ACTION_TIER[SemanticActionType.MONITOR] == ModelTier.FLASH
+        assert _ACTION_TIER[SemanticActionType.TEST] == ModelTier.FLASH
+
+    def test_action_tier_mapping_standard(self):
+        """IMPLEMENT, DEBUG, REFACTOR → STANDARD tier."""
+        from steward.buddhi import _ACTION_TIER
+        assert _ACTION_TIER[SemanticActionType.IMPLEMENT] == ModelTier.STANDARD
+        assert _ACTION_TIER[SemanticActionType.DEBUG] == ModelTier.STANDARD
+        assert _ACTION_TIER[SemanticActionType.REFACTOR] == ModelTier.STANDARD
+
+    def test_action_tier_mapping_pro(self):
+        """DESIGN, SYNTHESIZE → PRO tier."""
+        from steward.buddhi import _ACTION_TIER
+        assert _ACTION_TIER[SemanticActionType.DESIGN] == ModelTier.PRO
+        assert _ACTION_TIER[SemanticActionType.SYNTHESIZE] == ModelTier.PRO
+
+    def test_tier_demotes_under_context_pressure(self):
+        """At 70%+ context, tier demotes to FLASH regardless of action."""
+        buddhi = Buddhi()
+        directive = buddhi.pre_flight("do something complex", 0, context_pct=0.75)
+        assert directive.tier == ModelTier.FLASH
+
+    def test_tier_in_directive(self):
+        """BuddhiDirective includes tier field."""
+        buddhi = Buddhi()
+        directive = buddhi.pre_flight("list all files", 0)
+        assert isinstance(directive.tier, ModelTier)
+        assert directive.tier.value in ("flash", "standard", "pro")
+
+    def test_all_actions_have_tier(self):
+        """Every SemanticActionType has a tier mapping."""
+        from steward.buddhi import _ACTION_TIER
+        for action in SemanticActionType:
+            assert action in _ACTION_TIER, f"{action} missing from _ACTION_TIER"

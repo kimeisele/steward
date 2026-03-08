@@ -37,7 +37,7 @@ from vibe_core.runtime.tool_safety_guard import ToolSafetyGuard
 from vibe_core.tools.tool_protocol import ToolCall as ProtoToolCall, ToolResult
 from vibe_core.tools.tool_registry import ToolRegistry
 
-from steward.buddhi import Buddhi, BuddhiDirective, BuddhiVerdict
+from steward.buddhi import Buddhi, BuddhiDirective, BuddhiVerdict, ModelTier
 from steward.context import SamskaraContext
 from steward.services import tool_descriptions_for_llm
 from steward.summarizer import Summarizer, should_summarize
@@ -139,6 +139,7 @@ class AgentLoop:
             if round_num == 0:
                 usage.buddhi_action = directive.action.value
                 usage.buddhi_guna = directive.guna.value
+                usage.buddhi_tier = directive.tier.value
             usage.buddhi_phase = directive.phase
 
             # Try streaming if provider supports it
@@ -415,9 +416,10 @@ class AgentLoop:
                 logger.warning("Summarization failed: %s — _trim() will handle overflow", e)
 
     def _build_llm_kwargs(self, directive: BuddhiDirective | None = None) -> dict[str, object]:
-        """Build kwargs for LLM call — messages, tools, token budget.
+        """Build kwargs for LLM call — messages, tools, token budget, tier.
 
-        Buddhi directive controls tool pre-selection and token budget.
+        Buddhi directive controls tool pre-selection, token budget, and
+        ModelTier routing (FLASH/STANDARD/PRO → ProviderChamber sorting).
         Only sends relevant tools = fewer input tokens per call.
         """
         max_tokens = self._max_tokens
@@ -428,6 +430,10 @@ class AgentLoop:
             "messages": self._conversation.to_dicts(),
             "max_tokens": max_tokens,
         }
+
+        # ModelTier routing: Buddhi decides which cost tier to use
+        if directive:
+            kwargs["tier"] = directive.tier.value
 
         all_tools = tool_descriptions_for_llm(self._registry)
         if all_tools:

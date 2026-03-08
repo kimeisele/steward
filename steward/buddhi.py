@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from enum import StrEnum
 
 from vibe_core.mahamantra.protocols.compression import IntentGuna
 from vibe_core.runtime.semantic_actions import SemanticActionType
@@ -107,6 +108,38 @@ _PHASE_TOOL_OVERLAY: dict[str, frozenset[str]] = {
     PHASE_COMPLETE: frozenset(),
 }
 
+# ── ModelTier — cost-aware LLM routing ─────────────────────────────
+
+
+class ModelTier(StrEnum):
+    """Cost-aware model tiers for ProviderChamber routing.
+
+    FLASH: cheapest/fastest (Groq, Mistral) — simple reads, tests
+    STANDARD: balanced (default prana ordering) — implementation, debug
+    PRO: most capable (Claude, expensive) — design, synthesis
+    """
+
+    FLASH = "flash"
+    STANDARD = "standard"
+    PRO = "pro"
+
+
+_ACTION_TIER: dict[SemanticActionType, ModelTier] = {
+    SemanticActionType.RESEARCH:   ModelTier.FLASH,
+    SemanticActionType.ANALYZE:    ModelTier.STANDARD,
+    SemanticActionType.MONITOR:    ModelTier.FLASH,
+    SemanticActionType.REVIEW:     ModelTier.STANDARD,
+    SemanticActionType.IMPLEMENT:  ModelTier.STANDARD,
+    SemanticActionType.REFACTOR:   ModelTier.STANDARD,
+    SemanticActionType.DESIGN:     ModelTier.PRO,
+    SemanticActionType.PLAN:       ModelTier.STANDARD,
+    SemanticActionType.SYNTHESIZE: ModelTier.PRO,
+    SemanticActionType.DEBUG:      ModelTier.STANDARD,
+    SemanticActionType.TEST:       ModelTier.FLASH,
+    SemanticActionType.RESPOND:    ModelTier.STANDARD,
+}
+
+
 # Phase-based token budget (only applies when lower than action budget)
 # VERIFY and COMPLETE tighten budget — work should be winding down.
 # ORIENT and EXECUTE defer to the action's natural budget.
@@ -129,6 +162,7 @@ class BuddhiDirective:
     guna: IntentGuna
     tool_names: frozenset[str]
     max_tokens: int
+    tier: ModelTier = ModelTier.STANDARD
     function: str = ""
     approach: str = ""
     phase: str = ""  # ORIENT | EXECUTE | VERIFY | COMPLETE
@@ -232,11 +266,21 @@ class Buddhi:
             if recent_errors >= 2:
                 base_tools = frozenset(base_tools | {"bash"})
 
+        # ModelTier: action-derived, phase-adjusted
+        tier = _ACTION_TIER.get(self._action, ModelTier.STANDARD)
+        # PRO tasks demote to STANDARD in VERIFY/COMPLETE (work is done)
+        if tier == ModelTier.PRO and phase in (PHASE_VERIFY, PHASE_COMPLETE):
+            tier = ModelTier.STANDARD
+        # Under context pressure, demote to save tokens
+        if context_pct >= 0.7:
+            tier = ModelTier.FLASH
+
         return BuddhiDirective(
             action=self._action,
             guna=self._guna,
             tool_names=base_tools,
             max_tokens=max_tokens,
+            tier=tier,
             function=self._function,
             approach=self._approach,
             phase=phase,

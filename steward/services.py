@@ -54,6 +54,10 @@ class SVC_EVENT_BUS:
     """EventBus — real-time event stream with Sudarshana rate limiting."""
 
 
+class SVC_FEEDBACK:
+    """FeedbackProtocol — pain/pleasure signals for outcome learning."""
+
+
 class SVC_PROMPT_CONTEXT:
     """PromptContext — dynamic context resolvers for system prompt."""
 
@@ -99,25 +103,35 @@ def boot(
     if provider is not None:
         ServiceRegistry.register(SVC_PROVIDER, provider)
 
-    # 5. SignalBus (agent event communication)
+    # 5. FeedbackProtocol (Vedana — pain/pleasure signals for learning)
+    from vibe_core.protocols.feedback import InMemoryFeedback
+
+    feedback = InMemoryFeedback()
+    ServiceRegistry.register(SVC_FEEDBACK, feedback)
+
+    # Wire feedback into ProviderChamber if it supports it
+    if provider is not None and hasattr(provider, "set_feedback"):
+        provider.set_feedback(feedback)
+
+    # 6. SignalBus (agent event communication)
     from vibe_core.steward.bus import SignalBus
 
     bus = SignalBus(bus_id="steward.agent")
     ServiceRegistry.register(SVC_SIGNAL_BUS, bus)
 
-    # 6. Memory (Chitta — persistent context across turns)
+    # 7. Memory (Chitta — persistent context across turns)
     from steward.memory import PersistentMemory
 
     memory = PersistentMemory(cwd=cwd)
     ServiceRegistry.register(SVC_MEMORY, memory)
 
-    # 7. EventBus (Narada — real-time event stream + Sudarshana rate limiting)
+    # 8. EventBus (Narada — real-time event stream + Sudarshana rate limiting)
     from vibe_core.mahamantra.substrate.services.event_bus import EventBus
 
     event_bus = EventBus(rate_limit_enabled=False)  # steward is trusted
     ServiceRegistry.register(SVC_EVENT_BUS, event_bus)
 
-    # 8. PromptContext (dynamic system prompt resolvers)
+    # 9. PromptContext (dynamic system prompt resolvers)
     from pathlib import Path
 
     from vibe_core.runtime.prompt_context import PromptContext

@@ -16,6 +16,7 @@ import os
 import time
 from dataclasses import dataclass, field
 from datetime import date
+from typing import Iterator
 
 from vibe_core.mahamantra.protocols._header import MahaHeader
 from vibe_core.mahamantra.protocols._seed import COSMIC_FRAME, MAHA_QUANTUM
@@ -23,9 +24,13 @@ from vibe_core.mahamantra.substrate.cell_system.cell import (
     CellLifecycleState,
     MahaCellUnified,
 )
+from vibe_core.protocols.feedback import FeedbackProtocol
+from vibe_core.runtime.circuit_breaker import (
+    CircuitBreaker,
+    CircuitBreakerConfig,
+    CircuitBreakerOpenError,
+)
 from vibe_core.runtime.quota_manager import OperationalQuota, QuotaExceededError, QuotaLimits
-
-from typing import Iterator
 
 from steward.types import LLMProvider
 
@@ -37,6 +42,7 @@ _ADDR_GOOGLE = MAHA_QUANTUM * 10      # 1370
 _ADDR_MISTRAL = MAHA_QUANTUM * 11     # 1507
 _ADDR_DEEPSEEK = MAHA_QUANTUM * 12    # 1644
 _ADDR_ANTHROPIC = MAHA_QUANTUM * 13   # 1781
+_ADDR_GROQ = MAHA_QUANTUM * 14        # 1918
 
 # ── Prana Budgets ────────────────────────────────────────────────────
 
@@ -79,13 +85,18 @@ class ProviderChamber:
     Each provider is a MahaCellUnified with ProviderPayload.
     Sorted by prana (highest first = free/available first).
     On failure, integrity degrades; next provider is tried.
+
+    CircuitBreaker (per-cell): skips a provider for 30s after 5 failures/60s.
+    FeedbackProtocol: records success/failure signals for pattern detection.
     """
 
     _cells: list[MahaCellUnified[ProviderPayload]] = field(default_factory=list)
+    _breakers: dict[str, CircuitBreaker] = field(default_factory=dict)
     _last_reset: date = field(default_factory=date.today)
     _total_calls: int = 0
     _total_failures: int = 0
     _quota: OperationalQuota = field(default_factory=OperationalQuota)
+    _feedback: FeedbackProtocol | None = None
 
     def add_provider(
         self,
@@ -126,19 +137,32 @@ class ProviderChamber:
             payload=payload,
         )
         self._cells.append(cell)
+        self._breakers[name] = CircuitBreaker(CircuitBreakerConfig())
         logger.info("Added provider '%s' (model=%s, prana=%d)", name, model, prana)
 
+    def set_feedback(self, feedback: FeedbackProtocol) -> None:
+        """Wire FeedbackProtocol for outcome tracking."""
+        self._feedback = feedback
+
     def invoke(self, **kwargs: object) -> object | None:
-        """Try provider cells in prana order until one succeeds.
+        """Try provider cells in tier-aware order until one succeeds.
 
         Each cell uses its own model. Caller's model kwarg is stripped.
-        Supports `prefer_capable=True` kwarg to invert prana ordering
-        (use most capable/expensive provider first for complex tasks).
+
+        Tier routing (from Buddhi):
+            "flash"    — cheapest first (cost ascending)
+            "standard" — default prana ordering (free first)
+            "pro"      — most capable first (cost descending)
+
+        Also supports legacy `prefer_capable=True` (mapped to "pro").
 
         Returns LLMResponse or None if all providers exhausted.
         """
         self._maybe_reset_daily()
+        tier = str(kwargs.pop("tier", ""))
         prefer_capable = bool(kwargs.pop("prefer_capable", False))
+        if prefer_capable and not tier:
+            tier = "pro"
 
         # Pre-flight quota check (OperationalQuota from substrate)
         try:
@@ -153,10 +177,14 @@ class ProviderChamber:
         alive = [c for c in self._cells if c.is_alive]
         has_tools = bool(kwargs.get("tools"))
 
-        if prefer_capable:
+        if tier == "pro":
             # Complex task: sort by cost (highest = most capable first)
             alive.sort(key=lambda c: c.payload.cost_per_mtok_input, reverse=True)
-            logger.debug("Adaptive routing: prefer_capable → cost-ordered")
+            logger.debug("Tier routing: PRO → cost-ordered (capable first)")
+        elif tier == "flash":
+            # Simple task: sort by cost ascending (cheapest first)
+            alive.sort(key=lambda c: c.payload.cost_per_mtok_input)
+            logger.debug("Tier routing: FLASH → cost-ordered (cheapest first)")
         elif has_tools:
             # Tool-calling: prefer providers that support structured tools
             alive.sort(
@@ -173,6 +201,14 @@ class ProviderChamber:
                 logger.debug("'%s' over quota, skipping", payload.name)
                 continue
 
+            # CircuitBreaker gate: skip provider if breaker is OPEN
+            breaker = self._breakers.get(payload.name)
+            if breaker:
+                can_exec, reason = breaker.can_execute()
+                if not can_exec:
+                    logger.info("'%s' circuit breaker OPEN (%s), skipping", payload.name, reason)
+                    continue
+
             # Membrane gate: signal() checks integrity before accepting work.
             # Returns None if membrane too damaged — skip this provider.
             if cell.signal(payload.name) is None:
@@ -185,9 +221,15 @@ class ProviderChamber:
             call_kwargs.pop("max_retries", None)
 
             last_error: Exception | None = None
+            t0 = time.monotonic()
             for attempt in range(_MAX_RETRIES + 1):
                 try:
                     response = payload.provider.invoke(**call_kwargs)
+                    duration_ms = (time.monotonic() - t0) * 1000
+
+                    # CircuitBreaker: record success
+                    if breaker:
+                        breaker._record_success()
 
                     # Track usage
                     input_tokens = 0
@@ -218,6 +260,14 @@ class ProviderChamber:
                         operation=f"llm:{payload.name}",
                     )
 
+                    # FeedbackProtocol: signal success
+                    if self._feedback:
+                        self._feedback.signal_success(
+                            payload.name,
+                            {"model": payload.model, "cell_prana": cell.lifecycle.prana},
+                            duration_ms=duration_ms,
+                        )
+
                     logger.debug(
                         "'%s' responded (tokens: %d+%d, prana: %d, cycle: %d)",
                         payload.name, input_tokens, output_tokens,
@@ -239,13 +289,29 @@ class ProviderChamber:
 
             # All retries failed — metabolize failure as energy drain
             if last_error is not None:
+                duration_ms = (time.monotonic() - t0) * 1000
                 self._total_failures += 1
+
+                # CircuitBreaker: record failure
+                if breaker:
+                    breaker._record_failure(last_error)
+
                 # Integrity degrades on failure (membrane damage)
                 cell.lifecycle.integrity = max(
                     0, cell.lifecycle.integrity - (COSMIC_FRAME // 10)
                 )
                 # Failed call still costs metabolic energy
                 cell.metabolize(0)
+
+                # FeedbackProtocol: signal failure
+                if self._feedback:
+                    self._feedback.signal_failure(
+                        payload.name,
+                        f"{type(last_error).__name__}: {last_error}",
+                        {"model": payload.model, "cell_prana": cell.lifecycle.prana},
+                        duration_ms=duration_ms,
+                    )
+
                 logger.info(
                     "'%s' failed (%s: %s), integrity->%d, prana->%d, trying next",
                     payload.name, type(last_error).__name__, last_error,
@@ -290,8 +356,18 @@ class ProviderChamber:
             if not self._is_within_quota(payload):
                 continue
 
+            # CircuitBreaker gate
+            breaker = self._breakers.get(payload.name)
+            if breaker:
+                can_exec, reason = breaker.can_execute()
+                if not can_exec:
+                    logger.info("'%s' circuit breaker OPEN (%s), skipping stream", payload.name, reason)
+                    continue
+
             if cell.signal(payload.name) is None:
                 continue
+
+            t0 = time.monotonic()
 
             # Check if provider supports streaming
             if not hasattr(payload.provider, "invoke_stream"):
@@ -301,7 +377,16 @@ class ProviderChamber:
                 call_kwargs.pop("max_retries", None)
                 try:
                     response = payload.provider.invoke(**call_kwargs)
+                    duration_ms = (time.monotonic() - t0) * 1000
+                    if breaker:
+                        breaker._record_success()
                     self._total_calls += 1
+                    if self._feedback:
+                        self._feedback.signal_success(
+                            payload.name,
+                            {"model": payload.model, "stream": False},
+                            duration_ms=duration_ms,
+                        )
                     # Yield complete text as single delta
                     text = ""
                     if hasattr(response, "content"):
@@ -311,11 +396,20 @@ class ProviderChamber:
                     yield _StreamDelta(type="done", response=response)
                     return
                 except Exception as e:
+                    duration_ms = (time.monotonic() - t0) * 1000
                     self._total_failures += 1
+                    if breaker:
+                        breaker._record_failure(e)
                     cell.lifecycle.integrity = max(
                         0, cell.lifecycle.integrity - (COSMIC_FRAME // 10)
                     )
                     cell.metabolize(0)
+                    if self._feedback:
+                        self._feedback.signal_failure(
+                            payload.name, str(e),
+                            {"model": payload.model, "stream": False},
+                            duration_ms=duration_ms,
+                        )
                     logger.info("'%s' failed streaming fallback: %s", payload.name, e)
                     continue
 
@@ -326,6 +420,9 @@ class ProviderChamber:
             try:
                 for delta in payload.provider.invoke_stream(**call_kwargs):
                     if hasattr(delta, "type") and delta.type == "done":  # type: ignore[attr-defined]
+                        duration_ms = (time.monotonic() - t0) * 1000
+                        if breaker:
+                            breaker._record_success()
                         # Track usage from final response
                         final_resp = getattr(delta, "response", None)
                         if final_resp:
@@ -341,15 +438,30 @@ class ProviderChamber:
                                     operation=f"llm_stream:{payload.name}",
                                 )
                         self._total_calls += 1
+                        if self._feedback:
+                            self._feedback.signal_success(
+                                payload.name,
+                                {"model": payload.model, "stream": True},
+                                duration_ms=duration_ms,
+                            )
                     yield delta
                 return  # Success
 
             except Exception as e:
+                duration_ms = (time.monotonic() - t0) * 1000
                 self._total_failures += 1
+                if breaker:
+                    breaker._record_failure(e)
                 cell.lifecycle.integrity = max(
                     0, cell.lifecycle.integrity - (COSMIC_FRAME // 10)
                 )
                 cell.metabolize(0)
+                if self._feedback:
+                    self._feedback.signal_failure(
+                        payload.name, str(e),
+                        {"model": payload.model, "stream": True},
+                        duration_ms=duration_ms,
+                    )
                 logger.info("'%s' streaming failed: %s, trying next", payload.name, e)
                 continue
 
@@ -370,6 +482,8 @@ class ProviderChamber:
                     "integrity": c.lifecycle.integrity,
                     "cycle": c.lifecycle.cycle,
                     "alive": c.is_alive,
+                    "breaker": self._breakers[c.payload.name].get_status()
+                    if c.payload.name in self._breakers else None,
                 }
                 for c in self._cells
             ],
@@ -390,6 +504,7 @@ class ProviderChamber:
         """Daily reset — restore all cells to genesis state.
 
         Cells that apoptosed (from starvation or age) are reborn.
+        Circuit breakers reset to CLOSED.
         This is the natural daily cycle: death → rebirth.
         """
         today = date.today()
@@ -399,6 +514,9 @@ class ProviderChamber:
                 cell.lifecycle.integrity = COSMIC_FRAME
                 cell.lifecycle.cycle = 0
                 cell.lifecycle.is_active = True
+            # Reset all circuit breakers
+            for breaker in self._breakers.values():
+                breaker.reset()
             self._last_reset = today
             logger.info("Daily reset — all provider cells reborn (prana=%d)", _PRANA_FREE)
 
@@ -773,7 +891,31 @@ def build_chamber() -> ProviderChamber:
         except Exception as e:
             logger.warning("Mistral provider failed: %s", e)
 
-    # Cell 3: DeepSeek via OpenRouter (cheap paid fallback)
+    # Cell 3: Groq (FREE — llama-3.3-70b via OpenAI-compat API)
+    groq_key = os.environ.get("GROQ_API_KEY")
+    if groq_key and _is_valid_key(groq_key):
+        try:
+            from openai import OpenAI
+
+            client = OpenAI(api_key=groq_key, base_url="https://api.groq.com/openai/v1")
+            adapter = MistralAdapter(client)  # OpenAI-compat, same adapter
+            chamber.add_provider(
+                name="groq",
+                provider=adapter,
+                model="llama-3.3-70b-versatile",
+                source_address=_ADDR_GROQ,
+                prana=_PRANA_FREE,
+                daily_call_limit=1000,       # Free tier: 1K RPD
+                daily_token_limit=100_000,   # Free tier: 100K TPD
+                cost_per_mtok=0.0,
+                supports_tools=True,
+            )
+        except ImportError:
+            logger.warning("openai package needed for Groq")
+        except Exception as e:
+            logger.warning("Groq provider failed: %s", e)
+
+    # Cell 4: DeepSeek via OpenRouter (cheap paid fallback)
     openrouter_key = os.environ.get("OPENROUTER_API_KEY")
     if openrouter_key and _is_valid_key(openrouter_key):
         try:
@@ -793,7 +935,7 @@ def build_chamber() -> ProviderChamber:
         except Exception as e:
             logger.warning("OpenRouter provider failed: %s", e)
 
-    # Cell 4: Anthropic Claude (paid, highest capability)
+    # Cell 5: Anthropic Claude (paid, highest capability)
     anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
     if anthropic_key and _is_valid_key(anthropic_key):
         try:
