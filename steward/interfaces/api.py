@@ -61,6 +61,12 @@ def create_app():
     # ── App Setup ────────────────────────────────────────────────────
     from steward import __version__
     from steward.agent import StewardAgent
+    from steward.interfaces.agent_internet import (
+        fetch_semantic_capabilities,
+        fetch_semantic_contracts,
+        invoke_semantic_http,
+        load_agent_internet_proxy_config,
+    )
     from steward.provider import build_chamber
     from steward.session_ledger import SessionLedger
     from steward.types import EventType
@@ -124,6 +130,12 @@ def create_app():
         version: str
         providers: int
         tools: list[str]
+
+    class AgentInternetSemanticCallRequest(BaseModel):
+        capability_id: str | None = None
+        contract_id: str | None = None
+        version: int | None = None
+        input_payload: dict = {}
 
     # ── Endpoints ────────────────────────────────────────────────────
 
@@ -216,6 +228,48 @@ def create_app():
             result["providers"] = _state["chamber"].stats()
 
         return result
+
+    @app.get("/agent-internet/semantic/capabilities", dependencies=[Depends(_verify_token)])
+    async def agent_internet_semantic_capabilities():
+        """Proxy the published agent-internet semantic capability manifest."""
+        try:
+            load_agent_internet_proxy_config()
+            return fetch_semantic_capabilities()
+        except ValueError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    @app.get("/agent-internet/semantic/contracts", dependencies=[Depends(_verify_token)])
+    async def agent_internet_semantic_contracts(
+        capability_id: str | None = None,
+        contract_id: str | None = None,
+        version: int | None = None,
+    ):
+        """Proxy published agent-internet semantic contract descriptors."""
+        try:
+            load_agent_internet_proxy_config()
+            return fetch_semantic_contracts(capability_id=capability_id, contract_id=contract_id, version=version)
+        except ValueError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    @app.post("/agent-internet/semantic/call", dependencies=[Depends(_verify_token)])
+    async def agent_internet_semantic_call(req: AgentInternetSemanticCallRequest):
+        """Proxy published agent-internet semantic invocation through steward."""
+        try:
+            load_agent_internet_proxy_config()
+            return invoke_semantic_http(
+                capability_id=req.capability_id,
+                contract_id=req.contract_id,
+                version=req.version,
+                input_payload=dict(req.input_payload or {}),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     return app
 
