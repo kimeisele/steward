@@ -12,7 +12,7 @@ from steward.senses.coordinator import SenseCoordinator
 from steward.senses.git_sense import GitSense
 from steward.senses.health_sense import HealthSense
 from steward.senses.project_sense import ProjectSense
-from steward.senses.test_sense import TestSense
+from steward.senses.testing_sense import TestingSense
 from vibe_core.mahamantra.protocols._sense import (
     AggregatePerception,
     Jnanendriya,
@@ -168,22 +168,22 @@ class TestCodeSense:
             assert len(perception.data["large_files"]) > 0
 
 
-# ── TestSense (JIHVA) ──────────────────────────────────────────────────
+# ── TestingSense (JIHVA) ──────────────────────────────────────────────────
 
 
-class TestTestSense:
+class TestTestingSense:
     """Test JIHVA — test quality perception."""
 
     def test_jnanendriya_is_jihva(self):
-        sense = TestSense(cwd=".")
+        sense = TestingSense(cwd=".")
         assert sense.jnanendriya == Jnanendriya.JIHVA
 
     def test_tanmatra_is_rasa(self):
-        sense = TestSense(cwd=".")
+        sense = TestingSense(cwd=".")
         assert sense.tanmatra == Tanmatra.RASA
 
     def test_perceive_pytest_project(self):
-        sense = TestSense(cwd=".")
+        sense = TestingSense(cwd=".")
         perception = sense.perceive()
         assert perception.sense == Jnanendriya.JIHVA
         assert perception.data["framework"] == "pytest"
@@ -191,20 +191,20 @@ class TestTestSense:
 
     def test_perceive_no_tests(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            sense = TestSense(cwd=tmpdir)
+            sense = TestingSense(cwd=tmpdir)
             perception = sense.perceive()
             assert perception.data["test_files"] == 0
             assert perception.quality == "tamas"
             assert perception.intensity > 0.5  # No tests = high pain
 
     def test_pytest_config_detected(self):
-        sense = TestSense(cwd=".")
+        sense = TestingSense(cwd=".")
         perception = sense.perceive()
         assert "pytest" in perception.data.get("pytest_config", "") or perception.data["framework"] == "pytest"
 
     def test_pain_no_tests(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            sense = TestSense(cwd=tmpdir)
+            sense = TestingSense(cwd=tmpdir)
             pain = sense.get_pain_level()
             assert pain > 0.0  # No tests = pain
 

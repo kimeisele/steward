@@ -39,12 +39,14 @@ _FRAMEWORK_CONFIG: dict[str, list[str]] = {
 }
 
 
-class TestSense:
+class TestingSense:
     """JIHVA — perceives test quality through test framework analysis.
 
     Implements SenseProtocol. All perception is deterministic
     (file discovery + config parsing). Zero LLM.
     """
+
+    __test__ = False  # not a pytest test class
 
     def __init__(self, cwd: str | None = None) -> None:
         self._cwd = Path(cwd) if cwd else Path.cwd()
@@ -175,13 +177,17 @@ class TestSense:
     def _read_last_result(self) -> str:
         """Try to determine last test result (from common output locations)."""
         # Check for pytest cache
-        cache_dir = self._cwd / ".pytest_cache" / "v" / "cache" / "lastfailed"
-        if cache_dir.exists():
+        cache_file = self._cwd / ".pytest_cache" / "v" / "cache" / "lastfailed"
+        if cache_file.exists():
             try:
-                content = cache_dir.read_text(encoding="utf-8").strip()
-                if content and content != "{}":
-                    return "failed"
-                return "passed"
+                content = cache_file.read_text(encoding="utf-8").strip()
+                if not content or content == "{}":
+                    return "passed"
+                # Validate: check that at least one referenced test file still exists.
+                # Stale cache entries reference deleted tests → treat as stale.
+                if self._lastfailed_is_stale(content):
+                    return "unknown"
+                return "failed"
             except OSError:
                 pass
 
@@ -196,6 +202,27 @@ class TestSense:
                 pass
 
         return "unknown"
+
+    def _lastfailed_is_stale(self, content: str) -> bool:
+        """Check if lastfailed cache is stale (superseded by a newer clean run).
+
+        Pytest writes nodeids on EVERY run but only writes lastfailed when
+        tests fail. If nodeids is newer than lastfailed, the most recent
+        run had no failures — the lastfailed data is stale.
+        """
+        lastfailed_path = self._cwd / ".pytest_cache" / "v" / "cache" / "lastfailed"
+        nodeids_path = self._cwd / ".pytest_cache" / "v" / "cache" / "nodeids"
+
+        if not nodeids_path.exists():
+            return False  # can't determine → trust lastfailed
+
+        try:
+            lf_mtime = lastfailed_path.stat().st_mtime
+            ni_mtime = nodeids_path.stat().st_mtime
+            # nodeids newer → a clean run happened after the failures
+            return ni_mtime > lf_mtime
+        except OSError:
+            return False
 
     def _read_pytest_config(self) -> str:
         """Extract pytest config summary from pyproject.toml."""

@@ -99,9 +99,8 @@ class TestAgentInternetProxyAPI:
         monkeypatch.setenv("STEWARD_AGENT_INTERNET_TOKEN", "secret")
         monkeypatch.delenv("STEWARD_API_TOKEN", raising=False)
         monkeypatch.setattr(
-            "steward.interfaces.api.fetch_semantic_capabilities",
+            "steward.interfaces.agent_internet.fetch_semantic_capabilities",
             lambda: {"kind": "agent_web_semantic_capability_manifest", "capabilities": []},
-            raising=False,
         )
 
         client = TestClient(create_app())
@@ -126,7 +125,7 @@ class TestAgentInternetProxyAPI:
                 "version": version or 1,
             }
 
-        monkeypatch.setattr("steward.interfaces.api.fetch_semantic_contracts", _fake_fetch, raising=False)
+        monkeypatch.setattr("steward.interfaces.agent_internet.fetch_semantic_contracts", _fake_fetch)
 
         client = TestClient(create_app())
         response = client.get("/agent-internet/semantic/contracts?contract_id=semantic_expand.v1")
@@ -155,7 +154,7 @@ class TestAgentInternetProxyAPI:
                 "response": {"agent_web_semantic_expand": {"raw_query": input_payload.get("query")}},
             }
 
-        monkeypatch.setattr("steward.interfaces.api.invoke_semantic_http", _fake_invoke, raising=False)
+        monkeypatch.setattr("steward.interfaces.agent_internet.invoke_semantic_http", _fake_invoke)
 
         client = TestClient(create_app())
         response = client.post(
