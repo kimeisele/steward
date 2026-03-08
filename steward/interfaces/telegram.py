@@ -186,7 +186,7 @@ class TelegramBot:
             try:
                 await update.message.reply_text(chunk, parse_mode="HTML")
             except Exception:
-                # Fallback to plain text if HTML parsing fails
+                logger.debug("HTML parse failed for chunk, falling back to plain text")
                 await update.message.reply_text(chunk)
 
     def run(self) -> None:

@@ -19,13 +19,11 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
 
 from vibe_core.protocols.memory import (
     Entity,
     InMemoryMemory,
     MemoryEntry,
-    MemoryStats,
 )
 from vibe_core.utils.atomic_io import atomic_write_json
 
@@ -79,7 +77,7 @@ class PersistentMemory(InMemoryMemory):
 
     def remember_entities(
         self,
-        entities: List[Entity],
+        entities: list[Entity],
         session_id: str,
     ) -> None:
         super().remember_entities(entities, session_id)

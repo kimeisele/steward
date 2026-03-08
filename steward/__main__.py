@@ -78,20 +78,23 @@ def _format_event(event: AgentEvent) -> None:
         _err_console.print(f"[error]Error: {escape(str(event.content))}[/]")
 
 
+_TOOL_PARAM_KEY: dict[str, str] = {
+    "read_file": "path",
+    "write_file": "path",
+    "edit_file": "path",
+    "bash": "command",
+    "glob": "pattern",
+    "grep": "pattern",
+    "sub_agent": "task",
+}
+
+
 def _tool_display(name: str, params: dict) -> str:
     """Extract the most informative param for compact tool display."""
-    if name in ("read_file", "write_file", "edit_file"):
-        return str(params.get("path", ""))
-    if name == "bash":
-        cmd = str(params.get("command", ""))
-        return cmd[:80] + ("..." if len(cmd) > 80 else "")
-    if name == "glob":
-        return str(params.get("pattern", ""))
-    if name == "grep":
-        return str(params.get("pattern", ""))
-    if name == "sub_agent":
-        task = str(params.get("task", ""))
-        return task[:80] + ("..." if len(task) > 80 else "")
+    key = _TOOL_PARAM_KEY.get(name)
+    if key:
+        val = str(params.get(key, ""))
+        return val[:80] + ("..." if len(val) > 80 else "")
     # Fallback: show all params compactly
     return " ".join(f"{k}={v!r}" for k, v in params.items())[:100]
 

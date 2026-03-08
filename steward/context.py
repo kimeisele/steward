@@ -31,6 +31,7 @@ logger = logging.getLogger("STEWARD.CONTEXT")
 
 # Patterns for deterministic extraction
 _FILE_PATH_RE = re.compile(r"(?:^|[\s\"'])((?:/[\w./-]+|\.[\w./-]+)\.(?:py|js|ts|yaml|yml|json|md|txt|toml|cfg|sh|rs|go|c|h|cpp|java))")
+ERROR_MARKER = "[Error]"
 
 
 def _extract_structure(messages: list[Message]) -> str:
@@ -74,7 +75,7 @@ def _extract_structure(messages: list[Message]) -> str:
                         files_written.add(path)
 
         # Extract errors from tool results
-        if msg.role == MessageRole.TOOL and "[Error]" in content:
+        if msg.role == MessageRole.TOOL and ERROR_MARKER in content:
             # Keep first line of error only
             error_line = content.split("\n")[0][:100]
             errors.append(error_line)

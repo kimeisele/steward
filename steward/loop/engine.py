@@ -39,8 +39,8 @@ from vibe_core.tools.tool_protocol import ToolCall as ProtoToolCall, ToolResult
 from vibe_core.tools.tool_registry import ToolRegistry
 
 from steward.antahkarana.gandha import VerdictAction
-from steward.buddhi import Buddhi, BuddhiDirective, BuddhiVerdict, ModelTier
-from steward.context import SamskaraContext
+from steward.buddhi import Buddhi, BuddhiDirective
+from steward.context import SamskaraContext, ERROR_MARKER
 from steward.services import tool_descriptions_for_llm
 from steward.summarizer import Summarizer, should_summarize
 from steward.types import AgentEvent, AgentUsage, Conversation, EventType, LLMProvider, Message, MessageRole, ToolUse
@@ -213,7 +213,7 @@ class AgentLoop:
                 block_reason = self._check_tool_gates(tc)
                 if block_reason:
                     self._conversation.add(
-                        Message(role=MessageRole.TOOL, content=f"[Error] {block_reason}", tool_use_id=tc.id)
+                        Message(role=MessageRole.TOOL, content=f"{ERROR_MARKER} {block_reason}", tool_use_id=tc.id)
                     )
                     yield AgentEvent(
                         type=EventType.TOOL_RESULT,
@@ -270,7 +270,7 @@ class AgentLoop:
                             if self._memory:
                                 self._record_file_op(path, "write")
 
-                    output = result.output if result.success else f"[Error] {result.error}"
+                    output = result.output if result.success else f"{ERROR_MARKER} {result.error}"
                     output_str = str(output) if output else ""
                     if len(output_str) > MAX_TOOL_OUTPUT_CHARS:
                         output_str = (
