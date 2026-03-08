@@ -299,6 +299,57 @@ class TestAgentLoop:
         result = loop.run_sync("Hi")
         assert result == "sync response"
 
+    def test_blocked_tools_feed_buddhi_abort(self):
+        """Repeated blocked tools trigger Buddhi abort (5 consecutive errors)."""
+        from vibe_core.mahamantra.adapters.attention import MahaAttention
+
+        reg = ToolRegistry()
+        attention = MahaAttention()
+        # Nothing memorized → everything is a route miss
+
+        # 5 rounds of route misses → Buddhi should abort
+        tc = FakeToolCall(
+            id="call_1",
+            function=FakeFunction(name="nonexistent", arguments={"x": "1"}),
+        )
+        # Each round: route miss, then LLM tries again with same tool
+        responses = [FakeResponse(content="", tool_calls=[tc])] * 6 + [
+            FakeResponse(content="gave up"),
+        ]
+        llm = FakeLLM(responses)
+        conv = Conversation()
+        loop = AgentLoop(provider=llm, registry=reg, conversation=conv, attention=attention)
+
+        result, events = run_loop(loop, "Do something")
+        # Should abort after 5 consecutive blocked-tool errors
+        assert "Buddhi abort" in result or "consecutive" in result.lower()
+
+    def test_blocked_tools_feed_buddhi_redirect(self):
+        """Blocked route misses trigger Buddhi redirect with valid tool names."""
+        from vibe_core.mahamantra.adapters.attention import MahaAttention
+
+        reg = ToolRegistry()
+        attention = MahaAttention()
+
+        # 2 different fake tools → route misses → redirect
+        tc1 = FakeToolCall(id="c1", function=FakeFunction(name="search_code", arguments={"q": "x"}))
+        tc2 = FakeToolCall(id="c2", function=FakeFunction(name="find_files", arguments={"p": "y"}))
+        responses = [
+            FakeResponse(content="", tool_calls=[tc1]),
+            FakeResponse(content="", tool_calls=[tc2]),
+            FakeResponse(content="got redirected"),
+        ]
+        llm = FakeLLM(responses)
+        conv = Conversation()
+        loop = AgentLoop(provider=llm, registry=reg, conversation=conv, attention=attention)
+
+        result, events = run_loop(loop, "Search for code")
+        # Buddhi should inject a redirect message into conversation
+        user_msgs = [m for m in conv.messages if m.role == "user"]
+        redirect_msgs = [m for m in user_msgs if "redirect" in m.content.lower()]
+        assert len(redirect_msgs) >= 1
+        assert "Available tools" in redirect_msgs[0].content
+
 
 # ── StewardAgent Tests ───────────────────────────────────────────────
 
