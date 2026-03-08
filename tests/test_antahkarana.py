@@ -12,7 +12,6 @@ from steward.antahkarana.manas import Manas, ManasPerception
 from vibe_core.mahamantra.protocols.compression import IntentGuna
 from vibe_core.runtime.semantic_actions import SemanticActionType
 
-
 # ── Manas Tests ──────────────────────────────────────────────────────
 
 

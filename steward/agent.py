@@ -27,6 +27,7 @@ from steward.config import StewardConfig, load_config
 from steward.context import SamskaraContext
 from steward.gaps import GapTracker
 from steward.loop.engine import AgentLoop
+from steward.senses import SenseCoordinator
 from steward.services import (
     SVC_ATTENTION,
     SVC_CACHE,
@@ -263,6 +264,9 @@ class StewardAgent(GADBase):
         # Skill registry — dynamic capability loading from .steward/skills/
         self._skills = SkillRegistry(cwd=self._cwd)
 
+        # 5 Jnanendriyas — deterministic environmental perception (zero LLM)
+        self._senses = SenseCoordinator(cwd=self._cwd)
+
         # Gap tracker — self-awareness of capability gaps
         self._gaps = GapTracker()
         self._load_gaps_from_memory()
@@ -293,6 +297,12 @@ class StewardAgent(GADBase):
                 persona_section = self._format_persona_prompt()
                 if persona_section:
                     self._system_prompt += persona_section
+
+            # Inject 5 Jnanendriya perceptions (deterministic, zero LLM)
+            self._senses.perceive_all()
+            sense_ctx = self._senses.format_for_prompt()
+            if sense_ctx:
+                self._system_prompt += sense_ctx
 
         # Emit AGENT_STARTUP signal
         self._emit_startup_signal()
@@ -789,6 +799,7 @@ class StewardAgent(GADBase):
                 "persona_identity",
             ],
             "antahkarana": ["manas", "buddhi", "chitta", "gandha"],
+            "jnanendriyas": list(self._senses.senses.keys()),
             "skills_loaded": len(self._skills),
             "active_gaps": len(self._gaps),
             "has_persona": self._persona is not None,
@@ -822,6 +833,7 @@ class StewardAgent(GADBase):
             "session_stats": session_stats,
             "skills": [s.name for s in self._skills.skills],
             "gaps": self._gaps.stats,
+            "senses": self._senses.boot_summary(),
             "cache_stats": cache_stats,
             "config": {
                 "model": self._config.model,

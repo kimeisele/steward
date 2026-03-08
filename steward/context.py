@@ -23,9 +23,8 @@ from __future__ import annotations
 import logging
 import re
 
-from vibe_core.mahamantra.adapters.compression import MahaCompression
-
 from steward.types import Conversation, Message, MessageRole
+from vibe_core.mahamantra.adapters.compression import MahaCompression
 
 logger = logging.getLogger("STEWARD.CONTEXT")
 

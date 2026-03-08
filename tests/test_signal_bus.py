@@ -6,12 +6,10 @@ import asyncio
 from dataclasses import dataclass
 from typing import Any
 
-from vibe_core.di import ServiceRegistry
-from vibe_core.steward.bus import Signal, SignalBus, SignalType
-
 from steward.agent import StewardAgent
 from steward.services import SVC_SIGNAL_BUS, boot
-
+from vibe_core.di import ServiceRegistry
+from vibe_core.steward.bus import Signal, SignalBus, SignalType
 
 # ── Fake LLM for signal tests ────────────────────────────────────────
 

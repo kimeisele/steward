@@ -4,13 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from steward.provider import _PRANA_CHEAP, _PRANA_FREE, ProviderChamber, _is_transient
 from vibe_core.mahamantra.protocols._seed import COSMIC_FRAME, MAHA_QUANTUM
-
 from vibe_core.protocols.feedback import InMemoryFeedback, SignalType
 from vibe_core.runtime.circuit_breaker import CircuitBreakerState
-
-from steward.provider import ProviderChamber, _PRANA_CHEAP, _PRANA_FREE, _is_transient
-
 
 # ── Fake Providers ───────────────────────────────────────────────────
 
@@ -937,8 +934,9 @@ class TestNormalizeUsage:
 
     def test_normalize_openai_format(self):
         """OpenAI uses prompt_tokens/completion_tokens."""
-        from steward.provider import _normalize_usage
         from dataclasses import dataclass
+
+        from steward.provider import _normalize_usage
 
         @dataclass
         class OpenAIUsage:
@@ -951,8 +949,9 @@ class TestNormalizeUsage:
 
     def test_normalize_anthropic_format(self):
         """Anthropic uses input_tokens/output_tokens."""
-        from steward.provider import _normalize_usage
         from dataclasses import dataclass
+
+        from steward.provider import _normalize_usage
 
         @dataclass
         class AnthropicUsage:
@@ -965,9 +964,10 @@ class TestNormalizeUsage:
 
     def test_adapter_response_returns_llm_usage(self):
         """_AdapterResponse.usage returns LLMUsage, not raw object."""
+        from dataclasses import dataclass
+
         from steward.provider import _AdapterResponse
         from steward.types import LLMUsage
-        from dataclasses import dataclass
 
         @dataclass
         class FakeChoice:

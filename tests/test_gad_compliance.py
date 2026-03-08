@@ -8,9 +8,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from vibe_core.mahamantra.protocols._gad import GADBase, GADProtocol
-
 from steward.agent import StewardAgent
+from vibe_core.mahamantra.protocols._gad import GADBase, GADProtocol
 
 
 @dataclass

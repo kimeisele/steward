@@ -69,8 +69,8 @@ class TestToolDescriptionFormat:
         assert "required" in params
 
     def test_required_fields_extracted(self):
-        from steward.tools.bash import BashTool
         from steward.services import tool_descriptions_for_llm
+        from steward.tools.bash import BashTool
 
         reg = ToolRegistry()
         reg.register(BashTool())

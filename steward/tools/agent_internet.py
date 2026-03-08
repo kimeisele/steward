@@ -5,13 +5,12 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from vibe_core.tools.tool_protocol import Tool, ToolResult
-
 from steward.interfaces.agent_internet import (
     fetch_semantic_capabilities,
     fetch_semantic_contracts,
     invoke_semantic_http,
 )
+from vibe_core.tools.tool_protocol import Tool, ToolResult
 
 
 class AgentInternetTool(Tool):

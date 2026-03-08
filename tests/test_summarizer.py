@@ -11,7 +11,6 @@ from steward.summarizer import Summarizer, should_summarize
 from steward.types import Conversation, Message, ToolUse
 from vibe_core.tools.tool_registry import ToolRegistry
 
-
 # ── Fake LLM for summarization ──────────────────────────────────────
 
 

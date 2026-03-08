@@ -7,8 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from steward.config import StewardConfig, load_config, _parse_config
-
+from steward.config import StewardConfig, _parse_config, load_config
 
 # ── Fake LLM for agent tests ────────────────────────────────────────
 

@@ -8,11 +8,10 @@ Uses REAL substrate primitives:
 
 from __future__ import annotations
 
-from vibe_core.mahamantra.protocols.compression import IntentGuna
-from vibe_core.runtime.semantic_actions import SemanticActionType
-
 from steward.buddhi import Buddhi, BuddhiDirective, BuddhiVerdict, ModelTier
 from steward.types import ToolUse
+from vibe_core.mahamantra.protocols.compression import IntentGuna
+from vibe_core.runtime.semantic_actions import SemanticActionType
 
 
 def _tc(name: str = "bash", **params: object) -> ToolUse:
@@ -546,7 +545,7 @@ class TestToolNamespace:
 
     def test_sub_agent_in_delegate_namespace(self):
         """sub_agent is in the DELEGATE namespace."""
-        from steward.buddhi import ToolNamespace, _NAMESPACE_TOOLS
+        from steward.buddhi import _NAMESPACE_TOOLS, ToolNamespace
 
         assert "sub_agent" in _NAMESPACE_TOOLS[ToolNamespace.DELEGATE]
 
@@ -596,7 +595,7 @@ class TestToolNamespace:
 
     def test_register_tool_runtime(self):
         """Register a new tool into a namespace at runtime."""
-        from steward.buddhi import ToolNamespace, register_tool, unregister_tool, resolve_namespaces
+        from steward.buddhi import ToolNamespace, register_tool, resolve_namespaces, unregister_tool
 
         register_tool(ToolNamespace.OBSERVE, "semantic_search")
         try:
@@ -607,7 +606,7 @@ class TestToolNamespace:
 
     def test_unregister_tool_runtime(self):
         """Remove a tool from a namespace at runtime."""
-        from steward.buddhi import ToolNamespace, register_tool, unregister_tool, resolve_namespaces
+        from steward.buddhi import ToolNamespace, register_tool, resolve_namespaces, unregister_tool
 
         register_tool(ToolNamespace.EXECUTE, "docker_run")
         unregister_tool(ToolNamespace.EXECUTE, "docker_run")
@@ -626,7 +625,7 @@ class TestToolNamespace:
 
     def test_implement_has_full_toolset(self):
         """IMPLEMENT action has OBSERVE + MODIFY + EXECUTE (no DELEGATE)."""
-        from steward.buddhi import ToolNamespace, _ACTION_NAMESPACES
+        from steward.buddhi import _ACTION_NAMESPACES, ToolNamespace
 
         ns = _ACTION_NAMESPACES[SemanticActionType.IMPLEMENT]
         assert ToolNamespace.OBSERVE in ns

@@ -5,7 +5,6 @@ from __future__ import annotations
 from steward.context import SamskaraContext, _extract_structure
 from steward.types import Conversation, Message, ToolUse
 
-
 # ── _extract_structure tests ────────────────────────────────────────
 
 
