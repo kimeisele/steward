@@ -25,6 +25,7 @@ from steward import __version__
 from steward.buddhi import Buddhi
 from steward.config import StewardConfig, load_config
 from steward.context import SamskaraContext
+from steward.gaps import GapTracker
 from steward.loop.engine import AgentLoop
 from steward.services import (
     SVC_ATTENTION,
@@ -40,6 +41,7 @@ from steward.services import (
     boot,
 )
 from steward.session_ledger import SessionLedger, SessionRecord
+from steward.skills import SkillRegistry
 from steward.tools.agent_internet import AgentInternetTool
 from steward.tools.bash import BashTool
 from steward.tools.edit import EditTool
@@ -48,6 +50,7 @@ from steward.tools.grep import GrepTool
 from steward.tools.http import HttpTool
 from steward.tools.read_file import ReadFileTool
 from steward.tools.sub_agent import SubAgentTool
+from steward.tools.web_search import WebSearchTool
 from steward.tools.write_file import WriteFileTool
 from steward.types import AgentEvent, AgentUsage, Conversation, EventType, LLMProvider
 from vibe_core.di import ServiceRegistry
@@ -257,6 +260,16 @@ class StewardAgent(GADBase):
         # Session ledger (cross-session learning)
         self._ledger = SessionLedger(cwd=self._cwd)
 
+        # Skill registry — dynamic capability loading from .steward/skills/
+        self._skills = SkillRegistry(cwd=self._cwd)
+
+        # Gap tracker — self-awareness of capability gaps
+        self._gaps = GapTracker()
+        self._load_gaps_from_memory()
+
+        # Persona — persistent identity (from steward-protocol)
+        self._persona = self._load_persona()
+
         # Build system prompt (with dynamic context if not custom)
         if system_prompt is not None:
             self._system_prompt = system_prompt
@@ -274,6 +287,11 @@ class StewardAgent(GADBase):
                 git_status=git_ctx,
                 session_history=session_ctx,
             )
+            # Inject persona identity into system prompt
+            if self._persona:
+                persona_section = self._format_persona_prompt()
+                if persona_section:
+                    self._system_prompt += persona_section
 
         # Emit AGENT_STARTUP signal
         self._emit_startup_signal()
@@ -326,12 +344,25 @@ class StewardAgent(GADBase):
         Passes Memory to AgentLoop for cross-turn file tracking.
         Buddhi persists across turns — Chitta retains file awareness.
         Records cumulative session stats in Memory after each turn.
+        Injects matched skills and gap context per-turn.
         """
+        # Inject skills matched to this task
+        effective_prompt = self._system_prompt
+        matched_skills = self._skills.match(task)
+        if matched_skills:
+            effective_prompt += self._skills.format_for_prompt(matched_skills)
+            logger.debug("Injected %d skills for task", len(matched_skills))
+
+        # Inject gap awareness
+        gap_ctx = self._gaps.format_for_prompt()
+        if gap_ctx:
+            effective_prompt += gap_ctx
+
         loop = AgentLoop(
             provider=self._provider,
             registry=self._registry,
             conversation=self._conversation,
-            system_prompt=self._system_prompt,
+            system_prompt=effective_prompt,
             max_tokens=self._max_output_tokens,
             safety_guard=self._safety_guard,
             attention=self._attention,
@@ -342,12 +373,20 @@ class StewardAgent(GADBase):
         async for event in loop.run(task):
             self._emit_signal(event)
             self._emit_event_bus(event)
+            # Track tool failures as gaps
+            if event.type == EventType.TOOL_RESULT and event.content:
+                result = event.content
+                if hasattr(result, "success") and not result.success:  # type: ignore[union-attr]
+                    error = getattr(result, "error", "") or ""
+                    tool_name = event.tool_use.name if event.tool_use else "unknown"
+                    self._gaps.record_tool_failure(tool_name, str(error))
             if event.type == EventType.DONE and event.usage:
                 self._record_session_stats(event.usage)
                 self._record_session_ledger(task, event.usage)
                 # Cross-turn: merge reads, clear impressions, persist
                 self._buddhi._chitta.end_turn()
                 self._save_chitta_to_memory()
+                self._save_gaps_to_memory()
             yield event
 
     def _emit_startup_signal(self) -> None:
@@ -472,6 +511,96 @@ class StewardAgent(GADBase):
             tags=["chitta"],
         )
 
+    def _load_gaps_from_memory(self) -> None:
+        """Restore gap tracker state from PersistentMemory."""
+        data = self._memory.recall("gap_tracker", session_id="steward")
+        if data and isinstance(data, list):
+            self._gaps.load_from_dict(data)
+            active = len(self._gaps)
+            if active:
+                logger.debug("Restored %d active gaps", active)
+
+    def _save_gaps_to_memory(self) -> None:
+        """Persist gap tracker state to PersistentMemory."""
+        self._memory.remember(
+            "gap_tracker",
+            self._gaps.to_dict(),
+            session_id="steward",
+            tags=["gaps"],
+        )
+
+    def _load_persona(self) -> object | None:
+        """Load agent persona from .steward/persona.yaml or create default."""
+        try:
+            from vibe_core.state.persona import AgentPersona, PersonaManager
+
+            manager = PersonaManager(workspace_path=Path(self._cwd))
+            persona = manager.load("steward")
+            if persona:
+                logger.info("Loaded persona: %s (dharma: %s)", persona.display_name, persona.dharma[:50])
+                return persona
+
+            # Create default persona if none exists
+            persona = AgentPersona(
+                agent_id="steward",
+                display_name="Steward",
+                dharma="Autonomous software engineering — read, understand, build, fix, deploy.",
+                varna="KSHATRIYA",
+                personality={
+                    "formality": 0.3,
+                    "verbosity": 0.2,
+                    "creativity": 0.6,
+                    "caution": 0.4,
+                },
+                constitutional_limits=[
+                    "Never delete production data without explicit confirmation",
+                    "Never commit secrets or credentials",
+                    "Always run tests before declaring success",
+                ],
+            )
+            manager.save(persona)
+            logger.info("Created default persona for steward")
+            return persona
+        except Exception as e:
+            logger.debug("Persona loading skipped: %s", e)
+            return None
+
+    def _format_persona_prompt(self) -> str:
+        """Format persona traits for system prompt injection."""
+        if not self._persona:
+            return ""
+        try:
+            from vibe_core.state.persona import AgentPersona
+
+            if not isinstance(self._persona, AgentPersona):
+                return ""
+            p: AgentPersona = self._persona
+            parts = ["\n\n## Identity"]
+            if p.dharma:
+                parts.append(f"Dharma: {p.dharma}")
+            traits = p.personality
+            if traits:
+                style_parts = []
+                if traits.get("formality", 0.5) < 0.3:
+                    style_parts.append("direct and informal")
+                elif traits.get("formality", 0.5) > 0.7:
+                    style_parts.append("formal and precise")
+                if traits.get("verbosity", 0.5) < 0.3:
+                    style_parts.append("concise")
+                if traits.get("creativity", 0.5) > 0.7:
+                    style_parts.append("creative in problem-solving")
+                if traits.get("caution", 0.5) > 0.7:
+                    style_parts.append("cautious with destructive operations")
+                if style_parts:
+                    parts.append(f"Style: {', '.join(style_parts)}")
+            if p.constitutional_limits:
+                parts.append("Constraints:")
+                for limit in p.constitutional_limits[:5]:
+                    parts.append(f"  - {limit}")
+            return "\n".join(parts)
+        except Exception:
+            return ""
+
     def _record_session_stats(self, usage: AgentUsage) -> None:
         """Record cumulative session stats in Memory (Chitta).
 
@@ -567,10 +696,11 @@ class StewardAgent(GADBase):
         )
 
     def reset(self) -> None:
-        """Clear conversation history, safety guard, Buddhi, and session memory."""
+        """Clear conversation history, safety guard, Buddhi, gaps, and session memory."""
         self._conversation = Conversation(max_tokens=self._conversation.max_tokens)
         self._safety_guard.reset_session()
         self._buddhi.reset()
+        self._gaps = GapTracker()
         self._memory.clear_session("steward")
         logger.info("Conversation reset")
 
@@ -601,8 +731,15 @@ class StewardAgent(GADBase):
                 "gandha_pattern_detection",
                 "ephemeral_cache",
                 "diamond_tdd",
+                "web_search",
+                "skill_loading",
+                "gap_detection",
+                "persona_identity",
             ],
             "antahkarana": ["manas", "buddhi", "chitta", "gandha"],
+            "skills_loaded": len(self._skills),
+            "active_gaps": len(self._gaps),
+            "has_persona": self._persona is not None,
             "protocol_services": {
                 "cache": ServiceRegistry.get(SVC_CACHE) is not None,
                 "diamond": ServiceRegistry.get(SVC_DIAMOND) is not None,
@@ -631,6 +768,8 @@ class StewardAgent(GADBase):
             "buddhi_phase": self._buddhi.phase,
             "chitta_stats": self._buddhi.stats,
             "session_stats": session_stats,
+            "skills": [s.name for s in self._skills.skills],
+            "gaps": self._gaps.stats,
             "cache_stats": cache_stats,
             "config": {
                 "model": self._config.model,
@@ -661,6 +800,7 @@ class StewardAgent(GADBase):
             EditTool(),
             GrepTool(cwd=self._cwd),
             HttpTool(),
+            WebSearchTool(),
             AgentInternetTool(),
             SubAgentTool(cwd=self._cwd),
         ]

@@ -1,0 +1,81 @@
+# Self-Healing CI — Federation Protocol
+#
+# When CI fails, notify steward API so it can diagnose and fix.
+# This is the federation play: nodes watch each other.
+#
+# Requires:
+#   - STEWARD_API_URL secret (e.g., https://steward.example.com or http://localhost:8420)
+#   - STEWARD_API_TOKEN secret (for auth)
+#   - Steward API must be running and accessible
+#
+# The workflow:
+#   1. CI fails on push to main
+#   2. This workflow triggers on workflow_run completion
+#   3. Fetches the failure log
+#   4. Sends it to steward API as a task
+#   5. Steward diagnoses and creates a fix PR
+
+name: Self-Heal
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+jobs:
+  diagnose:
+    name: Diagnose CI Failure
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+
+    steps:
+      - name: Fetch failure logs
+        id: logs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RUN_ID=${{ github.event.workflow_run.id }}
+          echo "CI run $RUN_ID failed. Fetching logs..."
+
+          # Get failed job logs
+          LOGS=$(gh run view $RUN_ID --repo ${{ github.repository }} --log-failed 2>/dev/null | tail -100 || echo "Could not fetch logs")
+
+          # Save to file (GitHub Actions has issues with multiline env vars)
+          echo "$LOGS" > /tmp/failure_log.txt
+
+          # Get the commit that failed
+          echo "commit=${{ github.event.workflow_run.head_sha }}" >> $GITHUB_OUTPUT
+          echo "branch=${{ github.event.workflow_run.head_branch }}" >> $GITHUB_OUTPUT
+
+      - name: Notify Steward API
+        if: ${{ env.STEWARD_API_URL != '' }}
+        env:
+          STEWARD_API_URL: ${{ secrets.STEWARD_API_URL }}
+          STEWARD_API_TOKEN: ${{ secrets.STEWARD_API_TOKEN }}
+        run: |
+          FAILURE_LOG=$(cat /tmp/failure_log.txt | head -80)
+          COMMIT="${{ steps.logs.outputs.commit }}"
+          BRANCH="${{ steps.logs.outputs.branch }}"
+
+          TASK="CI failed on branch '$BRANCH' (commit $COMMIT). Diagnose the failure and suggest a fix. Failure log:\n\n$FAILURE_LOG"
+
+          # Call steward API
+          curl -s -X POST "$STEWARD_API_URL/task" \
+            -H "Authorization: Bearer $STEWARD_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"task\": $(echo "$TASK" | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read()))')}" \
+            --max-time 120 \
+            || echo "Steward API not reachable (expected in local-only mode)"
+
+      - name: Log failure summary
+        run: |
+          echo "## CI Failure Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Run ID**: ${{ github.event.workflow_run.id }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit**: ${{ github.event.workflow_run.head_sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch**: ${{ github.event.workflow_run.head_branch }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Failure Log (last 50 lines)" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          tail -50 /tmp/failure_log.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
