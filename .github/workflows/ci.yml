@@ -1,4 +1,4 @@
-# Steward CI — run tests on every push and PR
+# Steward CI — run tests + lint on every push and PR
 
 name: CI
 
@@ -23,11 +23,13 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install steward with all extras
-        run: pip install -e ".[providers,api,dev]"
+      - name: Install dependencies
+        run: |
+          pip install steward-protocol[providers]
+          pip install -e ".[providers,api,dev]"
 
       - name: Run tests
-        run: pytest tests/ -x -q --timeout=30
+        run: python -m pytest tests/ -x -q --timeout=30
 
   lint:
     name: Lint

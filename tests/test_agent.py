@@ -835,7 +835,12 @@ class TestDependencyAwareExecution:
         from steward.types import ToolUse
 
         to_execute = [
-            (ToolUse(id="1", name="edit_file", parameters={"path": "src/foo.py", "old_string": "a", "new_string": "b"}), None),
+            (
+                ToolUse(
+                    id="1", name="edit_file", parameters={"path": "src/foo.py", "old_string": "a", "new_string": "b"}
+                ),
+                None,
+            ),
             (ToolUse(id="2", name="bash", parameters={"command": "pytest src/foo.py"}), None),
         ]
         waves = AgentLoop._partition_by_dependency(to_execute)
@@ -870,7 +875,10 @@ class TestDependencyAwareExecution:
 
         to_execute = [
             (ToolUse(id="1", name="write_file", parameters={"path": "a.py", "content": "x"}), None),
-            (ToolUse(id="2", name="edit_file", parameters={"path": "b.py", "old_string": "a", "new_string": "b"}), None),
+            (
+                ToolUse(id="2", name="edit_file", parameters={"path": "b.py", "old_string": "a", "new_string": "b"}),
+                None,
+            ),
             (ToolUse(id="3", name="bash", parameters={"command": "pytest a.py b.py"}), None),
             (ToolUse(id="4", name="read_file", parameters={"path": "c.py"}), None),
         ]
@@ -891,6 +899,7 @@ class TestDependencyAwareExecution:
         reg.register(BashTool())
 
         import tempfile
+
         with tempfile.TemporaryDirectory() as td:
             target = f"{td}/hello.py"
             tc1 = FakeToolCall(
