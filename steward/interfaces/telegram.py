@@ -29,7 +29,9 @@ import asyncio
 import html
 import logging
 import os
+import signal
 import sys
+import time
 
 from steward.agent import StewardAgent
 from steward.provider import build_chamber
@@ -40,6 +42,9 @@ logger = logging.getLogger("STEWARD.TELEGRAM")
 
 # Telegram message limit
 _MAX_MSG_LEN = 4096
+
+# Typing indicator refresh interval (Telegram cancels after ~5s)
+_TYPING_INTERVAL_S = 4.0
 
 
 class TelegramBot:
@@ -55,6 +60,7 @@ class TelegramBot:
         self._cwd = cwd
         self._agent: StewardAgent | None = None
         self._lock = asyncio.Lock()  # serialize agent access
+        self._busy = False  # track whether agent is processing
 
     def _ensure_agent(self) -> StewardAgent:
         """Lazy-init the agent (provider chamber needs env vars at runtime)."""
@@ -73,10 +79,14 @@ class TelegramBot:
                 logger.info("Resumed session (%d messages)", len(conv.messages))
         return self._agent
 
+    def _is_owner(self, user) -> bool:  # noqa: ANN001
+        """Check if user is the owner."""
+        return user.id == self._owner_id
+
     async def handle_start(self, update, context) -> None:  # noqa: ANN001
         """Handle /start command."""
         user = update.effective_user
-        is_owner = user.id == self._owner_id
+        is_owner = self._is_owner(user)
         status = "Owner access" if is_owner else "Read-only access"
         await update.message.reply_text(
             f"Steward Superagent\n"
@@ -86,9 +96,25 @@ class TelegramBot:
             + ("" if is_owner else "\n\nNote: Only the owner can execute tasks.")
         )
 
+    async def handle_help(self, update, context) -> None:  # noqa: ANN001
+        """Handle /help command — list available commands."""
+        commands = (
+            "<b>Steward Telegram Commands</b>\n\n"
+            "/start  — Welcome message + access status\n"
+            "/help   — This help message\n"
+            "/status — Context window + phase diagnostics\n"
+            "/reset  — Clear conversation (owner only)\n"
+            "/save   — Save session to disk\n\n"
+            "<b>Usage</b>\n"
+            "Send any text to interact with the agent.\n"
+            "The agent has full tool access (bash, file I/O, etc).\n"
+            "All safety guards (Narasimha, Iron Dome) remain active."
+        )
+        await update.message.reply_text(commands, parse_mode="HTML")
+
     async def handle_reset(self, update, context) -> None:  # noqa: ANN001
         """Handle /reset command — clear conversation (owner only)."""
-        if update.effective_user.id != self._owner_id:
+        if not self._is_owner(update.effective_user):
             await update.message.reply_text("Only the owner can reset.")
             return
 
@@ -105,11 +131,34 @@ class TelegramBot:
         max_tokens = agent.conversation.max_tokens
         pct = int(tokens / max_tokens * 100) if max_tokens else 0
 
+        busy_indicator = " (processing...)" if self._busy else ""
+
         await update.message.reply_text(
             f"Context: {tokens}/{max_tokens} tokens ({pct}%)\n"
             f"Messages: {conv_len}\n"
-            f"Phase: {agent._buddhi.phase}"
+            f"Phase: {agent._buddhi.phase}{busy_indicator}"
         )
+
+    async def handle_save(self, update, context) -> None:  # noqa: ANN001
+        """Handle /save command — explicitly save session."""
+        if not self._is_owner(update.effective_user):
+            await update.message.reply_text("Only the owner can save.")
+            return
+
+        if self._agent:
+            save_conversation(self._agent.conversation, cwd=self._cwd)
+            await update.message.reply_text("Session saved.")
+        else:
+            await update.message.reply_text("No active session to save.")
+
+    async def _keep_typing(self, chat) -> None:  # noqa: ANN001
+        """Send typing indicator periodically until cancelled."""
+        try:
+            while True:
+                await chat.send_action("typing")
+                await asyncio.sleep(_TYPING_INTERVAL_S)
+        except asyncio.CancelledError:
+            pass
 
     async def handle_message(self, update, context) -> None:  # noqa: ANN001
         """Handle incoming text messages."""
@@ -120,23 +169,35 @@ class TelegramBot:
             return
 
         # Auth gate: non-owners get rejected
-        if user.id != self._owner_id:
+        if not self._is_owner(user):
             await update.message.reply_text(
                 "Read-only mode. Only the owner can interact with the agent."
             )
             return
 
+        # Reject if already processing (non-blocking feedback)
+        if self._busy:
+            await update.message.reply_text(
+                "Still processing previous request. Please wait."
+            )
+            return
+
         # Owner: run through StewardAgent
         async with self._lock:  # serialize — one task at a time
+            self._busy = True
+            typing_task: asyncio.Task | None = None
             try:
                 agent = self._ensure_agent()
 
-                # Send "typing" indicator
-                await update.message.chat.send_action("typing")
+                # Keep typing indicator alive during processing
+                typing_task = asyncio.create_task(
+                    self._keep_typing(update.message.chat)
+                )
 
                 # Collect response
                 response_parts: list[str] = []
                 tool_log: list[str] = []
+                t0 = time.monotonic()
 
                 async for event in agent.run_stream(text):
                     if event.type == EventType.TEXT:
@@ -154,9 +215,11 @@ class TelegramBot:
                         response_parts.append(f"Error: {event.content}")
                     elif event.type == EventType.DONE and event.usage:
                         u = event.usage
+                        elapsed = time.monotonic() - t0
                         tool_log.append(
                             f"\n[{u.input_tokens}+{u.output_tokens} tok, "
-                            f"{u.tool_calls} tools, {u.rounds} rounds]"
+                            f"{u.tool_calls} tools, {u.rounds} rounds, "
+                            f"{elapsed:.1f}s]"
                         )
 
                 # Save conversation after each turn
@@ -176,7 +239,17 @@ class TelegramBot:
 
             except Exception as e:
                 logger.exception("Error processing message")
-                await update.message.reply_text(f"Internal error: {e}")
+                error_msg = _format_error(e)
+                await update.message.reply_text(error_msg)
+
+            finally:
+                self._busy = False
+                if typing_task:
+                    typing_task.cancel()
+                    try:
+                        await typing_task
+                    except asyncio.CancelledError:
+                        pass
 
     async def _send_chunked(self, update, text: str) -> None:
         """Send a message, chunking if it exceeds Telegram's limit."""
@@ -197,8 +270,10 @@ class TelegramBot:
 
         # Commands
         app.add_handler(CommandHandler("start", self.handle_start))
+        app.add_handler(CommandHandler("help", self.handle_help))
         app.add_handler(CommandHandler("reset", self.handle_reset))
         app.add_handler(CommandHandler("status", self.handle_status))
+        app.add_handler(CommandHandler("save", self.handle_save))
 
         # Text messages
         app.add_handler(
@@ -207,6 +282,22 @@ class TelegramBot:
 
         logger.info("Telegram bot starting (owner_id=%d)", self._owner_id)
         app.run_polling(drop_pending_updates=True)
+
+
+def _format_error(exc: Exception) -> str:
+    """Format an exception into a user-friendly Telegram message."""
+    type_name = type(exc).__name__
+    msg = str(exc)
+
+    # Categorize common errors
+    if "No LLM providers" in msg or "API" in type_name:
+        return f"Provider error: {msg}"
+    if "timeout" in msg.lower() or "Timeout" in type_name:
+        return f"Timeout: {msg}"
+    if "permission" in msg.lower() or "Narasimha" in msg:
+        return f"Blocked: {msg}"
+
+    return f"Internal error ({type_name}): {msg}"
 
 
 def main() -> None:
