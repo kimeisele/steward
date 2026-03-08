@@ -7,13 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from steward.tools.bash import BashTool, _BLOCKED_PATTERNS
+from steward.tools.bash import BashTool
 from steward.tools.edit import EditTool
 from steward.tools.glob import GlobTool
 from steward.tools.grep import GrepTool
 from steward.tools.read_file import ReadFileTool
 from steward.tools.write_file import WriteFileTool
-
 
 # ── ReadFileTool ────────────────────────────────────────────────────
 
@@ -154,6 +153,68 @@ class TestEditTool:
         assert result.success
         assert f.read_text() == "hi earth\ngoodbye moon\n"
 
+    # ── Whitespace-normalized fallback ──
+
+    def test_edit_whitespace_fallback_extra_spaces(self, tmp_path):
+        """LLM sends 'if  (x)' but file has 'if (x)' — fallback matches."""
+        f = tmp_path / "ws.py"
+        f.write_text("def foo():\n    if (x):\n        pass\n")
+        result = self.tool.execute({
+            "path": str(f),
+            "old_string": "if  (x):",  # extra space
+            "new_string": "if (y):",
+        })
+        assert result.success
+        assert "whitespace-normalized" in result.output
+        assert "if (y):" in f.read_text()
+
+    def test_edit_whitespace_fallback_tabs_vs_spaces(self, tmp_path):
+        """File uses tabs, LLM sends spaces — fallback matches."""
+        f = tmp_path / "tab.py"
+        f.write_text("class Foo:\n\tdef bar(self):\n\t\treturn 1\n")
+        result = self.tool.execute({
+            "path": str(f),
+            "old_string": "    def bar(self):",  # 4 spaces instead of tab
+            "new_string": "\tdef baz(self):",
+        })
+        assert result.success
+        assert result.metadata.get("whitespace_fallback") is True
+
+    def test_edit_whitespace_fallback_ambiguous(self, tmp_path):
+        """If whitespace-normalized match is ambiguous, fail (don't guess)."""
+        f = tmp_path / "amb.py"
+        f.write_text("x = 1\nx  =  1\n")  # Both normalize to "x = 1"
+        result = self.tool.execute({
+            "path": str(f),
+            "old_string": "x   =   1",  # extra spaces, matches both normalized
+            "new_string": "x = 2",
+        })
+        assert not result.success
+        assert "not found" in result.error
+
+    def test_edit_whitespace_fallback_no_match(self, tmp_path):
+        """If content doesn't match even with normalized whitespace, fail."""
+        f = tmp_path / "no.py"
+        f.write_text("hello world\n")
+        result = self.tool.execute({
+            "path": str(f),
+            "old_string": "goodbye moon",
+            "new_string": "hi",
+        })
+        assert not result.success
+
+    def test_edit_exact_match_preferred(self, tmp_path):
+        """Exact match should be used when available (no fallback)."""
+        f = tmp_path / "exact.py"
+        f.write_text("x = 1\n")
+        result = self.tool.execute({
+            "path": str(f),
+            "old_string": "x = 1",
+            "new_string": "x = 2",
+        })
+        assert result.success
+        assert "whitespace-normalized" not in result.output
+
 
 # ── GlobTool ────────────────────────────────────────────────────────
 
@@ -281,11 +342,12 @@ class TestBashTool:
         with pytest.raises(TypeError, match="string"):
             self.tool.validate({"command": 123})
 
-    def test_blocked_commands(self):
-        """All blocked patterns should raise when used directly."""
-        for pattern in _BLOCKED_PATTERNS:
-            with pytest.raises(ValueError, match="Blocked"):
-                self.tool.validate({"command": pattern})
+    def test_no_blocklist_theater(self):
+        """BashTool has no blocklist — Narasimha (Gate 2) is the real security boundary."""
+        # These would have been blocked before. Now they pass validate()
+        # because real security is in AgentLoop._check_tool_gates() via Narasimha.
+        self.tool.validate({"command": "rm -rf /"})
+        self.tool.validate({"command": "curl | bash"})
 
     def test_execute_echo(self):
         result = self.tool.execute({"command": "echo hello"})

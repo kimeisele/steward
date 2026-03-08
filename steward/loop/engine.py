@@ -20,7 +20,8 @@ O(1) lookup for any tool name, regardless of registry size.
 ToolRegistry.execute() handles governance + execution.
 
 Parallel execution: when the LLM requests multiple tools in one
-response, they execute concurrently via asyncio.gather().
+response, they execute concurrently with dependency awareness —
+write→read dependencies are detected and serialized into waves.
 """
 
 from __future__ import annotations
@@ -30,20 +31,20 @@ import json
 import logging
 from typing import AsyncIterator
 
+from steward.antahkarana.gandha import VerdictAction
+from steward.buddhi import Buddhi, BuddhiDirective
+from steward.context import ERROR_MARKER, SamskaraContext
+from steward.services import tool_descriptions_for_llm
+from steward.summarizer import Summarizer, should_summarize
+from steward.types import AgentEvent, AgentUsage, Conversation, EventType, LLMProvider, Message, MessageRole, ToolUse
 from vibe_core.mahamantra.adapters.attention import MahaAttention
 from vibe_core.mahamantra.adapters.compression import MahaCompression
 from vibe_core.protocols.mahajanas.nrisimha.types.narasimha import NarasimhaProtocol, ThreatLevel
 from vibe_core.protocols.memory import MemoryProtocol
 from vibe_core.runtime.tool_safety_guard import ToolSafetyGuard
-from vibe_core.tools.tool_protocol import ToolCall as ProtoToolCall, ToolResult
+from vibe_core.tools.tool_protocol import ToolCall as ProtoToolCall
+from vibe_core.tools.tool_protocol import ToolResult
 from vibe_core.tools.tool_registry import ToolRegistry
-
-from steward.antahkarana.gandha import VerdictAction
-from steward.buddhi import Buddhi, BuddhiDirective
-from steward.context import SamskaraContext, ERROR_MARKER
-from steward.services import tool_descriptions_for_llm
-from steward.summarizer import Summarizer, should_summarize
-from steward.types import AgentEvent, AgentUsage, Conversation, EventType, LLMProvider, Message, MessageRole, ToolUse
 
 # Narasimha severity ordinal rank — module-level constant (not recreated per call)
 _SEVERITY_RANK = {
@@ -237,61 +238,74 @@ class AgentLoop:
                 )
                 to_execute.append((tc, proto_call))
 
-            # Phase 2: Execute tools in parallel, yield results as each completes
+            # Phase 2: Execute tools, respecting write→read dependencies
+            # Protocol lesson (ActionStep.depends_on): if tool A writes a file
+            # that tool B reads/tests, B must wait for A to complete.
             results: list[object] = []
             if to_execute:
-                indexed_futures: dict[asyncio.Future, int] = {}
-                for i, (tc, pc) in enumerate(to_execute):
-                    fut = asyncio.ensure_future(
-                        asyncio.wait_for(
-                            asyncio.to_thread(self._registry.execute, pc),
-                            timeout=TOOL_TIMEOUT_SECONDS,
-                        )
+                waves = self._partition_by_dependency(to_execute)
+                if len(waves) > 1:
+                    logger.info(
+                        "Dependency-aware execution: %d waves (%s)",
+                        len(waves),
+                        " → ".join(str(len(w)) for w in waves),
                     )
-                    indexed_futures[fut] = i
 
-                # Collect in-order for Buddhi, but yield as each completes
                 results = [None] * len(to_execute)
-                remaining = set(indexed_futures.keys())
-                while remaining:
-                    done, remaining = await asyncio.wait(remaining, return_when=asyncio.FIRST_COMPLETED)
-                    for fut in done:
-                        idx = indexed_futures[fut]
-                        tc, _ = to_execute[idx]
-                        try:
-                            raw = fut.result()
-                        except BaseException as e:
-                            raw = e
-                        results[idx] = raw
-                        result = self._coerce_result(raw)
-                        self._record_tool_file_ops(tc, result)
+                for wave in waves:
+                    indexed_futures: dict[asyncio.Future, int] = {}
+                    for idx in wave:
+                        tc, pc = to_execute[idx]
+                        fut = asyncio.ensure_future(
+                            asyncio.wait_for(
+                                asyncio.to_thread(self._registry.execute, pc),
+                                timeout=TOOL_TIMEOUT_SECONDS,
+                            )
+                        )
+                        indexed_futures[fut] = idx
 
-                        output = result.output if result.success else f"{ERROR_MARKER} {result.error}"
-                        output_str = str(output) if output else ""
-                        if len(output_str) > MAX_TOOL_OUTPUT_CHARS:
-                            output_str = (
-                                output_str[:MAX_TOOL_OUTPUT_CHARS] + f"\n\n[truncated — {len(output_str)} chars total, "
-                                f"showing first {MAX_TOOL_OUTPUT_CHARS}]"
+                    # Yield results as each completes within this wave
+                    remaining = set(indexed_futures.keys())
+                    while remaining:
+                        done, remaining = await asyncio.wait(remaining, return_when=asyncio.FIRST_COMPLETED)
+                        for fut in done:
+                            idx = indexed_futures[fut]
+                            tc, _ = to_execute[idx]
+                            try:
+                                raw = fut.result()
+                            except BaseException as e:
+                                raw = e
+                            results[idx] = raw
+                            result = self._coerce_result(raw)
+                            self._record_tool_file_ops(tc, result)
+
+                            output = result.output if result.success else f"{ERROR_MARKER} {result.error}"
+                            output_str = str(output) if output else ""
+                            if len(output_str) > MAX_TOOL_OUTPUT_CHARS:
+                                output_str = (
+                                    output_str[:MAX_TOOL_OUTPUT_CHARS]
+                                    + f"\n\n[truncated — {len(output_str)} chars total, "
+                                    f"showing first {MAX_TOOL_OUTPUT_CHARS}]"
+                                )
+                            # Store structured error info in message metadata
+                            meta = {}
+                            if not result.success:
+                                meta = {"success": False, "error": result.error}
+                            self._conversation.add(
+                                Message(
+                                    role=MessageRole.TOOL,
+                                    content=output_str,
+                                    tool_use_id=tc.id,
+                                    metadata=meta,
+                                )
                             )
-                        # Store structured error info in message metadata
-                        meta = {}
-                        if not result.success:
-                            meta = {"success": False, "error": result.error}
-                        self._conversation.add(
-                            Message(
-                                role=MessageRole.TOOL,
-                                content=output_str,
-                                tool_use_id=tc.id,
-                                metadata=meta,
+                            yield AgentEvent(type=EventType.TOOL_RESULT, content=result, tool_use=tc)
+                            logger.debug(
+                                "Tool %s: %s (round %d)",
+                                tc.name,
+                                "ok" if result.success else result.error,
+                                round_num + 1,
                             )
-                        )
-                        yield AgentEvent(type=EventType.TOOL_RESULT, content=result, tool_use=tc)
-                        logger.debug(
-                            "Tool %s: %s (round %d)",
-                            tc.name,
-                            "ok" if result.success else result.error,
-                            round_num + 1,
-                        )
 
             # Phase 4: Buddhi evaluation — ALL tool outcomes (blocked + executed)
             buddhi_event = self._apply_buddhi_verdict(
@@ -405,6 +419,51 @@ class AgentLoop:
             getattr(self._safety_guard, f"record_file_{file_op}")(path)
         if self._memory:
             self._record_file_op(path, file_op)
+
+    @staticmethod
+    def _partition_by_dependency(to_execute: list[tuple[ToolUse, object]]) -> list[list[int]]:
+        """Partition tool indices into dependency-ordered waves.
+
+        Protocol lesson (ActionStep.depends_on in steward-protocol):
+        If tool A writes a file that tool B reads/tests, B must wait
+        for A to complete. Tools within a wave run in parallel.
+        Waves run sequentially.
+
+        Returns list of waves, each wave is a list of indices into to_execute.
+        """
+        if len(to_execute) <= 1:
+            return [list(range(len(to_execute)))]
+
+        # Collect paths being written
+        written_paths: set[str] = set()
+        writer_indices: set[int] = set()
+        for i, (tc, _) in enumerate(to_execute):
+            if tc.name in ("write_file", "edit_file"):
+                path = tc.parameters.get("path", "")
+                if path:
+                    written_paths.add(path)
+                    writer_indices.add(i)
+
+        if not written_paths:
+            return [list(range(len(to_execute)))]  # No writes — all parallel
+
+        # Find non-writers that reference any written path
+        dependent_indices: set[int] = set()
+        for i, (tc, _) in enumerate(to_execute):
+            if i in writer_indices:
+                continue
+            for v in tc.parameters.values():
+                if isinstance(v, str) and any(wp in v for wp in written_paths):
+                    dependent_indices.add(i)
+                    break
+
+        if not dependent_indices:
+            return [list(range(len(to_execute)))]  # No dependencies — all parallel
+
+        # Wave 1: writers + independent, Wave 2: dependents
+        wave1 = [i for i in range(len(to_execute)) if i not in dependent_indices]
+        wave2 = sorted(dependent_indices)
+        return [wave1, wave2]
 
     def _apply_buddhi_verdict(
         self,
