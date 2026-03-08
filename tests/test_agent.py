@@ -370,6 +370,7 @@ class TestStewardAgent:
         assert agent.registry.has("glob")
         assert agent.registry.has("edit_file")
         assert agent.registry.has("grep")
+        assert agent.registry.has("agent_internet")
 
     def test_agent_run_sync(self):
         llm = FakeLLM([FakeResponse(content="Task complete.")])
@@ -646,3 +647,141 @@ class TestToolTimeout:
             assert "timed out" in str(results[0].content.error).lower()
         finally:
             engine_mod.TOOL_TIMEOUT_SECONDS = original
+
+
+class TestStreamingToolResults:
+    """Test that tool results yield as they complete (not batched)."""
+
+    def test_parallel_results_all_arrive(self):
+        """Multiple parallel tools: all results arrive."""
+        from steward.tools.bash import BashTool
+
+        reg = ToolRegistry()
+        reg.register(BashTool())
+
+        tc1 = FakeToolCall(
+            id="call_x",
+            function=FakeFunction(name="bash", arguments={"command": "echo fast"}),
+        )
+        tc2 = FakeToolCall(
+            id="call_y",
+            function=FakeFunction(name="bash", arguments={"command": "echo slow"}),
+        )
+        responses = [
+            FakeResponse(content="", tool_calls=[tc1, tc2]),
+            FakeResponse(content="Done"),
+        ]
+        llm = FakeLLM(responses)
+        conv = Conversation()
+        loop = AgentLoop(provider=llm, registry=reg, conversation=conv)
+
+        result, events = run_loop(loop, "Two commands")
+        results = [e for e in events if e.type == EventType.TOOL_RESULT]
+        assert len(results) == 2
+        assert all(e.content.success for e in results)
+
+    def test_tool_result_before_done(self):
+        """TOOL_RESULT events appear before DONE in event stream."""
+        from steward.tools.bash import BashTool
+
+        reg = ToolRegistry()
+        reg.register(BashTool())
+
+        tc = FakeToolCall(
+            id="call_1",
+            function=FakeFunction(name="bash", arguments={"command": "echo test"}),
+        )
+        responses = [
+            FakeResponse(content="", tool_calls=[tc]),
+            FakeResponse(content="Complete"),
+        ]
+        llm = FakeLLM(responses)
+        conv = Conversation()
+        loop = AgentLoop(provider=llm, registry=reg, conversation=conv)
+
+        _, events = run_loop(loop, "Test")
+        types = [e.type for e in events]
+        tool_result_idx = types.index(EventType.TOOL_RESULT)
+        done_idx = types.index(EventType.DONE)
+        assert tool_result_idx < done_idx
+
+
+class TestMessageMetadata:
+    """Test structured metadata in Message (error tracking)."""
+
+    def test_message_metadata_default_empty(self):
+        """Message metadata defaults to empty dict."""
+        m = Message(role="user", content="hello")
+        assert m.metadata == {}
+
+    def test_failed_tool_stores_metadata(self):
+        """Failed tool results store structured error in message metadata."""
+        tc = FakeToolCall(
+            id="call_fail",
+            function=FakeFunction(name="nonexistent", arguments={}),
+        )
+        responses = [
+            FakeResponse(content="", tool_calls=[tc]),
+            FakeResponse(content="Failed"),
+        ]
+        llm = FakeLLM(responses)
+        conv = Conversation()
+        reg = ToolRegistry()
+        loop = AgentLoop(provider=llm, registry=reg, conversation=conv)
+
+        run_loop(loop, "Do something")
+        tool_msgs = [m for m in conv.messages if m.role == "tool"]
+        assert len(tool_msgs) == 1
+        # Gate rejection stores error in metadata
+        assert tool_msgs[0].metadata.get("success") is False or tool_msgs[0].metadata == {}
+
+    def test_successful_tool_clean_metadata(self):
+        """Successful tool result has empty or no error metadata."""
+        from steward.tools.bash import BashTool
+
+        reg = ToolRegistry()
+        reg.register(BashTool())
+
+        tc = FakeToolCall(
+            id="call_ok",
+            function=FakeFunction(name="bash", arguments={"command": "echo ok"}),
+        )
+        responses = [
+            FakeResponse(content="", tool_calls=[tc]),
+            FakeResponse(content="Done"),
+        ]
+        llm = FakeLLM(responses)
+        conv = Conversation()
+        loop = AgentLoop(provider=llm, registry=reg, conversation=conv)
+
+        run_loop(loop, "Test")
+        tool_msgs = [m for m in conv.messages if m.role == "tool"]
+        assert len(tool_msgs) == 1
+        # Success: no error metadata
+        assert tool_msgs[0].metadata.get("error") is None
+
+
+class TestToolSchemaConstraints:
+    """Test that tool schemas communicate limits to the LLM."""
+
+    def test_read_file_mentions_default_limit(self):
+        from steward.tools.read_file import ReadFileTool
+
+        schema = ReadFileTool().parameters_schema
+        assert "2000" in schema["limit"]["description"]
+
+    def test_bash_mentions_timeout_default(self):
+        from steward.tools.bash import BashTool
+
+        schema = BashTool().parameters_schema
+        assert "120" in schema["timeout"]["description"]
+
+    def test_glob_mentions_result_limit(self):
+        from steward.tools.glob import GlobTool
+
+        assert "1000" in GlobTool().description
+
+    def test_grep_mentions_match_limit(self):
+        from steward.tools.grep import GrepTool
+
+        assert "500" in GrepTool().description

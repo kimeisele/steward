@@ -237,37 +237,61 @@ class AgentLoop:
                 )
                 to_execute.append((tc, proto_call))
 
-            # Phase 2: Execute all cleared tools in parallel (with timeout)
+            # Phase 2: Execute tools in parallel, yield results as each completes
+            results: list[object] = []
             if to_execute:
-                tasks = [
-                    asyncio.wait_for(
-                        asyncio.to_thread(self._registry.execute, pc),
-                        timeout=TOOL_TIMEOUT_SECONDS,
-                    )
-                    for _, pc in to_execute
-                ]
-                results = await asyncio.gather(*tasks, return_exceptions=True)
-
-                # Phase 3: Process results, record file ops, yield events
-                for (tc, _), raw_result in zip(to_execute, results):
-                    result = self._coerce_result(raw_result)
-                    self._record_tool_file_ops(tc, result)
-
-                    output = result.output if result.success else f"{ERROR_MARKER} {result.error}"
-                    output_str = str(output) if output else ""
-                    if len(output_str) > MAX_TOOL_OUTPUT_CHARS:
-                        output_str = (
-                            output_str[:MAX_TOOL_OUTPUT_CHARS] + f"\n\n[truncated — {len(output_str)} chars total, "
-                            f"showing first {MAX_TOOL_OUTPUT_CHARS}]"
+                indexed_futures: dict[asyncio.Future, int] = {}
+                for i, (tc, pc) in enumerate(to_execute):
+                    fut = asyncio.ensure_future(
+                        asyncio.wait_for(
+                            asyncio.to_thread(self._registry.execute, pc),
+                            timeout=TOOL_TIMEOUT_SECONDS,
                         )
-                    self._conversation.add(Message(role=MessageRole.TOOL, content=output_str, tool_use_id=tc.id))
-                    yield AgentEvent(type=EventType.TOOL_RESULT, content=result, tool_use=tc)
-                    logger.debug(
-                        "Tool %s: %s (round %d)",
-                        tc.name,
-                        "ok" if result.success else result.error,
-                        round_num + 1,
                     )
+                    indexed_futures[fut] = i
+
+                # Collect in-order for Buddhi, but yield as each completes
+                results = [None] * len(to_execute)
+                remaining = set(indexed_futures.keys())
+                while remaining:
+                    done, remaining = await asyncio.wait(remaining, return_when=asyncio.FIRST_COMPLETED)
+                    for fut in done:
+                        idx = indexed_futures[fut]
+                        tc, _ = to_execute[idx]
+                        try:
+                            raw = fut.result()
+                        except BaseException as e:
+                            raw = e
+                        results[idx] = raw
+                        result = self._coerce_result(raw)
+                        self._record_tool_file_ops(tc, result)
+
+                        output = result.output if result.success else f"{ERROR_MARKER} {result.error}"
+                        output_str = str(output) if output else ""
+                        if len(output_str) > MAX_TOOL_OUTPUT_CHARS:
+                            output_str = (
+                                output_str[:MAX_TOOL_OUTPUT_CHARS] + f"\n\n[truncated — {len(output_str)} chars total, "
+                                f"showing first {MAX_TOOL_OUTPUT_CHARS}]"
+                            )
+                        # Store structured error info in message metadata
+                        meta = {}
+                        if not result.success:
+                            meta = {"success": False, "error": result.error}
+                        self._conversation.add(
+                            Message(
+                                role=MessageRole.TOOL,
+                                content=output_str,
+                                tool_use_id=tc.id,
+                                metadata=meta,
+                            )
+                        )
+                        yield AgentEvent(type=EventType.TOOL_RESULT, content=result, tool_use=tc)
+                        logger.debug(
+                            "Tool %s: %s (round %d)",
+                            tc.name,
+                            "ok" if result.success else result.error,
+                            round_num + 1,
+                        )
 
             # Phase 4: Buddhi evaluation — ALL tool outcomes (blocked + executed)
             buddhi_event = self._apply_buddhi_verdict(

@@ -24,7 +24,9 @@ class GrepTool(Tool):
 
     @property
     def description(self) -> str:
-        return "Search file contents for a regex pattern. Returns matching lines with file path and line number."
+        return (
+            "Search file contents for a regex pattern. Returns up to 500 matching lines with file path and line number."
+        )
 
     @property
     def parameters_schema(self) -> dict[str, Any]:

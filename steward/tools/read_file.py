@@ -34,12 +34,12 @@ class ReadFileTool(Tool):
             "offset": {
                 "type": "integer",
                 "required": False,
-                "description": "Line number to start reading from (1-based)",
+                "description": "Line number to start reading from (1-based, default: 1)",
             },
             "limit": {
                 "type": "integer",
                 "required": False,
-                "description": "Maximum number of lines to read",
+                "description": "Maximum number of lines to read (default: 2000). Use offset+limit to paginate large files.",
             },
         }
 
