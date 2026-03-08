@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-__version__ = "0.14.0"
+__version__ = "0.15.0"
 
 if TYPE_CHECKING:  # pragma: no cover
     from steward.agent import StewardAgent

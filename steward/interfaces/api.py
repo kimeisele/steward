@@ -68,7 +68,7 @@ def create_app():
     app = FastAPI(
         title="Steward API",
         description="Autonomous Superagent Engine — HTTP interface",
-        version="0.14.0",
+        version="0.15.0",
     )
 
     _API_TOKEN = os.environ.get("STEWARD_API_TOKEN")
