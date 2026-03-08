@@ -124,7 +124,11 @@ class AgentLoop:
 
         for round_num in range(MAX_TOOL_ROUNDS):
             # Buddhi pre-flight: deterministic tool selection + token budget
-            directive = self._buddhi.pre_flight(user_message, round_num)
+            context_pct = (
+                self._conversation.total_tokens / self._conversation.max_tokens
+                if self._conversation.max_tokens else 0.0
+            )
+            directive = self._buddhi.pre_flight(user_message, round_num, context_pct)
             if round_num == 0:
                 usage.buddhi_action = directive.action.value
                 usage.buddhi_guna = directive.guna.value

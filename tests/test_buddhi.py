@@ -276,6 +276,57 @@ class TestPreFlightTokenSavings:
         assert len(d.tool_names) == 3
 
 
+class TestContextAwareTokenBudget:
+    """Token budget adapts to context window pressure."""
+
+    def test_low_context_gets_full_budget(self):
+        """Under 50% context → full token budget."""
+        buddhi = Buddhi()
+        buddhi._action = SemanticActionType.IMPLEMENT
+        buddhi._guna = IntentGuna.RAJAS
+        buddhi._function = "BRAHMA"
+        buddhi._approach = "GENESIS"
+
+        d = buddhi.pre_flight("implement", 1, context_pct=0.3)
+        assert d.max_tokens == 4096
+
+    def test_half_context_constrains_budget(self):
+        """50-70% context → max 2048 tokens."""
+        buddhi = Buddhi()
+        buddhi._action = SemanticActionType.IMPLEMENT
+        buddhi._guna = IntentGuna.RAJAS
+        buddhi._function = "BRAHMA"
+        buddhi._approach = "GENESIS"
+
+        d = buddhi.pre_flight("implement", 1, context_pct=0.55)
+        assert d.max_tokens == 2048
+
+    def test_high_context_further_constrains(self):
+        """Over 70% context → max 1024 tokens."""
+        buddhi = Buddhi()
+        buddhi._action = SemanticActionType.IMPLEMENT
+        buddhi._guna = IntentGuna.RAJAS
+        buddhi._function = "BRAHMA"
+        buddhi._approach = "GENESIS"
+
+        d = buddhi.pre_flight("implement", 1, context_pct=0.75)
+        assert d.max_tokens == 1024
+
+    def test_research_already_under_cap(self):
+        """RESEARCH has 2048 base — at 50% stays 2048, at 70% drops to 1024."""
+        buddhi = Buddhi()
+        buddhi._action = SemanticActionType.RESEARCH
+        buddhi._guna = IntentGuna.SATTVA
+        buddhi._function = "VISHNU"
+        buddhi._approach = "MOKSHA"
+
+        d50 = buddhi.pre_flight("research", 1, context_pct=0.55)
+        assert d50.max_tokens == 2048  # already at cap
+
+        d70 = buddhi.pre_flight("research", 1, context_pct=0.75)
+        assert d70.max_tokens == 1024  # further constrained
+
+
 class TestBuddhiInLoop:
     """Integration test: Buddhi with engine-like tool call patterns."""
 

@@ -203,7 +203,9 @@ class Buddhi:
         self._compression = MahaCompression()
         self._maha_buddhi = get_buddhi()
 
-    def pre_flight(self, user_message: str, round_num: int) -> BuddhiDirective:
+    def pre_flight(
+        self, user_message: str, round_num: int, context_pct: float = 0.0,
+    ) -> BuddhiDirective:
         """Pre-flight gate — substrate cognition → tool selection.
 
         Uses MahaBuddhi.think() + MahaCompression for classification.
@@ -212,6 +214,7 @@ class Buddhi:
         Args:
             user_message: The original user request (for intent on round 0)
             round_num: Current tool-use round (0 = first LLM call)
+            context_pct: Current context budget usage (0.0 to 1.0)
 
         Returns:
             BuddhiDirective with action type, guna, tool_names, max_tokens
@@ -228,6 +231,12 @@ class Buddhi:
         # Tool selection: action type → tool set
         base_tools = _ACTION_TOOLS.get(self._action, _ALL_TOOLS)
         max_tokens = _ACTION_MAX_TOKENS.get(self._action, 4096)
+
+        # Context-aware token budget: constrain output when context is filling up
+        if context_pct >= 0.7:
+            max_tokens = min(max_tokens, 1024)
+        elif context_pct >= 0.5:
+            max_tokens = min(max_tokens, 2048)
 
         # Guna overlay: if action tools are empty, use guna fallback
         if not base_tools:
