@@ -41,8 +41,8 @@ class TestGapTracker:
         self.tracker.record_tool_failure("read_file", "File not found: /tmp/x")
         assert len(self.tracker) == 0
 
-    def test_record_missing_skill(self):
-        self.tracker.record_missing_skill("deploy to kubernetes")
+    def test_record_missing_capability(self):
+        self.tracker.record_missing_capability("deploy to kubernetes")
         assert len(self.tracker) == 1
         gap = self.tracker.active_gaps()[0]
         assert gap.category == "skill"

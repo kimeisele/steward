@@ -42,7 +42,6 @@ from steward.services import (
     boot,
 )
 from steward.session_ledger import SessionLedger, SessionRecord
-from steward.skills import SkillRegistry
 from steward.tools.agent_internet import AgentInternetTool
 from steward.tools.bash import BashTool
 from steward.tools.edit import EditTool
@@ -261,9 +260,6 @@ class StewardAgent(GADBase):
         # Session ledger (cross-session learning)
         self._ledger = SessionLedger(cwd=self._cwd)
 
-        # Skill registry — dynamic capability loading from .steward/skills/
-        self._skills = SkillRegistry(cwd=self._cwd)
-
         # 5 Jnanendriyas — deterministic environmental perception (zero LLM)
         self._senses = SenseCoordinator(cwd=self._cwd)
 
@@ -355,16 +351,10 @@ class StewardAgent(GADBase):
         Passes Memory to AgentLoop for cross-turn file tracking.
         Buddhi persists across turns — Chitta retains file awareness.
         Records cumulative session stats in Memory after each turn.
-        Injects matched skills and gap context per-turn.
         """
-        # Inject skills and gap awareness (skip for custom system prompts)
+        # Inject gap awareness (skip for custom system prompts)
         effective_prompt = self._system_prompt
         if not self._custom_prompt:
-            matched_skills = self._skills.match(task)
-            if matched_skills:
-                effective_prompt += self._skills.format_for_prompt(matched_skills)
-                logger.debug("Injected %d skills for task", len(matched_skills))
-
             gap_ctx = self._gaps.format_for_prompt()
             if gap_ctx:
                 effective_prompt += gap_ctx
@@ -398,8 +388,6 @@ class StewardAgent(GADBase):
                 self._buddhi._chitta.end_turn()
                 self._save_chitta_to_memory()
                 self._save_gaps_to_memory()
-                # Post-task learning: auto-create skills from patterns
-                self._learn_from_completion(task, event.usage)
             yield event
 
     def _emit_startup_signal(self) -> None:
@@ -614,55 +602,6 @@ class StewardAgent(GADBase):
         except Exception:
             return ""
 
-    def _learn_from_completion(self, task: str, usage: AgentUsage) -> None:
-        """Post-task learning: auto-create skills from repeatable patterns.
-
-        After a successful task, checks SessionLedger for recurring action
-        patterns. When 2+ sessions share the same buddhi_action and succeed,
-        a skill is auto-created from the pattern — no LLM needed.
-        """
-        # Only learn from clean successes with substance
-        if usage.buddhi_errors > 0 or usage.tool_calls < 2:
-            return
-
-        candidates = self._ledger.find_skill_candidates()
-        if not candidates:
-            return
-
-        # Create at most 1 skill per turn (avoid spam)
-        for candidate in candidates[:1]:
-            # Check if existing skills already cover these triggers
-            existing = self._skills.match(" ".join(candidate["triggers"]))
-            if existing:
-                continue
-
-            action = candidate["action"]
-            content_parts = [
-                f"Pattern: {action} (seen {candidate['frequency']}x successfully)",
-            ]
-            if candidate["common_files"]:
-                content_parts.append(f"Key files: {', '.join(candidate['common_files'])}")
-            content_parts.append(
-                f"Typical effort: ~{candidate['avg_rounds']} rounds, ~{candidate['avg_tools']} tool calls"
-            )
-            if candidate["sample_tasks"]:
-                content_parts.append("\nExamples:")
-                for t in candidate["sample_tasks"]:
-                    content_parts.append(f"  - {t}")
-
-            name = f"Learned: {action.replace('_', ' ').title()}"
-            skill = self._skills.create_skill(
-                name=name,
-                triggers=candidate["triggers"],
-                content="\n".join(content_parts),
-            )
-            if skill:
-                logger.info(
-                    "Auto-learned skill '%s' from %d sessions",
-                    name,
-                    candidate["frequency"],
-                )
-
     def _record_session_stats(self, usage: AgentUsage) -> None:
         """Record cumulative session stats in Memory (Chitta).
 
@@ -794,13 +733,11 @@ class StewardAgent(GADBase):
                 "ephemeral_cache",
                 "diamond_tdd",
                 "web_search",
-                "skill_loading",
                 "gap_detection",
                 "persona_identity",
             ],
             "antahkarana": ["manas", "buddhi", "chitta", "gandha"],
             "jnanendriyas": list(self._senses.senses.keys()),
-            "skills_loaded": len(self._skills),
             "active_gaps": len(self._gaps),
             "has_persona": self._persona is not None,
             "protocol_services": {
@@ -831,7 +768,6 @@ class StewardAgent(GADBase):
             "buddhi_phase": self._buddhi.phase,
             "chitta_stats": self._buddhi.stats,
             "session_stats": session_stats,
-            "skills": [s.name for s in self._skills.skills],
             "gaps": self._gaps.stats,
             "senses": self._senses.boot_summary(),
             "cache_stats": cache_stats,
