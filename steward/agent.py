@@ -480,11 +480,18 @@ class StewardAgent(GADBase):
     # ── GAD-000 Protocol Implementation ──────────────────────────────
 
     def discover(self) -> dict[str, object]:
-        """GAD-000 Discoverability — machine-readable capability description."""
+        """GAD-000 Discoverability — machine-readable capability description.
+
+        Includes Kshetra awareness (25 Sankhya elements mapped).
+        """
+        from steward.kshetra import STEWARD_KSHETRA
+
         return {
             "name": "StewardAgent",
             "version": __version__,
             "type": "superagent",
+            "architecture": "sankhya_25",
+            "kshetra_elements": len(STEWARD_KSHETRA) + 1,  # 24 Prakriti + 1 Jiva
             "tools": self._registry.list_tools(),
             "providers": len(self._provider) if hasattr(self._provider, "__len__") else 1,
             "capabilities": [
@@ -493,8 +500,10 @@ class StewardAgent(GADBase):
                 "context_compaction",
                 "session_resume",
                 "multi_provider_failover",
-                "buddhi_reflection",
+                "buddhi_phase_machine",
+                "gandha_pattern_detection",
             ],
+            "antahkarana": ["manas", "buddhi", "chitta", "gandha"],
             "cwd": self._cwd,
             "max_context_tokens": self._conversation.max_tokens,
             "max_output_tokens": self._max_output_tokens,

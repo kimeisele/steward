@@ -49,7 +49,9 @@ class TestGADCompliance:
         assert isinstance(info["tools"], list)
         assert len(info["tools"]) > 0  # has builtin tools
         assert "autonomous_coding" in info["capabilities"]
-        assert "buddhi_reflection" in info["capabilities"]
+        assert "buddhi_phase_machine" in info["capabilities"]
+        assert info["architecture"] == "sankhya_25"
+        assert info["kshetra_elements"] == 25
 
     def test_get_state_returns_observability(self):
         """get_state() returns current agent state."""
