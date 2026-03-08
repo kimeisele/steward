@@ -8,10 +8,15 @@ Public API:
     from steward.state import save_conversation, load_conversation
 """
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
+
 __version__ = "0.13.1"
 
-from steward.agent import StewardAgent
-from steward.types import AgentEvent, AgentUsage, Conversation, LLMProvider, Message, ToolUse
+if TYPE_CHECKING:  # pragma: no cover
+    from steward.agent import StewardAgent
+    from steward.types import AgentEvent, AgentUsage, Conversation, LLMProvider, Message, ToolUse
 
 __all__ = [
     "StewardAgent",
@@ -22,3 +27,15 @@ __all__ = [
     "Message",
     "ToolUse",
 ]
+
+
+def __getattr__(name: str) -> Any:
+    if name == "StewardAgent":
+        from steward.agent import StewardAgent as _StewardAgent
+
+        return _StewardAgent
+    if name in {"AgentEvent", "AgentUsage", "Conversation", "LLMProvider", "Message", "ToolUse"}:
+        from steward import types as _types
+
+        return getattr(_types, name)
+    raise AttributeError(name)
