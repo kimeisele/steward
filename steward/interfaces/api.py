@@ -65,10 +65,12 @@ def create_app():
 
     # ── App Setup ────────────────────────────────────────────────────
 
+    from steward import __version__
+
     app = FastAPI(
         title="Steward API",
         description="Autonomous Superagent Engine — HTTP interface",
-        version="0.15.0",
+        version=__version__,
     )
 
     _API_TOKEN = os.environ.get("STEWARD_API_TOKEN")
@@ -195,8 +197,6 @@ def create_app():
     @app.get("/health", response_model=HealthResponse)
     async def health():
         """Health check — shows provider count and available tools."""
-        from steward import __version__
-
         try:
             agent = await _get_agent()
             return HealthResponse(
@@ -206,8 +206,6 @@ def create_app():
                 tools=agent._registry.list_tools(),
             )
         except HTTPException:
-            from steward import __version__
-
             return HealthResponse(status="no_providers", version=__version__, providers=0, tools=[])
 
     @app.get("/stats", dependencies=[Depends(_verify_token)])
