@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,6 +26,40 @@ logger = logging.getLogger("STEWARD.LEDGER")
 _LEDGER_VERSION = 1
 _MAX_SESSIONS = 50  # Keep last 50 sessions
 _PROMPT_SESSIONS = 5  # Include last 5 in system prompt
+_STOP_WORDS = frozenset(
+    {
+        "the",
+        "and",
+        "for",
+        "this",
+        "that",
+        "with",
+        "from",
+        "have",
+        "are",
+        "was",
+        "were",
+        "been",
+        "will",
+        "can",
+        "should",
+        "into",
+        "all",
+        "not",
+        "but",
+        "its",
+        "our",
+        "they",
+        "also",
+        "just",
+    }
+)
+
+
+def _task_keywords(task: str) -> set[str]:
+    """Extract meaningful keywords from a task description."""
+    words = set(re.split(r"\W+", task.lower()))
+    return {w for w in words if len(w) > 2 and w not in _STOP_WORDS}
 
 
 @dataclass
@@ -132,6 +167,55 @@ class SessionLedger:
     @property
     def sessions(self) -> list[SessionRecord]:
         return list(self._sessions)
+
+    def find_skill_candidates(self) -> list[dict]:
+        """Find repeatable successful patterns worthy of skill creation.
+
+        Groups successful sessions by buddhi_action, then extracts keywords
+        and common files from sessions that share the same action type.
+        Returns candidates only when 2+ sessions share a pattern.
+        """
+        successes = [s for s in self._sessions if s.outcome == "success" and s.tool_calls >= 2]
+        if len(successes) < 2:
+            return []
+
+        # Group by buddhi_action
+        groups: dict[str, list[SessionRecord]] = {}
+        for s in successes[-20:]:  # last 20 successes
+            action = s.buddhi_action or "general"
+            groups.setdefault(action, []).append(s)
+
+        candidates = []
+        for action, sessions in groups.items():
+            if len(sessions) < 2:
+                continue
+
+            # Collect keywords from task descriptions
+            all_keywords: set[str] = set()
+            for s in sessions:
+                all_keywords |= _task_keywords(s.task)
+
+            # Common files across sessions
+            file_sets = [set(s.files_read + s.files_written) for s in sessions]
+            common_files = set.intersection(*file_sets) if file_sets else set()
+
+            triggers = sorted(all_keywords)[:8]
+            if len(triggers) < 2:
+                continue
+
+            candidates.append(
+                {
+                    "action": action,
+                    "frequency": len(sessions),
+                    "triggers": triggers,
+                    "common_files": sorted(common_files)[:5],
+                    "sample_tasks": [s.task[:100] for s in sessions[:3]],
+                    "avg_rounds": int(sum(s.rounds for s in sessions) / len(sessions)),
+                    "avg_tools": int(sum(s.tool_calls for s in sessions) / len(sessions)),
+                }
+            )
+
+        return candidates
 
     @property
     def stats(self) -> dict[str, object]:
