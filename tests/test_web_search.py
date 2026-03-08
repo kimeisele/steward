@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -51,6 +52,12 @@ class TestWebSearchTool:
             assert not result.success
             assert "TAVILY_API_KEY" in result.error
 
+    def _make_tavily_mock(self, mock_client):
+        """Return a context manager that injects a fake tavily module into sys.modules."""
+        mock_tavily = MagicMock()
+        mock_tavily.TavilyClient.return_value = mock_client
+        return patch.dict(sys.modules, {"tavily": mock_tavily})
+
     def test_execute_with_results(self):
         mock_response = {
             "answer": "Python is great",
@@ -72,7 +79,7 @@ class TestWebSearchTool:
         mock_client.search.return_value = mock_response
 
         with patch.dict(os.environ, {"TAVILY_API_KEY": "test-key"}):
-            with patch("tavily.TavilyClient", return_value=mock_client):
+            with self._make_tavily_mock(mock_client):
                 result = self.tool.execute({"query": "python"})
                 assert result.success
                 assert "Python" in result.output
@@ -84,7 +91,7 @@ class TestWebSearchTool:
         mock_client.search.return_value = {"results": []}
 
         with patch.dict(os.environ, {"TAVILY_API_KEY": "test-key"}):
-            with patch("tavily.TavilyClient", return_value=mock_client):
+            with self._make_tavily_mock(mock_client):
                 result = self.tool.execute({"query": "xyznonexistent"})
                 assert result.success
                 assert "No results" in result.output
@@ -94,7 +101,7 @@ class TestWebSearchTool:
         mock_client.search.side_effect = RuntimeError("API rate limited")
 
         with patch.dict(os.environ, {"TAVILY_API_KEY": "test-key"}):
-            with patch("tavily.TavilyClient", return_value=mock_client):
+            with self._make_tavily_mock(mock_client):
                 result = self.tool.execute({"query": "test"})
                 assert not result.success
                 assert "rate limited" in result.error
@@ -107,7 +114,7 @@ class TestWebSearchTool:
         }
 
         with patch.dict(os.environ, {"TAVILY_API_KEY": "test-key"}):
-            with patch("tavily.TavilyClient", return_value=mock_client):
+            with self._make_tavily_mock(mock_client):
                 result = self.tool.execute({"query": "meaning of life"})
                 assert result.success
                 assert "42 is the answer" in result.output
@@ -119,7 +126,7 @@ class TestWebSearchTool:
         }
 
         with patch.dict(os.environ, {"TAVILY_API_KEY": "test-key"}):
-            with patch("tavily.TavilyClient", return_value=mock_client):
+            with self._make_tavily_mock(mock_client):
                 result = self.tool.execute({"query": "test"})
                 assert result.success
                 assert "..." in result.output
@@ -129,7 +136,7 @@ class TestWebSearchTool:
         mock_client.search.return_value = {"results": []}
 
         with patch.dict(os.environ, {"TAVILY_API_KEY": "test-key"}):
-            with patch("tavily.TavilyClient", return_value=mock_client):
+            with self._make_tavily_mock(mock_client):
                 self.tool.execute({"query": "test", "max_results": 20})
                 call_args = mock_client.search.call_args
                 assert call_args.kwargs.get("max_results", call_args[1].get("max_results", 0)) <= 10
