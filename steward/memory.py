@@ -99,14 +99,16 @@ class PersistentMemory(InMemoryMemory):
             for (sid, key), entry in self._store.items():
                 if entry.is_expired:
                     continue
-                entries.append({
-                    "session_id": sid,
-                    "key": key,
-                    "value": entry.value,
-                    "created_at": entry.created_at.isoformat(),
-                    "expires_at": entry.expires_at.isoformat() if entry.expires_at else None,
-                    "tags": entry.tags,
-                })
+                entries.append(
+                    {
+                        "session_id": sid,
+                        "key": key,
+                        "value": entry.value,
+                        "created_at": entry.created_at.isoformat(),
+                        "expires_at": entry.expires_at.isoformat() if entry.expires_at else None,
+                        "tags": entry.tags,
+                    }
+                )
 
             # Serialize entities
             entity_data: dict[str, list[dict[str, object]]] = {}
@@ -149,11 +151,7 @@ class PersistentMemory(InMemoryMemory):
                 sid = entry_data.get("session_id", "__global__")
                 key = entry_data.get("key", "")
                 created_at = datetime.fromisoformat(entry_data["created_at"])
-                expires_at = (
-                    datetime.fromisoformat(entry_data["expires_at"])
-                    if entry_data.get("expires_at")
-                    else None
-                )
+                expires_at = datetime.fromisoformat(entry_data["expires_at"]) if entry_data.get("expires_at") else None
 
                 entry = MemoryEntry(
                     key=key,

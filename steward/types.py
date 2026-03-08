@@ -42,6 +42,7 @@ class EventType(StrEnum):
     ERROR = "error"
     DONE = "done"
 
+
 # JSON value types — what LLM tool parameters contain
 JsonValue = str | int | float | bool | None | list | dict
 
@@ -73,9 +74,9 @@ class LLMProvider(Protocol):
 class ToolUse:
     """A tool invocation requested by the LLM."""
 
-    id: str                                  # unique call ID for correlating results
-    name: str                                # tool name (e.g. "bash", "read_file")
-    parameters: dict[str, JsonValue]         # tool-specific parameters
+    id: str  # unique call ID for correlating results
+    name: str  # tool name (e.g. "bash", "read_file")
+    parameters: dict[str, JsonValue]  # tool-specific parameters
 
 
 @dataclass
@@ -89,10 +90,10 @@ class Message:
         tool      — tool execution result (correlated by tool_use_id)
     """
 
-    role: str                                   # system | user | assistant | tool
-    content: str = ""                           # text content
-    tool_uses: list[ToolUse] = field(default_factory=list)   # assistant only
-    tool_use_id: str | None = None              # tool only — correlates to ToolUse.id
+    role: str  # system | user | assistant | tool
+    content: str = ""  # text content
+    tool_uses: list[ToolUse] = field(default_factory=list)  # assistant only
+    tool_use_id: str | None = None  # tool only — correlates to ToolUse.id
 
     @property
     def estimated_tokens(self) -> int:
@@ -198,12 +199,12 @@ class AgentUsage:
     tool_calls: int = 0
     rounds: int = 0
     # Buddhi diagnostics (observable cognition)
-    buddhi_action: str = ""     # SemanticActionType (e.g., "RESEARCH", "IMPLEMENT")
-    buddhi_guna: str = ""       # IntentGuna (e.g., "SATTVA", "RAJAS")
-    buddhi_tier: str = ""       # ModelTier (flash/standard/pro)
-    buddhi_phase: str = ""      # Chitta phase (ORIENT/EXECUTE/VERIFY/COMPLETE)
-    buddhi_errors: int = 0      # total tool errors detected by Buddhi
-    buddhi_reflections: int = 0 # number of reflect/redirect injections
+    buddhi_action: str = ""  # SemanticActionType (e.g., "RESEARCH", "IMPLEMENT")
+    buddhi_guna: str = ""  # IntentGuna (e.g., "SATTVA", "RAJAS")
+    buddhi_tier: str = ""  # ModelTier (flash/standard/pro)
+    buddhi_phase: str = ""  # Chitta phase (ORIENT/EXECUTE/VERIFY/COMPLETE)
+    buddhi_errors: int = 0  # total tool errors detected by Buddhi
+    buddhi_reflections: int = 0  # number of reflect/redirect injections
 
     @property
     def total_tokens(self) -> int:

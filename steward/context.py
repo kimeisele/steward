@@ -30,7 +30,9 @@ from steward.types import Conversation, Message, MessageRole
 logger = logging.getLogger("STEWARD.CONTEXT")
 
 # Patterns for deterministic extraction
-_FILE_PATH_RE = re.compile(r"(?:^|[\s\"'])((?:/[\w./-]+|\.[\w./-]+)\.(?:py|js|ts|yaml|yml|json|md|txt|toml|cfg|sh|rs|go|c|h|cpp|java))")
+_FILE_PATH_RE = re.compile(
+    r"(?:^|[\s\"'])((?:/[\w./-]+|\.[\w./-]+)\.(?:py|js|ts|yaml|yml|json|md|txt|toml|cfg|sh|rs|go|c|h|cpp|java))"
+)
 ERROR_MARKER = "[Error]"
 
 # Tool name → file set key (branchless dispatch)
@@ -143,7 +145,7 @@ class SamskaraContext:
             return False
 
         to_compact = non_system[: len(non_system) - keep_recent]
-        to_keep = non_system[len(non_system) - keep_recent:]
+        to_keep = non_system[len(non_system) - keep_recent :]
 
         if len(to_compact) < 2:
             return False

@@ -20,8 +20,7 @@ class ReadFileTool(Tool):
     @property
     def description(self) -> str:
         return (
-            "Read the contents of a file. Can optionally read a specific "
-            "line range with offset and limit parameters."
+            "Read the contents of a file. Can optionally read a specific line range with offset and limit parameters."
         )
 
     @property

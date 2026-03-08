@@ -106,17 +106,26 @@ def _git_status_summary(cwd: str) -> str | None:
         # Check if it's a git repo
         subprocess.run(
             ["git", "rev-parse", "--git-dir"],
-            cwd=cwd, capture_output=True, check=True, timeout=5,
+            cwd=cwd,
+            capture_output=True,
+            check=True,
+            timeout=5,
         )
         # Get short status
         status = subprocess.run(
             ["git", "status", "--short"],
-            cwd=cwd, capture_output=True, text=True, timeout=5,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         # Get diff stat
         diff = subprocess.run(
             ["git", "diff", "--stat"],
-            cwd=cwd, capture_output=True, text=True, timeout=5,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         parts: list[str] = []
         if status.stdout.strip():
@@ -154,8 +163,7 @@ def _build_system_prompt(
     _SECTION_KEYS = {"project_structure", "recent_commits"}
     if dynamic_context:
         # Inline key-value pairs (branch, time)
-        inline = {k: v for k, v in dynamic_context.items()
-                  if k not in _SECTION_KEYS and v and not v.startswith("[")}
+        inline = {k: v for k, v in dynamic_context.items() if k not in _SECTION_KEYS and v and not v.startswith("[")}
         if inline:
             parts.append("\nEnvironment:")
             for key, value in inline.items():
@@ -247,7 +255,9 @@ class StewardAgent(GADBase):
             project_ctx = _load_project_instructions(self._cwd)
             git_ctx = _git_status_summary(self._cwd)
             self._system_prompt = _build_system_prompt(
-                _BASE_SYSTEM_PROMPT, self._cwd, self._registry.list_tools(),
+                _BASE_SYSTEM_PROMPT,
+                self._cwd,
+                self._registry.list_tools(),
                 dynamic_context=dynamic_ctx,
                 project_instructions=project_ctx,
                 git_status=git_ctx,
@@ -258,7 +268,8 @@ class StewardAgent(GADBase):
 
         logger.info(
             "StewardAgent initialized (cwd=%s, tools=%s)",
-            self._cwd, self._registry.list_tools(),
+            self._cwd,
+            self._registry.list_tools(),
         )
 
     async def run(self, task: str) -> str:
@@ -333,11 +344,13 @@ class StewardAgent(GADBase):
         bus = ServiceRegistry.get(SVC_SIGNAL_BUS)
         if bus is None:
             return
-        bus.emit(Signal(
-            signal_type=SignalType.AGENT_STARTUP,
-            source_agent="steward",
-            payload={"tools": self._registry.list_tools(), "cwd": self._cwd},
-        ))
+        bus.emit(
+            Signal(
+                signal_type=SignalType.AGENT_STARTUP,
+                source_agent="steward",
+                payload={"tools": self._registry.list_tools(), "cwd": self._cwd},
+            )
+        )
 
     def _emit_signal(self, event: AgentEvent) -> None:
         """Translate AgentEvent to SignalBus signal (fire-and-forget)."""
@@ -348,39 +361,47 @@ class StewardAgent(GADBase):
             return
 
         if event.type == EventType.TOOL_CALL:
-            bus.emit(Signal(
-                signal_type=SignalType.AGENT_STATUS_UPDATE,
-                source_agent="steward",
-                payload={
-                    "action": "tool_call",
-                    "tool": event.tool_use.name if event.tool_use else "",
-                },
-            ))
+            bus.emit(
+                Signal(
+                    signal_type=SignalType.AGENT_STATUS_UPDATE,
+                    source_agent="steward",
+                    payload={
+                        "action": "tool_call",
+                        "tool": event.tool_use.name if event.tool_use else "",
+                    },
+                )
+            )
         elif event.type == EventType.TOOL_RESULT:
             success = False
             if event.content and hasattr(event.content, "success"):
                 success = event.content.success  # type: ignore[union-attr]
-            bus.emit(Signal(
-                signal_type=SignalType.AGENT_STATUS_UPDATE,
-                source_agent="steward",
-                payload={"action": "tool_result", "success": success},
-            ))
+            bus.emit(
+                Signal(
+                    signal_type=SignalType.AGENT_STATUS_UPDATE,
+                    source_agent="steward",
+                    payload={"action": "tool_result", "success": success},
+                )
+            )
         elif event.type == EventType.ERROR:
-            bus.emit(Signal(
-                signal_type=SignalType.AGENT_ERROR,
-                source_agent="steward",
-                payload={"error": str(event.content)},
-            ))
+            bus.emit(
+                Signal(
+                    signal_type=SignalType.AGENT_ERROR,
+                    source_agent="steward",
+                    payload={"error": str(event.content)},
+                )
+            )
         elif event.type == EventType.DONE:
             payload: dict[str, object] = {"action": "turn_complete"}
             if event.usage:
                 payload["tokens"] = event.usage.total_tokens
                 payload["tool_calls"] = event.usage.tool_calls
-            bus.emit(Signal(
-                signal_type=SignalType.AGENT_STATUS_UPDATE,
-                source_agent="steward",
-                payload=payload,
-            ))
+            bus.emit(
+                Signal(
+                    signal_type=SignalType.AGENT_STATUS_UPDATE,
+                    source_agent="steward",
+                    payload=payload,
+                )
+            )
 
     def _emit_event_bus(self, event: AgentEvent) -> None:
         """Emit to real EventBus (Narada stream) for observability."""
@@ -432,8 +453,10 @@ class StewardAgent(GADBase):
         """Persist Chitta's cross-turn state to PersistentMemory."""
         summary = self._buddhi._chitta.to_summary()
         self._memory.remember(
-            "chitta_summary", summary,
-            session_id="steward", tags=["chitta"],
+            "chitta_summary",
+            summary,
+            session_id="steward",
+            tags=["chitta"],
         )
 
     def _record_session_stats(self, usage: AgentUsage) -> None:
@@ -553,9 +576,9 @@ class StewardAgent(GADBase):
         return {
             "conversation_messages": len(self._conversation.messages),
             "conversation_tokens": self._conversation.total_tokens,
-            "context_budget_pct": int(
-                self._conversation.total_tokens / self._conversation.max_tokens * 100
-            ) if self._conversation.max_tokens else 0,
+            "context_budget_pct": int(self._conversation.total_tokens / self._conversation.max_tokens * 100)
+            if self._conversation.max_tokens
+            else 0,
             "tools_registered": self._registry.list_tools(),
             "safety_guard_active": self._safety_guard is not None,
             "memory_active": self._memory is not None,

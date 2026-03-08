@@ -15,10 +15,20 @@ from vibe_core.tools.tool_protocol import Tool, ToolResult
 
 # Commands that are NEVER allowed — destructive or dangerous
 _BLOCKED_PATTERNS = [
-    "rm -rf /", "rm -rf /*", "mkfs", "dd if=", "format c:",
-    "> /dev/sd", "chmod -R 777 /", ":(){ :|:& };:",
-    "curl | bash", "curl | sh", "wget | bash", "wget | sh",
-    "eval $(curl", "eval $(wget",
+    "rm -rf /",
+    "rm -rf /*",
+    "mkfs",
+    "dd if=",
+    "format c:",
+    "> /dev/sd",
+    "chmod -R 777 /",
+    ":(){ :|:& };:",
+    "curl | bash",
+    "curl | sh",
+    "wget | bash",
+    "wget | sh",
+    "eval $(curl",
+    "eval $(wget",
 ]
 
 
