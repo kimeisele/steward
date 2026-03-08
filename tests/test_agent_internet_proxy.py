@@ -5,10 +5,19 @@ import pytest
 
 from steward.interfaces.agent_internet import (
     AgentInternetProxyConfig,
+    fetch_federated_index,
+    fetch_public_graph,
+    fetch_repo_graph_capabilities,
+    fetch_repo_graph_context,
+    fetch_repo_graph_neighbors,
+    fetch_repo_graph_snapshot,
+    fetch_search_index,
     fetch_semantic_capabilities,
     fetch_semantic_contracts,
     invoke_semantic_http,
     load_agent_internet_proxy_config,
+    search_federated_index,
+    search_index,
 )
 
 
@@ -128,3 +137,73 @@ def test_invoke_semantic_http(mock_urlopen):
     assert payload["kind"] == "steward_agent_internet_semantic_proxy_invocation"
     assert payload["request"]["query"] == {"q": "bazaar"}
     assert payload["response"]["agent_web_semantic_expand"]["raw_query"] == "bazaar"
+
+
+@patch("steward.interfaces.agent_internet.urllib.request.urlopen")
+def test_fetch_repo_graph_snapshot(mock_urlopen):
+    mock_urlopen.return_value = _mock_response({"agent_web_repo_graph": {"kind": "agent_web_repo_graph_snapshot", "nodes": []}})
+    config = AgentInternetProxyConfig(base_url="https://agent.example", bearer_token="secret", timeout_s=5)
+
+    payload = fetch_repo_graph_snapshot(config=config, root="/repo", node_type="agent", limit=3)
+
+    assert payload["kind"] == "agent_web_repo_graph_snapshot"
+    req = mock_urlopen.call_args[0][0]
+    assert req.full_url.endswith("/v1/lotus/agent-web-repo-graph?root=%2Frepo&node_type=agent&limit=3")
+
+
+@patch("steward.interfaces.agent_internet.urllib.request.urlopen")
+def test_fetch_repo_graph_neighbors_and_context(mock_urlopen):
+    mock_urlopen.side_effect = [
+        _mock_response({"agent_web_repo_graph_neighbors": {"record": {"node_id": "module.city"}, "neighbors": []}}),
+        _mock_response({"agent_web_repo_graph_context": {"concept": "governance", "context": "ctx"}}),
+    ]
+    config = AgentInternetProxyConfig(base_url="https://agent.example", bearer_token="secret", timeout_s=5)
+
+    neighbors = fetch_repo_graph_neighbors(config=config, root="/repo", node_id="module.city", depth=1, limit=2)
+    context = fetch_repo_graph_context(config=config, root="/repo", concept="governance")
+
+    assert neighbors["record"]["node_id"] == "module.city"
+    assert context["concept"] == "governance"
+
+
+@patch("steward.interfaces.agent_internet.urllib.request.urlopen")
+def test_fetch_repo_graph_capabilities(mock_urlopen):
+    mock_urlopen.return_value = _mock_response({"agent_web_repo_graph_capabilities": {"capabilities": [{"capability_id": "repo_graph_snapshot"}]}})
+    config = AgentInternetProxyConfig(base_url="https://agent.example", bearer_token="secret", timeout_s=5)
+
+    payload = fetch_repo_graph_capabilities(config=config)
+
+    assert payload["capabilities"][0]["capability_id"] == "repo_graph_snapshot"
+
+
+@patch("steward.interfaces.agent_internet.urllib.request.urlopen")
+def test_fetch_public_graph_and_search(mock_urlopen):
+    mock_urlopen.side_effect = [
+        _mock_response({"agent_web_graph": {"kind": "agent_web_public_graph", "nodes": []}}),
+        _mock_response({"agent_web_index": {"kind": "agent_web_search_index", "records": []}}),
+        _mock_response({"agent_web_search": {"kind": "agent_web_search_results", "results": [{"title": "Marketplace"}]}}),
+    ]
+    config = AgentInternetProxyConfig(base_url="https://agent.example", bearer_token="secret", timeout_s=5)
+
+    graph = fetch_public_graph(config=config, root="/repo")
+    index = fetch_search_index(config=config, root="/repo")
+    search = search_index(config=config, root="/repo", query="marketplace", limit=3)
+
+    assert graph["kind"] == "agent_web_public_graph"
+    assert index["kind"] == "agent_web_search_index"
+    assert search["results"][0]["title"] == "Marketplace"
+
+
+@patch("steward.interfaces.agent_internet.urllib.request.urlopen")
+def test_fetch_federated_index_and_search(mock_urlopen):
+    mock_urlopen.side_effect = [
+        _mock_response({"agent_web_federated_index": {"stats": {"source_count": 2}}}),
+        _mock_response({"agent_web_federated_search": {"results": [{"source_city_id": "city-b"}]}}),
+    ]
+    config = AgentInternetProxyConfig(base_url="https://agent.example", bearer_token="secret", timeout_s=5)
+
+    index = fetch_federated_index(config=config, index_path="/tmp/index.json")
+    search = search_federated_index(config=config, query="bazaar", limit=2, index_path="/tmp/index.json")
+
+    assert index["stats"]["source_count"] == 2
+    assert search["results"][0]["source_city_id"] == "city-b"

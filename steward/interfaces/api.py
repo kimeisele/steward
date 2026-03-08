@@ -61,12 +61,7 @@ def create_app():
     # ── App Setup ────────────────────────────────────────────────────
     from steward import __version__
     from steward.agent import StewardAgent
-    from steward.interfaces.agent_internet import (
-        fetch_semantic_capabilities,
-        fetch_semantic_contracts,
-        invoke_semantic_http,
-        load_agent_internet_proxy_config,
-    )
+    from steward.interfaces import agent_internet as agent_internet_proxy
     from steward.provider import build_chamber
     from steward.session_ledger import SessionLedger
     from steward.types import EventType
@@ -233,8 +228,8 @@ def create_app():
     async def agent_internet_semantic_capabilities():
         """Proxy the published agent-internet semantic capability manifest."""
         try:
-            load_agent_internet_proxy_config()
-            return fetch_semantic_capabilities()
+            agent_internet_proxy.load_agent_internet_proxy_config()
+            return agent_internet_proxy.fetch_semantic_capabilities()
         except ValueError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         except RuntimeError as exc:
@@ -248,8 +243,8 @@ def create_app():
     ):
         """Proxy published agent-internet semantic contract descriptors."""
         try:
-            load_agent_internet_proxy_config()
-            return fetch_semantic_contracts(capability_id=capability_id, contract_id=contract_id, version=version)
+            agent_internet_proxy.load_agent_internet_proxy_config()
+            return agent_internet_proxy.fetch_semantic_contracts(capability_id=capability_id, contract_id=contract_id, version=version)
         except ValueError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         except RuntimeError as exc:
@@ -259,12 +254,190 @@ def create_app():
     async def agent_internet_semantic_call(req: AgentInternetSemanticCallRequest):
         """Proxy published agent-internet semantic invocation through steward."""
         try:
-            load_agent_internet_proxy_config()
-            return invoke_semantic_http(
+            agent_internet_proxy.load_agent_internet_proxy_config()
+            return agent_internet_proxy.invoke_semantic_http(
                 capability_id=req.capability_id,
                 contract_id=req.contract_id,
                 version=req.version,
                 input_payload=dict(req.input_payload or {}),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    @app.get("/agent-internet/repo-graph/capabilities", dependencies=[Depends(_verify_token)])
+    async def agent_internet_repo_graph_capabilities():
+        try:
+            agent_internet_proxy.load_agent_internet_proxy_config()
+            return agent_internet_proxy.fetch_repo_graph_capabilities()
+        except ValueError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    @app.get("/agent-internet/repo-graph/contracts", dependencies=[Depends(_verify_token)])
+    async def agent_internet_repo_graph_contracts(
+        capability_id: str | None = None,
+        contract_id: str | None = None,
+        version: int | None = None,
+    ):
+        try:
+            agent_internet_proxy.load_agent_internet_proxy_config()
+            return agent_internet_proxy.fetch_repo_graph_contracts(
+                capability_id=capability_id,
+                contract_id=contract_id,
+                version=version,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    @app.get("/agent-internet/repo-graph", dependencies=[Depends(_verify_token)])
+    async def agent_internet_repo_graph(
+        root: str,
+        node_type: str | None = None,
+        domain: str | None = None,
+        query: str | None = None,
+        limit: int | None = None,
+    ):
+        try:
+            agent_internet_proxy.load_agent_internet_proxy_config()
+            return agent_internet_proxy.fetch_repo_graph_snapshot(
+                root=root,
+                node_type=node_type,
+                domain=domain,
+                query=query,
+                limit=limit,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    @app.get("/agent-internet/repo-graph/neighbors", dependencies=[Depends(_verify_token)])
+    async def agent_internet_repo_graph_neighbors(
+        root: str,
+        node_id: str,
+        relation: str | None = None,
+        depth: int | None = None,
+        limit: int | None = None,
+    ):
+        try:
+            agent_internet_proxy.load_agent_internet_proxy_config()
+            return agent_internet_proxy.fetch_repo_graph_neighbors(
+                root=root,
+                node_id=node_id,
+                relation=relation,
+                depth=depth,
+                limit=limit,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    @app.get("/agent-internet/repo-graph/context", dependencies=[Depends(_verify_token)])
+    async def agent_internet_repo_graph_context(root: str, concept: str):
+        try:
+            agent_internet_proxy.load_agent_internet_proxy_config()
+            return agent_internet_proxy.fetch_repo_graph_context(root=root, concept=concept)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    @app.get("/agent-internet/public-graph", dependencies=[Depends(_verify_token)])
+    async def agent_internet_public_graph(
+        root: str,
+        city_id: str | None = None,
+        assistant_id: str | None = None,
+        heartbeat_source: str | None = None,
+    ):
+        try:
+            agent_internet_proxy.load_agent_internet_proxy_config()
+            return agent_internet_proxy.fetch_public_graph(
+                root=root,
+                city_id=city_id,
+                assistant_id=assistant_id,
+                heartbeat_source=heartbeat_source,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    @app.get("/agent-internet/search-index", dependencies=[Depends(_verify_token)])
+    async def agent_internet_search_index(
+        root: str,
+        city_id: str | None = None,
+        assistant_id: str | None = None,
+        heartbeat_source: str | None = None,
+    ):
+        try:
+            agent_internet_proxy.load_agent_internet_proxy_config()
+            return agent_internet_proxy.fetch_search_index(
+                root=root,
+                city_id=city_id,
+                assistant_id=assistant_id,
+                heartbeat_source=heartbeat_source,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    @app.get("/agent-internet/search", dependencies=[Depends(_verify_token)])
+    async def agent_internet_search(
+        root: str,
+        q: str,
+        limit: int | None = None,
+        city_id: str | None = None,
+        assistant_id: str | None = None,
+        heartbeat_source: str | None = None,
+    ):
+        try:
+            agent_internet_proxy.load_agent_internet_proxy_config()
+            return agent_internet_proxy.search_index(
+                root=root,
+                query=q,
+                limit=limit,
+                city_id=city_id,
+                assistant_id=assistant_id,
+                heartbeat_source=heartbeat_source,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    @app.get("/agent-internet/federated-index", dependencies=[Depends(_verify_token)])
+    async def agent_internet_federated_index(index_path: str | None = None):
+        try:
+            agent_internet_proxy.load_agent_internet_proxy_config()
+            return agent_internet_proxy.fetch_federated_index(index_path=index_path)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    @app.get("/agent-internet/federated-search", dependencies=[Depends(_verify_token)])
+    async def agent_internet_federated_search(
+        q: str,
+        limit: int | None = None,
+        index_path: str | None = None,
+        overlay_path: str | None = None,
+        wordnet_path: str | None = None,
+    ):
+        try:
+            agent_internet_proxy.load_agent_internet_proxy_config()
+            return agent_internet_proxy.search_federated_index(
+                query=q,
+                limit=limit,
+                index_path=index_path,
+                overlay_path=overlay_path,
+                wordnet_path=wordnet_path,
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
