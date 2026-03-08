@@ -1,4 +1,4 @@
-"""Thin agent-internet semantic proxy client for steward API wrappers."""
+"""Thin agent-internet semantic client used by steward tools and wrappers."""
 
 from __future__ import annotations
 

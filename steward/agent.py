@@ -49,6 +49,7 @@ from steward.services import (
 )
 from steward.tools.bash import BashTool
 from steward.tools.edit import EditTool
+from steward.tools.agent_internet import AgentInternetTool
 from steward.tools.glob import GlobTool
 from steward.tools.grep import GrepTool
 from steward.tools.http import HttpTool
@@ -650,5 +651,6 @@ class StewardAgent(GADBase):
             EditTool(),
             GrepTool(cwd=self._cwd),
             HttpTool(),
+            AgentInternetTool(),
             SubAgentTool(cwd=self._cwd),
         ]
