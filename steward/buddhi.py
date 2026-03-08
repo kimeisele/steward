@@ -38,14 +38,8 @@ from enum import StrEnum
 from vibe_core.mahamantra.protocols.compression import IntentGuna
 from vibe_core.runtime.semantic_actions import SemanticActionType
 
-from steward.antahkarana.chitta import (
-    PHASE_COMPLETE,
-    PHASE_EXECUTE,
-    PHASE_ORIENT,
-    PHASE_VERIFY,
-    Chitta,
-)
-from steward.antahkarana.gandha import detect_patterns
+from steward.antahkarana.chitta import Chitta, ExecutionPhase
+from steward.antahkarana.gandha import VerdictAction, detect_patterns
 from steward.antahkarana.manas import Manas
 from steward.types import ToolUse
 
@@ -107,11 +101,11 @@ _GUNA_NAMESPACES: dict[IntentGuna, frozenset[ToolNamespace]] = {
 }
 
 # Phase → namespace overlays (add capabilities during specific phases)
-_PHASE_NS_OVERLAY: dict[str, frozenset[ToolNamespace]] = {
-    PHASE_ORIENT:   frozenset(),
-    PHASE_EXECUTE:  frozenset({ToolNamespace.MODIFY, ToolNamespace.EXECUTE}),
-    PHASE_VERIFY:   frozenset({ToolNamespace.EXECUTE, ToolNamespace.OBSERVE}),
-    PHASE_COMPLETE: frozenset(),
+_PHASE_NS_OVERLAY: dict[ExecutionPhase, frozenset[ToolNamespace]] = {
+    ExecutionPhase.ORIENT:   frozenset(),
+    ExecutionPhase.EXECUTE:  frozenset({ToolNamespace.MODIFY, ToolNamespace.EXECUTE}),
+    ExecutionPhase.VERIFY:   frozenset({ToolNamespace.EXECUTE, ToolNamespace.OBSERVE}),
+    ExecutionPhase.COMPLETE: frozenset(),
 }
 
 
@@ -183,11 +177,11 @@ _ACTION_TIER: dict[SemanticActionType, ModelTier] = {
 # Phase-based token budget (only applies when lower than action budget)
 # VERIFY and COMPLETE tighten budget — work should be winding down.
 # ORIENT and EXECUTE defer to the action's natural budget.
-_PHASE_MAX_TOKENS: dict[str, int] = {
-    PHASE_ORIENT: 4096,    # defer to action budget
-    PHASE_EXECUTE: 4096,   # full budget for active work
-    PHASE_VERIFY: 2048,    # tighten for test/check phase
-    PHASE_COMPLETE: 2048,  # tighten for wrap-up
+_PHASE_MAX_TOKENS: dict[ExecutionPhase, int] = {
+    ExecutionPhase.ORIENT: 4096,    # defer to action budget
+    ExecutionPhase.EXECUTE: 4096,   # full budget for active work
+    ExecutionPhase.VERIFY: 2048,    # tighten for test/check phase
+    ExecutionPhase.COMPLETE: 2048,  # tighten for wrap-up
 }
 
 
@@ -219,7 +213,7 @@ class BuddhiVerdict:
         abort     — stop the loop (unrecoverable)
     """
 
-    action: str  # "continue" | "reflect" | "redirect" | "abort"
+    action: VerdictAction
     reason: str = ""
     suggestion: str = ""
 
@@ -243,7 +237,7 @@ class Buddhi:
     def __init__(self) -> None:
         self._manas = Manas()
         self._chitta = Chitta()
-        self._prev_phase: str = PHASE_ORIENT
+        self._prev_phase = ExecutionPhase.ORIENT
 
     def pre_flight(
         self, user_message: str, round_num: int, context_pct: float = 0.0,
@@ -311,7 +305,7 @@ class Buddhi:
         # ModelTier: action-derived, phase-adjusted
         tier = _ACTION_TIER.get(self._action, ModelTier.STANDARD)
         # PRO tasks demote to STANDARD in VERIFY/COMPLETE (work is done)
-        if tier == ModelTier.PRO and phase in (PHASE_VERIFY, PHASE_COMPLETE):
+        if tier == ModelTier.PRO and phase in (ExecutionPhase.VERIFY, ExecutionPhase.COMPLETE):
             tier = ModelTier.STANDARD
         # Under context pressure, demote to save tokens
         if context_pct >= 0.7:
@@ -393,12 +387,12 @@ class Buddhi:
             guidance = _phase_guidance(prev_phase, curr_phase, self._chitta)
             if guidance:
                 return BuddhiVerdict(
-                    action="reflect",
+                    action=VerdictAction.REFLECT,
                     reason=f"Phase {prev_phase}->{curr_phase}",
                     suggestion=guidance,
                 )
 
-        return BuddhiVerdict(action="continue")
+        return BuddhiVerdict(action=VerdictAction.CONTINUE)
 
     @property
     def phase(self) -> str:
@@ -408,7 +402,7 @@ class Buddhi:
     def reset(self) -> None:
         """Reset for a new task."""
         self._chitta.clear()
-        self._prev_phase = PHASE_ORIENT
+        self._prev_phase = ExecutionPhase.ORIENT
 
     @property
     def stats(self) -> dict[str, object]:
@@ -417,8 +411,8 @@ class Buddhi:
 
 
 def _phase_guidance(
-    prev: str,
-    curr: str,
+    prev: ExecutionPhase,
+    curr: ExecutionPhase,
     chitta: Chitta,
 ) -> str:
     """Generate guidance for a phase transition.
@@ -429,7 +423,7 @@ def _phase_guidance(
     Returns guidance text or empty string (no guidance needed).
     """
     # EXECUTE -> VERIFY: nudge to run tests after modifications
-    if prev == PHASE_EXECUTE and curr == PHASE_VERIFY:
+    if prev == ExecutionPhase.EXECUTE and curr == ExecutionPhase.VERIFY:
         modified = chitta.files_written
         if modified:
             file_list = ", ".join(modified[:5])

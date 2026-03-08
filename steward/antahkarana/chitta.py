@@ -18,14 +18,26 @@ knowing "where am I?" from "what have I done?"
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
 
 
-# ── Execution Phases (derived from impressions) ──────────────────────
+class ExecutionPhase(StrEnum):
+    """Execution phases — derived from Chitta impressions.
 
-PHASE_ORIENT = "ORIENT"      # exploring/reading — gathering context
-PHASE_EXECUTE = "EXECUTE"    # making changes — writing/editing
-PHASE_VERIFY = "VERIFY"      # checking work — running tests
-PHASE_COMPLETE = "COMPLETE"  # wrapping up — tests passed after writes
+    StrEnum so values work as dict keys and in string comparisons.
+    """
+
+    ORIENT = "ORIENT"      # exploring/reading — gathering context
+    EXECUTE = "EXECUTE"    # making changes — writing/editing
+    VERIFY = "VERIFY"      # checking work — running tests
+    COMPLETE = "COMPLETE"  # wrapping up — tests passed after writes
+
+
+# Legacy aliases (for backward compat)
+PHASE_ORIENT = ExecutionPhase.ORIENT
+PHASE_EXECUTE = ExecutionPhase.EXECUTE
+PHASE_VERIFY = ExecutionPhase.VERIFY
+PHASE_COMPLETE = ExecutionPhase.COMPLETE
 
 _READ_NAMES = frozenset({"read_file", "glob", "grep"})
 _WRITE_NAMES = frozenset({"edit_file", "write_file"})
@@ -127,7 +139,7 @@ class Chitta:
         self._round = 0
 
     @property
-    def phase(self) -> str:
+    def phase(self) -> ExecutionPhase:
         """Derive current execution phase from accumulated impressions.
 
         ORIENT   — still reading/exploring (or regressed due to errors)

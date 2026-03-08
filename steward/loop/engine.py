@@ -38,6 +38,7 @@ from vibe_core.runtime.tool_safety_guard import ToolSafetyGuard
 from vibe_core.tools.tool_protocol import ToolCall as ProtoToolCall, ToolResult
 from vibe_core.tools.tool_registry import ToolRegistry
 
+from steward.antahkarana.gandha import VerdictAction
 from steward.buddhi import Buddhi, BuddhiDirective, BuddhiVerdict, ModelTier
 from steward.context import SamskaraContext
 from steward.services import tool_descriptions_for_llm
@@ -309,7 +310,7 @@ class AgentLoop:
             if all_calls:
                 usage.buddhi_errors += sum(1 for ok, _ in all_results if not ok)
                 verdict = self._buddhi.evaluate(all_calls, all_results)
-                if verdict.action == "abort":
+                if verdict.action == VerdictAction.ABORT:
                     usage.rounds = round_num + 1
                     usage.buddhi_reflections += 1
                     yield AgentEvent(
@@ -317,10 +318,10 @@ class AgentLoop:
                         content=f"Buddhi abort: {verdict.reason}. {verdict.suggestion}",
                     )
                     return
-                if verdict.action in ("reflect", "redirect"):
+                if verdict.action in (VerdictAction.REFLECT, VerdictAction.REDIRECT):
                     usage.buddhi_reflections += 1
                     # Inject guidance — LLM will reconsider approach
-                    label = "reflection" if verdict.action == "reflect" else "redirect"
+                    label = "reflection" if verdict.action == VerdictAction.REFLECT else "redirect"
                     guidance = (
                         f"[Buddhi {label}: {verdict.reason}] "
                         f"{verdict.suggestion}"

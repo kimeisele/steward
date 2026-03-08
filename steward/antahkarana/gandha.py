@@ -24,6 +24,7 @@ Buddhi decides what to do with them.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
 
 from steward.antahkarana.chitta import Impression
 
@@ -34,21 +35,29 @@ MAX_SAME_TOOL_STREAK = 8  # same tool name repeatedly = likely stuck
 ERROR_RATIO_THRESHOLD = 0.7  # > 70% of calls failing = systemic issue
 
 
+class VerdictAction(StrEnum):
+    """Verdict/detection actions — single source of truth.
+
+    Shared between Detection.severity and BuddhiVerdict.action.
+    StrEnum so values flow directly from Gandha to Buddhi.
+    """
+
+    CONTINUE = "continue"   # proceed normally (verdict only)
+    REFLECT = "reflect"     # inject reflection prompt
+    REDIRECT = "redirect"   # suggest alternative approach
+    ABORT = "abort"         # stop the loop (unrecoverable)
+    INFO = "info"           # informational only (detection only)
+
+
 @dataclass(frozen=True)
 class Detection:
     """A detected pattern from Gandha analysis.
 
     Gandha detects, Buddhi decides. The severity is a hint,
     not a command — Buddhi may override.
-
-    Severities:
-        abort    — unrecoverable, stop the loop
-        redirect — known fix pattern, suggest alternative
-        reflect  — inject reflection prompt
-        info     — informational only
     """
 
-    severity: str  # "abort" | "redirect" | "reflect" | "info"
+    severity: VerdictAction
     pattern: str  # name of the detected pattern
     reason: str = ""  # human-readable explanation
     suggestion: str = ""  # what to do about it
@@ -103,7 +112,7 @@ def _check_consecutive_errors(impressions: list[Impression]) -> Detection | None
     if all(not r.success for r in recent):
         unique_errors = set(r.error[:80] for r in recent if r.error)
         return Detection(
-            severity="abort",
+            severity=VerdictAction.ABORT,
             pattern="consecutive_errors",
             reason=f"{MAX_CONSECUTIVE_ERRORS} consecutive errors",
             suggestion=(
@@ -125,7 +134,7 @@ def _check_identical_calls(impressions: list[Impression]) -> Detection | None:
         for r in recent
     ):
         return Detection(
-            severity="reflect",
+            severity=VerdictAction.REFLECT,
             pattern="identical_calls",
             reason=f"Identical call repeated {MAX_IDENTICAL_CALLS}x: {recent[0].name}",
             suggestion=(
@@ -161,7 +170,7 @@ def _check_failure_redirect(
         for r in recent
     ):
         return Detection(
-            severity="redirect",
+            severity=VerdictAction.REDIRECT,
             pattern="edit_needs_read",
             reason="edit_file failed 2x — old_string not found in file",
             suggestion=(
@@ -173,7 +182,7 @@ def _check_failure_redirect(
     # Pattern: write_file failed twice -> likely path or permission issue
     if all(r.name == "write_file" and not r.success for r in recent):
         return Detection(
-            severity="redirect",
+            severity=VerdictAction.REDIRECT,
             pattern="write_path_issue",
             reason="write_file failed 2x",
             suggestion=(
@@ -193,7 +202,7 @@ def _check_failure_redirect(
     ):
         tool_list = ", ".join(sorted(available_tools)) if available_tools else "bash, read_file, write_file, edit_file, glob, grep, sub_agent"
         return Detection(
-            severity="redirect",
+            severity=VerdictAction.REDIRECT,
             pattern="route_miss",
             reason="Repeated tool route misses — requesting non-existent tools",
             suggestion=f"Available tools: {tool_list}. Use only these tool names.",
@@ -242,7 +251,7 @@ def _check_write_without_read(
             return None  # File was read this turn — all good
 
     return Detection(
-        severity="redirect",
+        severity=VerdictAction.REDIRECT,
         pattern="write_without_read",
         reason=f"Blind write to '{last.path}' — file was never read first",
         suggestion=(
@@ -274,7 +283,7 @@ def _check_duplicate_read(impressions: list[Impression]) -> Detection | None:
             and imp.path == last.path
         ):
             return Detection(
-                severity="redirect",
+                severity=VerdictAction.REDIRECT,
                 pattern="duplicate_read",
                 reason=f"File already read: {last.path}",
                 suggestion=(
@@ -297,7 +306,7 @@ def _check_tool_streak(impressions: list[Impression]) -> Detection | None:
         if recent[0].name == "read_file":
             return None
         return Detection(
-            severity="reflect",
+            severity=VerdictAction.REFLECT,
             pattern="tool_streak",
             reason=f"Same tool '{recent[0].name}' used {MAX_SAME_TOOL_STREAK}x consecutively",
             suggestion=(
@@ -319,7 +328,7 @@ def _check_error_ratio(impressions: list[Impression]) -> Detection | None:
 
     if ratio >= ERROR_RATIO_THRESHOLD:
         return Detection(
-            severity="reflect",
+            severity=VerdictAction.REFLECT,
             pattern="error_ratio",
             reason=f"Error ratio {ratio:.0%} exceeds threshold ({ERROR_RATIO_THRESHOLD:.0%})",
             suggestion=(

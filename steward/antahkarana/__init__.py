@@ -21,14 +21,15 @@ This decomposition follows BG 13.6-7 (Kshetra elements).
 """
 
 from steward.antahkarana.chitta import (
+    Chitta,
+    ExecutionPhase,
+    Impression,
     PHASE_COMPLETE,
     PHASE_EXECUTE,
     PHASE_ORIENT,
     PHASE_VERIFY,
-    Chitta,
-    Impression,
 )
-from steward.antahkarana.gandha import Detection, detect_patterns
+from steward.antahkarana.gandha import Detection, VerdictAction, detect_patterns
 from steward.antahkarana.manas import Manas, ManasPerception
 
 __all__ = [
@@ -36,6 +37,8 @@ __all__ = [
     "ManasPerception",
     "Chitta",
     "Impression",
+    "ExecutionPhase",
+    "VerdictAction",
     "PHASE_ORIENT",
     "PHASE_EXECUTE",
     "PHASE_VERIFY",
