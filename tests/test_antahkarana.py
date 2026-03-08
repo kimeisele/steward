@@ -223,6 +223,43 @@ class TestGandha:
         d = detect_patterns(imps)
         assert d is None
 
+    def test_duplicate_read_detected(self):
+        """Reading the same file twice is a redirect."""
+        imps = [
+            Impression("read_file", 1, True, path="/src/main.py"),
+            Impression("glob", 2, True),
+            Impression("read_file", 3, True, path="/src/main.py"),
+        ]
+        d = detect_patterns(imps)
+        assert d is not None
+        assert d.severity == "redirect"
+        assert d.pattern == "duplicate_read"
+        assert "main.py" in d.suggestion
+
+    def test_duplicate_read_different_files_ok(self):
+        """Reading different files is fine."""
+        imps = [
+            Impression("read_file", 1, True, path="/src/a.py"),
+            Impression("read_file", 2, True, path="/src/b.py"),
+        ]
+        assert detect_patterns(imps) is None
+
+    def test_duplicate_read_failed_first_ok(self):
+        """Re-reading after a failed read is fine."""
+        imps = [
+            Impression("read_file", 1, False, "not found", path="/src/main.py"),
+            Impression("read_file", 2, True, path="/src/main.py"),
+        ]
+        assert detect_patterns(imps) is None
+
+    def test_duplicate_read_no_path_ignored(self):
+        """Reads without paths are not duplicate-checked."""
+        imps = [
+            Impression("read_file", 1, True),
+            Impression("read_file", 2, True),
+        ]
+        assert detect_patterns(imps) is None
+
     def test_detection_is_frozen(self):
         d = Detection(severity="abort", pattern="test", reason="test")
         import pytest

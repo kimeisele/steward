@@ -62,6 +62,7 @@ def detect_patterns(impressions: list[Impression]) -> Detection | None:
         _check_consecutive_errors,
         _check_identical_calls,
         _check_failure_redirect,
+        _check_duplicate_read,
         _check_tool_streak,
         _check_error_ratio,
     ]
@@ -176,6 +177,39 @@ def _check_failure_redirect(impressions: list[Impression]) -> Detection | None:
                 "glob, grep. Use only these tool names."
             ),
         )
+
+    return None
+
+
+def _check_duplicate_read(impressions: list[Impression]) -> Detection | None:
+    """Detect reading the same file twice — wasted tokens.
+
+    Only triggers if the MOST RECENT impression is a duplicate read.
+    The file was already read successfully earlier in this turn.
+    """
+    if len(impressions) < 2:
+        return None
+
+    last = impressions[-1]
+    if last.name != "read_file" or not last.success or not last.path:
+        return None
+
+    # Check if this path was already read successfully earlier
+    for imp in impressions[:-1]:
+        if (
+            imp.name == "read_file"
+            and imp.success
+            and imp.path == last.path
+        ):
+            return Detection(
+                severity="redirect",
+                pattern="duplicate_read",
+                reason=f"File already read: {last.path}",
+                suggestion=(
+                    f"You already read '{last.path}' earlier in this turn. "
+                    f"Use the content from your earlier read instead of re-reading."
+                ),
+            )
 
     return None
 
