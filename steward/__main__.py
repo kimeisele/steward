@@ -88,6 +88,7 @@ _TOOL_PARAM_KEY: dict[str, str] = {
     "glob": "pattern",
     "grep": "pattern",
     "http": "url",
+    "agent_internet": "action",
     "sub_agent": "task",
 }
 
