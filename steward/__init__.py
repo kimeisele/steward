@@ -10,7 +10,7 @@ Public API:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 __version__ = "0.13.1"
 
@@ -29,7 +29,7 @@ __all__ = [
 ]
 
 
-def __getattr__(name: str) -> Any:
+def __getattr__(name: str) -> object:
     if name == "StewardAgent":
         from steward.agent import StewardAgent as _StewardAgent
 

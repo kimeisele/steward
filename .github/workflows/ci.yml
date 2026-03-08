@@ -23,8 +23,8 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install steward with dev deps
-        run: pip install -e ".[providers,dev]"
+      - name: Install steward with all extras
+        run: pip install -e ".[providers,api,dev]"
 
       - name: Run tests
         run: pytest tests/ -x -q --timeout=30
@@ -42,8 +42,8 @@ jobs:
       - name: Install ruff
         run: pip install ruff
 
-      - name: Ruff check
-        run: ruff check steward/ --select=E9,F63,F7,F82 --output-format=github
+      - name: Ruff check (steward + tests)
+        run: ruff check steward/ tests/ --select=E9,F63,F7,F82 --output-format=github
 
-      - name: Ruff format check
-        run: ruff format --check steward/
+      - name: Ruff format check (steward + tests)
+        run: ruff format --check steward/ tests/

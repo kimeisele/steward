@@ -51,7 +51,9 @@ def fetch_semantic_contracts(
 ) -> dict:
     query = _query(capability_id=capability_id, contract_id=contract_id, version=version)
     suffix = f"?{urllib.parse.urlencode(query)}" if query else ""
-    payload = _request_json(config or load_agent_internet_proxy_config(), f"/v1/lotus/agent-web-semantic-contracts{suffix}")
+    payload = _request_json(
+        config or load_agent_internet_proxy_config(), f"/v1/lotus/agent-web-semantic-contracts{suffix}"
+    )
     return dict(payload["agent_web_semantic_contracts"])
 
 
