@@ -39,6 +39,7 @@ from steward.services import (
     SVC_ATTENTION,
     SVC_EVENT_BUS,
     SVC_MEMORY,
+    SVC_NARASIMHA,
     SVC_PROMPT_CONTEXT,
     SVC_SAFETY_GUARD,
     SVC_SIGNAL_BUS,
@@ -313,6 +314,7 @@ class StewardAgent(GADBase):
             attention=self._attention,
             memory=self._memory,
             buddhi=self._buddhi,
+            narasimha=ServiceRegistry.get(SVC_NARASIMHA),
         )
         async for event in loop.run(task):
             self._emit_signal(event)

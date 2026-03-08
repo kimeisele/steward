@@ -918,6 +918,69 @@ class TestFeedbackAdaptiveRouting:
         assert r.content == "expensive_clean response"
 
 
+class TestNormalizeUsage:
+    """Tests for _normalize_usage at the adapter boundary."""
+
+    def test_normalize_none(self):
+        from steward.provider import _normalize_usage
+        u = _normalize_usage(None)
+        assert u.input_tokens == 0
+        assert u.output_tokens == 0
+
+    def test_normalize_openai_format(self):
+        """OpenAI uses prompt_tokens/completion_tokens."""
+        from steward.provider import _normalize_usage
+        from dataclasses import dataclass
+
+        @dataclass
+        class OpenAIUsage:
+            prompt_tokens: int = 100
+            completion_tokens: int = 50
+
+        u = _normalize_usage(OpenAIUsage())
+        assert u.input_tokens == 100
+        assert u.output_tokens == 50
+
+    def test_normalize_anthropic_format(self):
+        """Anthropic uses input_tokens/output_tokens."""
+        from steward.provider import _normalize_usage
+        from dataclasses import dataclass
+
+        @dataclass
+        class AnthropicUsage:
+            input_tokens: int = 200
+            output_tokens: int = 80
+
+        u = _normalize_usage(AnthropicUsage())
+        assert u.input_tokens == 200
+        assert u.output_tokens == 80
+
+    def test_adapter_response_returns_llm_usage(self):
+        """_AdapterResponse.usage returns LLMUsage, not raw object."""
+        from steward.provider import _AdapterResponse
+        from steward.types import LLMUsage
+        from dataclasses import dataclass
+
+        @dataclass
+        class FakeChoice:
+            message: object = None
+            def __post_init__(self):
+                self.message = type("M", (), {"content": "hi", "tool_calls": None})()
+
+        @dataclass
+        class FakeRaw:
+            choices: list = None
+            usage: object = None
+            def __post_init__(self):
+                self.choices = [FakeChoice()]
+                self.usage = type("U", (), {"prompt_tokens": 42, "completion_tokens": 13})()
+
+        resp = _AdapterResponse(FakeRaw())
+        assert isinstance(resp.usage, LLMUsage)
+        assert resp.usage.input_tokens == 42
+        assert resp.usage.output_tokens == 13
+
+
 class TestGroqCell:
     """Tests for Groq provider cell in build_chamber."""
 

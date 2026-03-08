@@ -19,6 +19,18 @@ from vibe_core.tools.tool_protocol import ToolResult
 JsonValue = str | int | float | bool | None | list | dict
 
 
+@dataclass
+class LLMUsage:
+    """Normalized token usage from any LLM provider.
+
+    Adapters normalize vendor-specific names (prompt_tokens, completion_tokens)
+    to this canonical format at the boundary. Consumers never need getattr cascades.
+    """
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+
+
 @runtime_checkable
 class LLMProvider(Protocol):
     """Protocol for LLM providers.

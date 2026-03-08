@@ -32,6 +32,7 @@ from typing import AsyncIterator
 
 from vibe_core.mahamantra.adapters.attention import MahaAttention
 from vibe_core.mahamantra.adapters.compression import MahaCompression
+from vibe_core.protocols.mahajanas.nrisimha.types.narasimha import NarasimhaProtocol, ThreatLevel
 from vibe_core.protocols.memory import MemoryProtocol
 from vibe_core.runtime.tool_safety_guard import ToolSafetyGuard
 from vibe_core.tools.tool_protocol import ToolCall as ProtoToolCall, ToolResult
@@ -94,6 +95,7 @@ class AgentLoop:
         attention: MahaAttention | None = None,
         memory: MemoryProtocol | None = None,
         buddhi: Buddhi | None = None,
+        narasimha: NarasimhaProtocol | None = None,
     ) -> None:
         self._provider = provider
         self._registry = registry
@@ -102,6 +104,7 @@ class AgentLoop:
         self._safety_guard = safety_guard
         self._attention = attention
         self._memory = memory
+        self._narasimha = narasimha
         self._samskara = SamskaraContext()
         self._buddhi = buddhi or Buddhi()  # Use injected or create fresh
         self._compression = MahaCompression()
@@ -128,6 +131,9 @@ class AgentLoop:
 
         self._conversation.add(Message(role="user", content=user_message))
         usage = AgentUsage()
+
+        # Context management: once at turn start (not every round)
+        self._manage_context()
 
         for round_num in range(MAX_TOOL_ROUNDS):
             # Buddhi pre-flight: deterministic tool selection + token budget
@@ -208,6 +214,33 @@ class AgentLoop:
                             tool_use=tc,
                         )
                         blocked.append((tc, error_msg))
+                        continue
+
+                # Narasimha killswitch: audit bash commands for dangerous patterns
+                if self._narasimha and tc.name == "bash":
+                    cmd = str(tc.parameters.get("command", ""))
+                    threat = self._narasimha.audit_agent(
+                        "steward", cmd, {"tool": tc.name},
+                    )
+                    _SEVERITY_RANK = {
+                        ThreatLevel.GREEN: 0,
+                        ThreatLevel.YELLOW: 1,
+                        ThreatLevel.ORANGE: 2,
+                        ThreatLevel.RED: 3,
+                        ThreatLevel.APOCALYPSE: 4,
+                    }
+                    if threat and _SEVERITY_RANK.get(threat.severity, 0) >= _SEVERITY_RANK[ThreatLevel.RED]:
+                        error_msg = f"Narasimha blocked: {threat.description}"
+                        self._conversation.add(
+                            Message(role="tool", content=f"[Error] {error_msg}", tool_use_id=tc.id)
+                        )
+                        yield AgentEvent(
+                            type="tool_result",
+                            content=ToolResult(success=False, error=error_msg),
+                            tool_use=tc,
+                        )
+                        blocked.append((tc, error_msg))
+                        logger.warning("Narasimha blocked bash: %s", threat.description)
                         continue
 
                 # Iron Dome safety check
@@ -357,20 +390,16 @@ class AgentLoop:
 
     @staticmethod
     def _accumulate_usage(response: object, usage: AgentUsage) -> None:
-        """Extract token counts from LLM response and add to usage."""
+        """Extract token counts from LLM response and add to usage.
+
+        Adapters normalize usage to LLMUsage at the boundary,
+        so we just read .input_tokens and .output_tokens directly.
+        """
         if not hasattr(response, "usage") or response.usage is None:  # type: ignore[attr-defined]
             return
         resp_usage = response.usage  # type: ignore[attr-defined]
-        usage.input_tokens += (
-            getattr(resp_usage, "input_tokens", 0)
-            or getattr(resp_usage, "prompt_tokens", 0)
-            or 0
-        )
-        usage.output_tokens += (
-            getattr(resp_usage, "output_tokens", 0)
-            or getattr(resp_usage, "completion_tokens", 0)
-            or 0
-        )
+        usage.input_tokens += getattr(resp_usage, "input_tokens", 0) or 0
+        usage.output_tokens += getattr(resp_usage, "output_tokens", 0) or 0
 
     def _record_file_op(self, path: str, op: str) -> None:
         """Record file operation in Memory for cross-turn awareness."""
@@ -458,7 +487,6 @@ class AgentLoop:
 
         Retries once on transient failure before returning None.
         """
-        self._manage_context()
         kwargs = self._build_llm_kwargs(directive)
 
         for attempt in range(1 + LLM_MAX_RETRIES):
@@ -484,7 +512,6 @@ class AgentLoop:
         if not hasattr(self._provider, "invoke_stream"):
             return await self._call_llm(directive)
 
-        self._manage_context()
         kwargs = self._build_llm_kwargs(directive)
 
         try:

@@ -1,6 +1,6 @@
-"""Tests for core types: Message, Conversation, ToolUse."""
+"""Tests for core types: Message, Conversation, ToolUse, LLMUsage."""
 
-from steward.types import Conversation, Message, ToolUse
+from steward.types import Conversation, LLMUsage, Message, ToolUse
 
 
 class TestMessage:
@@ -20,6 +20,18 @@ class TestMessage:
         msg = Message(role="assistant", content="", tool_uses=[tu])
         assert len(msg.tool_uses) == 1
         assert msg.tool_uses[0].name == "bash"
+
+
+class TestLLMUsage:
+    def test_defaults(self):
+        u = LLMUsage()
+        assert u.input_tokens == 0
+        assert u.output_tokens == 0
+
+    def test_explicit_values(self):
+        u = LLMUsage(input_tokens=100, output_tokens=50)
+        assert u.input_tokens == 100
+        assert u.output_tokens == 50
 
 
 class TestConversation:

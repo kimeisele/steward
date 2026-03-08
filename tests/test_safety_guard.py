@@ -201,3 +201,104 @@ class TestSafetyGuard:
         guard.record_file_read("/tmp/test.py")
         guard.reset_session()
         assert not guard._was_file_read("/tmp/test.py")
+
+
+class TestNarasimhaIntegration:
+    """Tests for NarasimhaProtocol (hypervisor killswitch) in AgentLoop."""
+
+    def test_narasimha_blocks_dangerous_bash(self):
+        """Bash command with exec() is blocked by Narasimha.
+
+        Uses pure Python code so Narasimha's AST parser detects exec() → RED.
+        """
+        from vibe_core.protocols.mahajanas.nrisimha.types.narasimha import NarasimhaProtocol
+        from steward.tools.bash import BashTool
+
+        narasimha = NarasimhaProtocol()
+        reg = ToolRegistry()
+        reg.register(BashTool())
+
+        # Pure Python: ast.parse() succeeds, exec() detected at RED severity
+        tc = FakeToolCall(
+            id="call_bash",
+            function=FakeFunction(
+                name="bash",
+                arguments={"command": "exec(open('/etc/passwd').read())"},
+            ),
+        )
+        llm = FakeLLM([
+            FakeResponse(content="", tool_calls=[tc]),
+            FakeResponse(content="blocked"),
+        ])
+        conv = Conversation()
+        loop = AgentLoop(
+            provider=llm, registry=reg, conversation=conv, narasimha=narasimha,
+        )
+
+        _, events = _run(loop, "dangerous command")
+        tool_results = [e for e in events if e.type == "tool_result"]
+        assert len(tool_results) == 1
+        assert not tool_results[0].content.success
+        assert "Narasimha" in tool_results[0].content.error
+
+    def test_narasimha_allows_safe_bash(self):
+        """Normal bash commands are not blocked."""
+        from vibe_core.protocols.mahajanas.nrisimha.types.narasimha import NarasimhaProtocol
+        from steward.tools.bash import BashTool
+
+        narasimha = NarasimhaProtocol()
+        reg = ToolRegistry()
+        reg.register(BashTool())
+
+        tc = FakeToolCall(
+            id="call_bash",
+            function=FakeFunction(
+                name="bash",
+                arguments={"command": "echo hello"},
+            ),
+        )
+        llm = FakeLLM([
+            FakeResponse(content="", tool_calls=[tc]),
+            FakeResponse(content="done"),
+        ])
+        conv = Conversation()
+        loop = AgentLoop(
+            provider=llm, registry=reg, conversation=conv, narasimha=narasimha,
+        )
+
+        text, events = _run(loop, "safe command")
+        assert text == "done"
+        tool_results = [e for e in events if e.type == "tool_result"]
+        assert len(tool_results) == 1
+        assert tool_results[0].content.success
+
+    def test_no_narasimha_no_blocking(self):
+        """Without Narasimha wired, no blocking occurs."""
+        from steward.tools.bash import BashTool
+
+        reg = ToolRegistry()
+        reg.register(BashTool())
+
+        tc = FakeToolCall(
+            id="call_bash",
+            function=FakeFunction(name="bash", arguments={"command": "echo hi"}),
+        )
+        llm = FakeLLM([
+            FakeResponse(content="", tool_calls=[tc]),
+            FakeResponse(content="done"),
+        ])
+        conv = Conversation()
+        loop = AgentLoop(provider=llm, registry=reg, conversation=conv)
+
+        text, _ = _run(loop, "test")
+        assert text == "done"
+
+    def test_narasimha_in_services(self):
+        """NarasimhaProtocol is booted and retrievable from ServiceRegistry."""
+        from steward.services import SVC_NARASIMHA, boot
+        from vibe_core.di import ServiceRegistry
+
+        boot()
+        narasimha = ServiceRegistry.get(SVC_NARASIMHA)
+        assert narasimha is not None
+        assert not narasimha.is_active()  # dormant until needed

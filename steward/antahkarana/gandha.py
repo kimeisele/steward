@@ -57,6 +57,7 @@ class Detection:
 def detect_patterns(
     impressions: list[Impression],
     prior_reads: frozenset[str] = frozenset(),
+    available_tools: frozenset[str] | None = None,
 ) -> Detection | None:
     """Run all detection checks against impressions.
 
@@ -66,21 +67,24 @@ def detect_patterns(
     Args:
         impressions: Current turn's recorded tool impressions
         prior_reads: Files read in previous turns (cross-turn awareness)
+        available_tools: Currently available tool names (for route miss guidance)
     """
     # Standard checks (no cross-turn context needed)
-    simple_checks = [
+    for check in [
         _check_consecutive_errors,
         _check_identical_calls,
-        _check_failure_redirect,
         _check_duplicate_read,
         _check_tool_streak,
         _check_error_ratio,
-    ]
-
-    for check in simple_checks:
+    ]:
         result = check(impressions)
         if result is not None:
             return result
+
+    # Failure redirect (needs available tools for guidance)
+    result = _check_failure_redirect(impressions, available_tools)
+    if result is not None:
+        return result
 
     # Cross-turn aware checks
     result = _check_write_without_read(impressions, prior_reads)
@@ -133,7 +137,10 @@ def _check_identical_calls(impressions: list[Impression]) -> Detection | None:
     return None
 
 
-def _check_failure_redirect(impressions: list[Impression]) -> Detection | None:
+def _check_failure_redirect(
+    impressions: list[Impression],
+    available_tools: frozenset[str] | None = None,
+) -> Detection | None:
     """Redirect to a better tool when failure patterns are recognizable.
 
     Deterministic pattern matching — common failure modes have known fixes:
@@ -184,14 +191,12 @@ def _check_failure_redirect(impressions: list[Impression]) -> Detection | None:
         )
         and sum(1 for r in recent if not r.success) >= 2
     ):
+        tool_list = ", ".join(sorted(available_tools)) if available_tools else "bash, read_file, write_file, edit_file, glob, grep, sub_agent"
         return Detection(
             severity="redirect",
             pattern="route_miss",
             reason="Repeated tool route misses — requesting non-existent tools",
-            suggestion=(
-                "Available tools: bash, read_file, write_file, edit_file, "
-                "glob, grep. Use only these tool names."
-            ),
+            suggestion=f"Available tools: {tool_list}. Use only these tool names.",
         )
 
     return None

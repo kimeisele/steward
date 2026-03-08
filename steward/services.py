@@ -62,6 +62,10 @@ class SVC_PROMPT_CONTEXT:
     """PromptContext — dynamic context resolvers for system prompt."""
 
 
+class SVC_NARASIMHA:
+    """NarasimhaProtocol — hypervisor-level emergency killswitch."""
+
+
 # ── Boot ─────────────────────────────────────────────────────────────
 
 
@@ -131,7 +135,13 @@ def boot(
     event_bus = EventBus(rate_limit_enabled=False)  # steward is trusted
     ServiceRegistry.register(SVC_EVENT_BUS, event_bus)
 
-    # 9. PromptContext (dynamic system prompt resolvers)
+    # 9. NarasimhaProtocol (hypervisor killswitch — dormant until needed)
+    from vibe_core.protocols.mahajanas.nrisimha.types.narasimha import NarasimhaProtocol
+
+    narasimha = NarasimhaProtocol()
+    ServiceRegistry.register(SVC_NARASIMHA, narasimha)
+
+    # 10. PromptContext (dynamic system prompt resolvers)
     from pathlib import Path
 
     from vibe_core.runtime.prompt_context import PromptContext

@@ -532,6 +532,44 @@ class TestChittaCrossTurn:
         assert chitta.stats["prior_reads"] == 1
 
 
+class TestGandhaAvailableTools:
+    """Test Gandha route_miss with dynamic available_tools parameter."""
+
+    def test_route_miss_uses_available_tools(self):
+        """Route miss suggestion includes dynamically-provided tool names."""
+        imps = [
+            Impression("bad_tool", 1, False, "Tool 'bad_tool' not found (O(1) route miss)"),
+            Impression("worse_tool", 2, False, "Tool 'worse_tool' not found (O(1) route miss)"),
+        ]
+        tools = frozenset({"bash", "read_file", "sub_agent"})
+        d = detect_patterns(imps, available_tools=tools)
+        assert d is not None
+        assert d.pattern == "route_miss"
+        assert "bash" in d.suggestion
+        assert "read_file" in d.suggestion
+        assert "sub_agent" in d.suggestion
+
+    def test_route_miss_without_tools_uses_default(self):
+        """Route miss without available_tools uses hardcoded default list."""
+        imps = [
+            Impression("bad", 1, False, "Tool 'bad' not found"),
+            Impression("worse", 2, False, "Tool 'worse' not found"),
+        ]
+        d = detect_patterns(imps)
+        assert d is not None
+        assert "sub_agent" in d.suggestion  # default includes sub_agent now
+
+    def test_other_patterns_unaffected_by_available_tools(self):
+        """Non-route-miss patterns work the same regardless of available_tools."""
+        imps = [
+            Impression("bash", i, False, f"err {i}")
+            for i in range(MAX_CONSECUTIVE_ERRORS)
+        ]
+        d = detect_patterns(imps, available_tools=frozenset({"bash", "read_file"}))
+        assert d is not None
+        assert d.pattern == "consecutive_errors"  # not affected by available_tools
+
+
 class TestGandhaCrossTurn:
     """Test Gandha cross-turn awareness (write-without-read with prior_reads)."""
 

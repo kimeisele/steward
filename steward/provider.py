@@ -32,7 +32,7 @@ from vibe_core.runtime.circuit_breaker import (
 )
 from vibe_core.runtime.quota_manager import OperationalQuota, QuotaExceededError, QuotaLimits
 
-from steward.types import LLMProvider
+from steward.types import LLMProvider, LLMUsage
 
 logger = logging.getLogger("STEWARD.PROVIDER")
 
@@ -262,19 +262,13 @@ class ProviderChamber:
                     if breaker:
                         breaker._record_success()
 
-                    # Track usage
+                    # Track usage (adapters normalize to LLMUsage)
                     input_tokens = 0
                     output_tokens = 0
                     if hasattr(response, "usage") and response.usage:  # type: ignore[attr-defined]
-                        usage = response.usage  # type: ignore[attr-defined]
-                        input_tokens = (
-                            getattr(usage, "input_tokens", 0)
-                            or getattr(usage, "prompt_tokens", 0)
-                        )
-                        output_tokens = (
-                            getattr(usage, "output_tokens", 0)
-                            or getattr(usage, "completion_tokens", 0)
-                        )
+                        resp_usage = response.usage  # type: ignore[attr-defined]
+                        input_tokens = getattr(resp_usage, "input_tokens", 0) or 0
+                        output_tokens = getattr(resp_usage, "output_tokens", 0) or 0
 
                     # Cell lifecycle: metabolize with token cost as energy drain.
                     # metabolize() handles: METABOLIC_COST decay, age cycling,
@@ -701,7 +695,7 @@ class MistralAdapter:
             response=_StreamedResponse(
                 text=full_text,
                 tool_calls=[tc.build() for tc in tool_calls] if tool_calls else None,  # type: ignore[attr-defined]
-                usage=usage,
+                _raw_usage=usage,
             ),
         )
 
@@ -756,11 +750,28 @@ class _StreamedResponse:
 
     text: str
     tool_calls: list | None = None
-    usage: object = None
+    _raw_usage: object = None
 
     @property
     def content(self) -> str:
         return self.text
+
+    @property
+    def usage(self) -> LLMUsage:
+        return _normalize_usage(self._raw_usage)
+
+
+def _normalize_usage(raw_usage: object) -> LLMUsage:
+    """Normalize vendor-specific usage to LLMUsage at the adapter boundary.
+
+    Handles: OpenAI (prompt_tokens/completion_tokens),
+             Anthropic (input_tokens/output_tokens), and mixed formats.
+    """
+    if raw_usage is None:
+        return LLMUsage()
+    inp = getattr(raw_usage, "input_tokens", 0) or getattr(raw_usage, "prompt_tokens", 0) or 0
+    out = getattr(raw_usage, "output_tokens", 0) or getattr(raw_usage, "completion_tokens", 0) or 0
+    return LLMUsage(input_tokens=inp, output_tokens=out)
 
 
 @dataclass
@@ -779,8 +790,8 @@ class _AdapterResponse:
         return getattr(choice, "tool_calls", None)
 
     @property
-    def usage(self) -> object | None:
-        return getattr(self._raw, "usage", None)
+    def usage(self) -> LLMUsage:
+        return _normalize_usage(getattr(self._raw, "usage", None))
 
 
 class AnthropicAdapter:

@@ -365,9 +365,11 @@ class Buddhi:
             )
 
         # Gandha detects patterns in Chitta's impressions (cross-turn aware)
+        all_tools = resolve_namespaces(frozenset(ToolNamespace))
         detection = detect_patterns(
             self._chitta.impressions,
             prior_reads=self._chitta.prior_reads,
+            available_tools=all_tools,
         )
         if detection is not None:
             verdict = BuddhiVerdict(
