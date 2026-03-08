@@ -22,7 +22,7 @@ from steward.senses.code_sense import CodeSense
 from steward.senses.git_sense import GitSense
 from steward.senses.health_sense import HealthSense
 from steward.senses.project_sense import ProjectSense
-from steward.senses.test_sense import TestSense
+from steward.senses.testing_sense import TestingSense
 from vibe_core.mahamantra.protocols._sense import (
     AggregatePerception,
     Jnanendriya,
@@ -142,7 +142,7 @@ class SenseCoordinator:
             GitSense(cwd=self._cwd),
             ProjectSense(cwd=self._cwd),
             CodeSense(cwd=self._cwd),
-            TestSense(cwd=self._cwd),
+            TestingSense(cwd=self._cwd),
             HealthSense(cwd=self._cwd),
         ]
         for sense in senses:

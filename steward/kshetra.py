@@ -142,8 +142,8 @@ STEWARD_KSHETRA: Final[dict[PrakritiElement, TattvaMapping]] = {
     PrakritiElement.RASANA: TattvaMapping(
         element=PrakritiElement.RASANA,
         layer=ELEMENT_PROTOCOL_LAYER[PrakritiElement.RASANA],
-        module="steward.senses.test_sense",
-        component="TestSense",
+        module="steward.senses.testing_sense",
+        component="TestingSense",
         role="Taste code quality via test framework (results, coverage)",
     ),
     PrakritiElement.GHRANA: TattvaMapping(
