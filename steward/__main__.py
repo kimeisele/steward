@@ -199,8 +199,18 @@ def main() -> None:
         "--output", choices=["human", "json"], default="human",
         help="Output format (default: human)",
     )
+    parser.add_argument(
+        "--telegram", action="store_true",
+        help="Run as Telegram bot (requires TELEGRAM_BOT_TOKEN)",
+    )
 
     args = parser.parse_args()
+
+    # Telegram mode — delegate to telegram interface
+    if args.telegram:
+        from steward.interfaces.telegram import main as telegram_main
+        telegram_main()
+        return
 
     # Build provider chamber from environment
     chamber = build_chamber()
