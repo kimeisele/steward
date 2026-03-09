@@ -25,5 +25,6 @@ Usage:
 from __future__ import annotations
 
 from steward.senses.coordinator import SenseCoordinator
+from steward.senses.gh import GhClient, get_gh_client
 
-__all__ = ["SenseCoordinator"]
+__all__ = ["SenseCoordinator", "GhClient", "get_gh_client"]

@@ -19,6 +19,7 @@ import logging
 from pathlib import Path
 
 from steward.senses.code_sense import CodeSense
+from steward.senses.gh import get_gh_client
 from steward.senses.git_sense import GitSense
 from steward.senses.health_sense import HealthSense
 from steward.senses.project_sense import ProjectSense
@@ -148,8 +149,9 @@ class SenseCoordinator:
 
     def _boot(self) -> None:
         """Boot all 5 senses — fails hard if any sense is missing."""
+        gh = get_gh_client()
         senses: list[SenseProtocol] = [
-            GitSense(cwd=self._cwd),
+            GitSense(cwd=self._cwd, gh_client=gh),
             ProjectSense(cwd=self._cwd),
             CodeSense(cwd=self._cwd),
             TestingSense(cwd=self._cwd),
@@ -174,12 +176,17 @@ class SenseCoordinator:
         data = perception.data
 
         if jnanendriya == Jnanendriya.SROTRA:
-            # Git sense — compact: branch + dirty only
+            # Git sense — compact: branch + dirty + remote
             if not data.get("is_git"):
                 return ""
             branch = data.get("branch", "?")
             dirty = data.get("dirty_count", 0)
-            return f"Git: {branch}, {dirty} dirty"
+            line = f"Git: {branch}, {dirty} dirty"
+            if data.get("perceives") == "local+remote":
+                ci = data.get("ci_conclusion", "?")
+                prs = data.get("open_prs", 0)
+                line += f", ci={ci}, {prs} open PRs"
+            return line
 
         if jnanendriya == Jnanendriya.TVAK:
             # Project sense — compact: language only

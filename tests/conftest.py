@@ -95,6 +95,10 @@ def _reset_singletons(monkeypatch):
     except ImportError:
         pass
 
+    # Reset GhClient singleton (prevent test contamination)
+    from steward.senses.gh import _reset_gh_client
+    _reset_gh_client()
+
 
 @pytest.fixture
 def tmp_dir() -> Generator[Path, None, None]:
