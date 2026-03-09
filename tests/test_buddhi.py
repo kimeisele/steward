@@ -199,9 +199,9 @@ class TestPreFlightSubstrate:
         """Directive includes MahaBuddhi cognitive frame."""
         buddhi = Buddhi()
         d = buddhi.pre_flight("implement a new router", 0)
-        # function and approach come from MahaBuddhi.think()
-        assert d.function != ""  # BRAHMA/VISHNU/SHIVA
-        assert d.approach != ""  # GENESIS/DHARMA/KARMA/MOKSHA
+        # function and approach come from MahaBuddhi.think() (lowercase from VM)
+        assert d.function != ""  # carrier/deliverer/enhancer/creator/maintainer/destroyer
+        assert d.approach != ""  # genesis/dharma/karma/moksha
 
     def test_pre_flight_tool_selection_not_empty(self):
         """Pre-flight selects at least some tools for real messages."""
@@ -511,74 +511,86 @@ class TestHebbianTierEscalation:
     """Tests for Hebbian learning — real HebbianSynaptic from steward-protocol."""
 
     def test_no_synaptic_keeps_default_tier(self):
-        """Without HebbianSynaptic, tiers stay at defaults."""
+        """Without HebbianSynaptic, tiers stay at action defaults."""
         buddhi = Buddhi()  # no synaptic
         directive = buddhi.pre_flight("fix the broken test", 0)
-        assert directive.tier == ModelTier.FLASH
+        # Tier matches action default (whatever Manas classifies)
+        from steward.buddhi import _ACTION_TIER
+        assert directive.tier == _ACTION_TIER[directive.action]
 
     def test_flash_escalates_to_standard_on_low_weight(self):
         """FLASH tier escalates to STANDARD when synaptic weight < 0.4."""
         synaptic = HebbianSynaptic()
         buddhi = Buddhi(synaptic=synaptic)
-        # Classify to get the action type
-        d0 = buddhi.pre_flight("fix the broken test", 0)
-        action = d0.action.value
+        # Force a FLASH-tier action directly
+        buddhi._action = SemanticActionType.RESEARCH
+        buddhi._guna = IntentGuna.SATTVA
+        buddhi._function = "carrier"
+        buddhi._approach = "moksha"
+
+        d0 = buddhi.pre_flight("research something", 1)
         assert d0.tier == ModelTier.FLASH
 
         # Drive weight down with failures (0.5 → 0.45 → 0.405 → 0.3645)
         for _ in range(3):
-            synaptic.update(action, "execute", False)
-        assert synaptic.get_weight(action, "execute") < 0.4
+            synaptic.update("research", "execute", False)
+        assert synaptic.get_weight("research", "execute") < 0.4
 
-        buddhi.reset()
-        directive = buddhi.pre_flight("fix the broken test", 0)
+        directive = buddhi.pre_flight("research something", 1)
         assert directive.tier == ModelTier.STANDARD  # escalated
 
     def test_standard_escalates_to_pro_on_very_low_weight(self):
         """STANDARD tier escalates to PRO when synaptic weight < 0.25."""
         synaptic = HebbianSynaptic()
         buddhi = Buddhi(synaptic=synaptic)
-        d0 = buddhi.pre_flight("refactor the auth module", 0)
-        action = d0.action.value
+        # Force a STANDARD-tier action
+        buddhi._action = SemanticActionType.IMPLEMENT
+        buddhi._guna = IntentGuna.RAJAS
+        buddhi._function = "carrier"
+        buddhi._approach = "genesis"
+
+        d0 = buddhi.pre_flight("implement something", 1)
         assert d0.tier == ModelTier.STANDARD
 
         # Drive weight well below 0.25 with many failures
         for _ in range(8):
-            synaptic.update(action, "execute", False)
-        assert synaptic.get_weight(action, "execute") < 0.25
+            synaptic.update("implement", "execute", False)
+        assert synaptic.get_weight("implement", "execute") < 0.25
 
-        buddhi.reset()
-        directive = buddhi.pre_flight("refactor the auth module", 0)
+        directive = buddhi.pre_flight("implement something", 1)
         assert directive.tier == ModelTier.PRO  # escalated
 
     def test_high_weight_keeps_default(self):
         """Strong synaptic weight does not escalate tier."""
         synaptic = HebbianSynaptic()
         buddhi = Buddhi(synaptic=synaptic)
-        d0 = buddhi.pre_flight("refactor the auth module", 0)
-        action = d0.action.value
+        # Force a STANDARD-tier action
+        buddhi._action = SemanticActionType.IMPLEMENT
+        buddhi._guna = IntentGuna.RAJAS
+        buddhi._function = "carrier"
+        buddhi._approach = "genesis"
 
         # Successes strengthen the weight (0.5 → 0.55 → 0.595 → ...)
         for _ in range(3):
-            synaptic.update(action, "execute", True)
-        assert synaptic.get_weight(action, "execute") > 0.5
+            synaptic.update("implement", "execute", True)
+        assert synaptic.get_weight("implement", "execute") > 0.5
 
-        buddhi.reset()
-        directive = buddhi.pre_flight("refactor the auth module", 0)
+        directive = buddhi.pre_flight("implement something", 1)
         assert directive.tier == ModelTier.STANDARD  # stays at default
 
     def test_context_pressure_overrides_escalation(self):
         """Context pressure (>70%) demotes to FLASH even after escalation."""
         synaptic = HebbianSynaptic()
         buddhi = Buddhi(synaptic=synaptic)
-        d0 = buddhi.pre_flight("refactor the auth module", 0)
-        action = d0.action.value
+        buddhi._action = SemanticActionType.IMPLEMENT
+        buddhi._guna = IntentGuna.RAJAS
+        buddhi._function = "carrier"
+        buddhi._approach = "genesis"
 
         for _ in range(8):
-            synaptic.update(action, "execute", False)
+            synaptic.update("implement", "execute", False)
 
-        buddhi.reset()
-        directive = buddhi.pre_flight("refactor the auth module", 0, context_pct=0.75)
+        directive = buddhi.pre_flight("implement something", 1, context_pct=0.75)
         assert directive.tier == ModelTier.FLASH  # context pressure wins
 
     def test_record_outcome_updates_weight(self):
@@ -601,22 +613,23 @@ class TestHebbianTierEscalation:
         """Successes after failures recover the weight — tier de-escalates."""
         synaptic = HebbianSynaptic()
         buddhi = Buddhi(synaptic=synaptic)
-        d0 = buddhi.pre_flight("refactor the auth module", 0)
-        action = d0.action.value
+        buddhi._action = SemanticActionType.IMPLEMENT
+        buddhi._guna = IntentGuna.RAJAS
+        buddhi._function = "carrier"
+        buddhi._approach = "genesis"
 
         # Drive down
         for _ in range(5):
-            synaptic.update(action, "execute", False)
-        assert synaptic.get_weight(action, "execute") < 0.4
+            synaptic.update("implement", "execute", False)
+        assert synaptic.get_weight("implement", "execute") < 0.4
 
         # Recover
         for _ in range(10):
-            synaptic.update(action, "execute", True)
-        assert synaptic.get_weight(action, "execute") > 0.5
+            synaptic.update("implement", "execute", True)
+        assert synaptic.get_weight("implement", "execute") > 0.5
 
-        buddhi.reset()
-        d1 = buddhi.pre_flight("refactor the auth module", 0)
-        assert d1.tier == ModelTier.STANDARD  # recovered, no escalation
+        directive = buddhi.pre_flight("implement something", 1)
+        assert directive.tier == ModelTier.STANDARD  # recovered, no escalation
 
 
 class TestToolNamespace:
