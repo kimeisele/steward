@@ -450,6 +450,19 @@ class Buddhi:
             )
             return verdict
 
+        # Tool failure redirect — force LLM to try alternatives
+        # The LLM is a pattern matcher. Without this, it sees "error" and says "sorry".
+        # Infrastructure decides: any failed tool = redirect, not give up.
+        failed = [(tc, err) for tc, (ok, err) in zip(tool_calls, results) if not ok]
+        if failed:
+            tc, err = failed[0]
+            short_err = err[:150] if err else "unknown error"
+            return BuddhiVerdict(
+                action=VerdictAction.REDIRECT,
+                reason=f"{tc.name} failed",
+                suggestion=f"Tool '{tc.name}' returned error: {short_err}. Try an alternative approach.",
+            )
+
         # Phase transition guidance
         curr_phase = self._chitta.phase
         if prev_phase != curr_phase:
