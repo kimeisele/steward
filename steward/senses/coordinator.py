@@ -136,8 +136,18 @@ class SenseCoordinator:
             }
         return summaries
 
+    # The 5 Jnanendriyas are Vedic Tattvas — architectural constants, not plugins.
+    # BG 3.26.47-52: Sabda, Sparsa, Rupa, Rasa, Gandha — exactly 5, no more, no fewer.
+    _REQUIRED_SENSES = frozenset({
+        Jnanendriya.SROTRA,   # Ear (hears git)
+        Jnanendriya.TVAK,     # Skin (feels project structure)
+        Jnanendriya.CAKSU,    # Eye (sees code)
+        Jnanendriya.JIHVA,    # Tongue (tastes tests)
+        Jnanendriya.GHRANA,   # Nose (smells health)
+    })
+
     def _boot(self) -> None:
-        """Boot all 5 senses."""
+        """Boot all 5 senses — fails hard if any sense is missing."""
         senses: list[SenseProtocol] = [
             GitSense(cwd=self._cwd),
             ProjectSense(cwd=self._cwd),
@@ -147,6 +157,14 @@ class SenseCoordinator:
         ]
         for sense in senses:
             self.register_sense(sense)
+
+        # HARD INVARIANT: exactly 5 senses, all present
+        registered = frozenset(self._senses.keys())
+        missing = self._REQUIRED_SENSES - registered
+        if missing:
+            raise RuntimeError(f"Sense boot failure — missing Jnanendriyas: {missing}")
+        if len(self._senses) != 5:
+            raise RuntimeError(f"Sense boot failure — expected 5, got {len(self._senses)}")
 
         logger.info("Senses booted: %d active", sum(1 for s in self._senses.values() if s.is_active))
 

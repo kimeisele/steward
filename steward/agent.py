@@ -23,6 +23,7 @@ from typing import AsyncIterator
 from steward import __version__
 from steward.antahkarana.vedana import measure_vedana
 from steward.buddhi import Buddhi
+from steward.cetana import Cetana
 from steward.config import StewardConfig, load_config
 from steward.context import SamskaraContext
 from steward.gaps import GapTracker
@@ -209,6 +210,15 @@ class StewardAgent(GADBase):
 
         # Emit AGENT_STARTUP signal
         self._emit_startup_signal()
+
+        # Cetana — autonomous heartbeat driven by vedana health (BG 13.6-7)
+        # Daemon thread: adapts monitoring frequency to agent health.
+        # Does NOT think or act — only observes and signals.
+        self._cetana = Cetana(
+            vedana_source=lambda: self.vedana,
+            on_anomaly=self._on_cetana_anomaly,
+        )
+        self._cetana.start()
 
         logger.info(
             "StewardAgent initialized (cwd=%s, tools=%s)",
@@ -634,9 +644,10 @@ class StewardAgent(GADBase):
                 "gap_detection",
                 "jiva_identity",
                 "hebbian_synaptic",
+                "cetana_heartbeat",
             ],
             "antahkarana": ["manas", "buddhi", "chitta", "gandha"],
-            "jnanendriyas": list(self._senses.senses.keys()),
+            "jnanendriyas": ["srotra", "tvak", "caksu", "jihva", "ghrana"],  # Hard 5 — Vedic Tattvas
             "active_gaps": len(self._gaps),
             "jiva": self._persona,
             "synaptic_weights": self._synaptic.weight_count,
@@ -680,6 +691,7 @@ class StewardAgent(GADBase):
                 "synaptic": self.vedana.synaptic_confidence,
                 "tools": self.vedana.tool_success_rate,
             },
+            "cetana": self._cetana.stats(),
             "config": {
                 "model": self._config.model,
                 "auto_summarize": self._config.auto_summarize,
@@ -733,6 +745,33 @@ class StewardAgent(GADBase):
         """GAD-000 Cleanliness — are connections authorized?"""
         # Saucam: safety guard is active (Iron Dome)
         return self._safety_guard is not None
+
+    def close(self) -> None:
+        """Graceful shutdown — stop cetana heartbeat."""
+        self._cetana.stop()
+
+    def _on_cetana_anomaly(self, beat: object) -> None:
+        """Cetana detected health anomaly — emit signal."""
+        from steward.cetana import CetanaBeat
+        from vibe_core.steward.bus import Signal, SignalType
+
+        if not isinstance(beat, CetanaBeat):
+            return
+        bus = ServiceRegistry.get(SVC_SIGNAL_BUS)
+        if bus is None:
+            return
+        bus.emit(
+            Signal(
+                signal_type=SignalType.AGENT_ERROR,
+                source_agent="steward",
+                payload={
+                    "anomaly": True,
+                    "health": beat.vedana.health,
+                    "guna": beat.vedana.guna,
+                    "consecutive": beat.beat_number,
+                },
+            )
+        )
 
     # ── Private Helpers ────────────────────────────────────────────────
 
