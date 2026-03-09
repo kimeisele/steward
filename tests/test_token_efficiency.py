@@ -566,12 +566,13 @@ class TestChaos:
         conv.add(Message(role=MessageRole.USER, content="User message " * 50))
         conv.add(Message(role=MessageRole.ASSISTANT, content="Response " * 100))
 
-        # Token estimate should be reasonable (~4 chars per token)
+        # Token estimate uses ~3 chars/token (conservative for code/JSON).
+        # Actual LLM usage is measured precisely; this is a safety approximation.
         total_chars = sum(len(m.content) for m in conv.messages)
-        expected_tokens = total_chars // 4
+        expected_tokens = total_chars // 3
         actual_tokens = conv.total_tokens
 
-        # Allow 20% variance
+        # Allow 30% variance — estimation is conservative by design
         assert abs(actual_tokens - expected_tokens) < expected_tokens * 0.3, (
             f"Token tracking drifted: expected ~{expected_tokens}, got {actual_tokens}"
         )

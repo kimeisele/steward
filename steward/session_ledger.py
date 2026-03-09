@@ -25,7 +25,7 @@ logger = logging.getLogger("STEWARD.LEDGER")
 
 _LEDGER_VERSION = 1
 _MAX_SESSIONS = 50  # Keep last 50 sessions
-_PROMPT_SESSIONS = 5  # Include last 5 in system prompt
+_PROMPT_SESSIONS = 2  # Include last 2 in system prompt (token budget: ~50 tokens)
 _STOP_WORDS = frozenset(
     {
         "the",

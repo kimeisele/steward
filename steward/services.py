@@ -77,6 +77,33 @@ class SVC_DIAMOND:
     """NagaDiamondProtocol — TDD enforcement with RED/GREEN gates (protocol: naga)."""
 
 
+class SVC_VENU:
+    """VenuOrchestrator — O(1) 19-bit DIW rhythm driving execution cycle."""
+
+
+class SVC_COMPRESSION:
+    """MahaCompression — deterministic seed extraction for cache + learning."""
+
+
+class SVC_NORTH_STAR:
+    """North Star — infrastructure-level goal seed (not LLM prompt).
+
+    The north_star is a MahaCompression seed derived from the system's purpose.
+    Buddhi uses it for alignment checks. Integrity uses it for drift detection.
+    It is NEVER sent to the LLM as text — it is a deterministic integer.
+    """
+
+
+# ── North Star (Dhruva) ─────────────────────────────────────────────
+# The fixed point everything converges toward. Not English prose —
+# a deterministic seed from MahaCompression. The words become reality
+# because the architecture ENCODES them, not because the LLM reads them.
+#
+# This text is compressed to a seed at boot. The seed is the constant.
+# Change the text = change the seed = change the attractor.
+NORTH_STAR_TEXT = "execute tasks with minimal tokens by making the architecture itself intelligent"
+
+
 # ── Boot ─────────────────────────────────────────────────────────────
 
 
@@ -177,7 +204,23 @@ def boot(
     )
     ServiceRegistry.register(SVC_DIAMOND, diamond)
 
-    # 13. IntegrityChecker — boot-time validation (catch lazy-load failures early)
+    # 13. VenuOrchestrator (Krishna's Flute — O(1) DIW-based execution rhythm)
+    from vibe_core.mahamantra.substrate.vm.venu_orchestrator import VenuOrchestrator
+
+    venu = VenuOrchestrator()
+    ServiceRegistry.register(SVC_VENU, venu)
+
+    # 14. MahaCompression (deterministic seed extraction for cache + learning)
+    from vibe_core.mahamantra.adapters.compression import MahaCompression
+
+    compression = MahaCompression()
+    ServiceRegistry.register(SVC_COMPRESSION, compression)
+
+    # 15. North Star (Dhruva — fixed-point seed for alignment)
+    north_star_seed = compression.compress(NORTH_STAR_TEXT).seed
+    ServiceRegistry.register(SVC_NORTH_STAR, north_star_seed)
+
+    # 16. IntegrityChecker — boot-time validation (catch lazy-load failures early)
     from vibe_core.protocols.integrity import IntegrityChecker, IssueSeverity
 
     checker = IntegrityChecker()
@@ -213,6 +256,21 @@ def boot(
         "vajra_attention_wired",
         lambda: _check_service_wired(SVC_ATTENTION, "MahaAttention"),
         IssueSeverity.CRITICAL,
+    )
+    checker.register_checker(
+        "vajra_venu_wired",
+        lambda: _check_service_wired(SVC_VENU, "VenuOrchestrator"),
+        IssueSeverity.HIGH,
+    )
+    checker.register_checker(
+        "vajra_venu_divinity",
+        lambda: _check_venu_divinity(venu),
+        IssueSeverity.HIGH,
+    )
+    checker.register_checker(
+        "vajra_compression_wired",
+        lambda: _check_service_wired(SVC_COMPRESSION, "MahaCompression"),
+        IssueSeverity.HIGH,
     )
 
     ServiceRegistry.register(SVC_INTEGRITY, checker)
@@ -250,6 +308,12 @@ def _check_provider(provider: object) -> None:
     """Integrity check: provider can accept calls."""
     if not hasattr(provider, "invoke"):
         raise RuntimeError("Provider missing invoke()")
+
+
+def _check_venu_divinity(venu: object) -> None:
+    """Integrity check: VenuOrchestrator structural verification."""
+    if not hasattr(venu, "verify_divinity") or not venu.verify_divinity():
+        raise RuntimeError("VenuOrchestrator failed divinity verification")
 
 
 def _check_service_wired(svc_key: type, name: str) -> None:

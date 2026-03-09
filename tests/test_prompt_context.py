@@ -76,17 +76,15 @@ class TestPromptContextWiring:
 
 
 class TestDynamicSystemPrompt:
-    def test_system_prompt_includes_environment(self) -> None:
-        """Default system prompt includes dynamic environment context."""
+    def test_system_prompt_includes_cwd(self) -> None:
+        """Default system prompt includes working directory."""
         llm = FakeLLM([FakeResponse(content="ok")])
         agent = StewardAgent(provider=llm)
         agent.run_sync("test")
 
         system_msg = agent.conversation.messages[0]
         assert system_msg.role == "system"
-        # Should have Environment section with dynamic context
-        assert "Environment:" in system_msg.content
-        assert "system_time:" in system_msg.content
+        assert "cwd:" in system_msg.content
 
     def test_custom_prompt_skips_dynamic_context(self) -> None:
         """Custom system prompt does not get dynamic context appended."""

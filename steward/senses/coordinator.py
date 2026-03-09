@@ -156,43 +156,28 @@ class SenseCoordinator:
         data = perception.data
 
         if jnanendriya == Jnanendriya.SROTRA:
-            # Git sense
+            # Git sense — compact: branch + dirty only
             if not data.get("is_git"):
                 return ""
             branch = data.get("branch", "?")
             dirty = data.get("dirty_count", 0)
-            upstream = data.get("upstream", "unknown")
-            commits = data.get("recent_commits", [])
-            parts = [f"Git: branch={branch}, dirty={dirty}, upstream={upstream}"]
-            if commits:
-                parts.append(f"  Recent: {'; '.join(str(c)[:60] for c in commits[:3])}")
-            return "\n".join(parts)
+            return f"Git: {branch}, {dirty} dirty"
 
         if jnanendriya == Jnanendriya.TVAK:
-            # Project sense
+            # Project sense — compact: language only
             lang = data.get("primary_language", "unknown")
-            frameworks = data.get("frameworks", [])
-            dirs = data.get("key_dirs", [])
-            parts = [f"Project: {lang}"]
-            if frameworks:
-                parts[0] += f" ({', '.join(str(f) for f in frameworks)})"
-            if dirs:
-                parts.append(f"  Dirs: {', '.join(str(d) for d in dirs)}")
-            return "\n".join(parts)
+            return f"Project: {lang}"
 
         if jnanendriya == Jnanendriya.CAKSU:
-            # Code sense
+            # Code sense — compact: counts only, errors if any
             files = data.get("python_files", 0)
             classes = data.get("total_classes", 0)
             functions = data.get("total_functions", 0)
-            packages = data.get("packages", [])
             errors = data.get("syntax_errors", [])
-            parts = [f"Code: {files} files, {classes} classes, {functions} functions"]
-            if packages:
-                parts.append(f"  Packages: {', '.join(str(p) for p in packages[:10])}")
+            line = f"Code: {files} files, {classes} cls, {functions} fn"
             if errors:
-                parts.append(f"  Syntax errors: {', '.join(str(e) for e in errors[:5])}")
-            return "\n".join(parts)
+                line += f", {len(errors)} syntax errors"
+            return line
 
         if jnanendriya == Jnanendriya.JIHVA:
             # Test sense

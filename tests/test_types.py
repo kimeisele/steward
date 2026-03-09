@@ -12,8 +12,8 @@ class TestMessage:
         assert msg.tool_use_id is None
 
     def test_estimated_tokens(self):
-        msg = Message(role="user", content="a" * 400)
-        assert msg.estimated_tokens == 100  # 400 chars / 4
+        msg = Message(role="user", content="a" * 300)
+        assert msg.estimated_tokens == 100  # 300 chars / 3 (conservative for code/JSON)
 
     def test_tool_use_message(self):
         tu = ToolUse(id="call_1", name="bash", parameters={"command": "ls"})
@@ -77,12 +77,14 @@ class TestConversation:
         assert "[glob] file1.py" in dicts[1]["content"]
 
     def test_trim_drops_oldest_non_system(self):
-        conv = Conversation(max_tokens=50)
+        conv = Conversation(max_tokens=200)
         conv.add(Message(role="system", content="system prompt"))
         # Add enough messages to exceed max_tokens
         for i in range(100):
             conv.add(Message(role="user", content=f"message {'x' * 100}"))
-        assert conv.total_tokens <= 50
+        # After trimming, should be near budget (within one message overhead)
+        assert conv.total_tokens <= 200
+        assert len(conv.messages) < 100  # definitely trimmed
         # System message is preserved
         assert conv.messages[0].role == "system"
 

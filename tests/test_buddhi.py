@@ -210,10 +210,13 @@ class TestPreFlightSubstrate:
         assert len(d.tool_names) > 0
 
     def test_pre_flight_token_budget(self):
-        """Token budget is set from action type."""
+        """Token budget is tick-aligned and never below floor."""
+        from steward.cbr import CBR_FLOOR, CBR_TICK
+
         buddhi = Buddhi()
         d = buddhi.pre_flight("some task", 0)
-        assert d.max_tokens in (2048, 4096)
+        assert d.max_tokens % CBR_TICK == 0  # tick-aligned
+        assert d.max_tokens >= CBR_FLOOR  # never below floor
 
     def test_pre_flight_stable_across_rounds(self):
         """Action type classified once on round 0, stable after."""
@@ -300,8 +303,8 @@ class TestPreFlightTokenSavings:
 class TestContextAwareTokenBudget:
     """Token budget adapts to context window pressure."""
 
-    def test_low_context_gets_full_budget(self):
-        """Under 50% context → full token budget."""
+    def test_low_context_gets_dsp_budget(self):
+        """Low context → DSP: weight(1.0) × phase_mod(0.5) = 0.5, no compression."""
         buddhi = Buddhi()
         buddhi._action = SemanticActionType.IMPLEMENT
         buddhi._guna = IntentGuna.RAJAS
@@ -309,43 +312,50 @@ class TestContextAwareTokenBudget:
         buddhi._approach = "GENESIS"
 
         d = buddhi.pre_flight("implement", 1, context_pct=0.3)
-        assert d.max_tokens == 4096
+        # IMPLEMENT(1.0) × ORIENT(0.5) = 0.5 gain, no compression → 768
+        assert d.max_tokens == 768
 
-    def test_half_context_constrains_budget(self):
-        """50-70% context → max 2048 tokens."""
+    def test_moderate_context_compresses_budget(self):
+        """60-80% context → DSP compressor logarithmically reduces gain."""
         buddhi = Buddhi()
         buddhi._action = SemanticActionType.IMPLEMENT
         buddhi._guna = IntentGuna.RAJAS
         buddhi._function = "BRAHMA"
         buddhi._approach = "GENESIS"
 
-        d = buddhi.pre_flight("implement", 1, context_pct=0.55)
-        assert d.max_tokens == 2048
+        d_low = buddhi.pre_flight("implement", 1, context_pct=0.3)
+        d_mod = buddhi.pre_flight("implement", 1, context_pct=0.65)
+        # Compressed budget < uncompressed, both above floor
+        assert d_mod.max_tokens < d_low.max_tokens
+        assert d_mod.max_tokens >= 512  # never below floor
 
-    def test_high_context_further_constrains(self):
-        """Over 70% context → max 1024 tokens."""
+    def test_high_context_compressed_mode(self):
+        """Over 80% context → DSP compressor heavily attenuates. Never below floor."""
         buddhi = Buddhi()
         buddhi._action = SemanticActionType.IMPLEMENT
         buddhi._guna = IntentGuna.RAJAS
         buddhi._function = "BRAHMA"
         buddhi._approach = "GENESIS"
 
-        d = buddhi.pre_flight("implement", 1, context_pct=0.75)
-        assert d.max_tokens == 1024
+        d_mod = buddhi.pre_flight("implement", 1, context_pct=0.65)
+        d_high = buddhi.pre_flight("implement", 1, context_pct=0.85)
+        # Higher pressure → lower budget, still above floor
+        assert d_high.max_tokens <= d_mod.max_tokens
+        assert d_high.max_tokens >= 512
 
-    def test_research_already_under_cap(self):
-        """RESEARCH has 2048 base — at 50% stays 2048, at 70% drops to 1024."""
+    def test_research_stays_at_floor(self):
+        """RESEARCH weight=0.0 → gain=0.0 → floor (512) regardless of pressure."""
         buddhi = Buddhi()
         buddhi._action = SemanticActionType.RESEARCH
         buddhi._guna = IntentGuna.SATTVA
         buddhi._function = "VISHNU"
         buddhi._approach = "MOKSHA"
 
-        d50 = buddhi.pre_flight("research", 1, context_pct=0.55)
-        assert d50.max_tokens == 2048  # already at cap
+        d50 = buddhi.pre_flight("research", 1, context_pct=0.65)
+        assert d50.max_tokens == 512  # floor — weight=0.0 means floor always
 
-        d70 = buddhi.pre_flight("research", 1, context_pct=0.75)
-        assert d70.max_tokens == 1024  # further constrained
+        d80 = buddhi.pre_flight("research", 1, context_pct=0.85)
+        assert d80.max_tokens == 512  # floor — can't go below
 
 
 class TestBuddhiInLoop:

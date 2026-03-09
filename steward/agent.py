@@ -38,6 +38,7 @@ from steward.services import (
     SVC_SAFETY_GUARD,
     SVC_SIGNAL_BUS,
     SVC_TOOL_REGISTRY,
+    SVC_VENU,
     boot,
 )
 from steward.session_ledger import SessionLedger, SessionRecord
@@ -64,17 +65,7 @@ from vibe_core.tools.tool_registry import ToolRegistry
 logger = logging.getLogger("STEWARD.AGENT")
 
 _BASE_SYSTEM_PROMPT = """\
-You are Steward, an autonomous software engineering agent.
-
-You have access to tools for reading files, writing files, running commands,
-and searching the codebase. Use them to complete the user's task.
-
-Guidelines:
-- Read files before modifying them
-- Run tests after making changes
-- Keep changes minimal and focused
-- If something fails, diagnose the root cause before retrying
-- Use glob to find files, grep to search content, read_file before edit_file
+Software agent. Use tools to complete tasks. Read before edit. Test after change.
 """
 
 
@@ -111,38 +102,13 @@ def _build_system_prompt(
     project_instructions: str | None = None,
     session_history: str | None = None,
 ) -> str:
-    """Build system prompt with dynamic context.
+    """Build minimal system prompt. Every token counts.
 
-    Injects working directory, tool list, project instructions,
-    session history, and any PromptContext resolver values.
-    Git/commit context is now handled by GitSense (Jnanendriya perception).
+    Only includes: base instruction + cwd.
+    Tool signatures injected by engine (brain-in-a-jar).
+    Everything else is deterministic infrastructure — LLM doesn't need it.
     """
-    parts = [base.rstrip()]
-    parts.append(f"\nWorking directory: {cwd}")
-    parts.append(f"Available tools: {', '.join(sorted(tool_names))}")
-
-    # Multi-line context goes as separate sections
-    _SECTION_KEYS = {"project_structure"}
-    if dynamic_context:
-        # Inline key-value pairs (system_time, etc.)
-        inline = {k: v for k, v in dynamic_context.items() if k not in _SECTION_KEYS and v and not v.startswith("[")}
-        if inline:
-            parts.append("\nEnvironment:")
-            for key, value in inline.items():
-                parts.append(f"  {key}: {value}")
-
-        # Project structure as its own section
-        structure = dynamic_context.get("project_structure", "")
-        if structure and not structure.startswith("["):
-            parts.append(f"\nProject Structure:\n{structure}")
-
-    if project_instructions:
-        parts.append(f"\nProject Instructions:\n{project_instructions}")
-
-    if session_history:
-        parts.append(f"\nSession History:\n{session_history}")
-
-    return "\n".join(parts)
+    return f"{base.rstrip()}\ncwd: {cwd}"
 
 
 class StewardAgent(GADBase):
@@ -224,35 +190,22 @@ class StewardAgent(GADBase):
         # Persona — persistent identity (from steward-protocol)
         self._persona = self._load_persona()
 
-        # Build system prompt (with dynamic context if not custom)
+        # Build system prompt — minimal. LLM only needs: instruction + cwd.
+        # Tool sigs injected by engine. Everything else is infrastructure.
         self._custom_prompt = system_prompt is not None
         if system_prompt is not None:
             self._system_prompt = system_prompt
             self._base_system_prompt = system_prompt
         else:
-            dynamic_ctx = self._resolve_dynamic_context()
-            project_ctx = _load_project_instructions(self._cwd)
-            session_ctx = self._ledger.prompt_context()
             self._base_system_prompt = _build_system_prompt(
                 _BASE_SYSTEM_PROMPT,
                 self._cwd,
                 self._registry.list_tools(),
-                dynamic_context=dynamic_ctx,
-                project_instructions=project_ctx,
-                session_history=session_ctx,
             )
-            # Inject persona identity into base prompt (stable across runs)
-            if self._persona:
-                persona_section = self._format_persona_prompt()
-                if persona_section:
-                    self._base_system_prompt += persona_section
-
-            # Initial 5 Jnanendriya perception (re-fires each run_stream)
-            self._senses.perceive_all()
-            sense_ctx = self._senses.format_for_prompt()
             self._system_prompt = self._base_system_prompt
-            if sense_ctx:
-                self._system_prompt += sense_ctx
+
+            # Senses still perceive (infrastructure use), just not in LLM prompt
+            self._senses.perceive_all()
 
         # Emit AGENT_STARTUP signal
         self._emit_startup_signal()
@@ -307,18 +260,10 @@ class StewardAgent(GADBase):
         Buddhi persists across turns — Chitta retains file awareness.
         Records cumulative session stats in Memory after each turn.
         """
-        # Re-perceive senses for live environmental context (cheap, deterministic)
+        # Re-perceive senses (infrastructure use — cheap, deterministic, zero LLM)
         if not self._custom_prompt:
             self._senses.perceive_all()
-            sense_ctx = self._senses.format_for_prompt()
-            effective_prompt = self._base_system_prompt
-            if sense_ctx:
-                effective_prompt += sense_ctx
-            gap_ctx = self._gaps.format_for_prompt()
-            if gap_ctx:
-                effective_prompt += gap_ctx
-        else:
-            effective_prompt = self._system_prompt
+        effective_prompt = self._system_prompt
 
         # Update system message if conversation already has one (multi-run freshness)
         if (
@@ -341,6 +286,8 @@ class StewardAgent(GADBase):
             buddhi=self._buddhi,
             narasimha=ServiceRegistry.get(SVC_NARASIMHA),
             json_mode=not self._custom_prompt,  # Brain-in-a-jar for default prompts only
+            venu=ServiceRegistry.get(SVC_VENU),
+            cache=ServiceRegistry.get(SVC_CACHE),
         )
         async for event in loop.run(task):
             self._emit_signal(event)

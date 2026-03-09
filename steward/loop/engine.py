@@ -33,12 +33,15 @@ from typing import AsyncIterator
 
 from steward.antahkarana.gandha import VerdictAction
 from steward.buddhi import Buddhi, BuddhiDirective
+from steward.cbr import CBR_CEILING, CBR_SYSTEM_OVERHEAD
 from steward.context import ERROR_MARKER, SamskaraContext
 from steward.services import lean_tool_signatures
 from steward.summarizer import Summarizer, should_summarize
 from steward.types import AgentEvent, AgentUsage, Conversation, EventType, LLMProvider, Message, MessageRole, ToolUse
 from vibe_core.mahamantra.adapters.attention import MahaAttention
 from vibe_core.mahamantra.adapters.compression import MahaCompression
+from vibe_core.mahamantra.substrate.vm.venu_orchestrator import VenuOrchestrator
+from vibe_core.playbook.ephemeral_storage import EphemeralStorage
 from vibe_core.protocols.mahajanas.nrisimha.types.narasimha import NarasimhaProtocol, ThreatLevel
 from vibe_core.protocols.memory import MemoryProtocol
 from vibe_core.runtime.tool_safety_guard import ToolSafetyGuard
@@ -69,21 +72,27 @@ Reply ONLY with JSON:
   Parallel:  {{"tools": [{{"name": "<n>", "params": {{...}}}}, ...]}}
   Answer:    {{"response": "<your answer>"}}"""
 
+# ── CBR: Constant Bitrate Token Stream ──────────────────────────────
+# Budget comes from the DSP signal processor (steward.cbr).
+# CBR_CEILING: maximum possible budget per LLM call.
+# CBR_SYSTEM_OVERHEAD: constant cost of system prompt + tool sigs (~100 tokens).
+# Buddhi runs the DSP chain → directive.max_tokens = actual budget for this call.
+
 # Maximum tool-use iterations per turn to prevent infinite loops
 MAX_TOOL_ROUNDS = 50
 
-# Maximum characters for tool output in conversation (prevents context blowout)
-# Brain-in-a-jar: slashed 6x — every token counts
-MAX_TOOL_OUTPUT_CHARS = 8_000
+# Char limits — CBR-aligned. 1 token ~= 4 chars.
+# Tool output: feeds back into context (input to next LLM call)
+MAX_TOOL_OUTPUT_CHARS = 4_000  # 1000 tokens — bounded context input
 
-# Maximum characters for user input (hard boundary — never send unbounded text to LLM)
-MAX_INPUT_CHARS = 12_000
+# User input: hard boundary
+MAX_INPUT_CHARS = 4_000  # 1000 tokens — same discipline as tool output
 
-# Maximum characters for LLM text response stored in conversation
-MAX_RESPONSE_CHARS = 16_000
+# LLM text response stored in conversation (output side)
+MAX_RESPONSE_CHARS = 2_000  # 500 tokens — CBR-proportional
 
-# Maximum characters per tool call parameter value
-MAX_PARAM_CHARS = 4_000
+# Tool call parameter value (edit_file old_string/new_string)
+MAX_PARAM_CHARS = 2_000  # 500 tokens
 
 # Tool execution timeout (seconds) — prevents hung bash commands
 TOOL_TIMEOUT_SECONDS = 120
@@ -128,6 +137,8 @@ class AgentLoop:
         buddhi: Buddhi | None = None,
         narasimha: NarasimhaProtocol | None = None,
         json_mode: bool = True,
+        venu: VenuOrchestrator | None = None,
+        cache: EphemeralStorage | None = None,
     ) -> None:
         self._provider = provider
         self._registry = registry
@@ -141,6 +152,8 @@ class AgentLoop:
         self._buddhi = buddhi or Buddhi()  # Use injected or create fresh
         self._compression = MahaCompression()
         self._json_mode = json_mode
+        self._venu = venu
+        self._cache = cache
 
         # Ensure system prompt is first message
         if system_prompt and (not conversation.messages or conversation.messages[0].role != MessageRole.SYSTEM):
@@ -174,8 +187,34 @@ class AgentLoop:
         cr = self._compression.compress(user_message)
         logger.debug("Input compressed: seed=%d, ratio=%.1f", cr.seed, cr.compression_ratio)
 
+        # Venu: step the orchestrator for this turn's DIW context
+        venu_diw = 0
+        if self._venu:
+            venu_diw = self._venu.step()
+            logger.debug("Venu DIW: %d (position=%d)", venu_diw, (venu_diw & 0x3F))
+
         self._conversation.add(Message(role=MessageRole.USER, content=user_message))
         usage = AgentUsage()
+        usage.venu_diw = venu_diw
+        usage.input_seed = cr.seed
+        usage.cbr_budget = CBR_CEILING  # max possible; Buddhi DSP refines per-call
+
+        # Cache check: if we've seen this exact input before, bypass LLM entirely
+        if self._cache:
+            cached_response = self._cache.get(str(cr.seed))
+            if cached_response:
+                logger.info("Cache HIT on seed %d — zero LLM cost", cr.seed)
+                usage.cache_hit = True
+                usage.rounds = 0
+                usage.cbr_consumed = 0
+                usage.cbr_reserve = CBR_CEILING  # full budget saved (cache hit)
+                # Strip JSON wrapper if present
+                _, parsed = self._parse_json_response(cached_response)
+                text = parsed if parsed else cached_response
+                self._conversation.add(Message(role=MessageRole.ASSISTANT, content=text))
+                yield AgentEvent(type=EventType.TEXT, content=text)
+                yield AgentEvent(type=EventType.DONE, usage=usage)
+                return
 
         # Context management: once at turn start (not every round)
         self._manage_context()
@@ -193,6 +232,7 @@ class AgentLoop:
                 usage.buddhi_guna = directive.guna.value
                 usage.buddhi_tier = directive.tier.value
             usage.buddhi_phase = directive.phase
+            usage.cbr_budget = directive.max_tokens  # DSP-computed budget
 
             # Try streaming if provider supports it
             streamed_text_deltas: list[str] = []
@@ -210,10 +250,33 @@ class AgentLoop:
             if not tool_calls:
                 # Pure text response — turn is done
                 text = self._extract_text(response)
-                if len(text) > MAX_RESPONSE_CHARS:
+                was_truncated = len(text) > MAX_RESPONSE_CHARS
+                if was_truncated:
                     text = text[:MAX_RESPONSE_CHARS] + f"\n[truncated at {MAX_RESPONSE_CHARS} chars]"
                 self._conversation.add(Message(role=MessageRole.ASSISTANT, content=text))
                 usage.rounds = round_num + 1
+
+                # Quality signals: truncation + CBR overshoot
+                usage.truncated = was_truncated
+                usage.cbr_consumed = usage.total_tokens
+                usage.cbr_exceeded = usage.cbr_consumed > usage.cbr_budget
+                usage.cbr_reserve = max(0, usage.cbr_budget - usage.cbr_consumed)
+
+                # Cache store: cache all complete responses (truncated ones are still useful)
+                if self._cache and text:
+                    self._cache.set(str(cr.seed), text[:2000])
+                    logger.debug("Cache STORE: seed %d", cr.seed)
+
+                # Hebbian learning: ALWAYS success=True for completed turns.
+                # Truncation and CBR overshoot are quality SIGNALS, not failures.
+                # Recording truncation as failure causes reward hacking:
+                # the agent learns to produce NOOPs instead of useful-but-long output.
+                # Quality awareness is tracked in usage fields, not in synaptic weights.
+                self._buddhi.record_seed(cr.seed, success=True)
+                if was_truncated:
+                    logger.info("Quality: response truncated at %d chars (seed %d)", MAX_RESPONSE_CHARS, cr.seed)
+                if usage.cbr_exceeded:
+                    logger.info("Quality: CBR exceeded %d/%d tokens (seed %d)", usage.cbr_consumed, usage.cbr_budget, cr.seed)
 
                 # Brain-in-a-jar: check if streamed deltas are JSON (don't yield raw JSON)
                 if streamed_text_deltas:
@@ -324,6 +387,7 @@ class AgentLoop:
                                     + f"\n\n[truncated — {len(output_str)} chars total, "
                                     f"showing first {MAX_TOOL_OUTPUT_CHARS}]"
                                 )
+                                usage.truncated = True
                             # Store structured error info in message metadata
                             meta = {}
                             if not result.success:
@@ -584,6 +648,9 @@ class AgentLoop:
         JSON mode enforced via response_format.
         Buddhi directive controls token budget and ModelTier routing.
         """
+        # CBR: Buddhi sets max_tokens per action/phase.
+        # CBR tracks budget vs consumed for quality awareness — not a hard cap on output
+        # because tool calls (edit_file content) can legitimately exceed CBR output budget.
         max_tokens = self._max_tokens
         if directive and directive.max_tokens:
             max_tokens = directive.max_tokens

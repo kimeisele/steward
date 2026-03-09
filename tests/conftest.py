@@ -1,18 +1,207 @@
-"""Test configuration — ServiceRegistry isolation between tests."""
+"""
+STEWARD AGENT — Test Configuration
+===================================
+
+Shared fixtures, markers, singleton resets, API isolation.
+Every test file imports from here automatically (pytest convention).
+
+Federation standard: matches agent-city and steward-protocol conftest quality.
+"""
+
+import logging
+import os
+import tempfile
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Generator
 
 import pytest
 
-try:
-    from vibe_core.di import ServiceRegistry
+# ═══════════════════════════════════════════════════════════════════════
+# LOGGING — minimal noise during tests
+# ═══════════════════════════════════════════════════════════════════════
 
-    _HAS_VIBE_CORE = True
-except ImportError:
-    _HAS_VIBE_CORE = False
+logging.basicConfig(
+    level=logging.WARNING,
+    format="%(name)s - %(levelname)s - %(message)s",
+)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# PYTEST HOOKS — markers, auto-categorization
+# ═══════════════════════════════════════════════════════════════════════
+
+
+def pytest_configure(config):
+    """Register markers and set defaults."""
+    config.addinivalue_line("markers", "fast: Quick unit tests (<1s)")
+    config.addinivalue_line("markers", "slow: Slow tests (>5s)")
+    config.addinivalue_line("markers", "integration: Cross-module integration tests")
+    config.addinivalue_line("markers", "substrate: Substrate wiring tests (Venu, MahaCompression)")
+    config.addinivalue_line("markers", "senses: Jnanendriya sense tests")
+    config.addinivalue_line("markers", "buddhi: Buddhi decision engine tests")
+    config.addinivalue_line("markers", "tools: Tool execution tests")
+    config.addinivalue_line("markers", "engine: AgentLoop engine tests")
+
+
+def pytest_collection_modifyitems(config, items):
+    """Auto-mark tests based on file name."""
+    for item in items:
+        fspath = str(item.fspath)
+
+        if "test_substrate" in fspath:
+            item.add_marker(pytest.mark.substrate)
+        if "test_sense" in fspath or "test_coordinator" in fspath:
+            item.add_marker(pytest.mark.senses)
+        if "test_buddhi" in fspath:
+            item.add_marker(pytest.mark.buddhi)
+        if "test_tool" in fspath:
+            item.add_marker(pytest.mark.tools)
+        if "test_engine" in fspath or "test_loop" in fspath:
+            item.add_marker(pytest.mark.engine)
+
+        # Auto-mark slow tests by name
+        if "slow" in item.name.lower() or "stress" in item.name.lower():
+            item.add_marker(pytest.mark.slow)
+
+        # Auto-mark integration tests
+        if "integration" in item.name or "full_" in item.name:
+            item.add_marker(pytest.mark.integration)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# CORE FIXTURES — singleton resets, API isolation
+# ═══════════════════════════════════════════════════════════════════════
 
 
 @pytest.fixture(autouse=True)
-def _reset_service_registry():
-    """Reset ServiceRegistry after every test to prevent pollution."""
+def _reset_singletons(monkeypatch):
+    """Reset ServiceRegistry + prevent real API calls between tests.
+
+    Without this, test outcomes depend on ordering (VenuOrchestrator
+    accumulates ticks, ServiceRegistry leaks across tests).
+    """
+    # Prevent real LLM API calls
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.delenv("MISTRAL_API_KEY", raising=False)
+
     yield
-    if _HAS_VIBE_CORE:
+
+    # Reset ServiceRegistry after every test
+    try:
+        from vibe_core.di import ServiceRegistry
         ServiceRegistry.reset_all()
+    except ImportError:
+        pass
+
+
+@pytest.fixture
+def tmp_dir() -> Generator[Path, None, None]:
+    """Auto-cleaned temporary directory."""
+    tmpdir = Path(tempfile.mkdtemp(prefix="steward_test_"))
+    yield tmpdir
+    import shutil
+    shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# FAKE LLM — shared across all test files
+# ═══════════════════════════════════════════════════════════════════════
+
+
+@dataclass
+class FakeUsage:
+    """Fake LLM usage for tests."""
+    input_tokens: int = 10
+    output_tokens: int = 20
+
+
+@dataclass
+class FakeResponse:
+    """Fake LLM response for tests."""
+    content: str = ""
+    tool_calls: list[Any] | None = None
+    usage: FakeUsage | None = None
+
+    def __post_init__(self) -> None:
+        if self.usage is None:
+            self.usage = FakeUsage()
+
+
+@dataclass
+class _StreamDelta:
+    """Streaming delta event (text_delta or done)."""
+    type: str
+    text: str = ""
+    response: FakeResponse | None = None
+
+
+class FakeLLM:
+    """Deterministic fake LLM for tests. Never calls real APIs.
+
+    Battle-hardened: supports invoke, invoke_stream, call tracking,
+    reset, and all edge cases the engine might hit.
+
+    Usage:
+        llm = FakeLLM([FakeResponse(content="ok")])
+        resp = llm.invoke(messages=[...])
+        assert resp.content == "ok"
+    """
+
+    def __init__(self, responses: list[FakeResponse] | None = None) -> None:
+        self._responses = list(responses) if responses is not None else [FakeResponse(content="ok")]
+        self._call_count = 0
+        self.calls: list[dict[str, object]] = []
+
+    @property
+    def call_count(self) -> int:
+        return len(self.calls)
+
+    @property
+    def last_call(self) -> dict[str, object] | None:
+        return self.calls[-1] if self.calls else None
+
+    def invoke(self, **kwargs: Any) -> FakeResponse:
+        self.calls.append(kwargs)
+        if self._call_count < len(self._responses):
+            resp = self._responses[self._call_count]
+            self._call_count += 1
+            return resp
+        return FakeResponse(content="[no more responses]")
+
+    def invoke_stream(self, **kwargs: Any) -> list[_StreamDelta]:
+        """Streaming interface — yields text_delta events then done.
+
+        Compatible with engine._call_llm_streaming() expectations:
+        each delta has .type ("text_delta" or "done") and .text or .response.
+        """
+        resp = self.invoke(**kwargs)
+        events: list[_StreamDelta] = []
+        if resp.content:
+            events.append(_StreamDelta(type="text_delta", text=resp.content))
+        events.append(_StreamDelta(type="done", response=resp))
+        return events
+
+    def reset(self) -> None:
+        """Reset call history and restart response sequence."""
+        self._call_count = 0
+        self.calls.clear()
+
+
+@pytest.fixture
+def fake_llm():
+    """FakeLLM instance with single "ok" response."""
+    return FakeLLM()
+
+
+@pytest.fixture
+def fake_llm_factory():
+    """Factory for creating FakeLLM with custom responses.
+
+    Usage:
+        def test_something(fake_llm_factory):
+            llm = fake_llm_factory([FakeResponse(content="done")])
+    """
+    return FakeLLM
