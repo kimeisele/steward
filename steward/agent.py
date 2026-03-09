@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import AsyncIterator
 
 from steward import __version__
+from steward.antahkarana.vedana import measure_vedana
 from steward.buddhi import Buddhi
 from steward.config import StewardConfig, load_config
 from steward.context import SamskaraContext
@@ -670,12 +671,58 @@ class StewardAgent(GADBase):
             "gaps": self._gaps.stats,
             "senses": self._senses.boot_summary(),
             "cache_stats": cache_stats,
+            "vedana": {
+                "health": self.vedana.health,
+                "guna": self.vedana.guna,
+                "provider": self.vedana.provider_health,
+                "errors": self.vedana.error_pressure,
+                "context": self.vedana.context_pressure,
+                "synaptic": self.vedana.synaptic_confidence,
+                "tools": self.vedana.tool_success_rate,
+            },
             "config": {
                 "model": self._config.model,
                 "auto_summarize": self._config.auto_summarize,
                 "persist_memory": self._config.persist_memory,
             },
         }
+
+    @property
+    def vedana(self):
+        """Sukham/Duhkham — the agent's own health pulse."""
+        # Provider health
+        p_alive, p_total = 1, 1
+        if hasattr(self._provider, "stats"):
+            stats = self._provider.stats()  # type: ignore[attr-defined]
+            providers = stats.get("providers", [])
+            p_total = max(len(providers), 1)
+            p_alive = sum(1 for p in providers if isinstance(p, dict) and p.get("alive"))
+
+        # Context pressure
+        ctx_used = (
+            self._conversation.total_tokens / self._conversation.max_tokens
+            if self._conversation.max_tokens
+            else 0.0
+        )
+
+        # Synaptic weights
+        syn_weights = list(self._buddhi._synaptic._weights.values()) if self._buddhi._synaptic else None
+
+        # Buddhi error/call counts from recent session
+        session_stats = self._memory.recall("session_stats", session_id="steward") or {}
+        errors = session_stats.get("total_errors", 0)
+        calls = session_stats.get("total_tool_calls", 0)
+
+        return measure_vedana(
+            provider_alive=p_alive,
+            provider_total=p_total,
+            recent_errors=errors,
+            recent_calls=max(calls, 1),
+            context_used=ctx_used,
+            synaptic_weights=syn_weights,
+            tool_successes=max(calls - errors, 0),
+            tool_total=max(calls, 1),
+        )
 
     def test_tapas(self) -> bool:
         """GAD-000 Austerity — are resources constrained?"""
