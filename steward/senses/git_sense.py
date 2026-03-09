@@ -50,6 +50,10 @@ class GitSense:
         self._is_git = self._check_git_repo()
         self._gh = gh_client
 
+    def has_remote_perception(self) -> bool:
+        """RemotePerception protocol — True when gh CLI is available."""
+        return bool(self._gh and self._gh.is_available)
+
     @property
     def jnanendriya(self) -> Jnanendriya:
         return Jnanendriya.SROTRA

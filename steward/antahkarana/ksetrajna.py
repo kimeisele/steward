@@ -143,7 +143,7 @@ class KsetraJna:
             round=int(chitta.get("rounds", 0)),
             error_ratio=float(chitta.get("error_ratio", 0.0)),
             files_read=int(chitta.get("prior_reads", 0)),
-            files_written=len(chitta.get("tool_distribution", {}).get("write_file", []))
+            files_written=int(chitta.get("tool_distribution", {}).get("write_file", 0))
             if isinstance(chitta.get("tool_distribution"), dict)
             else 0,
             action=str(buddhi.get("action", "")),

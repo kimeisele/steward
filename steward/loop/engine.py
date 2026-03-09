@@ -171,7 +171,7 @@ class AgentLoop:
         self._venu = venu
         self._cache = cache
         self._ksetrajna = None  # Injected by agent for field observation
-        self._agent_ref = None  # Weak ref to agent for health anomaly checks
+        self._health_gate = None  # HealthGate protocol — Cetana → engine bridge
 
         # Ensure system prompt is first message
         if system_prompt and (not conversation.messages or conversation.messages[0].role != MessageRole.SYSTEM):
@@ -253,9 +253,9 @@ class AgentLoop:
 
         for round_num in range(MAX_TOOL_ROUNDS):
             # Cetana health check — abort if heartbeat detected critical anomaly
-            if self._agent_ref and getattr(self._agent_ref, "_health_anomaly", False):
-                detail = getattr(self._agent_ref, "_health_anomaly_detail", "unknown")
-                self._agent_ref._health_anomaly = False  # Reset flag after reading
+            if self._health_gate and self._health_gate.health_anomaly:
+                detail = self._health_gate.health_anomaly_detail
+                self._health_gate.clear_health_anomaly()
                 logger.warning("Cetana anomaly detected mid-turn: %s", detail)
                 guidance = f"[Cetana: health anomaly] {detail}. Consider finishing quickly or switching to a lighter approach."
                 self._conversation.add(Message(role=MessageRole.USER, content=guidance))

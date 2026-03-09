@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import AsyncIterator
 
 from steward import __version__
+from steward import agent_bus, agent_memory
 from steward.antahkarana.ksetrajna import KsetraJna
 from steward.antahkarana.vedana import measure_vedana
 from steward.buddhi import Buddhi
@@ -29,21 +30,20 @@ from steward.config import StewardConfig, load_config
 from steward.context import SamskaraContext
 from steward.gaps import GapTracker
 from steward.loop.engine import AgentLoop
+from steward.protocols import RemotePerception
 from steward.senses import SenseCoordinator
 from steward.services import (
     SVC_ATTENTION,
     SVC_CACHE,
     SVC_DIAMOND,
-    SVC_EVENT_BUS,
     SVC_MEMORY,
     SVC_NARASIMHA,
     SVC_SAFETY_GUARD,
-    SVC_SIGNAL_BUS,
     SVC_TOOL_REGISTRY,
     SVC_VENU,
     boot,
 )
-from steward.session_ledger import SessionLedger, SessionRecord
+from steward.session_ledger import SessionLedger
 from steward.tools.agent_internet import AgentInternetTool
 from steward.tools.bash import BashTool
 from steward.tools.edit import EditTool
@@ -54,7 +54,7 @@ from steward.tools.read_file import ReadFileTool
 from steward.tools.sub_agent import SubAgentTool
 from steward.tools.web_search import WebSearchTool
 from steward.tools.write_file import WriteFileTool
-from steward.types import AgentEvent, AgentUsage, ChamberProvider, Conversation, EventType, LLMProvider, Message, MessageRole, ToolResult
+from steward.types import AgentEvent, ChamberProvider, Conversation, EventType, LLMProvider, Message, MessageRole, ToolResult
 from vibe_core.di import ServiceRegistry
 from vibe_core.mahamantra.substrate.manas.synaptic import HebbianSynaptic
 from vibe_core.mahamantra.adapters.attention import MahaAttention
@@ -172,12 +172,12 @@ class StewardAgent(GADBase):
         # No file-backed state_dir — weights persist via PersistentMemory
         # so they survive ephemeral contexts (CI, API containers)
         self._synaptic = HebbianSynaptic()
-        self._load_synaptic_from_memory()
+        agent_memory.load_synaptic(self._memory, self._synaptic)
         self._synaptic.decay()  # temporal decay on boot — old patterns fade
 
         # Buddhi persists across turns (cross-turn Chitta awareness)
         self._buddhi = Buddhi(synaptic=self._synaptic)
-        self._load_chitta_from_memory()
+        agent_memory.load_chitta(self._memory, self._buddhi)
 
         # Session ledger (cross-session learning)
         self._ledger = SessionLedger(cwd=self._cwd)
@@ -187,10 +187,10 @@ class StewardAgent(GADBase):
 
         # Gap tracker — self-awareness of capability gaps
         self._gaps = GapTracker()
-        self._load_gaps_from_memory()
+        agent_memory.load_gaps(self._memory, self._gaps)
 
         # Persona — persistent identity (from steward-protocol)
-        self._persona = self._load_persona()
+        self._persona = agent_memory.load_persona()
 
         # Build system prompt — minimal. LLM only needs: instruction + cwd.
         # Tool sigs injected by engine. Everything else is infrastructure.
@@ -210,13 +210,13 @@ class StewardAgent(GADBase):
             self._senses.perceive_all()
 
         # Emit AGENT_STARTUP signal
-        self._emit_startup_signal()
+        agent_bus.emit_startup(self._registry.list_tools(), self._cwd)
 
         # Cetana — autonomous heartbeat driven by vedana health (BG 13.6-7)
         # Daemon thread: adapts monitoring frequency to agent health.
         # Does NOT think or act — only observes and signals.
-        self._health_anomaly = False
-        self._health_anomaly_detail = ""
+        self._health_anomaly_flag = False
+        self._health_anomaly_detail_str = ""
         self._cetana = Cetana(
             vedana_source=lambda: self.vedana,
             on_anomaly=self._on_cetana_anomaly,
@@ -331,268 +331,28 @@ class StewardAgent(GADBase):
         )
         # Wire field observers into engine — mid-turn, not just turn-boundary
         loop._ksetrajna = self._ksetrajna
-        loop._agent_ref = self  # For Cetana health anomaly checks
+        loop._health_gate = self  # HealthGate protocol — typed, no getattr
         async for event in loop.run(task):
-            self._emit_signal(event)
-            self._emit_event_bus(event)
+            agent_bus.emit_signal(event)
+            agent_bus.emit_event_bus(event)
             # Track tool failures as gaps
             if event.type == EventType.TOOL_RESULT and isinstance(event.content, ToolResult):
                 if not event.content.success:
                     tool_name = event.tool_use.name if event.tool_use else "unknown"
                     self._gaps.record_tool_failure(tool_name, event.content.error or "")
             if event.type == EventType.DONE and event.usage:
-                self._record_session_stats(event.usage)
-                self._record_session_ledger(task, event.usage)
+                agent_memory.record_session_stats(self._memory, event.usage)
+                agent_memory.record_session_ledger(self._ledger, self._buddhi, task, event.usage)
                 # Hebbian learning: record outcome, persist to Memory
                 success = event.usage.buddhi_errors <= event.usage.tool_calls // 2
                 self._buddhi.record_outcome(success)
-                self._save_synaptic_to_memory()
+                agent_memory.save_synaptic(self._memory, self._synaptic)
                 # Cross-turn: merge reads, clear impressions, persist
                 self._buddhi._chitta.end_turn()
                 self._ksetrajna.observe()  # Meta-observation at turn boundary
-                self._save_chitta_to_memory()
-                self._save_gaps_to_memory()
+                agent_memory.save_chitta(self._memory, self._buddhi)
+                agent_memory.save_gaps(self._memory, self._gaps)
             yield event
-
-    def _emit_startup_signal(self) -> None:
-        """Emit AGENT_STARTUP signal when agent is created."""
-        from vibe_core.steward.bus import Signal, SignalType
-
-        bus = ServiceRegistry.get(SVC_SIGNAL_BUS)
-        if bus is None:
-            return
-        bus.emit(
-            Signal(
-                signal_type=SignalType.AGENT_STARTUP,
-                source_agent="steward",
-                payload={"tools": self._registry.list_tools(), "cwd": self._cwd},
-            )
-        )
-
-    def _emit_signal(self, event: AgentEvent) -> None:
-        """Translate AgentEvent to SignalBus signal (fire-and-forget)."""
-        from vibe_core.steward.bus import Signal, SignalType
-
-        bus = ServiceRegistry.get(SVC_SIGNAL_BUS)
-        if bus is None:
-            return
-
-        if event.type == EventType.TOOL_CALL:
-            bus.emit(
-                Signal(
-                    signal_type=SignalType.AGENT_STATUS_UPDATE,
-                    source_agent="steward",
-                    payload={
-                        "action": "tool_call",
-                        "tool": event.tool_use.name if event.tool_use else "",
-                    },
-                )
-            )
-        elif event.type == EventType.TOOL_RESULT:
-            success = isinstance(event.content, ToolResult) and event.content.success
-            bus.emit(
-                Signal(
-                    signal_type=SignalType.AGENT_STATUS_UPDATE,
-                    source_agent="steward",
-                    payload={"action": "tool_result", "success": success},
-                )
-            )
-        elif event.type == EventType.ERROR:
-            bus.emit(
-                Signal(
-                    signal_type=SignalType.AGENT_ERROR,
-                    source_agent="steward",
-                    payload={"error": str(event.content)},
-                )
-            )
-        elif event.type == EventType.DONE:
-            payload: dict[str, object] = {"action": "turn_complete"}
-            if event.usage:
-                payload["tokens"] = event.usage.total_tokens
-                payload["tool_calls"] = event.usage.tool_calls
-            bus.emit(
-                Signal(
-                    signal_type=SignalType.AGENT_STATUS_UPDATE,
-                    source_agent="steward",
-                    payload=payload,
-                )
-            )
-
-    def _emit_event_bus(self, event: AgentEvent) -> None:
-        """Emit to real EventBus (Narada stream) for observability."""
-        from vibe_core.mahamantra.substrate.event_types import EventType as SubstrateEventType
-
-        event_bus = ServiceRegistry.get(SVC_EVENT_BUS)
-        if event_bus is None:
-            return
-
-        if event.type == EventType.TOOL_CALL:
-            event_bus.emit_sync(
-                event_type=SubstrateEventType.ACTION,
-                agent_id="steward",
-                message=f"tool_call: {event.tool_use.name}" if event.tool_use else "tool_call",
-            )
-        elif event.type == EventType.TOOL_RESULT:
-            success = isinstance(event.content, ToolResult) and event.content.success
-            event_bus.emit_sync(
-                event_type=SubstrateEventType.ACTION if success else SubstrateEventType.ERROR,
-                agent_id="steward",
-                message=f"tool_result: {'ok' if success else 'error'}",
-            )
-        elif event.type == EventType.ERROR:
-            event_bus.emit_sync(
-                event_type=SubstrateEventType.ERROR,
-                agent_id="steward",
-                message=f"error: {event.content}",
-            )
-        elif event.type == EventType.TEXT:
-            event_bus.emit_sync(
-                event_type=SubstrateEventType.THOUGHT,
-                agent_id="steward",
-                message="text_response",
-            )
-
-    def _load_synaptic_from_memory(self) -> None:
-        """Restore Hebbian synaptic weights from PersistentMemory.
-
-        Survives ephemeral contexts (CI, API containers) — no local files needed.
-        """
-        data = self._memory.recall("synaptic_weights", session_id="steward")
-        if data and isinstance(data, dict):
-            for key, weight in data.items():
-                self._synaptic._weights[key] = float(weight)
-            logger.debug("Synaptic weights restored: %d entries", len(data))
-
-    def _save_synaptic_to_memory(self) -> None:
-        """Persist Hebbian synaptic weights to PersistentMemory."""
-        weights = self._synaptic.snapshot()
-        if weights:
-            self._memory.remember(
-                "synaptic_weights",
-                weights,
-                session_id="steward",
-                tags=["synaptic", "hebbian"],
-            )
-
-    def _load_chitta_from_memory(self) -> None:
-        """Restore Chitta's cross-turn state from PersistentMemory."""
-        summary = self._memory.recall("chitta_summary", session_id="steward")
-        if summary and isinstance(summary, dict):
-            self._buddhi._chitta.load_summary(summary)
-            logger.debug(
-                "Chitta restored: %d prior reads",
-                len(self._buddhi._chitta.prior_reads),
-            )
-
-    def _save_chitta_to_memory(self) -> None:
-        """Persist Chitta's cross-turn state to PersistentMemory."""
-        summary = self._buddhi._chitta.to_summary()
-        self._memory.remember(
-            "chitta_summary",
-            summary,
-            session_id="steward",
-            tags=["chitta"],
-        )
-
-    def _load_gaps_from_memory(self) -> None:
-        """Restore gap tracker state from PersistentMemory."""
-        data = self._memory.recall("gap_tracker", session_id="steward")
-        if data and isinstance(data, list):
-            self._gaps.load_from_dict(data)
-            active = len(self._gaps)
-            if active:
-                logger.debug("Restored %d active gaps", active)
-
-    def _save_gaps_to_memory(self) -> None:
-        """Persist gap tracker state to PersistentMemory."""
-        self._memory.remember(
-            "gap_tracker",
-            self._gaps.to_dict(),
-            session_id="steward",
-            tags=["gaps"],
-        )
-
-    def _load_persona(self) -> dict[str, str] | None:
-        """Derive Jiva identity from MahaMantra VM (deterministic, from seed).
-
-        No YAML files, no text injection. Identity IS what the seed computes.
-        Uses mahamantra() from steward-protocol — the same VM that agent-city uses.
-        """
-        try:
-            from vibe_core.mahamantra import mahamantra
-
-            vm = mahamantra("steward")
-            jiva = {
-                "guna": vm["guna"]["mode"],
-                "guardian": vm["guardian"],
-                "quarter": vm["quarter"],
-                "trinity": vm["trinity_function"],
-                "position": str(vm["position"]),
-                "holy_name": vm["holy_name"],
-            }
-            logger.info(
-                "Jiva identity: %s | %s | %s | %s",
-                jiva["guna"], jiva["guardian"], jiva["quarter"], jiva["trinity"],
-            )
-            return jiva
-        except Exception as e:
-            logger.debug("Jiva derivation skipped: %s", e)
-            return None
-
-    def _format_persona_prompt(self) -> str:
-        """Minimal Jiva identity section — who, not how to behave."""
-        if not self._persona:
-            return ""
-        j = self._persona
-        return (
-            f"\n\n## Jiva Identity\n"
-            f"{j['guna']} | {j['guardian']} | {j['quarter']} | {j['trinity']}"
-        )
-
-    def _record_session_stats(self, usage: AgentUsage) -> None:
-        """Record cumulative session stats in Memory (Chitta).
-
-        Tracks tokens, tool calls, and Buddhi classifications across turns.
-        Persists across sessions via PersistentMemory.
-        """
-        existing = self._memory.recall("session_stats", session_id="steward") or {}
-        stats = {
-            "turns": existing.get("turns", 0) + 1,
-            "total_input_tokens": existing.get("total_input_tokens", 0) + usage.input_tokens,
-            "total_output_tokens": existing.get("total_output_tokens", 0) + usage.output_tokens,
-            "total_tool_calls": existing.get("total_tool_calls", 0) + usage.tool_calls,
-            "total_errors": existing.get("total_errors", 0) + usage.buddhi_errors,
-            "total_reflections": existing.get("total_reflections", 0) + usage.buddhi_reflections,
-        }
-        # Track Buddhi classification distribution
-        classifications = existing.get("classifications", {})
-        if usage.buddhi_action:
-            classifications[usage.buddhi_action] = classifications.get(usage.buddhi_action, 0) + 1
-        stats["classifications"] = classifications
-        self._memory.remember("session_stats", stats, session_id="steward", tags=["stats"])
-
-    def _record_session_ledger(self, task: str, usage: AgentUsage) -> None:
-        """Record this task in the session ledger for cross-session learning."""
-        chitta = self._buddhi._chitta
-        outcome = "error" if usage.buddhi_errors > usage.tool_calls // 2 else "success"
-        if usage.buddhi_errors > 0 and outcome == "success":
-            outcome = "partial"
-
-        self._ledger.record(
-            SessionRecord(
-                task=task,
-                outcome=outcome,
-                summary=f"{usage.buddhi_action or 'task'}: {usage.rounds} rounds, {usage.tool_calls} tools",
-                tokens=usage.input_tokens + usage.output_tokens,
-                tool_calls=usage.tool_calls,
-                rounds=usage.rounds,
-                files_read=chitta.files_read[:10],
-                files_written=chitta.files_written[:10],
-                buddhi_action=usage.buddhi_action or "",
-                buddhi_phase=str(usage.buddhi_phase) if usage.buddhi_phase else "",
-                errors=usage.buddhi_errors,
-            )
-        )
 
     @property
     def conversation(self) -> Conversation:
@@ -648,7 +408,7 @@ class StewardAgent(GADBase):
         from vibe_core.mahamantra.protocols._sense import Jnanendriya
 
         git_sense = self._senses.senses.get(Jnanendriya.SROTRA)
-        if git_sense and hasattr(git_sense, "_gh") and git_sense._gh and git_sense._gh.is_available:
+        if git_sense and isinstance(git_sense, RemotePerception) and git_sense.has_remote_perception():
             return "local+remote"
         return "local"
 
@@ -720,7 +480,7 @@ class StewardAgent(GADBase):
         """GAD-000 Observability — current agent state."""
         session_stats = self._memory.recall("session_stats", session_id="steward") or {}
         cache = ServiceRegistry.get(SVC_CACHE)
-        cache_stats = cache.get_stats() if cache and hasattr(cache, "get_stats") else {}
+        cache_stats = cache.get_stats() if cache else {}
         return {
             "conversation_messages": len(self._conversation.messages),
             "conversation_tokens": self._conversation.total_tokens,
@@ -806,6 +566,20 @@ class StewardAgent(GADBase):
         # Saucam: safety guard is active (Iron Dome)
         return self._safety_guard is not None
 
+    # ── HealthGate Protocol ──────────────────────────────────────────
+
+    @property
+    def health_anomaly(self) -> bool:
+        return self._health_anomaly_flag
+
+    @property
+    def health_anomaly_detail(self) -> str:
+        return self._health_anomaly_detail_str
+
+    def clear_health_anomaly(self) -> None:
+        self._health_anomaly_flag = False
+        self._health_anomaly_detail_str = ""
+
     def close(self) -> None:
         """Graceful shutdown — stop cetana heartbeat."""
         self._cetana.stop()
@@ -817,34 +591,19 @@ class StewardAgent(GADBase):
         This is the bridge: Cetana (observer) → Engine (actor).
         """
         from steward.cetana import CetanaBeat
-        from vibe_core.steward.bus import Signal, SignalType
 
         if not isinstance(beat, CetanaBeat):
             return
 
-        # Set anomaly flag — engine reads this mid-turn
-        self._health_anomaly = True
-        self._health_anomaly_detail = (
+        # Set anomaly flag — engine reads via HealthGate protocol
+        self._health_anomaly_flag = True
+        self._health_anomaly_detail_str = (
             f"health={beat.vedana.health:.2f} ({beat.vedana.guna}), "
             f"provider={beat.vedana.provider_health:.2f}, "
             f"errors={beat.vedana.error_pressure:.2f}"
         )
 
-        bus = ServiceRegistry.get(SVC_SIGNAL_BUS)
-        if bus is None:
-            return
-        bus.emit(
-            Signal(
-                signal_type=SignalType.AGENT_ERROR,
-                source_agent="steward",
-                payload={
-                    "anomaly": True,
-                    "health": beat.vedana.health,
-                    "guna": beat.vedana.guna,
-                    "consecutive": beat.beat_number,
-                },
-            )
-        )
+        agent_bus.emit_anomaly(beat.vedana.health, beat.vedana.guna, beat.beat_number)
 
     # ── Private Helpers ────────────────────────────────────────────────
 
