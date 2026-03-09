@@ -262,6 +262,32 @@ def _check_service_wired(svc_key: type, name: str) -> None:
 # ── Helpers ──────────────────────────────────────────────────────────
 
 
+def lean_tool_signatures(registry: ToolRegistry) -> str:
+    """One-line tool signatures for brain-in-a-jar system prompt.
+
+    Names + required params only. No descriptions — tool names are self-documenting.
+    ~100 tokens for ALL tools vs ~1500 tokens for full JSON Schema.
+    """
+    lines = []
+    for desc in registry.get_tool_descriptions():
+        name = desc["name"]
+        raw_params = desc.get("parameters", {})
+        if isinstance(raw_params, dict):
+            param_parts = []
+            for pname, pspec in raw_params.items():
+                if isinstance(pspec, dict):
+                    required = pspec.get("required", False)
+                    marker = "" if required else "?"
+                    param_parts.append(f"{pname}{marker}")
+                else:
+                    param_parts.append(pname)
+            sig = f"{name}({', '.join(param_parts)})"
+        else:
+            sig = f"{name}()"
+        lines.append(sig)
+    return "\n".join(lines)
+
+
 def tool_descriptions_for_llm(registry: ToolRegistry) -> list[dict[str, object]]:
     """Convert ToolRegistry descriptions to OpenAI tool-calling format.
 

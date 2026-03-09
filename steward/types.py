@@ -126,22 +126,27 @@ class Conversation:
         return sum(m.estimated_tokens for m in self.messages)
 
     def to_dicts(self) -> list[dict[str, object]]:
-        """Serialize for LLM API calls."""
+        """Serialize for LLM API calls — brain-in-a-jar format.
+
+        - TOOL messages become user messages (JSON mode has no tool_call_id)
+        - Consecutive same-role messages merged (providers expect alternating roles)
+        - No tool_calls in assistant messages (tool info is in JSON content)
+        """
         out: list[dict[str, object]] = []
         for m in self.messages:
-            d: dict[str, object] = {"role": m.role, "content": m.content}
-            if m.tool_uses:
-                d["tool_calls"] = [
-                    {
-                        "id": tu.id,
-                        "type": "function",
-                        "function": {"name": tu.name, "arguments": tu.parameters},
-                    }
-                    for tu in m.tool_uses
-                ]
-            if m.tool_use_id:
-                d["tool_call_id"] = m.tool_use_id
-            out.append(d)
+            role = m.role
+            content = m.content
+
+            # Brain-in-a-jar: tool results sent as user messages
+            if role == MessageRole.TOOL:
+                role = MessageRole.USER
+
+            # Merge consecutive same-role messages (prevents provider errors)
+            if out and out[-1]["role"] == role:
+                out[-1]["content"] = str(out[-1]["content"]) + "\n---\n" + content
+            else:
+                out.append({"role": role, "content": content})
+
         return out
 
     def _trim(self) -> None:
