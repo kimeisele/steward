@@ -53,7 +53,7 @@ from steward.tools.read_file import ReadFileTool
 from steward.tools.sub_agent import SubAgentTool
 from steward.tools.web_search import WebSearchTool
 from steward.tools.write_file import WriteFileTool
-from steward.types import AgentEvent, AgentUsage, Conversation, EventType, LLMProvider, Message, MessageRole, ToolResult
+from steward.types import AgentEvent, AgentUsage, ChamberProvider, Conversation, EventType, LLMProvider, Message, MessageRole, ToolResult
 from vibe_core.di import ServiceRegistry
 from vibe_core.mahamantra.substrate.manas.synaptic import HebbianSynaptic
 from vibe_core.mahamantra.adapters.attention import MahaAttention
@@ -623,7 +623,7 @@ class StewardAgent(GADBase):
             "architecture": "sankhya_25",
             "kshetra_elements": len(STEWARD_KSHETRA) + 1,  # 24 Prakriti + 1 Jiva
             "tools": self._registry.list_tools(),
-            "providers": len(self._provider) if hasattr(self._provider, "__len__") else 1,
+            "providers": len(self._provider) if isinstance(self._provider, ChamberProvider) else 1,
             "capabilities": [
                 "autonomous_coding",
                 "tool_execution",
@@ -698,8 +698,8 @@ class StewardAgent(GADBase):
         """Sukham/Duhkham — the agent's own health pulse."""
         # Provider health
         p_alive, p_total = 1, 1
-        if hasattr(self._provider, "stats"):
-            stats = self._provider.stats()  # type: ignore[attr-defined]
+        if isinstance(self._provider, ChamberProvider):
+            stats = self._provider.stats()
             providers = stats.get("providers", [])
             p_total = max(len(providers), 1)
             p_alive = sum(1 for p in providers if isinstance(p, dict) and p.get("alive"))

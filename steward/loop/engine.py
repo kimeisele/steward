@@ -37,7 +37,20 @@ from steward.cbr import CBR_CEILING, CBR_SYSTEM_OVERHEAD
 from steward.context import ERROR_MARKER, SamskaraContext
 from steward.services import lean_tool_signatures
 from steward.summarizer import Summarizer, should_summarize
-from steward.types import AgentEvent, AgentUsage, Conversation, EventType, LLMProvider, Message, MessageRole, ToolUse
+from steward.types import (
+    AgentEvent,
+    AgentUsage,
+    ChamberProvider,
+    Conversation,
+    EventType,
+    LLMProvider,
+    Message,
+    MessageRole,
+    NormalizedResponse,
+    StreamDelta,
+    StreamingProvider,
+    ToolUse,
+)
 from vibe_core.mahamantra.adapters.attention import MahaAttention
 from vibe_core.mahamantra.adapters.compression import MahaCompression
 from vibe_core.mahamantra.substrate.vm.venu_orchestrator import VenuOrchestrator
@@ -244,8 +257,8 @@ class AgentLoop:
             if response is None:
                 # Surface provider-level failure info if available
                 diag = "LLM returned no response"
-                if hasattr(self._provider, "stats"):
-                    stats = self._provider.stats()  # type: ignore[attr-defined]
+                if isinstance(self._provider, ChamberProvider):
+                    stats = self._provider.stats()
                     n_fail = stats.get("total_failures", 0)
                     n_total = stats.get("total_calls", 0)
                     providers = stats.get("providers", [])
@@ -496,18 +509,12 @@ class AgentLoop:
         return None  # All gates passed
 
     @staticmethod
-    def _accumulate_usage(response: object, usage: AgentUsage) -> None:
-        """Extract token counts from LLM response and add to usage.
-
-        Adapters normalize usage to LLMUsage at the boundary,
-        so we just read .input_tokens and .output_tokens directly.
-        """
-        if not hasattr(response, "usage") or response.usage is None:  # type: ignore[attr-defined]
-            logger.info("LLM response has no usage data — CBR budget tracking blind")
+    def _accumulate_usage(response: NormalizedResponse, usage: AgentUsage) -> None:
+        """Extract token counts from NormalizedResponse and add to usage."""
+        if not response.usage:
             return
-        resp_usage = response.usage  # type: ignore[attr-defined]
-        inp = getattr(resp_usage, "input_tokens", 0) or 0
-        out = getattr(resp_usage, "output_tokens", 0) or 0
+        inp = response.usage.input_tokens
+        out = response.usage.output_tokens
         if inp == 0 and out == 0:
             logger.info("LLM usage reports 0/0 tokens — provider not tracking (CBR blind)")
         usage.input_tokens += inp
@@ -699,7 +706,7 @@ class AgentLoop:
 
         return kwargs
 
-    async def _call_llm(self, directive: BuddhiDirective | None = None) -> object | None:
+    async def _call_llm(self, directive: BuddhiDirective | None = None) -> NormalizedResponse | None:
         """Call the LLM provider (non-streaming).
 
         Retries once on transient failure before returning None.
@@ -720,27 +727,26 @@ class AgentLoop:
         self,
         directive: BuddhiDirective | None = None,
         text_deltas: list[str] | None = None,
-    ) -> object | None:
+    ) -> NormalizedResponse | None:
         """Call LLM with streaming, falling back to non-streaming.
 
         Collects text_delta chunks into text_deltas list for the caller
         to yield as AgentEvents. Returns the final complete response.
         """
-        if not hasattr(self._provider, "invoke_stream"):
+        if not isinstance(self._provider, StreamingProvider):
             return await self._call_llm(directive)
 
         kwargs = self._build_llm_kwargs(directive)
 
         try:
 
-            def _stream() -> object | None:
+            def _stream() -> NormalizedResponse | None:
                 response = None
-                for delta in self._provider.invoke_stream(**kwargs):  # type: ignore[attr-defined]
-                    if hasattr(delta, "type"):
-                        if delta.type == "text_delta" and text_deltas is not None:  # type: ignore[attr-defined]
-                            text_deltas.append(delta.text)  # type: ignore[attr-defined]
-                        elif delta.type == "done":  # type: ignore[attr-defined]
-                            response = getattr(delta, "response", None)
+                for delta in self._provider.invoke_stream(**kwargs):
+                    if delta.type == "text_delta" and text_deltas is not None:
+                        text_deltas.append(delta.text)
+                    elif delta.type == "done":
+                        response = delta.response
                 return response
 
             return await asyncio.to_thread(_stream)
@@ -750,21 +756,9 @@ class AgentLoop:
             return await self._call_llm(directive)
 
     @staticmethod
-    def _extract_raw_content(response: object) -> str:
-        """Extract raw text content from any LLM response format."""
-        if hasattr(response, "content"):
-            content = response.content  # type: ignore[attr-defined]
-            if isinstance(content, str):
-                return content
-            # Anthropic-style: content is a list of blocks
-            if isinstance(content, list):
-                texts = [
-                    b.text if hasattr(b, "text") else str(b)
-                    for b in content
-                    if hasattr(b, "text") or (isinstance(b, dict) and b.get("type") == "text")
-                ]
-                return "\n".join(texts)
-        return ""
+    def _extract_raw_content(response: NormalizedResponse) -> str:
+        """Extract raw text content from NormalizedResponse."""
+        return response.content
 
     @staticmethod
     def _strip_fences(text: str) -> str:
@@ -893,8 +887,8 @@ class AgentLoop:
         return [], content
 
     @staticmethod
-    def _extract_text(response: object) -> str:
-        """Extract text content from LLM response.
+    def _extract_text(response: NormalizedResponse) -> str:
+        """Extract text content from NormalizedResponse.
 
         Brain-in-a-jar: extracts "response" value from JSON.
         Fallback: raw text content.
@@ -921,60 +915,20 @@ class AgentLoop:
         return clamped
 
     @staticmethod
-    def _extract_tool_calls(response: object) -> list[ToolUse]:
-        """Extract tool calls from LLM response.
+    def _extract_tool_calls(response: NormalizedResponse) -> list[ToolUse]:
+        """Extract tool calls from NormalizedResponse.
 
-        Priority order:
-        1. Standard tool_calls (OpenAI/Anthropic format) — backward compat
+        Priority:
+        1. Adapter-normalized tool_calls (already ToolUse from adapters)
         2. Brain-in-a-jar JSON mode — parses content as JSON
-
-        Clamps all parameter values to MAX_PARAM_CHARS.
         """
-        calls: list[ToolUse] = []
+        if response.tool_calls:
+            return response.tool_calls
 
-        # 1. OpenAI format: response.tool_calls
-        if hasattr(response, "tool_calls") and response.tool_calls:  # type: ignore[attr-defined]
-            for tc in response.tool_calls:  # type: ignore[attr-defined]
-                func = tc.function if hasattr(tc, "function") else tc
-                params = func.arguments if hasattr(func, "arguments") else {}
-                if isinstance(params, str):
-                    try:
-                        params = json.loads(params)
-                    except json.JSONDecodeError:
-                        params = {"raw": params}
-                if isinstance(params, dict):
-                    params = AgentLoop._clamp_params(params)
-                calls.append(
-                    ToolUse(
-                        id=tc.id if hasattr(tc, "id") else f"call_{id(tc)}",
-                        name=func.name if hasattr(func, "name") else str(func),
-                        parameters=params,
-                    )
-                )
-            return calls
-
-        # 2. Anthropic format: content blocks with type="tool_use"
-        if hasattr(response, "content") and isinstance(response.content, list):  # type: ignore[attr-defined]
-            for block in response.content:  # type: ignore[attr-defined]
-                if hasattr(block, "type") and block.type == "tool_use":
-                    raw_params = block.input if hasattr(block, "input") else {}
-                    calls.append(
-                        ToolUse(
-                            id=block.id,
-                            name=block.name,
-                            parameters=AgentLoop._clamp_params(raw_params)
-                            if isinstance(raw_params, dict)
-                            else raw_params,
-                        )
-                    )
-            if calls:
-                return calls
-
-        # 3. Brain-in-a-jar: JSON mode — parse content as JSON
-        raw = AgentLoop._extract_raw_content(response)
-        if raw:
-            json_calls, _ = AgentLoop._parse_json_response(raw)
+        # Brain-in-a-jar: JSON mode — parse content as JSON
+        if response.content:
+            json_calls, _ = AgentLoop._parse_json_response(response.content)
             if json_calls:
                 return json_calls
 
-        return calls
+        return []

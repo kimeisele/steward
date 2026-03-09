@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Protocol, runtime_checkable
+from typing import Iterator, Protocol, runtime_checkable
 
 from vibe_core.tools.tool_protocol import ToolResult
 
@@ -59,17 +59,6 @@ class LLMUsage:
     output_tokens: int = 0
 
 
-@runtime_checkable
-class LLMProvider(Protocol):
-    """Protocol for LLM providers.
-
-    Any object with invoke(**kwargs) that returns an LLM response.
-    Response should have .content, .tool_calls, .usage attributes.
-    """
-
-    def invoke(self, **kwargs: object) -> object: ...
-
-
 @dataclass
 class ToolUse:
     """A tool invocation requested by the LLM."""
@@ -77,6 +66,58 @@ class ToolUse:
     id: str  # unique call ID for correlating results
     name: str  # tool name (e.g. "bash", "read_file")
     parameters: dict[str, JsonValue]  # tool-specific parameters
+
+
+@dataclass
+class NormalizedResponse:
+    """Single response type from all LLM providers.
+
+    Adapters normalize vendor-specific responses at the boundary.
+    Downstream code never duck-types.
+    """
+
+    content: str = ""
+    tool_calls: list[ToolUse] = field(default_factory=list)
+    usage: LLMUsage = field(default_factory=LLMUsage)
+
+
+@dataclass
+class StreamDelta:
+    """Streaming chunk from invoke_stream.
+
+    text_delta: chunk text in .text
+    done: final NormalizedResponse in .response
+    """
+
+    type: str  # "text_delta" | "done"
+    text: str = ""
+    response: NormalizedResponse | None = None
+
+
+@runtime_checkable
+class LLMProvider(Protocol):
+    """Protocol for LLM providers.
+
+    All providers return NormalizedResponse from invoke().
+    """
+
+    def invoke(self, **kwargs: object) -> NormalizedResponse: ...
+
+
+@runtime_checkable
+class StreamingProvider(LLMProvider, Protocol):
+    """Provider that supports streaming."""
+
+    def invoke_stream(self, **kwargs: object) -> Iterator[StreamDelta]: ...
+
+
+@runtime_checkable
+class ChamberProvider(StreamingProvider, Protocol):
+    """ProviderChamber — multi-provider with stats and feedback."""
+
+    def stats(self) -> dict[str, object]: ...
+    def set_feedback(self, feedback: object) -> None: ...
+    def __len__(self) -> int: ...
 
 
 @dataclass

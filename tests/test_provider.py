@@ -962,33 +962,50 @@ class TestNormalizeUsage:
         assert u.input_tokens == 200
         assert u.output_tokens == 80
 
-    def test_adapter_response_returns_llm_usage(self):
-        """_AdapterResponse.usage returns LLMUsage, not raw object."""
+    def test_mistral_adapter_returns_normalized_response(self):
+        """MistralAdapter.invoke returns NormalizedResponse with LLMUsage."""
         from dataclasses import dataclass
 
-        from steward.provider import _AdapterResponse
-        from steward.types import LLMUsage
+        from steward.provider import MistralAdapter
+        from steward.types import LLMUsage, NormalizedResponse
+
+        @dataclass
+        class FakeMessage:
+            content: str = "hi"
+            tool_calls: list | None = None
 
         @dataclass
         class FakeChoice:
-            message: object = None
+            message: FakeMessage | None = None
 
             def __post_init__(self):
-                self.message = type("M", (), {"content": "hi", "tool_calls": None})()
+                if self.message is None:
+                    self.message = FakeMessage()
 
         @dataclass
-        class FakeRaw:
-            choices: list = None
+        class FakeCompletion:
+            choices: list | None = None
             usage: object = None
 
             def __post_init__(self):
-                self.choices = [FakeChoice()]
+                if self.choices is None:
+                    self.choices = [FakeChoice()]
                 self.usage = type("U", (), {"prompt_tokens": 42, "completion_tokens": 13})()
 
-        resp = _AdapterResponse(FakeRaw())
+        class FakeClient:
+            class chat:
+                class completions:
+                    @staticmethod
+                    def create(**kwargs):
+                        return FakeCompletion()
+
+        adapter = MistralAdapter(FakeClient())
+        resp = adapter.invoke(messages=[{"role": "user", "content": "test"}])
+        assert isinstance(resp, NormalizedResponse)
         assert isinstance(resp.usage, LLMUsage)
         assert resp.usage.input_tokens == 42
         assert resp.usage.output_tokens == 13
+        assert resp.content == "hi"
 
 
 class TestGroqCell:

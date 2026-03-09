@@ -11,7 +11,6 @@ Federation standard: matches agent-city and steward-protocol conftest quality.
 import logging
 import os
 import tempfile
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Generator
 
@@ -110,32 +109,11 @@ def tmp_dir() -> Generator[Path, None, None]:
 # FAKE LLM — shared across all test files
 # ═══════════════════════════════════════════════════════════════════════
 
+from steward.types import LLMUsage, NormalizedResponse, StreamDelta
 
-@dataclass
-class FakeUsage:
-    """Fake LLM usage for tests."""
-    input_tokens: int = 10
-    output_tokens: int = 20
-
-
-@dataclass
-class FakeResponse:
-    """Fake LLM response for tests."""
-    content: str = ""
-    tool_calls: list[Any] | None = None
-    usage: FakeUsage | None = None
-
-    def __post_init__(self) -> None:
-        if self.usage is None:
-            self.usage = FakeUsage()
-
-
-@dataclass
-class _StreamDelta:
-    """Streaming delta event (text_delta or done)."""
-    type: str
-    text: str = ""
-    response: FakeResponse | None = None
+# Backward-compatible aliases — 14+ test files use these names
+FakeUsage = LLMUsage
+FakeResponse = NormalizedResponse
 
 
 class FakeLLM:
@@ -145,13 +123,13 @@ class FakeLLM:
     reset, and all edge cases the engine might hit.
 
     Usage:
-        llm = FakeLLM([FakeResponse(content="ok")])
+        llm = FakeLLM([NormalizedResponse(content="ok")])
         resp = llm.invoke(messages=[...])
         assert resp.content == "ok"
     """
 
-    def __init__(self, responses: list[FakeResponse] | None = None) -> None:
-        self._responses = list(responses) if responses is not None else [FakeResponse(content="ok")]
+    def __init__(self, responses: list[NormalizedResponse] | None = None) -> None:
+        self._responses = list(responses) if responses is not None else [NormalizedResponse(content="ok")]
         self._call_count = 0
         self.calls: list[dict[str, object]] = []
 
@@ -163,25 +141,25 @@ class FakeLLM:
     def last_call(self) -> dict[str, object] | None:
         return self.calls[-1] if self.calls else None
 
-    def invoke(self, **kwargs: Any) -> FakeResponse:
+    def invoke(self, **kwargs: Any) -> NormalizedResponse:
         self.calls.append(kwargs)
         if self._call_count < len(self._responses):
             resp = self._responses[self._call_count]
             self._call_count += 1
             return resp
-        return FakeResponse(content="[no more responses]")
+        return NormalizedResponse(content="[no more responses]")
 
-    def invoke_stream(self, **kwargs: Any) -> list[_StreamDelta]:
+    def invoke_stream(self, **kwargs: Any) -> list[StreamDelta]:
         """Streaming interface — yields text_delta events then done.
 
         Compatible with engine._call_llm_streaming() expectations:
         each delta has .type ("text_delta" or "done") and .text or .response.
         """
         resp = self.invoke(**kwargs)
-        events: list[_StreamDelta] = []
+        events: list[StreamDelta] = []
         if resp.content:
-            events.append(_StreamDelta(type="text_delta", text=resp.content))
-        events.append(_StreamDelta(type="done", response=resp))
+            events.append(StreamDelta(type="text_delta", text=resp.content))
+        events.append(StreamDelta(type="done", response=resp))
         return events
 
     def reset(self) -> None:

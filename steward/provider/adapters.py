@@ -1,9 +1,9 @@
 """
 LLM Provider Adapters — vendor API translation layer.
 
-Each adapter normalizes a vendor-specific LLM API to the standard
-LLMProvider interface (invoke/invoke_stream). This is pure translation,
-no routing or failover logic (that's ProviderChamber's job).
+Each adapter normalizes a vendor-specific LLM API to NormalizedResponse
+at the boundary. This is pure translation, no routing or failover logic
+(that's ProviderChamber's job).
 
 Gita mapping: Karmendriyas (action organs) — each adapter is a
 different hand that can grasp the same tool differently.
@@ -11,26 +11,17 @@ different hand that can grasp the same tool differently.
 
 from __future__ import annotations
 
+import json
 import logging
-from dataclasses import dataclass
 from typing import Iterator
 
 from steward.provider.chamber import _normalize_usage
-from steward.types import LLMProvider, LLMUsage
+from steward.types import LLMUsage, NormalizedResponse, StreamDelta, ToolUse
 
 logger = logging.getLogger("STEWARD.PROVIDER")
 
 
-# ── Streaming Types ──────────────────────────────────────────────────
-
-
-@dataclass
-class _StreamDelta:
-    """A streaming chunk from invoke_stream."""
-
-    type: str  # "text_delta" | "done"
-    text: str = ""
-    response: object = None  # Final _StreamedResponse (on type="done")
+# ── Streaming Tool Call Accumulator ─────────────────────────────────
 
 
 class _ToolCallAccumulator:
@@ -51,70 +42,30 @@ class _ToolCallAccumulator:
             if getattr(func, "arguments", None):
                 self.arguments += func.arguments
 
-    def build(self) -> object:
-        return _BuiltToolCall(id=self.id, name=self.name, arguments=self.arguments)
-
-
-@dataclass
-class _BuiltToolCall:
-    """Assembled tool call from streaming deltas."""
-
-    id: str
-    name: str
-    arguments: str
-
-    @property
-    def function(self) -> object:
-        return self
-
-
-@dataclass
-class _StreamedResponse:
-    """Final response assembled from streaming chunks."""
-
-    text: str
-    tool_calls: list | None = None
-    _raw_usage: object = None
-
-    @property
-    def content(self) -> str:
-        return self.text
-
-    @property
-    def usage(self) -> LLMUsage:
-        return _normalize_usage(self._raw_usage)
-
-
-@dataclass
-class _AdapterResponse:
-    """Duck-type LLMResponse from OpenAI response."""
-
-    _raw: object
-
-    @property
-    def content(self) -> str:
-        return self._raw.choices[0].message.content or ""  # type: ignore[attr-defined]
-
-    @property
-    def tool_calls(self) -> list | None:
-        choice = self._raw.choices[0].message  # type: ignore[attr-defined]
-        return getattr(choice, "tool_calls", None)
-
-    @property
-    def usage(self) -> LLMUsage:
-        return _normalize_usage(getattr(self._raw, "usage", None))
+    def build(self) -> ToolUse:
+        """Build a ToolUse from accumulated deltas."""
+        params: dict = {}
+        if self.arguments:
+            try:
+                params = json.loads(self.arguments)
+            except (json.JSONDecodeError, TypeError):
+                params = {"raw": self.arguments}
+        return ToolUse(id=self.id, name=self.name, parameters=params if isinstance(params, dict) else {})
 
 
 # ── Google Adapter ───────────────────────────────────────────────────
 
 
 class GoogleAdapter:
-    """Normalizes messages -> prompt for GoogleProvider."""
+    """Normalizes messages -> prompt for GoogleProvider.
 
-    def __init__(self, provider: LLMProvider) -> None:
+    Returns NormalizedResponse at the boundary.
+    """
+
+    def __init__(self, provider: object) -> None:
         self._provider = provider
 
-    def invoke(self, **kwargs: object) -> object:
+    def invoke(self, **kwargs: object) -> NormalizedResponse:
         messages = kwargs.pop("messages", None)  # type: ignore[arg-type]
         if messages and isinstance(messages, list):
             parts: list[str] = []
@@ -131,19 +82,26 @@ class GoogleAdapter:
             kwargs["messages"] = messages
         elif "prompt" not in kwargs:
             kwargs["prompt"] = ""
-        return self._provider.invoke(**kwargs)
+        raw = self._provider.invoke(**kwargs)  # type: ignore[attr-defined]
+        # Google response: .content (str), .usage (.input_tokens, .output_tokens)
+        raw_usage = getattr(raw, "usage", None)
+        return NormalizedResponse(
+            content=getattr(raw, "content", "") or "",
+            tool_calls=[],
+            usage=_normalize_usage(raw_usage),
+        )
 
 
 # ── Mistral Adapter (OpenAI-compatible) ──────────────────────────────
 
 
 class MistralAdapter:
-    """OpenAI client -> LLMProvider.invoke() interface for Mistral."""
+    """OpenAI client -> NormalizedResponse for Mistral/Groq."""
 
     def __init__(self, client: object) -> None:
         self._client = client
 
-    def invoke(self, **kwargs: object) -> object:
+    def invoke(self, **kwargs: object) -> NormalizedResponse:
         messages = kwargs.get("messages")
         model = str(kwargs.get("model", "mistral-small-latest"))
         max_tokens = int(kwargs.get("max_tokens", 512))  # type: ignore[arg-type]
@@ -172,10 +130,10 @@ class MistralAdapter:
             create_kwargs["tool_choice"] = "auto"
 
         response = self._client.chat.completions.create(**create_kwargs)  # type: ignore[attr-defined]
-        return _AdapterResponse(response)
+        return self._normalize(response)
 
-    def invoke_stream(self, **kwargs: object) -> Iterator[object]:
-        """Stream LLM response, yielding _StreamDelta chunks."""
+    def invoke_stream(self, **kwargs: object) -> Iterator[StreamDelta]:
+        """Stream LLM response, yielding StreamDelta chunks."""
         messages = kwargs.get("messages")
         model = str(kwargs.get("model", "mistral-small-latest"))
         max_tokens = int(kwargs.get("max_tokens", 512))  # type: ignore[arg-type]
@@ -204,30 +162,62 @@ class MistralAdapter:
         stream = self._client.chat.completions.create(**create_kwargs)  # type: ignore[attr-defined]
 
         full_text = ""
-        tool_calls: list[object] = []
+        accumulators: list[_ToolCallAccumulator] = []
         usage = None
 
         for chunk in stream:
             delta = chunk.choices[0].delta if chunk.choices else None  # type: ignore[attr-defined]
             if delta and getattr(delta, "content", None):
                 full_text += delta.content
-                yield _StreamDelta(type="text_delta", text=delta.content)
+                yield StreamDelta(type="text_delta", text=delta.content)
             if delta and getattr(delta, "tool_calls", None):
                 for tc_delta in delta.tool_calls:
                     idx = getattr(tc_delta, "index", 0)
-                    while len(tool_calls) <= idx:
-                        tool_calls.append(_ToolCallAccumulator())
-                    tool_calls[idx].accumulate(tc_delta)  # type: ignore[attr-defined]
+                    while len(accumulators) <= idx:
+                        accumulators.append(_ToolCallAccumulator())
+                    accumulators[idx].accumulate(tc_delta)
             if hasattr(chunk, "usage") and chunk.usage is not None:  # type: ignore[attr-defined]
                 usage = chunk.usage  # type: ignore[attr-defined]
 
-        yield _StreamDelta(
+        built_tools = [acc.build() for acc in accumulators] if accumulators else []
+        yield StreamDelta(
             type="done",
-            response=_StreamedResponse(
-                text=full_text,
-                tool_calls=[tc.build() for tc in tool_calls] if tool_calls else None,  # type: ignore[attr-defined]
-                _raw_usage=usage,
+            response=NormalizedResponse(
+                content=full_text,
+                tool_calls=built_tools,
+                usage=_normalize_usage(usage),
             ),
+        )
+
+    @staticmethod
+    def _normalize(response: object) -> NormalizedResponse:
+        """Normalize OpenAI-format response to NormalizedResponse."""
+        message = response.choices[0].message  # type: ignore[attr-defined]
+        content = message.content or ""  # type: ignore[attr-defined]
+
+        tool_calls: list[ToolUse] = []
+        raw_tcs = getattr(message, "tool_calls", None)
+        if raw_tcs:
+            for tc in raw_tcs:
+                func = tc.function if hasattr(tc, "function") else tc
+                params = func.arguments if hasattr(func, "arguments") else {}
+                if isinstance(params, str):
+                    try:
+                        params = json.loads(params)
+                    except (json.JSONDecodeError, TypeError):
+                        params = {"raw": params}
+                tool_calls.append(
+                    ToolUse(
+                        id=tc.id if hasattr(tc, "id") else f"call_{id(tc)}",
+                        name=func.name if hasattr(func, "name") else str(func),
+                        parameters=params if isinstance(params, dict) else {},
+                    )
+                )
+
+        return NormalizedResponse(
+            content=content,
+            tool_calls=tool_calls,
+            usage=_normalize_usage(getattr(response, "usage", None)),
         )
 
 
@@ -235,12 +225,15 @@ class MistralAdapter:
 
 
 class AnthropicAdapter:
-    """Converts steward format to Anthropic Messages API format."""
+    """Converts steward format to Anthropic Messages API format.
+
+    Returns NormalizedResponse at the boundary.
+    """
 
     def __init__(self, client: object) -> None:
         self._client = client
 
-    def invoke(self, **kwargs: object) -> object:
+    def invoke(self, **kwargs: object) -> NormalizedResponse:
         messages = kwargs.get("messages")
         model = str(kwargs.get("model", "claude-sonnet-4-20250514"))
         max_tokens = int(kwargs.get("max_tokens", 4096))  # type: ignore[arg-type]
@@ -273,9 +266,9 @@ class AnthropicAdapter:
                     text = str(msg.get("content", ""))
                     if text:
                         content_blocks.append({"type": "text", "text": text})
-                    tool_calls = msg.get("tool_calls")
-                    if isinstance(tool_calls, list):
-                        for tc in tool_calls:
+                    tool_calls_raw = msg.get("tool_calls")
+                    if isinstance(tool_calls_raw, list):
+                        for tc in tool_calls_raw:
                             if isinstance(tc, dict):
                                 func = tc.get("function", {})
                                 if isinstance(func, dict):
@@ -317,4 +310,33 @@ class AnthropicAdapter:
         if anthropic_tools:
             create_kwargs["tools"] = anthropic_tools
 
-        return self._client.messages.create(**create_kwargs)  # type: ignore[attr-defined]
+        raw = self._client.messages.create(**create_kwargs)  # type: ignore[attr-defined]
+
+        # Normalize Anthropic response: content is a list of blocks
+        content = ""
+        tool_calls: list[ToolUse] = []
+        raw_content = getattr(raw, "content", [])
+        if isinstance(raw_content, list):
+            text_parts: list[str] = []
+            for block in raw_content:
+                block_type = getattr(block, "type", "")
+                if block_type == "text":
+                    text_parts.append(getattr(block, "text", ""))
+                elif block_type == "tool_use":
+                    raw_input = getattr(block, "input", {})
+                    tool_calls.append(
+                        ToolUse(
+                            id=getattr(block, "id", ""),
+                            name=getattr(block, "name", ""),
+                            parameters=raw_input if isinstance(raw_input, dict) else {},
+                        )
+                    )
+            content = "\n".join(text_parts)
+        elif isinstance(raw_content, str):
+            content = raw_content
+
+        return NormalizedResponse(
+            content=content,
+            tool_calls=tool_calls,
+            usage=_normalize_usage(getattr(raw, "usage", None)),
+        )

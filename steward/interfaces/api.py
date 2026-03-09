@@ -172,7 +172,7 @@ def create_app():
 
         async def _event_stream():
             async for event in agent.run_stream(req.task):
-                data: dict = {"type": event.type.value if hasattr(event.type, "value") else str(event.type)}
+                data: dict = {"type": event.type.value}
 
                 if event.type in (EventType.TEXT, EventType.TEXT_DELTA, EventType.ERROR):
                     data["content"] = str(event.content) if event.content else ""
@@ -219,7 +219,7 @@ def create_app():
         ledger = SessionLedger(cwd=_CWD)
         result: dict = {"ledger": ledger.stats}
 
-        if _state["chamber"] and hasattr(_state["chamber"], "stats"):
+        if _state["chamber"] is not None:
             result["providers"] = _state["chamber"].stats()
 
         return result

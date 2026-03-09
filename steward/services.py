@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 
-from steward.types import LLMProvider
+from steward.types import ChamberProvider, LLMProvider
 from vibe_core.di import ServiceRegistry
 from vibe_core.mahamantra.adapters.attention import MahaAttention
 from vibe_core.runtime.tool_safety_guard import ToolSafetyGuard
@@ -152,7 +152,7 @@ def boot(
     ServiceRegistry.register(SVC_FEEDBACK, feedback)
 
     # Wire feedback into ProviderChamber if it supports it
-    if provider is not None and hasattr(provider, "set_feedback"):
+    if provider is not None and isinstance(provider, ChamberProvider):
         provider.set_feedback(feedback)
 
     # 6. SignalBus (agent event communication)

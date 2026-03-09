@@ -118,21 +118,9 @@ class TestAgentSignalEmission:
     def test_tool_call_signals_emitted(self):
         """Agent emits tool_call status signals during tool use."""
 
-        @dataclass
-        class _FakeToolCall:
-            id: str = "c1"
-            function: object = None
+        from steward.types import ToolUse
 
-        @dataclass
-        class _FakeFunc:
-            name: str = "bash"
-            arguments: dict = None  # type: ignore[assignment]
-
-            def __post_init__(self):
-                if self.arguments is None:
-                    self.arguments = {"command": "echo test"}
-
-        tc = _FakeToolCall(function=_FakeFunc())
+        tc = ToolUse(id="c1", name="bash", parameters={"command": "echo test"})
         llm = _FakeLLM(
             [
                 _FakeResponse(content="", tool_calls=[tc]),
