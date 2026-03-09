@@ -34,7 +34,6 @@ from steward.services import (
     SVC_EVENT_BUS,
     SVC_MEMORY,
     SVC_NARASIMHA,
-    SVC_PROMPT_CONTEXT,
     SVC_SAFETY_GUARD,
     SVC_SIGNAL_BUS,
     SVC_TOOL_REGISTRY,
@@ -555,19 +554,6 @@ class StewardAgent(GADBase):
                 errors=usage.buddhi_errors,
             )
         )
-
-    def _resolve_dynamic_context(self) -> dict[str, str] | None:
-        """Resolve dynamic context from PromptContext (git, time, etc.)."""
-        prompt_ctx = ServiceRegistry.get(SVC_PROMPT_CONTEXT)
-        if prompt_ctx is None:
-            return None
-        try:
-            # Only resolve what senses don't cover
-            # (GitSense covers branch/commits, ProjectSense covers structure)
-            return prompt_ctx.resolve(["system_time", "project_structure"])
-        except Exception:
-            logger.debug("PromptContext resolve failed, skipping dynamic context")
-            return None
 
     @property
     def conversation(self) -> Conversation:

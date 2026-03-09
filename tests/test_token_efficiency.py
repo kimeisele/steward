@@ -430,6 +430,56 @@ class TestJsonMode:
             "Brain-in-a-jar: system prompt must include tool signatures"
         )
 
+    def test_json_extraction_from_preamble(self):
+        """LLM wraps JSON in preamble text — extraction fallback must recover."""
+        tool_calls, text = AgentLoop._parse_json_response(
+            'Here is the result:\n{"tool": "bash", "params": {"command": "ls"}}'
+        )
+        assert len(tool_calls) == 1
+        assert tool_calls[0].name == "bash"
+        assert tool_calls[0].parameters["command"] == "ls"
+
+    def test_json_extraction_from_malformed_fences(self):
+        """Malformed markdown fences — extraction fallback must recover."""
+        # Missing closing fence
+        tool_calls, text = AgentLoop._parse_json_response(
+            '```json\n{"tool": "read_file", "params": {"path": "/x.py"}}'
+        )
+        assert len(tool_calls) == 1
+        assert tool_calls[0].name == "read_file"
+
+    def test_json_extraction_single_line_fence(self):
+        """Single-line fence: ```json{"tool":...}``` — must recover."""
+        tool_calls, text = AgentLoop._parse_json_response(
+            '```json{"tool": "glob", "params": {"pattern": "*.py"}}```'
+        )
+        assert len(tool_calls) == 1
+        assert tool_calls[0].name == "glob"
+
+    def test_json_extraction_ignores_braces_in_strings(self):
+        """Brace-matching must respect JSON strings — don't split on embedded braces."""
+        tool_calls, text = AgentLoop._parse_json_response(
+            '{"tool": "bash", "params": {"command": "echo \\"hello {world}\\""}}'
+        )
+        assert len(tool_calls) == 1
+        assert "hello {world}" in tool_calls[0].parameters["command"]
+
+    def test_extract_json_object_returns_none_on_no_braces(self):
+        """No JSON object in text → None."""
+        result = AgentLoop._extract_json_object("just plain text no braces")
+        assert result is None
+
+    def test_extract_json_object_handles_nested(self):
+        """Nested JSON objects — must find complete outer object."""
+        result = AgentLoop._extract_json_object(
+            'prefix {"tool": "edit", "params": {"path": "/x", "old": "{"}} suffix'
+        )
+        assert result is not None
+        # Should be parseable JSON
+        import json
+        parsed = json.loads(result)
+        assert parsed["tool"] == "edit"
+
     def test_json_mode_full_roundtrip(self):
         """Full roundtrip: JSON tool call → execute → JSON response."""
         llm = JsonModeLLM([

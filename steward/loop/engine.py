@@ -242,7 +242,18 @@ class AgentLoop:
             response = await self._call_llm_streaming(directive, streamed_text_deltas)
             usage.llm_calls += 1
             if response is None:
-                yield AgentEvent(type=EventType.ERROR, content="LLM returned no response")
+                # Surface provider-level failure info if available
+                diag = "LLM returned no response"
+                if hasattr(self._provider, "stats"):
+                    stats = self._provider.stats()  # type: ignore[attr-defined]
+                    n_fail = stats.get("total_failures", 0)
+                    n_total = stats.get("total_calls", 0)
+                    providers = stats.get("providers", [])
+                    dead = [p["name"] for p in providers if isinstance(p, dict) and not p.get("alive")]
+                    diag = f"All providers failed ({n_fail} failures / {n_total} calls)"
+                    if dead:
+                        diag += f" — dead: {', '.join(dead)}"
+                yield AgentEvent(type=EventType.ERROR, content=diag)
                 return
 
             # Track tokens from LLM response
@@ -492,10 +503,15 @@ class AgentLoop:
         so we just read .input_tokens and .output_tokens directly.
         """
         if not hasattr(response, "usage") or response.usage is None:  # type: ignore[attr-defined]
+            logger.info("LLM response has no usage data — CBR budget tracking blind")
             return
         resp_usage = response.usage  # type: ignore[attr-defined]
-        usage.input_tokens += getattr(resp_usage, "input_tokens", 0) or 0
-        usage.output_tokens += getattr(resp_usage, "output_tokens", 0) or 0
+        inp = getattr(resp_usage, "input_tokens", 0) or 0
+        out = getattr(resp_usage, "output_tokens", 0) or 0
+        if inp == 0 and out == 0:
+            logger.info("LLM usage reports 0/0 tokens — provider not tracking (CBR blind)")
+        usage.input_tokens += inp
+        usage.output_tokens += out
 
     def _record_file_op(self, path: str, op: str) -> None:
         """Record file operation in Memory for cross-turn awareness."""
@@ -758,9 +774,48 @@ class AgentLoop:
             first_nl = cleaned.find("\n")
             if first_nl != -1:
                 cleaned = cleaned[first_nl + 1:]
+            else:
+                # No newline — ```json{...}``` on one line
+                cleaned = cleaned[3:]
+                if cleaned.lower().startswith("json"):
+                    cleaned = cleaned[4:]
             if cleaned.rstrip().endswith("```"):
                 cleaned = cleaned.rstrip()[:-3].rstrip()
         return cleaned
+
+    @staticmethod
+    def _extract_json_object(text: str) -> str | None:
+        """Extract first complete JSON object {...} from text via brace-matching.
+
+        Handles preamble text, malformed fences, or LLM chatter around JSON.
+        String-aware: ignores braces inside JSON string values.
+        """
+        start = text.find("{")
+        if start == -1:
+            return None
+        depth = 0
+        in_string = False
+        escape = False
+        for i in range(start, len(text)):
+            ch = text[i]
+            if escape:
+                escape = False
+                continue
+            if ch == "\\":
+                escape = True
+                continue
+            if ch == '"':
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    return text[start : i + 1]
+        return None
 
     @staticmethod
     def _parse_json_response(content: str) -> tuple[list[ToolUse], str]:
@@ -778,10 +833,24 @@ class AgentLoop:
 
         cleaned = AgentLoop._strip_fences(content)
 
+        data = None
         try:
             data = json.loads(cleaned)
         except (json.JSONDecodeError, TypeError):
-            return [], content  # Not JSON — treat as plain text
+            # Fallback: extract JSON object from mixed content (preamble, malformed fences)
+            extracted = AgentLoop._extract_json_object(cleaned)
+            if extracted:
+                try:
+                    data = json.loads(extracted)
+                    logger.info("JSON recovered from mixed content (extraction fallback)")
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+        if data is None:
+            # Log when content LOOKS like JSON but failed to parse — tool calls may be lost
+            if cleaned.lstrip()[:1] in ("{", "["):
+                logger.warning("JSON-like content unparseable — tool calls may be lost: %.200s", cleaned[:200])
+            return [], content
 
         if not isinstance(data, dict):
             return [], content
