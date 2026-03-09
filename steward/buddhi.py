@@ -239,6 +239,15 @@ class Buddhi:
         self._manas = Manas()
         self._chitta = Chitta()
         self._prev_phase = ExecutionPhase.ORIENT
+        self._outcome_rates: dict[str, float] = {}  # action → success_rate (0.0-1.0)
+
+    def set_outcome_history(self, rates: dict[str, float]) -> None:
+        """Inject cross-session outcome rates for model tier adjustment.
+
+        Hebbian principle: success strengthens (keep tier), failure escalates (bump tier).
+        Computed from SessionLedger by the agent.
+        """
+        self._outcome_rates = rates
 
     def pre_flight(
         self,
@@ -306,8 +315,19 @@ class Buddhi:
             if recent_errors >= 2:
                 base_tools = frozenset(base_tools | {"bash"})
 
-        # ModelTier: action-derived, phase-adjusted
+        # ModelTier: action-derived, session-history-adjusted, phase-adjusted
         tier = _ACTION_TIER.get(self._action, ModelTier.STANDARD)
+
+        # Hebbian escalation: if this action type keeps failing, use a better model
+        success_rate = self._outcome_rates.get(self._action.value, 1.0)
+        if success_rate < 0.5:
+            if tier == ModelTier.FLASH:
+                tier = ModelTier.STANDARD
+                logger.info("Tier escalated FLASH→STANDARD (%.0f%% success rate for %s)", success_rate * 100, self._action.value)
+            elif tier == ModelTier.STANDARD and success_rate < 0.3:
+                tier = ModelTier.PRO
+                logger.info("Tier escalated STANDARD→PRO (%.0f%% success rate for %s)", success_rate * 100, self._action.value)
+
         # PRO tasks demote to STANDARD in VERIFY/COMPLETE (work is done)
         if tier == ModelTier.PRO and phase in (ExecutionPhase.VERIFY, ExecutionPhase.COMPLETE):
             tier = ModelTier.STANDARD

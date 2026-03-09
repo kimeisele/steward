@@ -506,6 +506,80 @@ class TestModelTier:
             assert action in _ACTION_TIER, f"{action} missing from _ACTION_TIER"
 
 
+class TestHebbianTierEscalation:
+    """Tests for Hebbian learning — model tier escalation based on session outcome history."""
+
+    def test_no_history_keeps_default_tier(self):
+        """Without outcome history, tiers stay at defaults."""
+        buddhi = Buddhi()
+        # Manas classifies "fix the broken test" → RESEARCH → FLASH
+        directive = buddhi.pre_flight("fix the broken test", 0)
+        assert directive.tier == ModelTier.FLASH
+
+    def test_flash_escalates_to_standard_on_low_success(self):
+        """FLASH tier escalates to STANDARD when success rate < 50%."""
+        buddhi = Buddhi()
+        # "fix the broken test" → RESEARCH → FLASH by default
+        directive_before = buddhi.pre_flight("fix the broken test", 0)
+        action = directive_before.action.value  # capture actual action
+        assert directive_before.tier == ModelTier.FLASH
+
+        buddhi.reset()
+        buddhi.set_outcome_history({action: 0.3})
+        directive = buddhi.pre_flight("fix the broken test", 0)
+        assert directive.tier == ModelTier.STANDARD  # escalated from FLASH
+
+    def test_standard_escalates_to_pro_on_very_low_success(self):
+        """STANDARD tier escalates to PRO when success rate < 30%."""
+        buddhi = Buddhi()
+        # "refactor the auth module" → IMPLEMENT → STANDARD by default
+        directive_before = buddhi.pre_flight("refactor the auth module", 0)
+        action = directive_before.action.value
+        assert directive_before.tier == ModelTier.STANDARD
+
+        buddhi.reset()
+        buddhi.set_outcome_history({action: 0.2})
+        directive = buddhi.pre_flight("refactor the auth module", 0)
+        assert directive.tier == ModelTier.PRO  # escalated from STANDARD
+
+    def test_good_success_rate_keeps_default(self):
+        """High success rate does not escalate tier."""
+        buddhi = Buddhi()
+        # "refactor the auth module" → IMPLEMENT → STANDARD
+        directive_before = buddhi.pre_flight("refactor the auth module", 0)
+        action = directive_before.action.value
+        assert directive_before.tier == ModelTier.STANDARD
+
+        buddhi.reset()
+        buddhi.set_outcome_history({action: 0.8})
+        directive = buddhi.pre_flight("refactor the auth module", 0)
+        assert directive.tier == ModelTier.STANDARD  # stays at default
+
+    def test_context_pressure_overrides_escalation(self):
+        """Context pressure (>70%) demotes to FLASH even after escalation."""
+        buddhi = Buddhi()
+        buddhi.set_outcome_history({"implement": 0.2})
+        directive = buddhi.pre_flight("refactor the auth module", 0, context_pct=0.75)
+        assert directive.tier == ModelTier.FLASH  # context pressure wins
+
+    def test_outcome_rates_refresh(self):
+        """Calling set_outcome_history again updates the rates."""
+        buddhi = Buddhi()
+        # Get the action classification first
+        d0 = buddhi.pre_flight("refactor the auth module", 0)
+        action = d0.action.value
+        buddhi.reset()
+
+        buddhi.set_outcome_history({action: 0.2})  # low → escalate
+        d1 = buddhi.pre_flight("refactor the auth module", 0)
+        assert d1.tier == ModelTier.PRO
+
+        buddhi.reset()
+        buddhi.set_outcome_history({action: 0.9})  # improved → no escalation
+        d2 = buddhi.pre_flight("refactor the auth module", 0)
+        assert d2.tier == ModelTier.STANDARD
+
+
 class TestToolNamespace:
     """Tests for ToolNamespace — semantic capability domains."""
 
