@@ -205,6 +205,8 @@ class StewardAgent(GADBase):
 
         # Session ledger (cross-session learning)
         self._ledger = SessionLedger(cwd=self._cwd)
+        # Inject outcome rates for Hebbian tier escalation
+        self._buddhi.set_outcome_history(self._compute_outcome_rates())
 
         # 5 Jnanendriyas — deterministic environmental perception (zero LLM)
         self._senses = SenseCoordinator(cwd=self._cwd)
@@ -299,6 +301,9 @@ class StewardAgent(GADBase):
         Buddhi persists across turns — Chitta retains file awareness.
         Records cumulative session stats in Memory after each turn.
         """
+        # Refresh outcome rates for Hebbian tier learning (cheap, from ledger)
+        self._buddhi.set_outcome_history(self._compute_outcome_rates())
+
         # Re-perceive senses for live environmental context (cheap, deterministic)
         if not self._custom_prompt:
             self._senses.perceive_all()
@@ -608,6 +613,24 @@ class StewardAgent(GADBase):
                 errors=usage.buddhi_errors,
             )
         )
+
+    def _compute_outcome_rates(self) -> dict[str, float]:
+        """Compute success rates per action type from SessionLedger.
+
+        Returns {action_name: success_rate} for Buddhi's Hebbian tier escalation.
+        Only considers the last 20 sessions to weight recent experience.
+        """
+        sessions = self._ledger.sessions
+        if not sessions:
+            return {}
+        action_outcomes: dict[str, list[str]] = {}
+        for s in sessions[-20:]:
+            action = s.buddhi_action or "general"
+            action_outcomes.setdefault(action, []).append(s.outcome)
+        return {
+            action: sum(1 for o in outcomes if o == "success") / len(outcomes)
+            for action, outcomes in action_outcomes.items()
+        }
 
     def _resolve_dynamic_context(self) -> dict[str, str] | None:
         """Resolve dynamic context from PromptContext (git, time, etc.)."""
