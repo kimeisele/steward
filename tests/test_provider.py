@@ -253,7 +253,7 @@ class TestProviderChamber:
             source_address=MAHA_QUANTUM * 10,
         )
 
-        import steward.provider as pmod
+        import steward.provider.chamber as pmod
 
         # Speed up retries for testing
         orig_delay = pmod._RETRY_BASE_DELAY
@@ -435,7 +435,7 @@ class TestCircuitBreaker:
             prana=_PRANA_FREE,
         )
 
-        import steward.provider as pmod
+        import steward.provider.chamber as pmod
 
         orig_delay = pmod._RETRY_BASE_DELAY
         pmod._RETRY_BASE_DELAY = 0.001
@@ -477,7 +477,7 @@ class TestCircuitBreaker:
             prana=_PRANA_FREE,
         )
 
-        import steward.provider as pmod
+        import steward.provider.chamber as pmod
 
         orig_delay = pmod._RETRY_BASE_DELAY
         pmod._RETRY_BASE_DELAY = 0.001
@@ -524,7 +524,7 @@ class TestCircuitBreaker:
             source_address=MAHA_QUANTUM * 11,
         )
 
-        import steward.provider as pmod
+        import steward.provider.chamber as pmod
 
         orig_delay = pmod._RETRY_BASE_DELAY
         pmod._RETRY_BASE_DELAY = 0.001
@@ -602,7 +602,7 @@ class TestFeedbackProtocol:
             prana=_PRANA_FREE,
         )
 
-        import steward.provider as pmod
+        import steward.provider.chamber as pmod
 
         orig_delay = pmod._RETRY_BASE_DELAY
         pmod._RETRY_BASE_DELAY = 0.001
