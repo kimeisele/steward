@@ -457,17 +457,17 @@ class TestStewardAgent:
         assert usage.rounds == 2
 
     def test_system_prompt_includes_cwd_and_tools(self):
-        """Dynamic system prompt includes working directory and tool names."""
+        """Dynamic system prompt includes cwd and tool sigs (brain-in-a-jar)."""
         llm = FakeLLM([FakeResponse(content="ok")])
         agent = StewardAgent(provider=llm)
         agent.run_sync("test")
 
         system_msg = agent.conversation.messages[0]
         assert system_msg.role == "system"
-        assert "Working directory:" in system_msg.content
-        assert "Available tools:" in system_msg.content
-        assert "bash" in system_msg.content
-        assert "read_file" in system_msg.content
+        assert "cwd:" in system_msg.content
+        # Tools are in lean signatures (brain-in-a-jar), not "Available tools:"
+        assert "bash(" in system_msg.content
+        assert "read_file(" in system_msg.content
 
     def test_tool_output_truncated_in_conversation(self):
         """Large tool outputs are truncated to prevent context blowout."""

@@ -98,10 +98,15 @@ class Message:
 
     @property
     def estimated_tokens(self) -> int:
-        """Rough token estimate (~4 chars per token)."""
-        n = len(self.content) // 4
+        """Conservative token estimate.
+
+        Uses ~3 chars per token (not 4) because code/JSON tokenizes worse
+        than natural language. 3:1 is safer for budget calculations.
+        Actual token counts come from LLM usage response for CBR accounting.
+        """
+        n = len(self.content) // 3
         for tu in self.tool_uses:
-            n += len(str(tu.parameters)) // 4 + 20  # overhead for name/id
+            n += len(str(tu.parameters)) // 3 + 20  # overhead for name/id
         return max(n, 1)
 
 
@@ -211,6 +216,17 @@ class AgentUsage:
     buddhi_phase: str = ""  # Chitta phase (ORIENT/EXECUTE/VERIFY/COMPLETE)
     buddhi_errors: int = 0  # total tool errors detected by Buddhi
     buddhi_reflections: int = 0  # number of reflect/redirect injections
+    # Venu / substrate diagnostics
+    venu_diw: int = 0  # DIW from VenuOrchestrator for this turn
+    input_seed: int = 0  # MahaCompression seed for input
+    cache_hit: bool = False  # whether cache bypass was used
+    # CBR: Constant Bitrate Token Stream
+    cbr_budget: int = 0  # tokens budgeted for this tick
+    cbr_consumed: int = 0  # tokens actually consumed (0 on cache hit)
+    cbr_reserve: int = 0  # delta = budget - consumed (saved tokens)
+    # Quality signals — self-reflection on output integrity
+    truncated: bool = False  # output was truncated (hit char limit)
+    cbr_exceeded: bool = False  # consumed > budget (over CBR)
 
     @property
     def total_tokens(self) -> int:

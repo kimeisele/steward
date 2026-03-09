@@ -93,7 +93,7 @@ class TestSessionLedger:
             assert "2000 tokens" in ctx
             assert "auth.py" in ctx
 
-    def test_prompt_context_limits_to_5(self):
+    def test_prompt_context_limits_to_2(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             ledger = SessionLedger(cwd=tmpdir)
             for i in range(10):
@@ -105,10 +105,11 @@ class TestSessionLedger:
                     )
                 )
             ctx = ledger.prompt_context()
-            # Should only show last 5
-            assert "Task 5" in ctx
+            # Should only show last 2 (token budget: ~50 tokens)
+            assert "Task 8" in ctx
             assert "Task 9" in ctx
             assert "Task 0" not in ctx
+            assert "Task 7" not in ctx
 
     def test_max_sessions_trimmed(self):
         with tempfile.TemporaryDirectory() as tmpdir:

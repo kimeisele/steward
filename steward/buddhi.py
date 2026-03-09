@@ -38,6 +38,7 @@ from enum import StrEnum
 from steward.antahkarana.chitta import Chitta, ExecutionPhase
 from steward.antahkarana.gandha import VerdictAction, detect_patterns
 from steward.antahkarana.manas import Manas
+from steward.cbr import process_cbr
 from steward.types import ToolUse
 from vibe_core.mahamantra.protocols.compression import IntentGuna
 from vibe_core.mahamantra.substrate.manas.synaptic import HebbianSynaptic
@@ -129,19 +130,22 @@ def unregister_tool(namespace: ToolNamespace, tool_name: str) -> None:
     _NAMESPACE_TOOLS[namespace].discard(tool_name)
 
 
-_ACTION_MAX_TOKENS: dict[SemanticActionType, int] = {
-    SemanticActionType.RESEARCH: 2048,
-    SemanticActionType.ANALYZE: 2048,
-    SemanticActionType.MONITOR: 2048,
-    SemanticActionType.REVIEW: 2048,
-    SemanticActionType.IMPLEMENT: 4096,
-    SemanticActionType.REFACTOR: 4096,
-    SemanticActionType.DESIGN: 4096,
-    SemanticActionType.PLAN: 2048,
-    SemanticActionType.SYNTHESIZE: 2048,
-    SemanticActionType.DEBUG: 4096,
-    SemanticActionType.TEST: 2048,
-    SemanticActionType.RESPOND: 4096,
+# CBR task weight per action — normalized 0.0-1.0.
+# This feeds the DSP signal processor, not hardcoded token counts.
+# 0.0 = trivial (just a tool call), 1.0 = heavy (edit_file + bash)
+_ACTION_WEIGHT: dict[SemanticActionType, float] = {
+    SemanticActionType.RESEARCH: 0.0,    # just tool calls
+    SemanticActionType.ANALYZE: 0.0,     # observe only
+    SemanticActionType.MONITOR: 0.0,     # observe only
+    SemanticActionType.REVIEW: 0.0,      # observe only
+    SemanticActionType.PLAN: 0.0,        # think, don't write
+    SemanticActionType.TEST: 0.0,        # just run bash
+    SemanticActionType.DESIGN: 0.5,      # plan + describe
+    SemanticActionType.SYNTHESIZE: 0.5,  # aggregate
+    SemanticActionType.RESPOND: 0.5,     # text response
+    SemanticActionType.IMPLEMENT: 1.0,   # edit_file needs room
+    SemanticActionType.REFACTOR: 1.0,    # rewrite code
+    SemanticActionType.DEBUG: 1.0,       # edit + bash
 }
 
 # ── ModelTier — cost-aware LLM routing ─────────────────────────────
@@ -176,14 +180,14 @@ _ACTION_TIER: dict[SemanticActionType, ModelTier] = {
 }
 
 
-# Phase-based token budget (only applies when lower than action budget)
-# VERIFY and COMPLETE tighten budget — work should be winding down.
-# ORIENT and EXECUTE defer to the action's natural budget.
-_PHASE_MAX_TOKENS: dict[ExecutionPhase, int] = {
-    ExecutionPhase.ORIENT: 4096,  # defer to action budget
-    ExecutionPhase.EXECUTE: 4096,  # full budget for active work
-    ExecutionPhase.VERIFY: 2048,  # tighten for test/check phase
-    ExecutionPhase.COMPLETE: 2048,  # tighten for wrap-up
+# Phase modulation — multiplier on task_weight before DSP processing.
+# The phase attenuates the input signal, not the output budget.
+# EXECUTE = unity gain (1.0), everything else reduces the signal.
+_PHASE_MODULATION: dict[ExecutionPhase, float] = {
+    ExecutionPhase.ORIENT: 0.5,    # exploring — half amplitude
+    ExecutionPhase.EXECUTE: 1.0,   # implementing — full amplitude
+    ExecutionPhase.VERIFY: 0.5,    # testing — half amplitude
+    ExecutionPhase.COMPLETE: 0.5,  # summarizing — half amplitude
 }
 
 
@@ -255,6 +259,22 @@ class Buddhi:
         if action is not None:
             self._synaptic.update(action.value, "execute", success)
 
+    def record_seed(self, seed: int, success: bool) -> None:
+        """Record seed-level outcome for input-specific learning.
+
+        Tracks per-input-pattern confidence. Higher weight = more cacheable.
+        Uses HebbianSynaptic: success strengthens, failure weakens.
+        """
+        if self._synaptic is None:
+            return
+        self._synaptic.update(f"seed:{seed}", "cache", success)
+
+    def seed_confidence(self, seed: int) -> float:
+        """Get confidence for a specific input seed (0.0 to 1.0)."""
+        if self._synaptic is None:
+            return 0.0
+        return self._synaptic.get_weight(f"seed:{seed}", "cache")
+
     @property
     def synaptic(self) -> HebbianSynaptic | None:
         """Access synaptic learning (for persistence by agent)."""
@@ -296,7 +316,6 @@ class Buddhi:
 
         # Action-based namespace selection (primary)
         action_ns = _ACTION_NAMESPACES.get(self._action, frozenset())
-        max_tokens = _ACTION_MAX_TOKENS.get(self._action, 4096)
         base_tools = resolve_namespaces(action_ns)
 
         # Guna fallback if no namespaces for action
@@ -310,15 +329,20 @@ class Buddhi:
         if phase_ns:
             base_tools = frozenset(base_tools | resolve_namespaces(phase_ns))
 
-        # Phase-aware token budget
-        phase_max = _PHASE_MAX_TOKENS.get(phase, 4096)
-        max_tokens = min(max_tokens, phase_max)
+        # ── DSP Signal Chain ────────────────────────────────────────
+        # Task weight (action) × phase modulation → effective weight
+        # Then process_cbr() handles compression + limiting + quantization.
+        # No if/else thresholds. The math handles everything.
+        task_weight = _ACTION_WEIGHT.get(self._action, 0.5)
+        phase_mod = _PHASE_MODULATION.get(phase, 0.5)
+        effective_weight = task_weight * phase_mod
 
-        # Context pressure: tighten budget further
-        if context_pct >= 0.7:
-            max_tokens = min(max_tokens, 1024)
-        elif context_pct >= 0.5:
-            max_tokens = min(max_tokens, 2048)
+        cbr_out = process_cbr(
+            context_pressure=context_pct,
+            task_weight=effective_weight,
+            cache_confidence=0.0,  # no seed at pre_flight time
+        )
+        max_tokens = cbr_out.budget
 
         # After errors, always grant bash for debugging
         if round_num > 0:
