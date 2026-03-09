@@ -40,6 +40,7 @@ from steward.antahkarana.gandha import VerdictAction, detect_patterns
 from steward.antahkarana.manas import Manas
 from steward.types import ToolUse
 from vibe_core.mahamantra.protocols.compression import IntentGuna
+from vibe_core.mahamantra.substrate.manas.synaptic import HebbianSynaptic
 from vibe_core.runtime.semantic_actions import SemanticActionType
 
 logger = logging.getLogger("STEWARD.BUDDHI")
@@ -235,19 +236,29 @@ class Buddhi:
     at phase transitions.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, synaptic: HebbianSynaptic | None = None) -> None:
         self._manas = Manas()
         self._chitta = Chitta()
         self._prev_phase = ExecutionPhase.ORIENT
-        self._outcome_rates: dict[str, float] = {}  # action → success_rate (0.0-1.0)
+        self._synaptic = synaptic  # Real Hebbian learning from steward-protocol
 
-    def set_outcome_history(self, rates: dict[str, float]) -> None:
-        """Inject cross-session outcome rates for model tier adjustment.
+    def record_outcome(self, success: bool) -> None:
+        """Record task outcome via Hebbian synaptic update.
 
-        Hebbian principle: success strengthens (keep tier), failure escalates (bump tier).
-        Computed from SessionLedger by the agent.
+        Uses real HebbianSynaptic from steward-protocol:
+        Success: w += 0.1 * (1 - w)  → asymptotic to 1.0
+        Failure: w -= 0.1 * w        → asymptotic to 0.0
         """
-        self._outcome_rates = rates
+        if self._synaptic is None:
+            return
+        action = getattr(self, "_action", None)
+        if action is not None:
+            self._synaptic.update(action.value, "execute", success)
+
+    @property
+    def synaptic(self) -> HebbianSynaptic | None:
+        """Access synaptic learning (for persistence by agent)."""
+        return self._synaptic
 
     def pre_flight(
         self,
@@ -318,15 +329,17 @@ class Buddhi:
         # ModelTier: action-derived, session-history-adjusted, phase-adjusted
         tier = _ACTION_TIER.get(self._action, ModelTier.STANDARD)
 
-        # Hebbian escalation: if this action type keeps failing, use a better model
-        success_rate = self._outcome_rates.get(self._action.value, 1.0)
-        if success_rate < 0.5:
-            if tier == ModelTier.FLASH:
-                tier = ModelTier.STANDARD
-                logger.info("Tier escalated FLASH→STANDARD (%.0f%% success rate for %s)", success_rate * 100, self._action.value)
-            elif tier == ModelTier.STANDARD and success_rate < 0.3:
-                tier = ModelTier.PRO
-                logger.info("Tier escalated STANDARD→PRO (%.0f%% success rate for %s)", success_rate * 100, self._action.value)
+        # Hebbian escalation: synaptic weight < threshold → escalate tier
+        # HebbianSynaptic from steward-protocol: default 0.5, success→1.0, failure→0.0
+        if self._synaptic is not None:
+            confidence = self._synaptic.get_weight(self._action.value, "execute")
+            if confidence < 0.4:
+                if tier == ModelTier.FLASH:
+                    tier = ModelTier.STANDARD
+                    logger.info("Tier escalated FLASH→STANDARD (synapse %.2f for %s)", confidence, self._action.value)
+                elif tier == ModelTier.STANDARD and confidence < 0.25:
+                    tier = ModelTier.PRO
+                    logger.info("Tier escalated STANDARD→PRO (synapse %.2f for %s)", confidence, self._action.value)
 
         # PRO tasks demote to STANDARD in VERIFY/COMPLETE (work is done)
         if tier == ModelTier.PRO and phase in (ExecutionPhase.VERIFY, ExecutionPhase.COMPLETE):
