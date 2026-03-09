@@ -126,16 +126,7 @@ class Summarizer:
             ],
             max_tokens=_MAX_SUMMARY_TOKENS,
         )
-
-        # Extract text from response
-        if hasattr(response, "content"):
-            content = response.content  # type: ignore[attr-defined]
-            if isinstance(content, str):
-                return content
-            if isinstance(content, list):
-                texts = [b.text if hasattr(b, "text") else str(b) for b in content if hasattr(b, "text")]
-                return "\n".join(texts)
-        return ""
+        return response.content
 
     @staticmethod
     def _messages_to_text(messages: list[Message]) -> str:

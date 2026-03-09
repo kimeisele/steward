@@ -8,6 +8,7 @@ from typing import Any
 
 from steward.agent import StewardAgent
 from steward.services import SVC_MEMORY, boot
+from steward.types import ToolUse
 from vibe_core.di import ServiceRegistry
 from vibe_core.protocols.memory import InMemoryMemory
 
@@ -18,18 +19,6 @@ from vibe_core.protocols.memory import InMemoryMemory
 class FakeUsage:
     input_tokens: int = 10
     output_tokens: int = 20
-
-
-@dataclass
-class FakeFunction:
-    name: str
-    arguments: dict[str, Any]
-
-
-@dataclass
-class FakeToolCall:
-    id: str
-    function: FakeFunction
 
 
 @dataclass
@@ -101,10 +90,7 @@ class TestMemoryFileTracking:
         os.close(fd)
 
         try:
-            tc = FakeToolCall(
-                id="call_read",
-                function=FakeFunction(name="read_file", arguments={"path": path}),
-            )
+            tc = ToolUse(id="call_read", name="read_file", parameters={"path": path})
             responses = [
                 FakeResponse(content="", tool_calls=[tc]),
                 FakeResponse(content="Read the file"),
@@ -131,20 +117,11 @@ class TestMemoryFileTracking:
 
         try:
             # First read the file (Iron Dome requires read before write)
-            tc_read = FakeToolCall(
-                id="call_read",
-                function=FakeFunction(name="read_file", arguments={"path": path}),
-            )
-            tc_write = FakeToolCall(
-                id="call_write",
-                function=FakeFunction(
-                    name="write_file",
-                    arguments={
+            tc_read = ToolUse(id="call_read", name="read_file", parameters={"path": path})
+            tc_write = ToolUse(id="call_write", name="write_file", parameters={
                         "path": path,
                         "content": "new content",
-                    },
-                ),
-            )
+                    })
             responses = [
                 FakeResponse(content="", tool_calls=[tc_read]),
                 FakeResponse(content="", tool_calls=[tc_write]),

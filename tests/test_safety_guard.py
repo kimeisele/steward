@@ -12,7 +12,7 @@ from steward.loop.engine import AgentLoop
 from steward.tools.edit import EditTool
 from steward.tools.read_file import ReadFileTool
 from steward.tools.write_file import WriteFileTool
-from steward.types import Conversation, EventType
+from steward.types import Conversation, EventType, ToolUse
 from vibe_core.runtime.tool_safety_guard import ToolSafetyGuard
 from vibe_core.tools.tool_protocol import Tool, ToolResult
 from vibe_core.tools.tool_registry import ToolRegistry
@@ -20,22 +20,15 @@ from vibe_core.tools.tool_registry import ToolRegistry
 # ── Fake LLM ─────────────────────────────────────────────────────────
 
 
-@dataclass
-class FakeToolCall:
-    id: str
-    function: object
 
 
-@dataclass
-class FakeFunction:
-    name: str
-    arguments: dict[str, str]
 
 
 @dataclass
 class FakeResponse:
     content: str = ""
     tool_calls: list[object] | None = None
+    usage: object | None = None
 
 
 class FakeLLM:
@@ -81,13 +74,7 @@ class TestSafetyGuard:
         reg = ToolRegistry()
         reg.register(EditTool())
 
-        tc = FakeToolCall(
-            id="call_edit",
-            function=FakeFunction(
-                name="edit_file",
-                arguments={"path": path, "old_string": "hello", "new_string": "goodbye"},
-            ),
-        )
+        tc = ToolUse(id="call_edit", name="edit_file", parameters={"path": path, "old_string": "hello", "new_string": "goodbye"})
         llm = FakeLLM(
             [
                 FakeResponse(content="", tool_calls=[tc]),
@@ -126,18 +113,9 @@ class TestSafetyGuard:
         reg.register(EditTool())
 
         # Step 1: read
-        tc_read = FakeToolCall(
-            id="call_read",
-            function=FakeFunction(name="read_file", arguments={"path": path}),
-        )
+        tc_read = ToolUse(id="call_read", name="read_file", parameters={"path": path})
         # Step 2: edit
-        tc_edit = FakeToolCall(
-            id="call_edit",
-            function=FakeFunction(
-                name="edit_file",
-                arguments={"path": path, "old_string": "hello", "new_string": "goodbye"},
-            ),
-        )
+        tc_edit = ToolUse(id="call_edit", name="edit_file", parameters={"path": path, "old_string": "hello", "new_string": "goodbye"})
         llm = FakeLLM(
             [
                 FakeResponse(content="", tool_calls=[tc_read]),
@@ -171,13 +149,7 @@ class TestSafetyGuard:
         reg = ToolRegistry()
         reg.register(WriteFileTool())
 
-        tc = FakeToolCall(
-            id="call_write",
-            function=FakeFunction(
-                name="write_file",
-                arguments={"path": path, "content": "overwritten"},
-            ),
-        )
+        tc = ToolUse(id="call_write", name="write_file", parameters={"path": path, "content": "overwritten"})
         llm = FakeLLM(
             [
                 FakeResponse(content="", tool_calls=[tc]),
@@ -232,13 +204,7 @@ class TestNarasimhaIntegration:
         reg.register(BashTool())
 
         # Pure Python: ast.parse() succeeds, exec() detected at RED severity
-        tc = FakeToolCall(
-            id="call_bash",
-            function=FakeFunction(
-                name="bash",
-                arguments={"command": "exec(open('/etc/passwd').read())"},
-            ),
-        )
+        tc = ToolUse(id="call_bash", name="bash", parameters={"command": "exec(open('/etc/passwd').read())"})
         llm = FakeLLM(
             [
                 FakeResponse(content="", tool_calls=[tc]),
@@ -268,13 +234,7 @@ class TestNarasimhaIntegration:
         reg = ToolRegistry()
         reg.register(BashTool())
 
-        tc = FakeToolCall(
-            id="call_bash",
-            function=FakeFunction(
-                name="bash",
-                arguments={"command": "echo hello"},
-            ),
-        )
+        tc = ToolUse(id="call_bash", name="bash", parameters={"command": "echo hello"})
         llm = FakeLLM(
             [
                 FakeResponse(content="", tool_calls=[tc]),
@@ -302,10 +262,7 @@ class TestNarasimhaIntegration:
         reg = ToolRegistry()
         reg.register(BashTool())
 
-        tc = FakeToolCall(
-            id="call_bash",
-            function=FakeFunction(name="bash", arguments={"command": "echo hi"}),
-        )
+        tc = ToolUse(id="call_bash", name="bash", parameters={"command": "echo hi"})
         llm = FakeLLM(
             [
                 FakeResponse(content="", tool_calls=[tc]),

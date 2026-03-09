@@ -3,46 +3,20 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, field
 from typing import Any
 
 import pytest
 
 from steward.agent import StewardAgent
 from steward.loop.engine import AgentLoop
-from steward.types import AgentEvent, Conversation, EventType, Message
+from steward.types import AgentEvent, Conversation, EventType, LLMUsage, Message, NormalizedResponse, ToolUse
 from vibe_core.tools.tool_registry import ToolRegistry
 
 # ── Fake LLM Provider ────────────────────────────────────────────────
 
-
-@dataclass
-class FakeToolCall:
-    id: str
-    function: Any
-
-
-@dataclass
-class FakeFunction:
-    name: str
-    arguments: dict[str, Any]
-
-
-@dataclass
-class FakeUsage:
-    input_tokens: int = 10
-    output_tokens: int = 20
-
-
-@dataclass
-class FakeResponse:
-    content: str = ""
-    tool_calls: list[Any] | None = None
-    usage: FakeUsage | None = None
-
-    def __post_init__(self):
-        if self.usage is None:
-            self.usage = FakeUsage()
+# Aliases for backward compat
+FakeUsage = LLMUsage
+FakeResponse = NormalizedResponse
 
 
 class FakeLLM:
@@ -105,10 +79,7 @@ class TestAgentLoop:
         reg = ToolRegistry()
         reg.register(BashTool())
 
-        tc = FakeToolCall(
-            id="call_1",
-            function=FakeFunction(name="bash", arguments={"command": "echo hello"}),
-        )
+        tc = ToolUse(id="call_1", name="bash", parameters={"command": "echo hello"})
         responses = [
             FakeResponse(content="", tool_calls=[tc]),
             FakeResponse(content="The command output: hello"),
@@ -126,10 +97,7 @@ class TestAgentLoop:
 
     def test_unknown_tool_returns_error(self):
         """Unknown tool name -> error result in conversation."""
-        tc = FakeToolCall(
-            id="call_1",
-            function=FakeFunction(name="nonexistent", arguments={}),
-        )
+        tc = ToolUse(id="call_1", name="nonexistent", parameters={})
         responses = [
             FakeResponse(content="", tool_calls=[tc]),
             FakeResponse(content="Tool failed, sorry"),
@@ -155,10 +123,7 @@ class TestAgentLoop:
         attention = MahaAttention()
         # Deliberately NOT memorizing "bash" → attend() returns found=False
 
-        tc = FakeToolCall(
-            id="call_1",
-            function=FakeFunction(name="bash", arguments={"command": "echo hi"}),
-        )
+        tc = ToolUse(id="call_1", name="bash", parameters={"command": "echo hi"})
         responses = [
             FakeResponse(content="", tool_calls=[tc]),
             FakeResponse(content="Route missed"),
@@ -192,10 +157,7 @@ class TestAgentLoop:
         attention = MahaAttention()
         attention.memorize("bash", bash)  # register in Lotus
 
-        tc = FakeToolCall(
-            id="call_1",
-            function=FakeFunction(name="bash", arguments={"command": "echo lotus"}),
-        )
+        tc = ToolUse(id="call_1", name="bash", parameters={"command": "echo lotus"})
         responses = [
             FakeResponse(content="", tool_calls=[tc]),
             FakeResponse(content="It worked"),
@@ -225,14 +187,8 @@ class TestAgentLoop:
         reg = ToolRegistry()
         reg.register(BashTool())
 
-        tc1 = FakeToolCall(
-            id="call_a",
-            function=FakeFunction(name="bash", arguments={"command": "echo alpha"}),
-        )
-        tc2 = FakeToolCall(
-            id="call_b",
-            function=FakeFunction(name="bash", arguments={"command": "echo bravo"}),
-        )
+        tc1 = ToolUse(id="call_a", name="bash", parameters={"command": "echo alpha"})
+        tc2 = ToolUse(id="call_b", name="bash", parameters={"command": "echo bravo"})
         responses = [
             FakeResponse(content="", tool_calls=[tc1, tc2]),
             FakeResponse(content="Both done"),
@@ -266,10 +222,7 @@ class TestAgentLoop:
 
     def test_max_rounds_exceeded(self):
         """Infinite tool loops are capped at MAX_TOOL_ROUNDS."""
-        tc = FakeToolCall(
-            id="call_inf",
-            function=FakeFunction(name="echo", arguments={}),
-        )
+        tc = ToolUse(id="call_inf", name="echo", parameters={})
         responses = [FakeResponse(content="", tool_calls=[tc])] * 60
         llm = FakeLLM(responses)
         conv = Conversation()
@@ -312,10 +265,7 @@ class TestAgentLoop:
         # Nothing memorized → everything is a route miss
 
         # 5 rounds of route misses → Buddhi should abort
-        tc = FakeToolCall(
-            id="call_1",
-            function=FakeFunction(name="nonexistent", arguments={"x": "1"}),
-        )
+        tc = ToolUse(id="call_1", name="nonexistent", parameters={"x": "1"})
         # Each round: route miss, then LLM tries again with same tool
         responses = [FakeResponse(content="", tool_calls=[tc])] * 6 + [
             FakeResponse(content="gave up"),
@@ -336,8 +286,8 @@ class TestAgentLoop:
         attention = MahaAttention()
 
         # 2 different fake tools → route misses → redirect
-        tc1 = FakeToolCall(id="c1", function=FakeFunction(name="search_code", arguments={"q": "x"}))
-        tc2 = FakeToolCall(id="c2", function=FakeFunction(name="find_files", arguments={"p": "y"}))
+        tc1 = ToolUse(id="c1", name="search_code", parameters={"q": "x"})
+        tc2 = ToolUse(id="c2", name="find_files", parameters={"p": "y"})
         responses = [
             FakeResponse(content="", tool_calls=[tc1]),
             FakeResponse(content="", tool_calls=[tc2]),
@@ -427,10 +377,7 @@ class TestStewardAgent:
 
     def test_usage_accumulates_across_tool_rounds(self):
         """Usage accumulates across multiple LLM calls during tool use."""
-        tc = FakeToolCall(
-            id="call_1",
-            function=FakeFunction(name="bash", arguments={"command": "echo hi"}),
-        )
+        tc = ToolUse(id="call_1", name="bash", parameters={"command": "echo hi"})
         responses = [
             FakeResponse(content="", tool_calls=[tc], usage=FakeUsage(input_tokens=100, output_tokens=30)),
             FakeResponse(content="Done", usage=FakeUsage(input_tokens=200, output_tokens=40)),
@@ -492,10 +439,7 @@ class TestStewardAgent:
             def execute(self, parameters: dict[str, Any]) -> ToolResult:
                 return ToolResult(success=True, output="x" * 100_000)
 
-        tc = FakeToolCall(
-            id="call_big",
-            function=FakeFunction(name="big_output", arguments={}),
-        )
+        tc = ToolUse(id="call_big", name="big_output", parameters={})
         responses = [
             FakeResponse(content="", tool_calls=[tc]),
             FakeResponse(content="Done processing"),
@@ -628,10 +572,7 @@ class TestToolTimeout:
                 [
                     FakeResponse(
                         tool_calls=[
-                            FakeToolCall(
-                                id="c1",
-                                function=FakeFunction(name="slow_tool", arguments={}),
-                            )
+                            ToolUse(id="c1", name="slow_tool", parameters={})
                         ],
                     ),
                     FakeResponse(content="Timed out."),
@@ -658,14 +599,8 @@ class TestStreamingToolResults:
         reg = ToolRegistry()
         reg.register(BashTool())
 
-        tc1 = FakeToolCall(
-            id="call_x",
-            function=FakeFunction(name="bash", arguments={"command": "echo fast"}),
-        )
-        tc2 = FakeToolCall(
-            id="call_y",
-            function=FakeFunction(name="bash", arguments={"command": "echo slow"}),
-        )
+        tc1 = ToolUse(id="call_x", name="bash", parameters={"command": "echo fast"})
+        tc2 = ToolUse(id="call_y", name="bash", parameters={"command": "echo slow"})
         responses = [
             FakeResponse(content="", tool_calls=[tc1, tc2]),
             FakeResponse(content="Done"),
@@ -686,10 +621,7 @@ class TestStreamingToolResults:
         reg = ToolRegistry()
         reg.register(BashTool())
 
-        tc = FakeToolCall(
-            id="call_1",
-            function=FakeFunction(name="bash", arguments={"command": "echo test"}),
-        )
+        tc = ToolUse(id="call_1", name="bash", parameters={"command": "echo test"})
         responses = [
             FakeResponse(content="", tool_calls=[tc]),
             FakeResponse(content="Complete"),
@@ -715,10 +647,7 @@ class TestMessageMetadata:
 
     def test_failed_tool_stores_metadata(self):
         """Failed tool results store structured error in message metadata."""
-        tc = FakeToolCall(
-            id="call_fail",
-            function=FakeFunction(name="nonexistent", arguments={}),
-        )
+        tc = ToolUse(id="call_fail", name="nonexistent", parameters={})
         responses = [
             FakeResponse(content="", tool_calls=[tc]),
             FakeResponse(content="Failed"),
@@ -741,10 +670,7 @@ class TestMessageMetadata:
         reg = ToolRegistry()
         reg.register(BashTool())
 
-        tc = FakeToolCall(
-            id="call_ok",
-            function=FakeFunction(name="bash", arguments={"command": "echo ok"}),
-        )
+        tc = ToolUse(id="call_ok", name="bash", parameters={"command": "echo ok"})
         responses = [
             FakeResponse(content="", tool_calls=[tc]),
             FakeResponse(content="Done"),
@@ -902,14 +828,8 @@ class TestDependencyAwareExecution:
 
         with tempfile.TemporaryDirectory() as td:
             target = f"{td}/hello.py"
-            tc1 = FakeToolCall(
-                id="w1",
-                function=FakeFunction(name="write_file", arguments={"path": target, "content": "print('hello')"}),
-            )
-            tc2 = FakeToolCall(
-                id="t1",
-                function=FakeFunction(name="bash", arguments={"command": f"python {target}"}),
-            )
+            tc1 = ToolUse(id="w1", name="write_file", parameters={"path": target, "content": "print('hello')"})
+            tc2 = ToolUse(id="t1", name="bash", parameters={"command": f"python {target}"})
             responses = [
                 FakeResponse(content="", tool_calls=[tc1, tc2]),
                 FakeResponse(content="Done"),

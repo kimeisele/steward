@@ -12,13 +12,7 @@ import asyncio
 from dataclasses import dataclass
 
 from steward.agent import StewardAgent
-from steward.types import AgentEvent, EventType, Message
-
-
-@dataclass
-class FakeUsage:
-    input_tokens: int = 50
-    output_tokens: int = 30
+from steward.types import AgentEvent, EventType, LLMUsage, Message, NormalizedResponse, StreamDelta, ToolUse
 
 
 # ── Scripted LLM that returns tool calls then text ──────────────────
@@ -52,34 +46,22 @@ class ScriptedLLM:
 class TextResponse:
     content: str
     tool_calls: list | None = None
-    usage: FakeUsage | None = None
+    usage: LLMUsage | None = None
 
     def __post_init__(self) -> None:
         if self.usage is None:
-            self.usage = FakeUsage()
-
-
-@dataclass
-class FakeToolCall:
-    id: str
-    function: object
-
-
-@dataclass
-class FakeFunction:
-    name: str
-    arguments: str  # JSON string
+            self.usage = LLMUsage(input_tokens=50, output_tokens=30)
 
 
 @dataclass
 class ToolCallResponse:
     content: str = ""
     tool_calls: list | None = None
-    usage: FakeUsage | None = None
+    usage: LLMUsage | None = None
 
     def __post_init__(self) -> None:
         if self.usage is None:
-            self.usage = FakeUsage()
+            self.usage = LLMUsage(input_tokens=50, output_tokens=30)
 
 
 # ── Integration Tests ───────────────────────────────────────────────
@@ -105,10 +87,7 @@ class TestEndToEnd:
                 ToolCallResponse(
                     content="Let me check.",
                     tool_calls=[
-                        FakeToolCall(
-                            id="call_1",
-                            function=FakeFunction(name="glob", arguments='{"pattern": "*.py"}'),
-                        )
+                        ToolUse(id="call_1", name="glob", parameters={'pattern': '*.py'})
                     ],
                 ),
                 TextResponse("I found some Python files."),
@@ -149,10 +128,7 @@ class TestEndToEnd:
                 ToolCallResponse(
                     content="Reading file.",
                     tool_calls=[
-                        FakeToolCall(
-                            id="call_1",
-                            function=FakeFunction(name="glob", arguments='{"pattern": "*.md"}'),
-                        )
+                        ToolUse(id="call_1", name="glob", parameters={'pattern': '*.md'})
                     ],
                 ),
                 TextResponse("Done reading."),
@@ -266,95 +242,51 @@ class TestEndToEnd:
                 ToolCallResponse(
                     content="Let me read the code.",
                     tool_calls=[
-                        FakeToolCall(
-                            id="call_1",
-                            function=FakeFunction(
-                                name="read_file",
-                                arguments=json.dumps({"path": main_py}),
-                            ),
-                        )
+                        ToolUse(id="call_1", name="read_file", parameters={"path": main_py})
                     ],
                 ),
                 # Round 2: Read another file → 2 reads → EXECUTE
                 ToolCallResponse(
                     content="Let me check another file.",
                     tool_calls=[
-                        FakeToolCall(
-                            id="call_2",
-                            function=FakeFunction(
-                                name="read_file",
-                                arguments=json.dumps({"path": lib_py}),
-                            ),
-                        )
+                        ToolUse(id="call_2", name="read_file", parameters={"path": lib_py})
                     ],
                 ),
                 # Round 3: Edit the file → stays EXECUTE
                 ToolCallResponse(
                     content="I'll fix the bug.",
                     tool_calls=[
-                        FakeToolCall(
-                            id="call_3",
-                            function=FakeFunction(
-                                name="edit_file",
-                                arguments=json.dumps(
-                                    {
-                                        "path": main_py,
-                                        "old_string": "old_value",
-                                        "new_string": "new_value",
-                                    }
-                                ),
-                            ),
-                        )
+                        ToolUse(id="call_3", name="edit_file", parameters={
+                            "path": main_py,
+                            "old_string": "old_value",
+                            "new_string": "new_value",
+                        })
                     ],
                 ),
                 # Rounds 4-6: Read after write → push recent window past the write → VERIFY
                 ToolCallResponse(
                     content="Let me verify the change.",
                     tool_calls=[
-                        FakeToolCall(
-                            id="call_4",
-                            function=FakeFunction(
-                                name="read_file",
-                                arguments=json.dumps({"path": main_py}),
-                            ),
-                        )
+                        ToolUse(id="call_4", name="read_file", parameters={"path": main_py})
                     ],
                 ),
                 ToolCallResponse(
                     content="Checking more.",
                     tool_calls=[
-                        FakeToolCall(
-                            id="call_5",
-                            function=FakeFunction(
-                                name="read_file",
-                                arguments=json.dumps({"path": test_py}),
-                            ),
-                        )
+                        ToolUse(id="call_5", name="read_file", parameters={"path": test_py})
                     ],
                 ),
                 ToolCallResponse(
                     content="Reading lib.",
                     tool_calls=[
-                        FakeToolCall(
-                            id="call_6",
-                            function=FakeFunction(
-                                name="read_file",
-                                arguments=json.dumps({"path": lib_py}),
-                            ),
-                        )
+                        ToolUse(id="call_6", name="read_file", parameters={"path": lib_py})
                     ],
                 ),
                 # Round 7: Run tests → COMPLETE
                 ToolCallResponse(
                     content="Running tests.",
                     tool_calls=[
-                        FakeToolCall(
-                            id="call_7",
-                            function=FakeFunction(
-                                name="bash",
-                                arguments=json.dumps({"command": "echo 'all tests passed'"}),
-                            ),
-                        )
+                        ToolUse(id="call_7", name="bash", parameters={"command": "echo 'all tests passed'"})
                     ],
                 ),
                 # Final: text response
@@ -423,13 +355,7 @@ class TestEndToEnd:
                 ToolCallResponse(
                     content=f"Trying tool {i}.",
                     tool_calls=[
-                        FakeToolCall(
-                            id=f"call_{i}",
-                            function=FakeFunction(
-                                name="nonexistent_tool",
-                                arguments='{"x": "y"}',
-                            ),
-                        )
+                        ToolUse(id=f"call_{i}", name="nonexistent_tool", parameters={"x": "y"})
                     ],
                 )
             )
@@ -464,10 +390,7 @@ class TestEndToEnd:
                 ToolCallResponse(
                     content="Looking for files.",
                     tool_calls=[
-                        FakeToolCall(
-                            id=f"call_{i}",
-                            function=FakeFunction(name="glob", arguments='{"pattern": "*.py"}'),
-                        )
+                        ToolUse(id=f"call_{i}", name="glob", parameters={"pattern": "*.py"})
                     ],
                 )
             )
@@ -504,16 +427,13 @@ class TestEndToEnd:
 
             def invoke_stream(self, **kwargs: object):
                 """Simulate streaming — yield chunks then done."""
-                from steward.provider import _StreamDelta, _StreamedResponse
-
-                yield _StreamDelta(type="text_delta", text="Hello ")
-                yield _StreamDelta(type="text_delta", text="world!")
-                yield _StreamDelta(
+                yield StreamDelta(type="text_delta", text="Hello ")
+                yield StreamDelta(type="text_delta", text="world!")
+                yield StreamDelta(
                     type="done",
-                    response=_StreamedResponse(
-                        text="Hello world!",
-                        tool_calls=None,
-                        usage=FakeUsage(10, 5),
+                    response=NormalizedResponse(
+                        content="Hello world!",
+                        usage=LLMUsage(input_tokens=10, output_tokens=5),
                     ),
                 )
 
@@ -571,14 +491,12 @@ class TestEndToEnd:
                 return TextResponse("Fallback")
 
             def invoke_stream(self, **kwargs: object):
-                from steward.provider import _StreamDelta, _StreamedResponse
-
-                yield _StreamDelta(type="text_delta", text="Part ")
-                yield _StreamDelta(type="text_delta", text="one ")
-                yield _StreamDelta(type="text_delta", text="two")
-                yield _StreamDelta(
+                yield StreamDelta(type="text_delta", text="Part ")
+                yield StreamDelta(type="text_delta", text="one ")
+                yield StreamDelta(type="text_delta", text="two")
+                yield StreamDelta(
                     type="done",
-                    response=_StreamedResponse(text="Part one two"),
+                    response=NormalizedResponse(content="Part one two"),
                 )
 
         llm = StreamingLLM()
@@ -600,10 +518,7 @@ class TestEndToEnd:
                 ToolCallResponse(
                     content="Reading.",
                     tool_calls=[
-                        FakeToolCall(
-                            id="c1",
-                            function=FakeFunction(name="glob", arguments='{"pattern": "*.py"}'),
-                        )
+                        ToolUse(id="c1", name="glob", parameters={'pattern': '*.py'})
                     ],
                 ),
                 TextResponse("Found files."),

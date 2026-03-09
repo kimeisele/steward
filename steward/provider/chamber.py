@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Iterator
 
-from steward.types import LLMProvider, LLMUsage
+from steward.types import LLMProvider, LLMUsage, NormalizedResponse, StreamDelta, StreamingProvider
 from vibe_core.mahamantra.protocols._header import MahaHeader
 from vibe_core.mahamantra.protocols._seed import COSMIC_FRAME, MAHA_QUANTUM
 from vibe_core.mahamantra.substrate.cell_system.cell import (
@@ -217,10 +217,10 @@ class ProviderChamber:
 
         return self._apply_feedback_penalty(alive)
 
-    def invoke(self, **kwargs: object) -> object | None:
+    def invoke(self, **kwargs: object) -> NormalizedResponse | None:
         """Try provider cells in tier-aware order until one succeeds.
 
-        Returns LLMResponse or None if all providers exhausted.
+        Returns NormalizedResponse or None if all providers exhausted.
         """
         self._maybe_reset_daily()
         tier = str(kwargs.pop("tier", ""))
@@ -267,7 +267,7 @@ class ProviderChamber:
                     response = payload.provider.invoke(**call_kwargs)
                     duration_ms = (time.monotonic() - t0) * 1000
 
-                    usage = _normalize_usage(getattr(response, "usage", None))
+                    usage = response.usage
                     self._record_call_success(
                         cell,
                         breaker,
@@ -322,10 +322,8 @@ class ProviderChamber:
         )
         return None
 
-    def invoke_stream(self, **kwargs: object) -> Iterator[object]:
-        """Streaming invoke — yields _StreamDelta chunks."""
-        from steward.provider.adapters import _StreamDelta
-
+    def invoke_stream(self, **kwargs: object) -> Iterator[StreamDelta]:
+        """Streaming invoke — yields StreamDelta chunks."""
         self._maybe_reset_daily()
         kwargs.pop("prefer_capable", None)
 
@@ -357,7 +355,7 @@ class ProviderChamber:
 
             t0 = time.monotonic()
 
-            if not hasattr(payload.provider, "invoke_stream"):
+            if not isinstance(payload.provider, StreamingProvider):
                 logger.debug("'%s' lacks invoke_stream, falling back to non-streaming", payload.name)
                 call_kwargs = dict(kwargs)
                 call_kwargs["model"] = payload.model
@@ -365,20 +363,16 @@ class ProviderChamber:
                 try:
                     response = payload.provider.invoke(**call_kwargs)
                     duration_ms = (time.monotonic() - t0) * 1000
-                    usage = _normalize_usage(getattr(response, "usage", None))
                     self._record_call_success(
                         cell,
                         breaker,
-                        usage.input_tokens,
-                        usage.output_tokens,
+                        response.usage.input_tokens,
+                        response.usage.output_tokens,
                         duration_ms,
                     )
-                    text = ""
-                    if hasattr(response, "content"):
-                        text = response.content if isinstance(response.content, str) else ""  # type: ignore[attr-defined]
-                    if text:
-                        yield _StreamDelta(type="text_delta", text=text)
-                    yield _StreamDelta(type="done", response=response)
+                    if response.content:
+                        yield StreamDelta(type="text_delta", text=response.content)
+                    yield StreamDelta(type="done", response=response)
                     return
                 except Exception as e:
                     duration_ms = (time.monotonic() - t0) * 1000
@@ -392,10 +386,9 @@ class ProviderChamber:
 
             try:
                 for delta in payload.provider.invoke_stream(**call_kwargs):
-                    if hasattr(delta, "type") and delta.type == "done":  # type: ignore[attr-defined]
+                    if delta.type == "done":
                         duration_ms = (time.monotonic() - t0) * 1000
-                        final_resp = getattr(delta, "response", None)
-                        usage = _normalize_usage(getattr(final_resp, "usage", None)) if final_resp else LLMUsage()
+                        usage = delta.response.usage if delta.response else LLMUsage()
                         self._record_call_success(
                             cell,
                             breaker,

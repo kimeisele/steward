@@ -8,6 +8,7 @@ from typing import Any
 
 from steward.agent import StewardAgent
 from steward.services import SVC_EVENT_BUS, boot
+from steward.types import ToolUse
 from vibe_core.di import ServiceRegistry
 from vibe_core.mahamantra.substrate.services.event_bus import EventBus
 
@@ -18,18 +19,6 @@ from vibe_core.mahamantra.substrate.services.event_bus import EventBus
 class FakeUsage:
     input_tokens: int = 10
     output_tokens: int = 20
-
-
-@dataclass
-class FakeFunction:
-    name: str
-    arguments: dict[str, Any]
-
-
-@dataclass
-class FakeToolCall:
-    id: str
-    function: FakeFunction
 
 
 @dataclass
@@ -99,10 +88,7 @@ class TestEventBusEmission:
 
     def test_tool_call_emits_action_event(self) -> None:
         """Tool calls emit ACTION events to EventBus."""
-        tc = FakeToolCall(
-            id="call_1",
-            function=FakeFunction(name="bash", arguments={"command": "echo hi"}),
-        )
+        tc = ToolUse(id="call_1", name="bash", parameters={"command": "echo hi"})
         responses = [
             FakeResponse(content="", tool_calls=[tc]),
             FakeResponse(content="Done"),

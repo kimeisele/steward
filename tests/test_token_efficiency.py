@@ -66,18 +66,6 @@ class TextResponse:
 
 
 @dataclass
-class FakeToolCall:
-    id: str
-    function: object
-
-
-@dataclass
-class FakeFunction:
-    name: str
-    arguments: str
-
-
-@dataclass
 class ToolCallResponse:
     content: str = ""
     tool_calls: list | None = None
@@ -165,12 +153,10 @@ class TestToolOutputLimits:
                 ToolCallResponse(
                     content="Reading.",
                     tool_calls=[
-                        FakeToolCall(
+                        ToolUse(
                             id="c1",
-                            function=FakeFunction(
-                                name="read_file",
-                                arguments=json.dumps({"path": str(big_file)}),
-                            ),
+                            name="read_file",
+                            parameters={"path": str(big_file)},
                         )
                     ],
                 ),
@@ -211,10 +197,7 @@ class TestConversationBloat:
             ToolCallResponse(
                 content="Listing.",
                 tool_calls=[
-                    FakeToolCall(
-                        id="c1",
-                        function=FakeFunction(name="glob", arguments='{"pattern": "*.py"}'),
-                    )
+                    ToolUse(id="c1", name="glob", parameters={"pattern": "*.py"})
                 ],
             ),
             TextResponse("Found files."),
@@ -591,12 +574,10 @@ class TestChaos:
                 ToolCallResponse(
                     content="Reading.",
                     tool_calls=[
-                        FakeToolCall(
+                        ToolUse(
                             id="c1",
-                            function=FakeFunction(
-                                name="read_file",
-                                arguments=json.dumps({"path": str(huge)}),
-                            ),
+                            name="read_file",
+                            parameters={"path": str(huge)},
                         )
                     ],
                 ),
@@ -768,7 +749,7 @@ class TestTokenAccounting:
             ToolCallResponse(
                 content="",
                 tool_calls=[
-                    FakeToolCall(id="c1", function=FakeFunction(name="glob", arguments='{"pattern": "*.py"}')),
+                    ToolUse(id="c1", name="glob", parameters={"pattern": "*.py"}),
                 ],
             ),
             TextResponse("Done."),
