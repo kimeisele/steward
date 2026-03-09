@@ -51,6 +51,7 @@ from steward.types import (
     StreamingProvider,
     ToolUse,
 )
+from vibe_core.di import ServiceRegistry
 from vibe_core.mahamantra.adapters.attention import MahaAttention
 from vibe_core.mahamantra.adapters.compression import MahaCompression
 from vibe_core.mahamantra.substrate.vm.venu_orchestrator import VenuOrchestrator
@@ -163,10 +164,14 @@ class AgentLoop:
         self._narasimha = narasimha
         self._samskara = SamskaraContext()
         self._buddhi = buddhi or Buddhi()  # Use injected or create fresh
-        self._compression = MahaCompression()
+        # Use SVC_COMPRESSION from registry if available (singleton), else create fresh
+        from steward.services import SVC_COMPRESSION
+        self._compression = ServiceRegistry.get(SVC_COMPRESSION) or MahaCompression()
         self._json_mode = json_mode
         self._venu = venu
         self._cache = cache
+        self._ksetrajna = None  # Injected by agent for field observation
+        self._agent_ref = None  # Weak ref to agent for health anomaly checks
 
         # Ensure system prompt is first message
         if system_prompt and (not conversation.messages or conversation.messages[0].role != MessageRole.SYSTEM):
@@ -206,6 +211,17 @@ class AgentLoop:
             venu_diw = self._venu.step()
             logger.debug("Venu DIW: %d (position=%d)", venu_diw, (venu_diw & 0x3F))
 
+        # North Star alignment check — is this task aligned with agent purpose?
+        from steward.services import SVC_NORTH_STAR
+        north_star = ServiceRegistry.get(SVC_NORTH_STAR)
+        if north_star and isinstance(north_star, int):
+            # XOR distance between input seed and north star seed
+            # Low distance = aligned, high distance = divergent
+            alignment = 1.0 - min(bin(cr.seed ^ north_star).count("1") / 32.0, 1.0)
+            logger.debug("North Star alignment: %.2f (seed=%d, star=%d)", alignment, cr.seed, north_star)
+        else:
+            alignment = 1.0  # No north star = assume aligned
+
         self._conversation.add(Message(role=MessageRole.USER, content=user_message))
         usage = AgentUsage()
         usage.venu_diw = venu_diw
@@ -236,6 +252,14 @@ class AgentLoop:
         self._manage_context()
 
         for round_num in range(MAX_TOOL_ROUNDS):
+            # Cetana health check — abort if heartbeat detected critical anomaly
+            if self._agent_ref and getattr(self._agent_ref, "_health_anomaly", False):
+                detail = getattr(self._agent_ref, "_health_anomaly_detail", "unknown")
+                self._agent_ref._health_anomaly = False  # Reset flag after reading
+                logger.warning("Cetana anomaly detected mid-turn: %s", detail)
+                guidance = f"[Cetana: health anomaly] {detail}. Consider finishing quickly or switching to a lighter approach."
+                self._conversation.add(Message(role=MessageRole.USER, content=guidance))
+
             # Buddhi pre-flight: deterministic tool selection + token budget
             context_pct = (
                 self._conversation.total_tokens / self._conversation.max_tokens
@@ -298,12 +322,19 @@ class AgentLoop:
                 # Cache store: only when Hebbian confidence is HIGH (> 0.7).
                 # Requires ~5 successful uses of this seed pattern.
                 # First-success caching is dangerous — the response may be mediocre.
-                # Short TTL (60s): agent context changes fast, stale cache is toxic.
+                # Venu-modulated TTL: DIW position influences cache freshness.
+                # Higher DIW = more execution context passed = shorter TTL (fresher).
+                # Base 60s, reduced by Venu position (0-63 range from 6-bit field).
+                base_ttl = 60
+                if venu_diw:
+                    position = venu_diw & 0x3F  # 6-bit position (0-63)
+                    ttl_factor = 1.0 - (position / 63.0) * 0.5  # 1.0 to 0.5
+                    base_ttl = max(15, int(base_ttl * ttl_factor))
                 if self._cache and text:
                     store_conf = self._buddhi.seed_confidence(cr.seed)
                     if store_conf > 0.7:
-                        self._cache.set(str(cr.seed), text[:2000], ttl_seconds=60)
-                        logger.debug("Cache STORE: seed %d (confidence=%.2f)", cr.seed, store_conf)
+                        self._cache.set(str(cr.seed), text[:2000], ttl_seconds=base_ttl)
+                        logger.debug("Cache STORE: seed %d (confidence=%.2f, ttl=%ds)", cr.seed, store_conf, base_ttl)
                 if was_truncated:
                     logger.info("Quality: response truncated at %d chars (seed %d)", MAX_RESPONSE_CHARS, cr.seed)
                 if usage.cbr_exceeded:
@@ -452,6 +483,15 @@ class AgentLoop:
                     yield buddhi_event
                     return
                 # Reflection/redirect: guidance injected, continue loop
+
+            # Phase 5: KsetraJna mid-turn observation — detect stuck/stagnation
+            if self._ksetrajna:
+                self._ksetrajna.observe()
+                if self._ksetrajna.is_stuck():
+                    logger.warning("KsetraJna: agent stuck (drift < threshold over %d observations)", 5)
+                    guidance = "[KsetraJna: stagnation detected] The field is not changing. Break the pattern — try a completely different approach or tool."
+                    self._conversation.add(Message(role=MessageRole.USER, content=guidance))
+                    usage.buddhi_reflections += 1
 
         usage.rounds = MAX_TOOL_ROUNDS
         yield AgentEvent(type=EventType.ERROR, content="Maximum tool rounds exceeded")
@@ -620,6 +660,17 @@ class AgentLoop:
 
         usage.buddhi_errors += sum(1 for ok, _ in all_outcomes if not ok)
         verdict = self._buddhi.evaluate(all_calls, all_outcomes)
+
+        # Wire feedback protocol — every tool outcome is a learning signal
+        from steward.services import SVC_FEEDBACK
+        feedback = ServiceRegistry.get(SVC_FEEDBACK)
+        if feedback:
+            ctx = {"round": round_num}
+            for tc, (ok, err) in zip(all_calls, all_outcomes):
+                if ok:
+                    feedback.signal_success(tc.name, ctx)
+                else:
+                    feedback.signal_failure(tc.name, err or "unknown", ctx)
 
         if verdict.action == VerdictAction.ABORT:
             usage.rounds = round_num + 1
