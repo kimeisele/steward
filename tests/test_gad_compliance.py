@@ -61,15 +61,17 @@ class TestGADCompliance:
         assert "conversation_tokens" in state
         assert "context_budget_pct" in state
         assert "tools_registered" in state
-        assert "heartbeat_state" in state
+        assert "ksetrajna" in state
         assert "safety_guard_active" in state
         assert state["safety_guard_active"] is True
 
-    def test_heartbeat_works(self):
-        """MantraHeartbeat chants correctly."""
+    def test_ksetrajna_observable(self):
+        """KsetraJna meta-observer is accessible and produces stats."""
         agent = StewardAgent(provider=FakeLLM(), system_prompt="test")
-        assert agent.chant() is True
-        assert agent.heartbeat.mantra_count >= 1
+        kj_stats = agent.get_state()["ksetrajna"]
+        assert isinstance(kj_stats, dict)
+        assert "observations" in kj_stats
+        assert "digest" in kj_stats
 
     def test_audit_passes(self):
         """GAD-000 audit passes for StewardAgent."""

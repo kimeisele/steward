@@ -30,6 +30,7 @@ from steward.antahkarana.chitta import (
     Impression,
 )
 from steward.antahkarana.gandha import Detection, VerdictAction, detect_patterns
+from steward.antahkarana.ksetrajna import BubbleSnapshot, KsetraJna
 from steward.antahkarana.manas import Manas, ManasPerception
 
 __all__ = [
@@ -45,4 +46,6 @@ __all__ = [
     "PHASE_COMPLETE",
     "Detection",
     "detect_patterns",
+    "KsetraJna",
+    "BubbleSnapshot",
 ]
