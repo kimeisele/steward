@@ -245,6 +245,11 @@ class Buddhi:
         self._chitta = Chitta()
         self._prev_phase = ExecutionPhase.ORIENT
         self._synaptic = synaptic  # Real Hebbian learning from steward-protocol
+        # Initialized by pre_flight() round 0 — safe defaults until then
+        self._action: SemanticActionType = SemanticActionType.RESPOND
+        self._guna: IntentGuna = IntentGuna.RAJAS
+        self._function: str = ""
+        self._approach: str = ""
 
     def record_outcome(self, success: bool) -> None:
         """Record task outcome via Hebbian synaptic update.
@@ -255,9 +260,7 @@ class Buddhi:
         """
         if self._synaptic is None:
             return
-        action = getattr(self, "_action", None)
-        if action is not None:
-            self._synaptic.update(action.value, "execute", success)
+        self._synaptic.update(self._action.value, "execute", success)
 
     def record_seed(self, seed: int, success: bool) -> None:
         """Record seed-level outcome for input-specific learning.
