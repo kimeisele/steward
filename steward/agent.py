@@ -51,7 +51,7 @@ from steward.tools.read_file import ReadFileTool
 from steward.tools.sub_agent import SubAgentTool
 from steward.tools.web_search import WebSearchTool
 from steward.tools.write_file import WriteFileTool
-from steward.types import AgentEvent, AgentUsage, Conversation, EventType, LLMProvider
+from steward.types import AgentEvent, AgentUsage, Conversation, EventType, LLMProvider, Message, MessageRole
 from vibe_core.di import ServiceRegistry
 from vibe_core.mahamantra.adapters.attention import MahaAttention
 from vibe_core.mahamantra.protocols._gad import GADBase
@@ -220,11 +220,12 @@ class StewardAgent(GADBase):
         self._custom_prompt = system_prompt is not None
         if system_prompt is not None:
             self._system_prompt = system_prompt
+            self._base_system_prompt = system_prompt
         else:
             dynamic_ctx = self._resolve_dynamic_context()
             project_ctx = _load_project_instructions(self._cwd)
             session_ctx = self._ledger.prompt_context()
-            self._system_prompt = _build_system_prompt(
+            self._base_system_prompt = _build_system_prompt(
                 _BASE_SYSTEM_PROMPT,
                 self._cwd,
                 self._registry.list_tools(),
@@ -232,15 +233,16 @@ class StewardAgent(GADBase):
                 project_instructions=project_ctx,
                 session_history=session_ctx,
             )
-            # Inject persona identity into system prompt
+            # Inject persona identity into base prompt (stable across runs)
             if self._persona:
                 persona_section = self._format_persona_prompt()
                 if persona_section:
-                    self._system_prompt += persona_section
+                    self._base_system_prompt += persona_section
 
-            # Inject 5 Jnanendriya perceptions (deterministic, zero LLM)
+            # Initial 5 Jnanendriya perception (re-fires each run_stream)
             self._senses.perceive_all()
             sense_ctx = self._senses.format_for_prompt()
+            self._system_prompt = self._base_system_prompt
             if sense_ctx:
                 self._system_prompt += sense_ctx
 
@@ -291,17 +293,33 @@ class StewardAgent(GADBase):
     async def run_stream(self, task: str) -> AsyncIterator[AgentEvent]:
         """Execute a task and yield events as they happen.
 
+        Re-perceives senses before each run for live environmental awareness.
         Emits to both SignalBus (simple) and EventBus (full Narada stream).
         Passes Memory to AgentLoop for cross-turn file tracking.
         Buddhi persists across turns — Chitta retains file awareness.
         Records cumulative session stats in Memory after each turn.
         """
-        # Inject gap awareness (skip for custom system prompts)
-        effective_prompt = self._system_prompt
+        # Re-perceive senses for live environmental context (cheap, deterministic)
         if not self._custom_prompt:
+            self._senses.perceive_all()
+            sense_ctx = self._senses.format_for_prompt()
+            effective_prompt = self._base_system_prompt
+            if sense_ctx:
+                effective_prompt += sense_ctx
             gap_ctx = self._gaps.format_for_prompt()
             if gap_ctx:
                 effective_prompt += gap_ctx
+        else:
+            effective_prompt = self._system_prompt
+
+        # Update system message if conversation already has one (multi-run freshness)
+        if (
+            self._conversation.messages
+            and self._conversation.messages[0].role == MessageRole.SYSTEM
+        ):
+            self._conversation.messages[0] = Message(
+                role=MessageRole.SYSTEM, content=effective_prompt
+            )
 
         loop = AgentLoop(
             provider=self._provider,
