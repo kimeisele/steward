@@ -215,6 +215,8 @@ class StewardAgent(GADBase):
         # Cetana — autonomous heartbeat driven by vedana health (BG 13.6-7)
         # Daemon thread: adapts monitoring frequency to agent health.
         # Does NOT think or act — only observes and signals.
+        self._health_anomaly = False
+        self._health_anomaly_detail = ""
         self._cetana = Cetana(
             vedana_source=lambda: self.vedana,
             on_anomaly=self._on_cetana_anomaly,
@@ -327,6 +329,9 @@ class StewardAgent(GADBase):
             venu=ServiceRegistry.get(SVC_VENU),
             cache=ServiceRegistry.get(SVC_CACHE),
         )
+        # Wire field observers into engine — mid-turn, not just turn-boundary
+        loop._ksetrajna = self._ksetrajna
+        loop._agent_ref = self  # For Cetana health anomaly checks
         async for event in loop.run(task):
             self._emit_signal(event)
             self._emit_event_bus(event)
@@ -806,12 +811,25 @@ class StewardAgent(GADBase):
         self._cetana.stop()
 
     def _on_cetana_anomaly(self, beat: object) -> None:
-        """Cetana detected health anomaly — emit signal."""
+        """Cetana detected health anomaly — set flag + emit signal.
+
+        The anomaly flag is read by the engine loop to inject health warnings.
+        This is the bridge: Cetana (observer) → Engine (actor).
+        """
         from steward.cetana import CetanaBeat
         from vibe_core.steward.bus import Signal, SignalType
 
         if not isinstance(beat, CetanaBeat):
             return
+
+        # Set anomaly flag — engine reads this mid-turn
+        self._health_anomaly = True
+        self._health_anomaly_detail = (
+            f"health={beat.vedana.health:.2f} ({beat.vedana.guna}), "
+            f"provider={beat.vedana.provider_health:.2f}, "
+            f"errors={beat.vedana.error_pressure:.2f}"
+        )
+
         bus = ServiceRegistry.get(SVC_SIGNAL_BUS)
         if bus is None:
             return
