@@ -285,6 +285,7 @@ class Buddhi:
         user_message: str,
         round_num: int,
         context_pct: float = 0.0,
+        seed: int = 0,
     ) -> BuddhiDirective:
         """Pre-flight gate — Manas perception + Chitta phase -> tool selection.
 
@@ -295,6 +296,7 @@ class Buddhi:
             user_message: The original user request
             round_num: Current tool-use round (0 = first LLM call)
             context_pct: Current context budget usage (0.0 to 1.0)
+            seed: Input seed for Hebbian cache confidence lookup
 
         Returns:
             BuddhiDirective with action, guna, tool_names, max_tokens, phase
@@ -331,16 +333,18 @@ class Buddhi:
 
         # ── DSP Signal Chain ────────────────────────────────────────
         # Task weight (action) × phase modulation → effective weight
+        # Cache confidence from Hebbian synaptic (per-seed learning).
         # Then process_cbr() handles compression + limiting + quantization.
         # No if/else thresholds. The math handles everything.
         task_weight = _ACTION_WEIGHT.get(self._action, 0.5)
         phase_mod = _PHASE_MODULATION.get(phase, 0.5)
         effective_weight = task_weight * phase_mod
+        cache_conf = self.seed_confidence(seed) if seed else 0.0
 
         cbr_out = process_cbr(
             context_pressure=context_pct,
             task_weight=effective_weight,
-            cache_confidence=0.0,  # no seed at pre_flight time
+            cache_confidence=cache_conf,
         )
         max_tokens = cbr_out.budget
 

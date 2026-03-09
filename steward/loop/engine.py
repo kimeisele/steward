@@ -199,11 +199,14 @@ class AgentLoop:
         usage.input_seed = cr.seed
         usage.cbr_budget = CBR_CEILING  # max possible; Buddhi DSP refines per-call
 
-        # Cache check: if we've seen this exact input before, bypass LLM entirely
-        if self._cache:
+        # Cache check: only replay when Hebbian confidence is HIGH (> 0.7).
+        # This means the seed has been seen 5+ times successfully.
+        # First-success caching is toxic for agents — context differs each time.
+        cache_conf = self._buddhi.seed_confidence(cr.seed)
+        if self._cache and cache_conf > 0.7:
             cached_response = self._cache.get(str(cr.seed))
             if cached_response:
-                logger.info("Cache HIT on seed %d — zero LLM cost", cr.seed)
+                logger.info("Cache HIT on seed %d (confidence=%.2f) — zero LLM cost", cr.seed, cache_conf)
                 usage.cache_hit = True
                 usage.rounds = 0
                 usage.cbr_consumed = 0
@@ -226,7 +229,7 @@ class AgentLoop:
                 if self._conversation.max_tokens
                 else 0.0
             )
-            directive = self._buddhi.pre_flight(user_message, round_num, context_pct)
+            directive = self._buddhi.pre_flight(user_message, round_num, context_pct, seed=cr.seed)
             if round_num == 0:
                 usage.buddhi_action = directive.action.value
                 usage.buddhi_guna = directive.guna.value
@@ -262,17 +265,21 @@ class AgentLoop:
                 usage.cbr_exceeded = usage.cbr_consumed > usage.cbr_budget
                 usage.cbr_reserve = max(0, usage.cbr_budget - usage.cbr_consumed)
 
-                # Cache store: cache all complete responses (truncated ones are still useful)
-                if self._cache and text:
-                    self._cache.set(str(cr.seed), text[:2000])
-                    logger.debug("Cache STORE: seed %d", cr.seed)
-
                 # Hebbian learning: ALWAYS success=True for completed turns.
                 # Truncation and CBR overshoot are quality SIGNALS, not failures.
                 # Recording truncation as failure causes reward hacking:
                 # the agent learns to produce NOOPs instead of useful-but-long output.
-                # Quality awareness is tracked in usage fields, not in synaptic weights.
                 self._buddhi.record_seed(cr.seed, success=True)
+
+                # Cache store: only when Hebbian confidence is HIGH (> 0.7).
+                # Requires ~5 successful uses of this seed pattern.
+                # First-success caching is dangerous — the response may be mediocre.
+                # Short TTL (60s): agent context changes fast, stale cache is toxic.
+                if self._cache and text:
+                    store_conf = self._buddhi.seed_confidence(cr.seed)
+                    if store_conf > 0.7:
+                        self._cache.set(str(cr.seed), text[:2000], ttl_seconds=60)
+                        logger.debug("Cache STORE: seed %d (confidence=%.2f)", cr.seed, store_conf)
                 if was_truncated:
                     logger.info("Quality: response truncated at %d chars (seed %d)", MAX_RESPONSE_CHARS, cr.seed)
                 if usage.cbr_exceeded:

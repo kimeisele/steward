@@ -358,6 +358,51 @@ class TestContextAwareTokenBudget:
         assert d80.max_tokens == 512  # floor — can't go below
 
 
+class TestSeedConfidenceDSP:
+    """Seed confidence feeds into DSP cache gate via Hebbian synaptic."""
+
+    def test_high_confidence_reduces_budget(self):
+        """Seed with high Hebbian confidence → DSP cache gate attenuates."""
+        synaptic = HebbianSynaptic()
+        buddhi = Buddhi(synaptic=synaptic)
+        buddhi._action = SemanticActionType.IMPLEMENT
+        buddhi._guna = IntentGuna.RAJAS
+        buddhi._function = "BRAHMA"
+        buddhi._approach = "GENESIS"
+
+        seed = 12345
+        # Drive confidence above 0.7 (5+ successes from 0.5 baseline)
+        for _ in range(6):
+            synaptic.update(f"seed:{seed}", "cache", True)
+        assert buddhi.seed_confidence(seed) > 0.7
+
+        d_no_seed = buddhi.pre_flight("implement", 1, context_pct=0.0, seed=0)
+        d_with_seed = buddhi.pre_flight("implement", 1, context_pct=0.0, seed=seed)
+        assert d_with_seed.max_tokens < d_no_seed.max_tokens
+
+    def test_low_confidence_no_effect(self):
+        """Seed with default confidence (0.5) → negligible DSP effect."""
+        synaptic = HebbianSynaptic()
+        buddhi = Buddhi(synaptic=synaptic)
+        buddhi._action = SemanticActionType.IMPLEMENT
+        buddhi._guna = IntentGuna.RAJAS
+        buddhi._function = "BRAHMA"
+        buddhi._approach = "GENESIS"
+
+        # Default weight is 0.5 → cache gate: gain *= (1 - 0.5 * 0.5) = 0.75
+        # vs seed=0: gain *= (1 - 0.0 * 0.5) = 1.0
+        # Both produce different gains but the difference is from the continuous gate
+        d_no_seed = buddhi.pre_flight("implement", 1, context_pct=0.0, seed=0)
+        d_unknown = buddhi.pre_flight("implement", 1, context_pct=0.0, seed=99999)
+        # Unknown seed gets default 0.5 confidence → some attenuation
+        assert d_unknown.max_tokens <= d_no_seed.max_tokens
+
+    def test_no_synaptic_zero_confidence(self):
+        """Without HebbianSynaptic, seed confidence is always 0.0."""
+        buddhi = Buddhi()  # no synaptic
+        assert buddhi.seed_confidence(12345) == 0.0
+
+
 class TestBuddhiInLoop:
     """Integration test: Buddhi with engine-like tool call patterns."""
 
