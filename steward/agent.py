@@ -526,77 +526,42 @@ class StewardAgent(GADBase):
             tags=["gaps"],
         )
 
-    def _load_persona(self) -> object | None:
-        """Load agent persona from .steward/persona.yaml or create default."""
+    def _load_persona(self) -> dict[str, str] | None:
+        """Derive Jiva identity from MahaMantra VM (deterministic, from seed).
+
+        No YAML files, no text injection. Identity IS what the seed computes.
+        Uses mahamantra() from steward-protocol — the same VM that agent-city uses.
+        """
         try:
-            from vibe_core.state.persona import AgentPersona, PersonaManager
+            from vibe_core.mahamantra import mahamantra
 
-            manager = PersonaManager(workspace_path=Path(self._cwd))
-            persona = manager.load("steward")
-            if persona:
-                logger.info("Loaded persona: %s (dharma: %s)", persona.display_name, persona.dharma[:50])
-                return persona
-
-            # Create default persona if none exists
-            persona = AgentPersona(
-                agent_id="steward",
-                display_name="Steward",
-                dharma="Autonomous software engineering — read, understand, build, fix, deploy.",
-                varna="KSHATRIYA",
-                personality={
-                    "formality": 0.3,
-                    "verbosity": 0.2,
-                    "creativity": 0.6,
-                    "caution": 0.4,
-                },
-                constitutional_limits=[
-                    "Never delete production data without explicit confirmation",
-                    "Never commit secrets or credentials",
-                    "Always run tests before declaring success",
-                ],
+            vm = mahamantra("steward")
+            jiva = {
+                "guna": vm["guna"]["mode"],
+                "guardian": vm["guardian"],
+                "quarter": vm["quarter"],
+                "trinity": vm["trinity_function"],
+                "position": str(vm["position"]),
+                "holy_name": vm["holy_name"],
+            }
+            logger.info(
+                "Jiva identity: %s | %s | %s | %s",
+                jiva["guna"], jiva["guardian"], jiva["quarter"], jiva["trinity"],
             )
-            manager.save(persona)
-            logger.info("Created default persona for steward")
-            return persona
+            return jiva
         except Exception as e:
-            logger.debug("Persona loading skipped: %s", e)
+            logger.debug("Jiva derivation skipped: %s", e)
             return None
 
     def _format_persona_prompt(self) -> str:
-        """Format persona traits for system prompt injection."""
+        """Minimal Jiva identity section — who, not how to behave."""
         if not self._persona:
             return ""
-        try:
-            from vibe_core.state.persona import AgentPersona
-
-            if not isinstance(self._persona, AgentPersona):
-                return ""
-            p: AgentPersona = self._persona
-            parts = ["\n\n## Identity"]
-            if p.dharma:
-                parts.append(f"Dharma: {p.dharma}")
-            traits = p.personality
-            if traits:
-                style_parts = []
-                if traits.get("formality", 0.5) < 0.3:
-                    style_parts.append("direct and informal")
-                elif traits.get("formality", 0.5) > 0.7:
-                    style_parts.append("formal and precise")
-                if traits.get("verbosity", 0.5) < 0.3:
-                    style_parts.append("concise")
-                if traits.get("creativity", 0.5) > 0.7:
-                    style_parts.append("creative in problem-solving")
-                if traits.get("caution", 0.5) > 0.7:
-                    style_parts.append("cautious with destructive operations")
-                if style_parts:
-                    parts.append(f"Style: {', '.join(style_parts)}")
-            if p.constitutional_limits:
-                parts.append("Constraints:")
-                for limit in p.constitutional_limits[:5]:
-                    parts.append(f"  - {limit}")
-            return "\n".join(parts)
-        except Exception:
-            return ""
+        j = self._persona
+        return (
+            f"\n\n## Jiva Identity\n"
+            f"{j['guna']} | {j['guardian']} | {j['quarter']} | {j['trinity']}"
+        )
 
     def _record_session_stats(self, usage: AgentUsage) -> None:
         """Record cumulative session stats in Memory (Chitta).
@@ -732,12 +697,14 @@ class StewardAgent(GADBase):
                 "diamond_tdd",
                 "web_search",
                 "gap_detection",
-                "persona_identity",
+                "jiva_identity",
+                "hebbian_synaptic",
             ],
             "antahkarana": ["manas", "buddhi", "chitta", "gandha"],
             "jnanendriyas": list(self._senses.senses.keys()),
             "active_gaps": len(self._gaps),
-            "has_persona": self._persona is not None,
+            "jiva": self._persona,
+            "synaptic_weights": self._synaptic.weight_count,
             "protocol_services": {
                 "cache": ServiceRegistry.get(SVC_CACHE) is not None,
                 "diamond": ServiceRegistry.get(SVC_DIAMOND) is not None,
