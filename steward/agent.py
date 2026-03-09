@@ -53,7 +53,7 @@ from steward.tools.read_file import ReadFileTool
 from steward.tools.sub_agent import SubAgentTool
 from steward.tools.web_search import WebSearchTool
 from steward.tools.write_file import WriteFileTool
-from steward.types import AgentEvent, AgentUsage, Conversation, EventType, LLMProvider, Message, MessageRole
+from steward.types import AgentEvent, AgentUsage, Conversation, EventType, LLMProvider, Message, MessageRole, ToolResult
 from vibe_core.di import ServiceRegistry
 from vibe_core.mahamantra.substrate.manas.synaptic import HebbianSynaptic
 from vibe_core.mahamantra.adapters.attention import MahaAttention
@@ -303,12 +303,10 @@ class StewardAgent(GADBase):
             self._emit_signal(event)
             self._emit_event_bus(event)
             # Track tool failures as gaps
-            if event.type == EventType.TOOL_RESULT and event.content:
-                result = event.content
-                if hasattr(result, "success") and not result.success:  # type: ignore[union-attr]
-                    error = getattr(result, "error", "") or ""
+            if event.type == EventType.TOOL_RESULT and isinstance(event.content, ToolResult):
+                if not event.content.success:
                     tool_name = event.tool_use.name if event.tool_use else "unknown"
-                    self._gaps.record_tool_failure(tool_name, str(error))
+                    self._gaps.record_tool_failure(tool_name, event.content.error or "")
             if event.type == EventType.DONE and event.usage:
                 self._record_session_stats(event.usage)
                 self._record_session_ledger(task, event.usage)
@@ -357,9 +355,7 @@ class StewardAgent(GADBase):
                 )
             )
         elif event.type == EventType.TOOL_RESULT:
-            success = False
-            if event.content and hasattr(event.content, "success"):
-                success = event.content.success  # type: ignore[union-attr]
+            success = isinstance(event.content, ToolResult) and event.content.success
             bus.emit(
                 Signal(
                     signal_type=SignalType.AGENT_STATUS_UPDATE,
@@ -403,9 +399,7 @@ class StewardAgent(GADBase):
                 message=f"tool_call: {event.tool_use.name}" if event.tool_use else "tool_call",
             )
         elif event.type == EventType.TOOL_RESULT:
-            success = False
-            if event.content and hasattr(event.content, "success"):
-                success = event.content.success  # type: ignore[union-attr]
+            success = isinstance(event.content, ToolResult) and event.content.success
             event_bus.emit_sync(
                 event_type=SubstrateEventType.ACTION if success else SubstrateEventType.ERROR,
                 agent_id="steward",

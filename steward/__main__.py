@@ -24,7 +24,7 @@ from steward import __version__
 from steward.agent import StewardAgent
 from steward.provider import build_chamber
 from steward.state import clear_state, load_conversation, save_conversation
-from steward.types import AgentEvent, AgentUsage, EventType
+from steward.types import AgentEvent, AgentUsage, EventType, ToolResult
 
 # ── Console Setup ────────────────────────────────────────────────────
 
@@ -64,14 +64,12 @@ def _format_event(event: AgentEvent) -> None:
         _console.print(f"  [tool.name]{escape(tc.name)}[/] [tool.param]{escape(display)}[/]")
 
     elif event.type == EventType.TOOL_RESULT:
-        if event.content and hasattr(event.content, "success"):
-            if event.content.success:  # type: ignore[union-attr]
-                output = getattr(event.content, "output", "")
-                preview = str(output)[:120] if output else "ok"
+        if isinstance(event.content, ToolResult):
+            if event.content.success:
+                preview = str(event.content.output)[:120] if event.content.output else "ok"
                 _console.print(f"  [tool.ok]>[/] [stats]{escape(preview)}[/]")
             else:
-                err = getattr(event.content, "error", "failed")
-                _console.print(f"  [tool.err]x {escape(str(err))}[/]")
+                _console.print(f"  [tool.err]x {escape(event.content.error or 'failed')}[/]")
 
     elif event.type == EventType.DONE and event.usage:
         _print_usage(event.usage)

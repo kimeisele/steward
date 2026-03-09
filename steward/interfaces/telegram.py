@@ -36,7 +36,7 @@ import time
 from steward.agent import StewardAgent
 from steward.provider import build_chamber
 from steward.state import load_conversation, save_conversation
-from steward.types import EventType
+from steward.types import EventType, ToolResult
 
 logger = logging.getLogger("STEWARD.TELEGRAM")
 
@@ -201,7 +201,7 @@ class TelegramBot:
                         tc = event.tool_use
                         tool_log.append(f"  {tc.name}")
                     elif event.type == EventType.TOOL_RESULT:
-                        if event.content and hasattr(event.content, "success"):
+                        if isinstance(event.content, ToolResult):
                             status = "ok" if event.content.success else "err"
                             tool_log.append(f"    -> {status}")
                     elif event.type == EventType.ERROR:
