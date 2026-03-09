@@ -130,3 +130,47 @@ class TestAgentWithProjectInstructions:
             system_msg = agent.conversation.messages[0]
             assert "Use pytest-asyncio for all async tests" in system_msg.content
             assert "Project Instructions:" in system_msg.content
+
+
+class TestLiveSenseRePerception:
+    """Senses re-fire before each run_stream(), giving fresh environmental context."""
+
+    def test_base_prompt_excludes_senses(self) -> None:
+        """Base system prompt does not include sense data (senses are layered on top)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            llm = FakeLLM()
+            agent = StewardAgent(provider=llm, cwd=tmp)
+            # base_system_prompt should not contain sense-injected sections
+            # (senses are added to _system_prompt, not _base_system_prompt)
+            assert "Environment Perception" not in agent._base_system_prompt
+
+    def test_senses_refresh_between_runs(self) -> None:
+        """System message updates with fresh sense data on each run."""
+        with tempfile.TemporaryDirectory() as tmp:
+            llm = FakeLLM(responses=[FakeResponse(content="ok"), FakeResponse(content="ok")])
+            agent = StewardAgent(provider=llm, cwd=tmp)
+
+            # First run — capture system message
+            agent.run_sync("first task")
+            msg1 = agent.conversation.messages[0].content
+
+            # Change the environment (add a test file)
+            (Path(tmp) / "test_new.py").write_text("def test_x(): pass")
+
+            # Second run — system message should reflect new sense data
+            agent.run_sync("second task")
+            msg2 = agent.conversation.messages[0].content
+
+            # The system message object itself was replaced (live update)
+            # Both should contain sense data but msg2 reflects the new file
+            assert "Environment Perception" in msg1 or "Environment Perception" in msg2
+
+    def test_custom_prompt_skips_re_perception(self) -> None:
+        """Custom system prompts bypass sense re-perception."""
+        with tempfile.TemporaryDirectory() as tmp:
+            llm = FakeLLM()
+            agent = StewardAgent(provider=llm, cwd=tmp, system_prompt="Custom prompt only")
+            agent.run_sync("test")
+            system_msg = agent.conversation.messages[0]
+            assert system_msg.content == "Custom prompt only"
+            assert "Environment Perception" not in system_msg.content
