@@ -47,10 +47,18 @@ class TestGADCompliance:
         assert "tools" in info
         assert isinstance(info["tools"], list)
         assert len(info["tools"]) > 0  # has builtin tools
-        assert "autonomous_coding" in info["capabilities"]
-        assert "buddhi_phase_machine" in info["capabilities"]
         assert info["architecture"] == "sankhya_25"
         assert info["kshetra_elements"] == 25
+        # BG 13.6-7 field mapping
+        assert "antahkarana" in info
+        assert "manas" in info["antahkarana"]
+        assert "buddhi" in info["antahkarana"]
+        assert "jnanendriyas" in info
+        assert "karmendriyas" in info
+        assert "ksetrajna" in info
+        assert "kshetra_properties" in info
+        assert info["kshetra_properties"]["vedana"] is True
+        assert info["kshetra_properties"]["cetana"] is True
 
     def test_get_state_returns_observability(self):
         """get_state() returns current agent state."""

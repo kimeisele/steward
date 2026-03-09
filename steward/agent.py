@@ -628,7 +628,10 @@ class StewardAgent(GADBase):
     def discover(self) -> dict[str, object]:
         """GAD-000 Discoverability — machine-readable capability description.
 
-        Includes Kshetra awareness (25 Sankhya elements mapped).
+        Complete BG 13.6-7 Ksetra (field) mapping:
+          24 Prakriti elements (kshetra.py) + 1 Jiva (LLM)
+          + Ksetra-jna (field observer)
+          + Ksetra properties (vedana, cetana, dhrti, iccha/dvesha)
         """
         from steward.kshetra import STEWARD_KSHETRA
 
@@ -640,24 +643,39 @@ class StewardAgent(GADBase):
             "kshetra_elements": len(STEWARD_KSHETRA) + 1,  # 24 Prakriti + 1 Jiva
             "tools": self._registry.list_tools(),
             "providers": len(self._provider) if isinstance(self._provider, ChamberProvider) else 1,
-            "capabilities": [
-                "autonomous_coding",
-                "tool_execution",
-                "context_compaction",
-                "session_resume",
-                "multi_provider_failover",
-                "buddhi_phase_machine",
-                "gandha_pattern_detection",
-                "ephemeral_cache",
-                "diamond_tdd",
-                "web_search",
-                "gap_detection",
-                "jiva_identity",
-                "hebbian_synaptic",
-                "cetana_heartbeat",
-            ],
-            "antahkarana": ["manas", "buddhi", "chitta", "gandha", "ksetrajna"],
-            "jnanendriyas": ["srotra", "tvak", "caksu", "jihva", "ghrana"],  # Hard 5 — Vedic Tattvas
+            # ── Antahkarana (BG 13.6: inner instrument) ──
+            "antahkarana": {
+                "manas": "steward.antahkarana.manas",       # perceive intent
+                "buddhi": "steward.buddhi",                  # discriminate
+                "ahankara": "steward.agent",                 # identity (Jiva)
+                "chitta": "steward.antahkarana.chitta",      # store impressions
+                "gandha": "steward.antahkarana.gandha",      # detect patterns (tanmatra #9)
+            },
+            # ── Ksetra-jna (BG 13.1-2: knower of the field) ──
+            "ksetrajna": "steward.antahkarana.ksetrajna",    # meta-observer
+            # ── Ksetra properties (BG 13.6-7: field qualities) ──
+            "kshetra_properties": {
+                "vedana": True,        # sukham/duhkham — health pulse
+                "cetana": True,        # life symptoms — heartbeat
+                "dhrti": True,         # conviction — narasimha + safety guard
+                "iccha_dvesha": True,  # desire/aversion — hebbian synaptic
+            },
+            # ── 5 Jnanendriyas (BG 13.6: knowledge senses) ──
+            "jnanendriyas": {
+                "srotra": {"module": "git_sense", "perceives": "local"},
+                "tvak": {"module": "project_sense", "perceives": "local"},
+                "caksu": {"module": "code_sense", "perceives": "local"},
+                "jihva": {"module": "testing_sense", "perceives": "local"},
+                "ghrana": {"module": "health_sense", "perceives": "local"},
+            },
+            # ── 5 Karmendriyas (BG 13.6: action organs) ──
+            "karmendriyas": {
+                "vak": "AgentLoop._call_llm",        # speech → LLM prompts
+                "pani": "ToolRegistry.execute",       # hands → tool execution
+                "pada": "MahaAttention",              # feet → O(1) routing
+                "payu": "SamskaraContext.compact",     # elimination → context GC
+                "upastha": "boot",                     # creation → service genesis
+            },
             "active_gaps": len(self._gaps),
             "jiva": self._persona,
             "synaptic_weights": self._synaptic.weight_count,
