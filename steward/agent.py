@@ -285,10 +285,23 @@ class StewardAgent(GADBase):
         Buddhi persists across turns — Chitta retains file awareness.
         Records cumulative session stats in Memory after each turn.
         """
-        # Re-perceive senses (infrastructure use — cheap, deterministic, zero LLM)
+        # Re-perceive senses (cheap, deterministic, zero LLM)
+        # Inject perception + gaps into system prompt — agent needs awareness
         if not self._custom_prompt:
             self._senses.perceive_all()
-        effective_prompt = self._system_prompt
+            context_parts = [self._base_system_prompt]
+            sense_context = self._senses.format_for_prompt()
+            if sense_context:
+                context_parts.append(sense_context)
+            gap_context = self._gaps.format_for_prompt()
+            if gap_context:
+                context_parts.append(gap_context)
+            # NOTE: Session ledger is NOT injected into prompt.
+            # Learning is INFRASTRUCTURE (Hebbian, Chitta, Gandha patterns),
+            # not LLM prompt bloat. The 25th element observes, not memorizes.
+            effective_prompt = "".join(context_parts)
+        else:
+            effective_prompt = self._system_prompt
 
         # Update system message if conversation already has one (multi-run freshness)
         if (
@@ -625,6 +638,15 @@ class StewardAgent(GADBase):
 
     # ── GAD-000 Protocol Implementation ──────────────────────────────
 
+    def _srotra_scope(self) -> str:
+        """Determine SROTRA perception scope: local or local+remote."""
+        from vibe_core.mahamantra.protocols._sense import Jnanendriya
+
+        git_sense = self._senses.senses.get(Jnanendriya.SROTRA)
+        if git_sense and hasattr(git_sense, "_gh") and git_sense._gh and git_sense._gh.is_available:
+            return "local+remote"
+        return "local"
+
     def discover(self) -> dict[str, object]:
         """GAD-000 Discoverability — machine-readable capability description.
 
@@ -662,7 +684,7 @@ class StewardAgent(GADBase):
             },
             # ── 5 Jnanendriyas (BG 13.6: knowledge senses) ──
             "jnanendriyas": {
-                "srotra": {"module": "git_sense", "perceives": "local"},
+                "srotra": {"module": "git_sense", "perceives": self._srotra_scope()},
                 "tvak": {"module": "project_sense", "perceives": "local"},
                 "caksu": {"module": "code_sense", "perceives": "local"},
                 "jihva": {"module": "testing_sense", "perceives": "local"},

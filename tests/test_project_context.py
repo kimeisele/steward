@@ -119,8 +119,8 @@ class TestBuildSystemPromptMinimal:
 
 
 class TestAgentMinimalPrompt:
-    def test_agent_prompt_is_minimal(self) -> None:
-        """Agent system prompt is just base + cwd. No project instructions injected."""
+    def test_agent_base_prompt_is_minimal(self) -> None:
+        """Base system prompt is just base + cwd. No project instructions injected."""
         with tempfile.TemporaryDirectory() as tmp:
             steward_dir = Path(tmp) / ".steward"
             steward_dir.mkdir()
@@ -128,43 +128,32 @@ class TestAgentMinimalPrompt:
 
             llm = FakeLLM()
             agent = StewardAgent(provider=llm, cwd=tmp)
-            agent.run_sync("test")
 
-            system_msg = agent.conversation.messages[0]
-            # Minimal prompt — no project instructions, no sense data
-            assert "cwd:" in system_msg.content
-            assert "Environment Perception" not in system_msg.content
+            # Base prompt stays minimal — no project instructions
+            assert "cwd:" in agent._base_system_prompt
+            assert "Use pytest-asyncio" not in agent._base_system_prompt
 
 
-class TestSensesInfrastructureOnly:
-    """Senses perceive for infrastructure but do NOT inject into LLM prompt."""
+class TestSensePerceptionInPrompt:
+    """Senses inject environmental perception into the effective system prompt."""
 
-    def test_prompt_has_no_sense_data(self) -> None:
-        """System prompt contains zero sense data — senses are infrastructure only."""
+    def test_base_prompt_has_no_sense_data(self) -> None:
+        """Base system prompt is minimal — sense data is added at runtime."""
         with tempfile.TemporaryDirectory() as tmp:
             llm = FakeLLM()
             agent = StewardAgent(provider=llm, cwd=tmp)
             assert "Environment Perception" not in agent._base_system_prompt
-            assert "Environment Perception" not in agent._system_prompt
 
-    def test_prompt_stays_minimal_across_runs(self) -> None:
-        """System prompt stays minimal even after multiple runs."""
-        with tempfile.TemporaryDirectory() as tmp:
-            llm = FakeLLM(responses=[FakeResponse(content="ok"), FakeResponse(content="ok")])
-            agent = StewardAgent(provider=llm, cwd=tmp)
-
-            agent.run_sync("first task")
-            msg1 = agent.conversation.messages[0].content
-
-            (Path(tmp) / "test_new.py").write_text("def test_x(): pass")
-            agent.run_sync("second task")
-            msg2 = agent.conversation.messages[0].content
-
-            # No sense data in prompt — ever
-            assert "Environment Perception" not in msg1
-            assert "Environment Perception" not in msg2
-            # Prompt is stable (base + cwd only)
-            assert msg1 == msg2
+    def test_effective_prompt_includes_senses(self) -> None:
+        """After run_sync, system message includes sense perception data."""
+        llm = FakeLLM()
+        agent = StewardAgent(provider=llm)
+        agent.run_sync("test")
+        system_msg = agent.conversation.messages[0].content
+        # Effective prompt has sense data appended
+        assert "cwd:" in system_msg
+        # In a real cwd (git repo), sense data is present
+        assert "Git:" in system_msg or "Environment Perception" in system_msg
 
     def test_custom_prompt_unchanged(self) -> None:
         """Custom system prompts pass through untouched."""
