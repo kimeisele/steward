@@ -11,6 +11,7 @@ from __future__ import annotations
 from steward.buddhi import Buddhi, BuddhiDirective, BuddhiVerdict, ModelTier
 from steward.types import ToolUse
 from vibe_core.mahamantra.protocols.compression import IntentGuna
+from vibe_core.mahamantra.substrate.manas.synaptic import HebbianSynaptic
 from vibe_core.runtime.semantic_actions import SemanticActionType
 
 
@@ -507,77 +508,115 @@ class TestModelTier:
 
 
 class TestHebbianTierEscalation:
-    """Tests for Hebbian learning — model tier escalation based on session outcome history."""
+    """Tests for Hebbian learning — real HebbianSynaptic from steward-protocol."""
 
-    def test_no_history_keeps_default_tier(self):
-        """Without outcome history, tiers stay at defaults."""
-        buddhi = Buddhi()
-        # Manas classifies "fix the broken test" → RESEARCH → FLASH
+    def test_no_synaptic_keeps_default_tier(self):
+        """Without HebbianSynaptic, tiers stay at defaults."""
+        buddhi = Buddhi()  # no synaptic
         directive = buddhi.pre_flight("fix the broken test", 0)
         assert directive.tier == ModelTier.FLASH
 
-    def test_flash_escalates_to_standard_on_low_success(self):
-        """FLASH tier escalates to STANDARD when success rate < 50%."""
-        buddhi = Buddhi()
-        # "fix the broken test" → RESEARCH → FLASH by default
-        directive_before = buddhi.pre_flight("fix the broken test", 0)
-        action = directive_before.action.value  # capture actual action
-        assert directive_before.tier == ModelTier.FLASH
+    def test_flash_escalates_to_standard_on_low_weight(self):
+        """FLASH tier escalates to STANDARD when synaptic weight < 0.4."""
+        synaptic = HebbianSynaptic()
+        buddhi = Buddhi(synaptic=synaptic)
+        # Classify to get the action type
+        d0 = buddhi.pre_flight("fix the broken test", 0)
+        action = d0.action.value
+        assert d0.tier == ModelTier.FLASH
+
+        # Drive weight down with failures (0.5 → 0.45 → 0.405 → 0.3645)
+        for _ in range(3):
+            synaptic.update(action, "execute", False)
+        assert synaptic.get_weight(action, "execute") < 0.4
 
         buddhi.reset()
-        buddhi.set_outcome_history({action: 0.3})
         directive = buddhi.pre_flight("fix the broken test", 0)
-        assert directive.tier == ModelTier.STANDARD  # escalated from FLASH
+        assert directive.tier == ModelTier.STANDARD  # escalated
 
-    def test_standard_escalates_to_pro_on_very_low_success(self):
-        """STANDARD tier escalates to PRO when success rate < 30%."""
-        buddhi = Buddhi()
-        # "refactor the auth module" → IMPLEMENT → STANDARD by default
-        directive_before = buddhi.pre_flight("refactor the auth module", 0)
-        action = directive_before.action.value
-        assert directive_before.tier == ModelTier.STANDARD
+    def test_standard_escalates_to_pro_on_very_low_weight(self):
+        """STANDARD tier escalates to PRO when synaptic weight < 0.25."""
+        synaptic = HebbianSynaptic()
+        buddhi = Buddhi(synaptic=synaptic)
+        d0 = buddhi.pre_flight("refactor the auth module", 0)
+        action = d0.action.value
+        assert d0.tier == ModelTier.STANDARD
+
+        # Drive weight well below 0.25 with many failures
+        for _ in range(8):
+            synaptic.update(action, "execute", False)
+        assert synaptic.get_weight(action, "execute") < 0.25
 
         buddhi.reset()
-        buddhi.set_outcome_history({action: 0.2})
         directive = buddhi.pre_flight("refactor the auth module", 0)
-        assert directive.tier == ModelTier.PRO  # escalated from STANDARD
+        assert directive.tier == ModelTier.PRO  # escalated
 
-    def test_good_success_rate_keeps_default(self):
-        """High success rate does not escalate tier."""
-        buddhi = Buddhi()
-        # "refactor the auth module" → IMPLEMENT → STANDARD
-        directive_before = buddhi.pre_flight("refactor the auth module", 0)
-        action = directive_before.action.value
-        assert directive_before.tier == ModelTier.STANDARD
+    def test_high_weight_keeps_default(self):
+        """Strong synaptic weight does not escalate tier."""
+        synaptic = HebbianSynaptic()
+        buddhi = Buddhi(synaptic=synaptic)
+        d0 = buddhi.pre_flight("refactor the auth module", 0)
+        action = d0.action.value
+
+        # Successes strengthen the weight (0.5 → 0.55 → 0.595 → ...)
+        for _ in range(3):
+            synaptic.update(action, "execute", True)
+        assert synaptic.get_weight(action, "execute") > 0.5
 
         buddhi.reset()
-        buddhi.set_outcome_history({action: 0.8})
         directive = buddhi.pre_flight("refactor the auth module", 0)
         assert directive.tier == ModelTier.STANDARD  # stays at default
 
     def test_context_pressure_overrides_escalation(self):
         """Context pressure (>70%) demotes to FLASH even after escalation."""
-        buddhi = Buddhi()
-        buddhi.set_outcome_history({"implement": 0.2})
+        synaptic = HebbianSynaptic()
+        buddhi = Buddhi(synaptic=synaptic)
+        d0 = buddhi.pre_flight("refactor the auth module", 0)
+        action = d0.action.value
+
+        for _ in range(8):
+            synaptic.update(action, "execute", False)
+
+        buddhi.reset()
         directive = buddhi.pre_flight("refactor the auth module", 0, context_pct=0.75)
         assert directive.tier == ModelTier.FLASH  # context pressure wins
 
-    def test_outcome_rates_refresh(self):
-        """Calling set_outcome_history again updates the rates."""
-        buddhi = Buddhi()
-        # Get the action classification first
+    def test_record_outcome_updates_weight(self):
+        """record_outcome() delegates to HebbianSynaptic.update()."""
+        synaptic = HebbianSynaptic()
+        buddhi = Buddhi(synaptic=synaptic)
+        buddhi.pre_flight("fix the broken test", 0)
+        action = buddhi._action.value
+
+        # Record success → weight should increase from 0.5
+        buddhi.record_outcome(True)
+        assert synaptic.get_weight(action, "execute") > 0.5
+
+        # Record failure → weight should decrease
+        buddhi.record_outcome(False)
+        w = synaptic.get_weight(action, "execute")
+        assert 0.45 < w < 0.55  # near default after 1 success + 1 failure
+
+    def test_weight_recovers_after_improvement(self):
+        """Successes after failures recover the weight — tier de-escalates."""
+        synaptic = HebbianSynaptic()
+        buddhi = Buddhi(synaptic=synaptic)
         d0 = buddhi.pre_flight("refactor the auth module", 0)
         action = d0.action.value
-        buddhi.reset()
 
-        buddhi.set_outcome_history({action: 0.2})  # low → escalate
+        # Drive down
+        for _ in range(5):
+            synaptic.update(action, "execute", False)
+        assert synaptic.get_weight(action, "execute") < 0.4
+
+        # Recover
+        for _ in range(10):
+            synaptic.update(action, "execute", True)
+        assert synaptic.get_weight(action, "execute") > 0.5
+
+        buddhi.reset()
         d1 = buddhi.pre_flight("refactor the auth module", 0)
-        assert d1.tier == ModelTier.PRO
-
-        buddhi.reset()
-        buddhi.set_outcome_history({action: 0.9})  # improved → no escalation
-        d2 = buddhi.pre_flight("refactor the auth module", 0)
-        assert d2.tier == ModelTier.STANDARD
+        assert d1.tier == ModelTier.STANDARD  # recovered, no escalation
 
 
 class TestToolNamespace:

@@ -53,6 +53,7 @@ from steward.tools.web_search import WebSearchTool
 from steward.tools.write_file import WriteFileTool
 from steward.types import AgentEvent, AgentUsage, Conversation, EventType, LLMProvider, Message, MessageRole
 from vibe_core.di import ServiceRegistry
+from vibe_core.mahamantra.substrate.manas.synaptic import HebbianSynaptic
 from vibe_core.mahamantra.adapters.attention import MahaAttention
 from vibe_core.mahamantra.protocols._gad import GADBase
 from vibe_core.protocols.memory import MemoryProtocol
@@ -199,14 +200,19 @@ class StewardAgent(GADBase):
         self._attention: MahaAttention = ServiceRegistry.require(SVC_ATTENTION)
         self._memory: MemoryProtocol = ServiceRegistry.require(SVC_MEMORY)
 
+        # Hebbian synaptic learning (real HebbianSynaptic from steward-protocol)
+        # No file-backed state_dir — weights persist via PersistentMemory
+        # so they survive ephemeral contexts (CI, API containers)
+        self._synaptic = HebbianSynaptic()
+        self._load_synaptic_from_memory()
+        self._synaptic.decay()  # temporal decay on boot — old patterns fade
+
         # Buddhi persists across turns (cross-turn Chitta awareness)
-        self._buddhi = Buddhi()
+        self._buddhi = Buddhi(synaptic=self._synaptic)
         self._load_chitta_from_memory()
 
         # Session ledger (cross-session learning)
         self._ledger = SessionLedger(cwd=self._cwd)
-        # Inject outcome rates for Hebbian tier escalation
-        self._buddhi.set_outcome_history(self._compute_outcome_rates())
 
         # 5 Jnanendriyas — deterministic environmental perception (zero LLM)
         self._senses = SenseCoordinator(cwd=self._cwd)
@@ -301,9 +307,6 @@ class StewardAgent(GADBase):
         Buddhi persists across turns — Chitta retains file awareness.
         Records cumulative session stats in Memory after each turn.
         """
-        # Refresh outcome rates for Hebbian tier learning (cheap, from ledger)
-        self._buddhi.set_outcome_history(self._compute_outcome_rates())
-
         # Re-perceive senses for live environmental context (cheap, deterministic)
         if not self._custom_prompt:
             self._senses.perceive_all()
@@ -351,6 +354,10 @@ class StewardAgent(GADBase):
             if event.type == EventType.DONE and event.usage:
                 self._record_session_stats(event.usage)
                 self._record_session_ledger(task, event.usage)
+                # Hebbian learning: record outcome, persist to Memory
+                success = event.usage.buddhi_errors <= event.usage.tool_calls // 2
+                self._buddhi.record_outcome(success)
+                self._save_synaptic_to_memory()
                 # Cross-turn: merge reads, clear impressions, persist
                 self._buddhi._chitta.end_turn()
                 self._save_chitta_to_memory()
@@ -457,6 +464,28 @@ class StewardAgent(GADBase):
                 event_type=SubstrateEventType.THOUGHT,
                 agent_id="steward",
                 message="text_response",
+            )
+
+    def _load_synaptic_from_memory(self) -> None:
+        """Restore Hebbian synaptic weights from PersistentMemory.
+
+        Survives ephemeral contexts (CI, API containers) — no local files needed.
+        """
+        data = self._memory.recall("synaptic_weights", session_id="steward")
+        if data and isinstance(data, dict):
+            for key, weight in data.items():
+                self._synaptic._weights[key] = float(weight)
+            logger.debug("Synaptic weights restored: %d entries", len(data))
+
+    def _save_synaptic_to_memory(self) -> None:
+        """Persist Hebbian synaptic weights to PersistentMemory."""
+        weights = self._synaptic.snapshot()
+        if weights:
+            self._memory.remember(
+                "synaptic_weights",
+                weights,
+                session_id="steward",
+                tags=["synaptic", "hebbian"],
             )
 
     def _load_chitta_from_memory(self) -> None:
@@ -613,24 +642,6 @@ class StewardAgent(GADBase):
                 errors=usage.buddhi_errors,
             )
         )
-
-    def _compute_outcome_rates(self) -> dict[str, float]:
-        """Compute success rates per action type from SessionLedger.
-
-        Returns {action_name: success_rate} for Buddhi's Hebbian tier escalation.
-        Only considers the last 20 sessions to weight recent experience.
-        """
-        sessions = self._ledger.sessions
-        if not sessions:
-            return {}
-        action_outcomes: dict[str, list[str]] = {}
-        for s in sessions[-20:]:
-            action = s.buddhi_action or "general"
-            action_outcomes.setdefault(action, []).append(s.outcome)
-        return {
-            action: sum(1 for o in outcomes if o == "success") / len(outcomes)
-            for action, outcomes in action_outcomes.items()
-        }
 
     def _resolve_dynamic_context(self) -> dict[str, str] | None:
         """Resolve dynamic context from PromptContext (git, time, etc.)."""
