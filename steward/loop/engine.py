@@ -34,7 +34,7 @@ from typing import AsyncIterator
 from steward.antahkarana.gandha import VerdictAction
 from steward.buddhi import Buddhi, BuddhiDirective
 from steward.context import ERROR_MARKER, SamskaraContext
-from steward.services import tool_descriptions_for_llm
+from steward.services import lean_tool_signatures
 from steward.summarizer import Summarizer, should_summarize
 from steward.types import AgentEvent, AgentUsage, Conversation, EventType, LLMProvider, Message, MessageRole, ToolUse
 from vibe_core.mahamantra.adapters.attention import MahaAttention
@@ -57,20 +57,33 @@ _SEVERITY_RANK = {
 
 logger = logging.getLogger("STEWARD.LOOP")
 
+# Brain-in-a-jar instruction template — injected into system prompt
+# Replaces 1500-token JSON Schema tool descriptions with ~60-token one-liners
+_TOOL_JSON_INSTRUCTION = """
+
+## Tools
+{tool_sigs}
+
+Reply ONLY with JSON:
+  Tool call: {{"tool": "<name>", "params": {{...}}}}
+  Parallel:  {{"tools": [{{"name": "<n>", "params": {{...}}}}, ...]}}
+  Answer:    {{"response": "<your answer>"}}"""
+
 # Maximum tool-use iterations per turn to prevent infinite loops
 MAX_TOOL_ROUNDS = 50
 
 # Maximum characters for tool output in conversation (prevents context blowout)
-MAX_TOOL_OUTPUT_CHARS = 50_000
+# Brain-in-a-jar: slashed 6x — every token counts
+MAX_TOOL_OUTPUT_CHARS = 8_000
 
 # Maximum characters for user input (hard boundary — never send unbounded text to LLM)
-MAX_INPUT_CHARS = 20_000
+MAX_INPUT_CHARS = 12_000
 
 # Maximum characters for LLM text response stored in conversation
-MAX_RESPONSE_CHARS = 100_000
+MAX_RESPONSE_CHARS = 16_000
 
 # Maximum characters per tool call parameter value
-MAX_PARAM_CHARS = 10_000
+MAX_PARAM_CHARS = 4_000
 
 # Tool execution timeout (seconds) — prevents hung bash commands
 TOOL_TIMEOUT_SECONDS = 120
@@ -114,6 +127,7 @@ class AgentLoop:
         memory: MemoryProtocol | None = None,
         buddhi: Buddhi | None = None,
         narasimha: NarasimhaProtocol | None = None,
+        json_mode: bool = True,
     ) -> None:
         self._provider = provider
         self._registry = registry
@@ -126,11 +140,25 @@ class AgentLoop:
         self._samskara = SamskaraContext()
         self._buddhi = buddhi or Buddhi()  # Use injected or create fresh
         self._compression = MahaCompression()
-        self._tool_descriptions_cache: list[dict[str, object]] | None = None  # Avoid rebuilding every LLM call
+        self._json_mode = json_mode
 
         # Ensure system prompt is first message
         if system_prompt and (not conversation.messages or conversation.messages[0].role != MessageRole.SYSTEM):
             conversation.messages.insert(0, Message(role=MessageRole.SYSTEM, content=system_prompt))
+
+        # Brain-in-a-jar: inject lean tool signatures into system prompt
+        # ~60 tokens vs ~1500 for full JSON Schema. Eliminates tools parameter.
+        if json_mode and conversation.messages and conversation.messages[0].role == MessageRole.SYSTEM:
+            sigs = lean_tool_signatures(registry)
+            if sigs:
+                tool_section = _TOOL_JSON_INSTRUCTION.format(tool_sigs=sigs)
+                sys_msg = conversation.messages[0]
+                # Guard against double-injection on multi-run
+                if "Reply ONLY with JSON:" not in sys_msg.content:
+                    conversation.messages[0] = Message(
+                        role=MessageRole.SYSTEM,
+                        content=sys_msg.content + tool_section,
+                    )
 
     async def run(self, user_message: str) -> AsyncIterator[AgentEvent]:
         """Execute one full agent turn as an async event stream.
@@ -174,10 +202,6 @@ class AgentLoop:
                 yield AgentEvent(type=EventType.ERROR, content="LLM returned no response")
                 return
 
-            # Yield text deltas that were collected during streaming
-            for delta in streamed_text_deltas:
-                yield AgentEvent(type=EventType.TEXT_DELTA, content=delta)
-
             # Track tokens from LLM response
             self._accumulate_usage(response, usage)
 
@@ -190,8 +214,18 @@ class AgentLoop:
                     text = text[:MAX_RESPONSE_CHARS] + f"\n[truncated at {MAX_RESPONSE_CHARS} chars]"
                 self._conversation.add(Message(role=MessageRole.ASSISTANT, content=text))
                 usage.rounds = round_num + 1
-                # Only emit "text" if we didn't already stream deltas
-                if not streamed_text_deltas:
+
+                # Brain-in-a-jar: check if streamed deltas are JSON (don't yield raw JSON)
+                if streamed_text_deltas:
+                    assembled = "".join(streamed_text_deltas)
+                    if not assembled.strip().startswith("{"):
+                        # Plain text streaming — yield deltas
+                        for delta in streamed_text_deltas:
+                            yield AgentEvent(type=EventType.TEXT_DELTA, content=delta)
+                    else:
+                        # JSON mode — emit parsed text as TEXT event
+                        yield AgentEvent(type=EventType.TEXT, content=text)
+                else:
                     yield AgentEvent(type=EventType.TEXT, content=text)
                 yield AgentEvent(type=EventType.DONE, usage=usage)
                 logger.debug(
@@ -282,6 +316,8 @@ class AgentLoop:
 
                             output = result.output if result.success else f"{ERROR_MARKER} {result.error}"
                             output_str = str(output) if output else ""
+                            # Prefix with tool name (JSON mode context — LLM needs to know which tool produced this)
+                            output_str = f"[{tc.name}] {output_str}"
                             if len(output_str) > MAX_TOOL_OUTPUT_CHARS:
                                 output_str = (
                                     output_str[:MAX_TOOL_OUTPUT_CHARS]
@@ -542,11 +578,11 @@ class AgentLoop:
                 logger.warning("Summarization failed: %s — _trim() will handle overflow", e)
 
     def _build_llm_kwargs(self, directive: BuddhiDirective | None = None) -> dict[str, object]:
-        """Build kwargs for LLM call — messages, tools, token budget, tier.
+        """Build kwargs for LLM call — brain-in-a-jar mode.
 
-        Buddhi directive controls tool pre-selection, token budget, and
-        ModelTier routing (FLASH/STANDARD/PRO → ProviderChamber sorting).
-        Only sends relevant tools = fewer input tokens per call.
+        No tools parameter. Tool info is in system prompt as lean signatures.
+        JSON mode enforced via response_format.
+        Buddhi directive controls token budget and ModelTier routing.
         """
         max_tokens = self._max_tokens
         if directive and directive.max_tokens:
@@ -557,31 +593,19 @@ class AgentLoop:
             "max_tokens": max_tokens,
         }
 
+        # Brain-in-a-jar: JSON mode (no tools parameter, saves ~1500 tokens/call)
+        if self._json_mode:
+            kwargs["response_format"] = {"type": "json_object"}
+        else:
+            # Legacy mode: send full tool schemas (custom prompts, backward compat)
+            from steward.services import tool_descriptions_for_llm
+            all_tools = tool_descriptions_for_llm(self._registry)
+            if all_tools:
+                kwargs["tools"] = all_tools
+
         # ModelTier routing: Buddhi decides which cost tier to use
         if directive:
             kwargs["tier"] = directive.tier.value
-
-        # Cache tool descriptions — tools don't change mid-turn (EphemeralStorage lesson)
-        if self._tool_descriptions_cache is None:
-            self._tool_descriptions_cache = tool_descriptions_for_llm(self._registry)
-        all_tools = self._tool_descriptions_cache
-        if all_tools:
-            if directive and directive.tool_names:
-                filtered = [
-                    t
-                    for t in all_tools
-                    if t.get("function", {}).get("name") in directive.tool_names  # type: ignore[union-attr]
-                ]
-                kwargs["tools"] = filtered or all_tools
-                if len(filtered) < len(all_tools):
-                    logger.debug(
-                        "Buddhi pre-flight: %d/%d tools selected (%s)",
-                        len(filtered),
-                        len(all_tools),
-                        directive.action.value,
-                    )
-            else:
-                kwargs["tools"] = all_tools
 
         return kwargs
 
@@ -636,8 +660,8 @@ class AgentLoop:
             return await self._call_llm(directive)
 
     @staticmethod
-    def _extract_text(response: object) -> str:
-        """Extract text content from LLM response."""
+    def _extract_raw_content(response: object) -> str:
+        """Extract raw text content from any LLM response format."""
         if hasattr(response, "content"):
             content = response.content  # type: ignore[attr-defined]
             if isinstance(content, str):
@@ -651,6 +675,93 @@ class AgentLoop:
                 ]
                 return "\n".join(texts)
         return ""
+
+    @staticmethod
+    def _strip_fences(text: str) -> str:
+        """Strip markdown code fences (Google Gemini wraps JSON in ```json...```)."""
+        cleaned = text.strip()
+        if cleaned.startswith("```"):
+            first_nl = cleaned.find("\n")
+            if first_nl != -1:
+                cleaned = cleaned[first_nl + 1:]
+            if cleaned.rstrip().endswith("```"):
+                cleaned = cleaned.rstrip()[:-3].rstrip()
+        return cleaned
+
+    @staticmethod
+    def _parse_json_response(content: str) -> tuple[list[ToolUse], str]:
+        """Parse brain-in-a-jar JSON response into (tool_calls, response_text).
+
+        Formats:
+          {"tool": "name", "params": {...}}         → single tool call
+          {"tools": [{"name": "n", "params": {...}}, ...]} → parallel calls
+          {"response": "text"}                      → final answer
+
+        Returns ([], content) if not valid JSON — fallback to plain text.
+        """
+        if not content or not content.strip():
+            return [], ""
+
+        cleaned = AgentLoop._strip_fences(content)
+
+        try:
+            data = json.loads(cleaned)
+        except (json.JSONDecodeError, TypeError):
+            return [], content  # Not JSON — treat as plain text
+
+        if not isinstance(data, dict):
+            return [], content
+
+        calls: list[ToolUse] = []
+
+        # Single tool call
+        if "tool" in data:
+            params = data.get("params", data.get("parameters", {}))
+            if isinstance(params, dict):
+                params = AgentLoop._clamp_params(params)
+            calls.append(ToolUse(
+                id="json_0",
+                name=str(data["tool"]),
+                parameters=params if isinstance(params, dict) else {},
+            ))
+            return calls, ""
+
+        # Multiple tool calls (parallel)
+        if "tools" in data and isinstance(data["tools"], list):
+            for i, tc in enumerate(data["tools"]):
+                if isinstance(tc, dict) and ("name" in tc or "tool" in tc):
+                    name = str(tc.get("name", tc.get("tool", "")))
+                    params = tc.get("params", tc.get("parameters", {}))
+                    if isinstance(params, dict):
+                        params = AgentLoop._clamp_params(params)
+                    calls.append(ToolUse(
+                        id=f"json_{i}",
+                        name=name,
+                        parameters=params if isinstance(params, dict) else {},
+                    ))
+            if calls:
+                return calls, ""
+
+        # Text response
+        if "response" in data:
+            return [], str(data["response"])
+
+        # Unknown JSON — treat as text
+        return [], content
+
+    @staticmethod
+    def _extract_text(response: object) -> str:
+        """Extract text content from LLM response.
+
+        Brain-in-a-jar: extracts "response" value from JSON.
+        Fallback: raw text content.
+        """
+        raw = AgentLoop._extract_raw_content(response)
+        if raw:
+            _, response_text = AgentLoop._parse_json_response(raw)
+            if response_text:
+                return response_text
+        return raw
 
     @staticmethod
     def _clamp_params(params: dict) -> dict:
@@ -670,13 +781,15 @@ class AgentLoop:
     def _extract_tool_calls(response: object) -> list[ToolUse]:
         """Extract tool calls from LLM response.
 
-        Handles both OpenAI format (response.tool_calls) and
-        Anthropic format (content blocks with type=tool_use).
+        Priority order:
+        1. Standard tool_calls (OpenAI/Anthropic format) — backward compat
+        2. Brain-in-a-jar JSON mode — parses content as JSON
+
         Clamps all parameter values to MAX_PARAM_CHARS.
         """
         calls: list[ToolUse] = []
 
-        # OpenAI format: response.choices[0].message.tool_calls
+        # 1. OpenAI format: response.tool_calls
         if hasattr(response, "tool_calls") and response.tool_calls:  # type: ignore[attr-defined]
             for tc in response.tool_calls:  # type: ignore[attr-defined]
                 func = tc.function if hasattr(tc, "function") else tc
@@ -697,7 +810,7 @@ class AgentLoop:
                 )
             return calls
 
-        # Anthropic format: content blocks with type="tool_use"
+        # 2. Anthropic format: content blocks with type="tool_use"
         if hasattr(response, "content") and isinstance(response.content, list):  # type: ignore[attr-defined]
             for block in response.content:  # type: ignore[attr-defined]
                 if hasattr(block, "type") and block.type == "tool_use":
@@ -711,10 +824,14 @@ class AgentLoop:
                             else raw_params,
                         )
                     )
+            if calls:
+                return calls
 
-        # Stop reason check (Anthropic: stop_reason == "tool_use")
-        if not calls and hasattr(response, "stop_reason"):
-            if response.stop_reason == "tool_use":  # type: ignore[attr-defined]
-                logger.warning("stop_reason=tool_use but no tool calls found")
+        # 3. Brain-in-a-jar: JSON mode — parse content as JSON
+        raw = AgentLoop._extract_raw_content(response)
+        if raw:
+            json_calls, _ = AgentLoop._parse_json_response(raw)
+            if json_calls:
+                return json_calls
 
         return calls

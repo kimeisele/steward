@@ -340,6 +340,7 @@ class StewardAgent(GADBase):
             memory=self._memory,
             buddhi=self._buddhi,
             narasimha=ServiceRegistry.get(SVC_NARASIMHA),
+            json_mode=not self._custom_prompt,  # Brain-in-a-jar for default prompts only
         )
         async for event in loop.run(task):
             self._emit_signal(event)
