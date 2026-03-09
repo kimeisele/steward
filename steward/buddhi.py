@@ -250,6 +250,8 @@ class Buddhi:
         self._guna: IntentGuna = IntentGuna.RAJAS
         self._function: str = ""
         self._approach: str = ""
+        self._last_tier: ModelTier = ModelTier.STANDARD
+        self._last_pattern: str = ""
 
     def record_outcome(self, success: bool) -> None:
         """Record task outcome via Hebbian synaptic update.
@@ -379,6 +381,8 @@ class Buddhi:
         if context_pct >= 0.7:
             tier = ModelTier.FLASH
 
+        self._last_tier = tier
+
         return BuddhiDirective(
             action=self._action,
             guna=self._guna,
@@ -431,6 +435,7 @@ class Buddhi:
             prior_reads=self._chitta.prior_reads,
             available_tools=all_tools,
         )
+        self._last_pattern = detection.pattern if detection else ""
         if detection is not None:
             verdict = BuddhiVerdict(
                 action=detection.severity,
@@ -478,6 +483,21 @@ class Buddhi:
     def stats(self) -> dict[str, object]:
         """Diagnostic stats — delegates to Chitta."""
         return self._chitta.stats
+
+    @property
+    def last_action(self) -> str:
+        """Last semantic action (for KsetraJna observation)."""
+        return self._action.value
+
+    @property
+    def last_tier(self) -> str:
+        """Last model tier (for KsetraJna observation)."""
+        return self._last_tier.value
+
+    @property
+    def last_pattern(self) -> str:
+        """Last gandha pattern name (for KsetraJna observation)."""
+        return self._last_pattern
 
 
 def _phase_guidance(

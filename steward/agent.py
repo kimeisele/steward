@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import AsyncIterator
 
 from steward import __version__
+from steward.antahkarana.ksetrajna import KsetraJna
 from steward.antahkarana.vedana import measure_vedana
 from steward.buddhi import Buddhi
 from steward.cetana import Cetana
@@ -220,6 +221,20 @@ class StewardAgent(GADBase):
         )
         self._cetana.start()
 
+        # KsetraJna — meta-observer of the entire field (BG 13.1-2)
+        # Watches all antahkarana components, produces BubbleSnapshots.
+        # Zero LLM tokens. Foundation for BuddyBubble peer observation.
+        self._ksetrajna = KsetraJna(
+            vedana_source=lambda: self.vedana,
+            chitta_source=lambda: self._buddhi.stats,
+            cetana_source=lambda: self._cetana.stats(),
+            buddhi_source=lambda: {
+                "action": self._buddhi.last_action,
+                "tier": self._buddhi.last_tier,
+            },
+            gandha_source=lambda: self._buddhi.last_pattern,
+        )
+
         logger.info(
             "StewardAgent initialized (cwd=%s, tools=%s)",
             self._cwd,
@@ -316,6 +331,7 @@ class StewardAgent(GADBase):
                 self._save_synaptic_to_memory()
                 # Cross-turn: merge reads, clear impressions, persist
                 self._buddhi._chitta.end_turn()
+                self._ksetrajna.observe()  # Meta-observation at turn boundary
                 self._save_chitta_to_memory()
                 self._save_gaps_to_memory()
             yield event
@@ -640,7 +656,7 @@ class StewardAgent(GADBase):
                 "hebbian_synaptic",
                 "cetana_heartbeat",
             ],
-            "antahkarana": ["manas", "buddhi", "chitta", "gandha"],
+            "antahkarana": ["manas", "buddhi", "chitta", "gandha", "ksetrajna"],
             "jnanendriyas": ["srotra", "tvak", "caksu", "jihva", "ghrana"],  # Hard 5 — Vedic Tattvas
             "active_gaps": len(self._gaps),
             "jiva": self._persona,
@@ -669,7 +685,7 @@ class StewardAgent(GADBase):
             "tools_registered": self._registry.list_tools(),
             "safety_guard_active": self._safety_guard is not None,
             "memory_active": self._memory is not None,
-            "heartbeat_state": self.heartbeat.get_summary(),
+            "ksetrajna": self._ksetrajna.stats(),
             "buddhi_phase": self._buddhi.phase,
             "chitta_stats": self._buddhi.stats,
             "session_stats": session_stats,
@@ -692,6 +708,11 @@ class StewardAgent(GADBase):
                 "persist_memory": self._config.persist_memory,
             },
         }
+
+    @property
+    def ksetrajna(self) -> KsetraJna:
+        """KsetraJna — meta-observer of the entire field."""
+        return self._ksetrajna
 
     @property
     def vedana(self):
