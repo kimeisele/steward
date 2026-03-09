@@ -298,11 +298,12 @@ class TestAgentLoop:
         loop = AgentLoop(provider=llm, registry=reg, conversation=conv, attention=attention)
 
         result, events = run_loop(loop, "Search for code")
-        # Buddhi should inject a redirect message into conversation
+        # Buddhi should inject redirect messages into conversation
         user_msgs = [m for m in conv.messages if m.role == "user"]
         redirect_msgs = [m for m in user_msgs if "redirect" in m.content.lower()]
         assert len(redirect_msgs) >= 1
-        assert "Available tools" in redirect_msgs[0].content
+        # Generic redirect fires on first failure — mentions the failed tool
+        assert "search_code" in redirect_msgs[0].content or "find_files" in redirect_msgs[0].content
 
 
 # ── StewardAgent Tests ───────────────────────────────────────────────

@@ -27,11 +27,13 @@ class TestBuddhiBasics:
         v = buddhi.evaluate([_tc("bash", command="ls")], [(True, "")])
         assert v.action == "continue"
 
-    def test_single_error_continues(self):
-        """Single error is not enough to trigger anything."""
+    def test_single_error_redirects(self):
+        """Single error triggers redirect — infrastructure forces retry."""
         buddhi = Buddhi()
         v = buddhi.evaluate([_tc("bash", command="bad")], [(False, "not found")])
-        assert v.action == "continue"
+        assert v.action == "redirect"
+        assert "bash" in v.reason
+        assert "alternative" in v.suggestion.lower()
 
     def test_reset_clears_state(self):
         """Reset clears all history."""
@@ -101,7 +103,10 @@ class TestConsecutiveErrors:
         ]
         for name, result in zip(tools, results):
             v = buddhi.evaluate([_tc(name, path=f"/{name}")], [result])
-        assert v.action == "continue"  # not 5 consecutive, ratio 62.5%
+        # Last call failed → redirect (infrastructure forces retry).
+        # Key invariant: NOT abort (only 2 consecutive at end, not 5).
+        assert v.action == "redirect"
+        assert v.action != "abort"
 
 
 class TestToolStreak:
@@ -440,7 +445,8 @@ class TestBuddhiInLoop:
         ]
         results = [(True, ""), (True, ""), (False, "not found")]
         v = buddhi.evaluate(calls, results)
-        assert v.action == "continue"
+        # 1 failure in batch → redirect (infrastructure forces retry)
+        assert v.action == "redirect"
         assert buddhi.stats["total_calls"] == 3
         assert buddhi.stats["errors"] == 1
 
@@ -488,12 +494,13 @@ class TestFailureRedirect:
         assert v.action == "redirect"
         assert "Available tools" in v.suggestion
 
-    def test_single_failure_no_redirect(self):
-        """Single failure is not enough for redirect."""
+    def test_single_failure_redirects(self):
+        """Single failure triggers generic redirect — infrastructure forces retry."""
         buddhi = Buddhi()
         tc = _tc("edit_file", path="/a.py", old="foo", new="bar")
         v = buddhi.evaluate([tc], [(False, "old_string not found")])
-        assert v.action == "continue"
+        assert v.action == "redirect"
+        assert "edit_file" in v.reason
 
     def test_redirect_before_identical_check(self):
         """Redirect fires before identical-call reflect (lower severity)."""
