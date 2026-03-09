@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import subprocess
 from pathlib import Path
 from typing import AsyncIterator
 
@@ -103,73 +102,28 @@ def _load_project_instructions(cwd: str) -> str | None:
     return None
 
 
-def _git_status_summary(cwd: str) -> str | None:
-    """Get a short git status + diff summary for context.
-
-    Returns None if not in a git repo or git is unavailable.
-    """
-    try:
-        # Check if it's a git repo
-        subprocess.run(
-            ["git", "rev-parse", "--git-dir"],
-            cwd=cwd,
-            capture_output=True,
-            check=True,
-            timeout=5,
-        )
-        # Get short status
-        status = subprocess.run(
-            ["git", "status", "--short"],
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        # Get diff stat
-        diff = subprocess.run(
-            ["git", "diff", "--stat"],
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        parts: list[str] = []
-        if status.stdout.strip():
-            # Limit to 20 lines
-            lines = status.stdout.strip().split("\n")
-            if len(lines) > 20:
-                parts.append("\n".join(lines[:20]) + f"\n... ({len(lines) - 20} more)")
-            else:
-                parts.append("\n".join(lines))
-        if diff.stdout.strip():
-            parts.append(diff.stdout.strip())
-        return "\n".join(parts) if parts else None
-    except (subprocess.SubprocessError, FileNotFoundError, OSError):
-        return None
-
-
 def _build_system_prompt(
     base: str,
     cwd: str,
     tool_names: list[str],
     dynamic_context: dict[str, str] | None = None,
     project_instructions: str | None = None,
-    git_status: str | None = None,
     session_history: str | None = None,
 ) -> str:
     """Build system prompt with dynamic context.
 
     Injects working directory, tool list, project instructions,
-    git status, session history, and any PromptContext resolver values.
+    session history, and any PromptContext resolver values.
+    Git/commit context is now handled by GitSense (Jnanendriya perception).
     """
     parts = [base.rstrip()]
     parts.append(f"\nWorking directory: {cwd}")
     parts.append(f"Available tools: {', '.join(sorted(tool_names))}")
 
     # Multi-line context goes as separate sections
-    _SECTION_KEYS = {"project_structure", "recent_commits"}
+    _SECTION_KEYS = {"project_structure"}
     if dynamic_context:
-        # Inline key-value pairs (branch, time)
+        # Inline key-value pairs (system_time, etc.)
         inline = {k: v for k, v in dynamic_context.items() if k not in _SECTION_KEYS and v and not v.startswith("[")}
         if inline:
             parts.append("\nEnvironment:")
@@ -181,16 +135,8 @@ def _build_system_prompt(
         if structure and not structure.startswith("["):
             parts.append(f"\nProject Structure:\n{structure}")
 
-        # Recent commits
-        commits = dynamic_context.get("recent_commits", "")
-        if commits and not commits.startswith("["):
-            parts.append(f"\nRecent Commits:\n{commits}")
-
     if project_instructions:
         parts.append(f"\nProject Instructions:\n{project_instructions}")
-
-    if git_status:
-        parts.append(f"\nGit Status:\n{git_status}")
 
     if session_history:
         parts.append(f"\nSession History:\n{session_history}")
@@ -277,7 +223,6 @@ class StewardAgent(GADBase):
         else:
             dynamic_ctx = self._resolve_dynamic_context()
             project_ctx = _load_project_instructions(self._cwd)
-            git_ctx = _git_status_summary(self._cwd)
             session_ctx = self._ledger.prompt_context()
             self._system_prompt = _build_system_prompt(
                 _BASE_SYSTEM_PROMPT,
@@ -285,7 +230,6 @@ class StewardAgent(GADBase):
                 self._registry.list_tools(),
                 dynamic_context=dynamic_ctx,
                 project_instructions=project_ctx,
-                git_status=git_ctx,
                 session_history=session_ctx,
             )
             # Inject persona identity into system prompt
@@ -653,7 +597,9 @@ class StewardAgent(GADBase):
         if prompt_ctx is None:
             return None
         try:
-            return prompt_ctx.resolve(["current_branch", "system_time", "project_structure", "recent_commits"])
+            # Only resolve what senses don't cover
+            # (GitSense covers branch/commits, ProjectSense covers structure)
+            return prompt_ctx.resolve(["system_time", "project_structure"])
         except Exception:
             logger.debug("PromptContext resolve failed, skipping dynamic context")
             return None

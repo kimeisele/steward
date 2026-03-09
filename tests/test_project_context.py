@@ -10,7 +10,6 @@ from typing import Any
 from steward.agent import (
     StewardAgent,
     _build_system_prompt,
-    _git_status_summary,
     _load_project_instructions,
 )
 
@@ -114,43 +113,6 @@ class TestBuildSystemPromptWithInstructions:
             tool_names=["bash"],
         )
         assert "Project Instructions:" not in prompt
-
-
-class TestGitStatusSummary:
-    def test_returns_status_in_git_repo(self) -> None:
-        """Returns git status in a real git repo."""
-        # This test runs in the steward repo itself
-        result = _git_status_summary(".")
-        # Should return something (we always have at least untracked test files)
-        # or None if clean — either is valid
-        assert result is None or isinstance(result, str)
-
-    def test_returns_none_outside_git_repo(self) -> None:
-        """Returns None when not in a git repo."""
-        with tempfile.TemporaryDirectory() as tmp:
-            result = _git_status_summary(tmp)
-            assert result is None
-
-    def test_includes_git_status_in_prompt(self) -> None:
-        """Git status section appears in system prompt when present."""
-        prompt = _build_system_prompt(
-            base="You are Steward.",
-            cwd="/tmp/project",
-            tool_names=["bash"],
-            git_status="M  src/main.py\n?? new_file.py",
-        )
-        assert "Git Status:" in prompt
-        assert "M  src/main.py" in prompt
-        assert "?? new_file.py" in prompt
-
-    def test_no_git_section_when_none(self) -> None:
-        """No git status section when not in a repo."""
-        prompt = _build_system_prompt(
-            base="You are Steward.",
-            cwd="/tmp/project",
-            tool_names=["bash"],
-        )
-        assert "Git Status:" not in prompt
 
 
 class TestAgentWithProjectInstructions:
