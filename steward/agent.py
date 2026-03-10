@@ -375,6 +375,11 @@ class StewardAgent(GADBase):
         """Access the loaded configuration."""
         return self._config
 
+    @property
+    def buddhi_phase(self) -> str:
+        """Current execution phase (delegates to Buddhi)."""
+        return self._buddhi.phase
+
     def resume(self, conversation: Conversation) -> None:
         """Resume from a previous session's conversation.
 
