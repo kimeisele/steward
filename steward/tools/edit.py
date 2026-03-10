@@ -2,10 +2,13 @@
 Edit Tool — Diff-based file editing via exact string replacement.
 
 ToolSafetyGuard enforced: the file must be read before editing.
+Post-edit: .py files are syntax-checked via ast.parse(). If broken,
+the edit is reverted and the syntax error is returned to the LLM.
 """
 
 from __future__ import annotations
 
+import ast
 import re
 from pathlib import Path
 from typing import Any
@@ -73,6 +76,12 @@ class EditTool(Tool):
                 # Whitespace-normalized fallback (protocol lesson: reduces LLM retry loops)
                 fallback = self._whitespace_fallback(content, old_string, new_string)
                 if fallback is not None:
+                    syntax_err = self._check_syntax(path, fallback, content)
+                    if syntax_err:
+                        return ToolResult(
+                            success=False,
+                            error=f"Edit would break syntax: {syntax_err}. File NOT modified.",
+                        )
                     path.write_text(fallback, encoding="utf-8")
                     return ToolResult(
                         success=True,
@@ -91,6 +100,14 @@ class EditTool(Tool):
                 )
 
             new_content = content.replace(old_string, new_string, 1)
+
+            syntax_err = self._check_syntax(path, new_content, content)
+            if syntax_err:
+                return ToolResult(
+                    success=False,
+                    error=f"Edit would break syntax: {syntax_err}. File NOT modified.",
+                )
+
             path.write_text(new_content, encoding="utf-8")
 
             return ToolResult(
@@ -100,6 +117,28 @@ class EditTool(Tool):
             )
         except Exception as e:
             return ToolResult(success=False, error=str(e))
+
+    @staticmethod
+    def _check_syntax(path: Path, new_content: str, old_content: str | None = None) -> str | None:
+        """Check Python syntax after edit. Returns error string or None if ok.
+
+        Only checks .py files. Other file types pass through unchecked.
+        Only rejects edits that INTRODUCE syntax errors — if the original
+        content was already broken, the edit is allowed (agent may be fixing it).
+        """
+        if path.suffix != ".py":
+            return None
+        try:
+            ast.parse(new_content, filename=str(path))
+            return None
+        except SyntaxError as e:
+            # New content is broken — but was the old content also broken?
+            if old_content is not None:
+                try:
+                    ast.parse(old_content, filename=str(path))
+                except SyntaxError:
+                    return None  # Original was already broken — don't block repair attempts
+            return f"{e.msg} (line {e.lineno})"
 
     @staticmethod
     def _whitespace_fallback(content: str, old_string: str, new_string: str) -> str | None:

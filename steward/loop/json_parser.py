@@ -181,6 +181,34 @@ def extract_text(response: NormalizedResponse) -> str:
     return raw
 
 
+def looks_like_failed_json(response: NormalizedResponse) -> str | None:
+    """Detect if the LLM tried to produce JSON but failed.
+
+    Returns a diagnostic message if the response looks like malformed JSON
+    that should have been a tool call, or None if it's genuinely plain text.
+    """
+    if response.tool_calls:
+        return None  # Adapter already parsed it — no failure
+    raw = response.content
+    if not raw or not raw.strip():
+        return None
+    cleaned = strip_fences(raw).lstrip()
+    if not cleaned.startswith("{") and not cleaned.startswith("["):
+        return None  # Not JSON-shaped — genuinely plain text
+
+    # It LOOKS like JSON. Does it parse?
+    calls, text = parse_json_response(raw)
+    if calls or text != raw:
+        return None  # Parsed successfully (tool calls or response key)
+
+    # Failed to parse — build diagnostic
+    try:
+        json.loads(cleaned)
+        return None  # Actually valid JSON (unknown structure)
+    except (json.JSONDecodeError, TypeError) as e:
+        return f"Malformed JSON: {e}. Reply with valid JSON: {{\"tool\": ..., \"params\": ...}} or {{\"response\": \"...\"}}"
+
+
 def extract_tool_calls(response: NormalizedResponse) -> list[ToolUse]:
     """Extract tool calls from NormalizedResponse.
 

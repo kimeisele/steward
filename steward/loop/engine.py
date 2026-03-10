@@ -52,7 +52,6 @@ from steward.types import (
     StreamingProvider,
     ToolUse,
 )
-from vibe_core.di import ServiceRegistry
 from vibe_core.mahamantra.adapters.attention import MahaAttention
 from vibe_core.mahamantra.adapters.compression import MahaCompression
 from vibe_core.mahamantra.substrate.cell_system.antaranga import (
@@ -144,6 +143,9 @@ class AgentLoop:
         antaranga: AntarangaRegistry | None = None,
         ksetrajna: KsetraJna | None = None,
         health_gate: HealthGate | None = None,
+        compression: MahaCompression | None = None,
+        north_star: int | None = None,
+        feedback: object | None = None,
     ) -> None:
         self._provider = provider
         self._registry = registry
@@ -154,10 +156,8 @@ class AgentLoop:
         self._memory = memory
         self._narasimha = narasimha
         self._samskara = SamskaraContext()
-        self._buddhi = buddhi or Buddhi()  # Use injected or create fresh
-        # Use SVC_COMPRESSION from registry if available (singleton), else create fresh
-        from steward.services import SVC_COMPRESSION
-        self._compression = ServiceRegistry.get(SVC_COMPRESSION) or MahaCompression()
+        self._buddhi = buddhi or Buddhi()
+        self._compression = compression or MahaCompression()
         self._json_mode = json_mode
         self._venu = venu
         self._cache = cache
@@ -165,6 +165,8 @@ class AgentLoop:
         self._antaranga_touched: set[int] = set()  # slots collided this round
         self._ksetrajna = ksetrajna
         self._health_gate = health_gate
+        self._north_star = north_star
+        self._feedback = feedback
 
         # Ensure system prompt is first message
         if system_prompt and (not conversation.messages or conversation.messages[0].role != MessageRole.SYSTEM):
@@ -219,8 +221,7 @@ class AgentLoop:
                     )
 
         # North Star alignment check — is this task aligned with agent purpose?
-        from steward.services import SVC_NORTH_STAR
-        north_star = ServiceRegistry.get(SVC_NORTH_STAR)
+        north_star = self._north_star
         if north_star and isinstance(north_star, int):
             # XOR distance between input seed and north star seed
             # Low distance = aligned, high distance = divergent
@@ -310,6 +311,20 @@ class AgentLoop:
             tool_calls = json_parser.extract_tool_calls(response)
 
             if not tool_calls:
+                # Check if LLM tried JSON but produced malformed output
+                json_error = json_parser.looks_like_failed_json(response)
+                if json_error:
+                    # Inject error feedback and retry (don't end the turn)
+                    logger.warning("JSON parse failure — injecting feedback: %s", json_error)
+                    self._conversation.add(
+                        Message(role=MessageRole.ASSISTANT, content=json_parser.extract_raw_content(response))
+                    )
+                    self._conversation.add(
+                        Message(role=MessageRole.USER, content=f"[JSON error] {json_error}")
+                    )
+                    usage.json_retries += 1
+                    continue  # Re-enter the loop — LLM gets another shot
+
                 # Pure text response — turn is done
                 text = json_parser.extract_text(response)
                 was_truncated = len(text) > MAX_RESPONSE_CHARS
@@ -593,8 +608,7 @@ class AgentLoop:
         verdict = self._buddhi.evaluate(all_calls, all_outcomes)
 
         # Wire feedback protocol — every tool outcome is a learning signal
-        from steward.services import SVC_FEEDBACK
-        feedback = ServiceRegistry.get(SVC_FEEDBACK)
+        feedback = self._feedback
         if feedback:
             ctx = {"round": round_num}
             for tc, (ok, err) in zip(all_calls, all_outcomes):

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 from pathlib import Path
 from typing import AsyncIterator
 
@@ -37,9 +38,12 @@ from steward.services import (
     SVC_ANTARANGA,
     SVC_ATTENTION,
     SVC_CACHE,
+    SVC_COMPRESSION,
     SVC_DIAMOND,
+    SVC_FEEDBACK,
     SVC_MEMORY,
     SVC_NARASIMHA,
+    SVC_NORTH_STAR,
     SVC_SAFETY_GUARD,
     SVC_TOOL_REGISTRY,
     SVC_VENU,
@@ -208,6 +212,7 @@ class StewardAgent(GADBase):
         # Cetana — autonomous heartbeat driven by vedana health (BG 13.6-7)
         # Daemon thread: adapts monitoring frequency to agent health.
         # Does NOT think or act — only observes and signals.
+        self._health_lock = threading.Lock()
         self._health_anomaly_flag = False
         self._health_anomaly_detail_str = ""
         self._cetana = Cetana(
@@ -324,6 +329,9 @@ class StewardAgent(GADBase):
             antaranga=ServiceRegistry.get(SVC_ANTARANGA),
             ksetrajna=self._ksetrajna,
             health_gate=self,  # StewardAgent implements HealthGate protocol
+            compression=ServiceRegistry.get(SVC_COMPRESSION),
+            north_star=ServiceRegistry.get(SVC_NORTH_STAR),
+            feedback=ServiceRegistry.get(SVC_FEEDBACK),
         )
         async for event in loop.run(task):
             agent_bus.emit_signal(event)
@@ -569,15 +577,18 @@ class StewardAgent(GADBase):
 
     @property
     def health_anomaly(self) -> bool:
-        return self._health_anomaly_flag
+        with self._health_lock:
+            return self._health_anomaly_flag
 
     @property
     def health_anomaly_detail(self) -> str:
-        return self._health_anomaly_detail_str
+        with self._health_lock:
+            return self._health_anomaly_detail_str
 
     def clear_health_anomaly(self) -> None:
-        self._health_anomaly_flag = False
-        self._health_anomaly_detail_str = ""
+        with self._health_lock:
+            self._health_anomaly_flag = False
+            self._health_anomaly_detail_str = ""
 
     def close(self) -> None:
         """Graceful shutdown — stop cetana heartbeat."""
@@ -595,12 +606,14 @@ class StewardAgent(GADBase):
             return
 
         # Set anomaly flag — engine reads via HealthGate protocol
-        self._health_anomaly_flag = True
-        self._health_anomaly_detail_str = (
-            f"health={beat.vedana.health:.2f} ({beat.vedana.guna}), "
-            f"provider={beat.vedana.provider_health:.2f}, "
-            f"errors={beat.vedana.error_pressure:.2f}"
-        )
+        # Lock protects cross-thread access (Cetana daemon → async loop)
+        with self._health_lock:
+            self._health_anomaly_flag = True
+            self._health_anomaly_detail_str = (
+                f"health={beat.vedana.health:.2f} ({beat.vedana.guna}), "
+                f"provider={beat.vedana.provider_health:.2f}, "
+                f"errors={beat.vedana.error_pressure:.2f}"
+            )
 
         agent_bus.emit_anomaly(beat.vedana.health, beat.vedana.guna, beat.beat_number)
 
