@@ -101,8 +101,9 @@ class Chitta:
 
     def advance_round(self) -> int:
         """Advance to next round, return new round number."""
-        self._round += 1
-        return self._round
+        with self._lock:
+            self._round += 1
+            return self._round
 
     @property
     def impressions(self) -> list[Impression]:
