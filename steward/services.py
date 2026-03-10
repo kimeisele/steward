@@ -89,6 +89,10 @@ class SVC_SIKSASTAKAM:
     """SiksastakamSynth — 7-beat cache lifecycle from Verse 1."""
 
 
+class SVC_ANTARANGA:
+    """AntarangaRegistry — 512-slot O(1) contiguous state chamber (16 KB)."""
+
+
 class SVC_NORTH_STAR:
     """North Star — infrastructure-level goal seed (not LLM prompt).
 
@@ -230,7 +234,13 @@ def boot(
     siksastakam = SiksastakamSynth()
     ServiceRegistry.register(SVC_SIKSASTAKAM, siksastakam)
 
-    # 17. IntegrityChecker — boot-time validation (catch lazy-load failures early)
+    # 17. AntarangaRegistry (512-slot O(1) state chamber — 16 KB contiguous RAM)
+    from vibe_core.mahamantra.substrate.cell_system.antaranga import AntarangaRegistry
+
+    antaranga = AntarangaRegistry()
+    ServiceRegistry.register(SVC_ANTARANGA, antaranga)
+
+    # 18. IntegrityChecker — boot-time validation (catch lazy-load failures early)
     from vibe_core.protocols.integrity import IntegrityChecker, IssueSeverity
 
     checker = IntegrityChecker()
@@ -280,6 +290,11 @@ def boot(
     checker.register_checker(
         "vajra_compression_wired",
         lambda: _check_service_wired(SVC_COMPRESSION, "MahaCompression"),
+        IssueSeverity.HIGH,
+    )
+    checker.register_checker(
+        "vajra_antaranga_wired",
+        lambda: _check_service_wired(SVC_ANTARANGA, "AntarangaRegistry"),
         IssueSeverity.HIGH,
     )
 
