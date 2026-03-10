@@ -300,19 +300,21 @@ def _check_tools_registered(registry: ToolRegistry) -> None:
 
 def _check_narasimha(narasimha: object) -> None:
     """Integrity check: Narasimha protocol is functional."""
-    if not hasattr(narasimha, "audit_agent"):
+    from vibe_core.protocols.mahajanas.nrisimha.types.narasimha import NarasimhaProtocol
+    if not isinstance(narasimha, NarasimhaProtocol):
         raise RuntimeError("NarasimhaProtocol missing audit_agent()")
 
 
 def _check_provider(provider: object) -> None:
     """Integrity check: provider can accept calls."""
-    if not hasattr(provider, "invoke"):
+    if not callable(getattr(provider, "invoke", None)):
         raise RuntimeError("Provider missing invoke()")
 
 
 def _check_venu_divinity(venu: object) -> None:
     """Integrity check: VenuOrchestrator structural verification."""
-    if not hasattr(venu, "verify_divinity") or not venu.verify_divinity():
+    from vibe_core.mahamantra.substrate.vm.venu_orchestrator import VenuOrchestrator
+    if not isinstance(venu, VenuOrchestrator) or not venu.verify_divinity():
         raise RuntimeError("VenuOrchestrator failed divinity verification")
 
 
