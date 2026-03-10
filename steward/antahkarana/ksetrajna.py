@@ -21,6 +21,7 @@ each other's BubbleSnapshot via SankirtanChamber resonance.
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from collections import deque
 from dataclasses import dataclass
@@ -100,8 +101,8 @@ class KsetraJna:
     Usage:
         kj = KsetraJna(
             vedana_source=lambda: agent.vedana,
-            chitta_source=lambda: agent._buddhi.stats,
-            cetana_source=lambda: agent._cetana.stats(),
+            chitta_source=lambda: agent.chitta_stats(),
+            cetana_source=lambda: agent.cetana_stats(),
             buddhi_source=lambda: {"action": "research", "tier": "STANDARD"},
             gandha_source=lambda: "",
         )
@@ -124,16 +125,26 @@ class KsetraJna:
         self._buddhi_source = buddhi_source
         self._gandha_source = gandha_source
         self._history: deque[BubbleSnapshot] = deque(maxlen=max_history)
+        self._lock = threading.Lock()
 
     def observe(self) -> BubbleSnapshot:
-        """Take a snapshot of the field. O(1), zero side effects."""
+        """Take a snapshot of the field. O(1), zero side effects.
+
+        Sources are called outside the lock (they may acquire their own locks).
+        Only the history append is synchronized.
+        """
         vedana = self._vedana_source()
-        chitta = self._chitta_source
-        if callable(chitta):
-            chitta = chitta()
+        chitta = self._chitta_source()  # Always callable — no need for check
         cetana = self._cetana_source()
         buddhi = self._buddhi_source()
         pattern = self._gandha_source()
+
+        tool_dist = chitta.get("tool_distribution")
+        files_written = (
+            int(tool_dist.get("write_file", 0))
+            if isinstance(tool_dist, dict)
+            else 0
+        )
 
         snapshot = BubbleSnapshot(
             timestamp=time.time(),
@@ -143,9 +154,7 @@ class KsetraJna:
             round=int(chitta.get("rounds", 0)),
             error_ratio=float(chitta.get("error_ratio", 0.0)),
             files_read=int(chitta.get("prior_reads", 0)),
-            files_written=int(chitta.get("tool_distribution", {}).get("write_file", 0))
-            if isinstance(chitta.get("tool_distribution"), dict)
-            else 0,
+            files_written=files_written,
             action=str(buddhi.get("action", "")),
             tier=str(buddhi.get("tier", "STANDARD")),
             heartbeat_hz=float(cetana.get("frequency_hz", 0.0)),
@@ -153,7 +162,8 @@ class KsetraJna:
             last_pattern=pattern,
         )
 
-        self._history.append(snapshot)
+        with self._lock:
+            self._history.append(snapshot)
 
         logger.debug(
             "KsetraJna: %s %s r%d h=%.2f hz=%.1f %s",
@@ -170,12 +180,14 @@ class KsetraJna:
     @property
     def history(self) -> list[BubbleSnapshot]:
         """Rolling snapshot history (most recent last)."""
-        return list(self._history)
+        with self._lock:
+            return list(self._history)
 
     @property
     def last(self) -> BubbleSnapshot | None:
         """Most recent observation."""
-        return self._history[-1] if self._history else None
+        with self._lock:
+            return self._history[-1] if self._history else None
 
     def drift(self) -> float:
         """How much has the field changed between last two snapshots?
@@ -183,9 +195,10 @@ class KsetraJna:
         Returns 0.0 (identical) to 1.0 (completely different).
         Returns 0.0 if fewer than 2 snapshots.
         """
-        if len(self._history) < 2:
-            return 0.0
-        return _compute_drift(self._history[-2], self._history[-1])
+        with self._lock:
+            if len(self._history) < 2:
+                return 0.0
+            return _compute_drift(self._history[-2], self._history[-1])
 
     def is_stuck(self, window: int = 5, threshold: float = 0.05) -> bool:
         """Is the agent stuck in a loop?
@@ -193,10 +206,12 @@ class KsetraJna:
         True if average drift over the last `window` observations is
         below `threshold`. Needs at least `window` snapshots.
         """
-        if len(self._history) < window:
-            return False
+        with self._lock:
+            if len(self._history) < window:
+                return False
+            # Snapshot under lock, compute outside
+            recent = list(self._history)[-window:]
 
-        recent = list(self._history)[-window:]
         drifts = [_compute_drift(recent[i], recent[i + 1]) for i in range(len(recent) - 1)]
         avg_drift = sum(drifts) / len(drifts)
         return avg_drift < threshold
@@ -207,11 +222,12 @@ class KsetraJna:
         Returns "improving", "degrading", or "stable".
         Uses slope of health values (simple linear regression sign).
         """
-        n = min(len(self._history), 5)
-        if n < 2:
-            return "stable"
+        with self._lock:
+            n = min(len(self._history), 5)
+            if n < 2:
+                return "stable"
+            recent = list(self._history)[-n:]
 
-        recent = list(self._history)[-n:]
         healths = [s.health for s in recent]
 
         # Simple slope: average of consecutive diffs
@@ -243,9 +259,13 @@ class KsetraJna:
 
     def stats(self) -> dict[str, object]:
         """Observability dict for get_state()."""
-        snap = self.last
+        # Snapshot state under a single lock acquisition to avoid
+        # multiple lock round-trips and inconsistent reads.
+        with self._lock:
+            snap = self._history[-1] if self._history else None
+            obs_count = len(self._history)
         return {
-            "observations": len(self._history),
+            "observations": obs_count,
             "drift": round(self.drift(), 4),
             "trend": self.trend(),
             "is_stuck": self.is_stuck(),

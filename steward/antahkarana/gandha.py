@@ -128,23 +128,32 @@ def _check_consecutive_errors(impressions: list[Impression]) -> Detection | None
 
 
 def _check_identical_calls(impressions: list[Impression]) -> Detection | None:
-    """Detect repeated identical tool calls (same name + same params)."""
+    """Detect repeated identical tool calls (same name + same params).
+
+    Does NOT trigger if the last call succeeded after earlier failures —
+    that's a recovery pattern (retry finally worked), not a stuck loop.
+    """
     if len(impressions) < MAX_IDENTICAL_CALLS:
         return None
 
     recent = impressions[-MAX_IDENTICAL_CALLS:]
-    if all(r.name == recent[0].name and r.params_hash == recent[0].params_hash for r in recent):
-        return Detection(
-            severity=VerdictAction.REFLECT,
-            pattern="identical_calls",
-            reason=f"Identical call repeated {MAX_IDENTICAL_CALLS}x: {recent[0].name}",
-            suggestion=(
-                f"Tool '{recent[0].name}' called with same parameters "
-                f"{MAX_IDENTICAL_CALLS} times. Try a different approach or "
-                f"different parameters."
-            ),
-        )
-    return None
+    if not all(r.name == recent[0].name and r.params_hash == recent[0].params_hash for r in recent):
+        return None
+
+    # Recovery pattern: last succeeded, earlier ones failed → not stuck
+    if recent[-1].success and any(not r.success for r in recent[:-1]):
+        return None
+
+    return Detection(
+        severity=VerdictAction.REFLECT,
+        pattern="identical_calls",
+        reason=f"Identical call repeated {MAX_IDENTICAL_CALLS}x: {recent[0].name}",
+        suggestion=(
+            f"Tool '{recent[0].name}' called with same parameters "
+            f"{MAX_IDENTICAL_CALLS} times. Try a different approach or "
+            f"different parameters."
+        ),
+    )
 
 
 def _check_failure_redirect(
@@ -349,7 +358,7 @@ def _check_error_recovery(impressions: list[Impression]) -> Detection | None:
 
 
 _WRITE_TOOL_NAMES = frozenset({"edit_file", "write_file"})
-_READ_TOOL_NAMES = frozenset({"read_file"})
+_READ_TOOL_NAMES = frozenset({"read_file", "glob", "grep"})
 
 
 def _check_write_without_read(

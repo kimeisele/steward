@@ -88,6 +88,10 @@ class Cetana:
     Runs a background thread that periodically reads the agent's
     vedana (health pulse) and adjusts monitoring frequency.
 
+    Thread safety: All mutable state accessed from both the daemon thread
+    and the main thread is protected by _lock. The daemon thread writes
+    (_beat, _adapt_frequency), the main thread reads (stats, properties).
+
     Usage:
         cetana = Cetana(
             vedana_source=lambda: agent.vedana,
@@ -106,6 +110,7 @@ class Cetana:
     _total_beats: int = field(default=0, init=False)
     _history: deque[CetanaBeat] = field(default_factory=lambda: deque(maxlen=_MAX_HISTORY), init=False)
     _consecutive_anomalies: int = field(default=0, init=False)
+    _lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
 
     def start(self, block: bool = False) -> None:
         """Start the autonomous heartbeat."""
@@ -125,16 +130,22 @@ class Cetana:
     def stop(self) -> None:
         """Stop the heartbeat gracefully."""
         self._stop_event.set()
-        if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=5)
+        thread = self._thread
+        if thread and thread.is_alive():
+            thread.join(timeout=5)
+            if thread.is_alive():
+                logger.warning("Cetana daemon thread did not stop within 5s — may be stuck")
             self._thread = None
 
-        last_health = self._history[-1].vedana.health if self._history else 0.0
+        with self._lock:
+            last_health = self._history[-1].vedana.health if self._history else 0.0
+            total = self._total_beats
+            freq = self.frequency_hz
         logger.info(
             "Cetana stopped after %d beats (last health=%.2f, freq=%.1fHz)",
-            self._total_beats,
+            total,
             last_health,
-            self.frequency_hz,
+            freq,
         )
 
     @property
@@ -144,23 +155,26 @@ class Cetana:
 
     @property
     def total_beats(self) -> int:
-        return self._total_beats
+        with self._lock:
+            return self._total_beats
 
     @property
     def last_beat(self) -> CetanaBeat | None:
-        return self._history[-1] if self._history else None
+        with self._lock:
+            return self._history[-1] if self._history else None
 
     def stats(self) -> dict[str, object]:
         """Observability — current heartbeat state."""
-        last = self.last_beat
-        return {
-            "alive": self.is_alive,
-            "total_beats": self._total_beats,
-            "frequency_hz": self.frequency_hz,
-            "consecutive_anomalies": self._consecutive_anomalies,
-            "last_health": last.vedana.health if last else None,
-            "last_guna": last.vedana.guna if last else None,
-        }
+        with self._lock:
+            last = self._history[-1] if self._history else None
+            return {
+                "alive": self.is_alive,
+                "total_beats": self._total_beats,
+                "frequency_hz": self.frequency_hz,
+                "consecutive_anomalies": self._consecutive_anomalies,
+                "last_health": last.vedana.health if last else None,
+                "last_guna": last.vedana.guna if last else None,
+            }
 
     def _loop(self) -> None:
         """Internal heartbeat loop — adaptive frequency."""
@@ -171,33 +185,45 @@ class Cetana:
             self._adapt_frequency(beat.vedana.health)
 
             elapsed = time.monotonic() - t0
-            sleep_time = max(0.01, (1.0 / self.frequency_hz) - elapsed)
+            with self._lock:
+                freq = self.frequency_hz
+            sleep_time = max(0.01, (1.0 / freq) - elapsed)
 
             # Interruptible sleep — Event.wait returns immediately when set
             self._stop_event.wait(timeout=sleep_time)
 
     def _beat(self) -> CetanaBeat:
-        """Execute one heartbeat — read vedana, detect anomalies."""
-        self._total_beats += 1
+        """Execute one heartbeat — read vedana, detect anomalies.
 
+        Called from daemon thread. vedana_source() is called outside the lock
+        (it may be slow), then state is updated atomically under _lock.
+        """
         vedana = self.vedana_source()
         is_anomaly = vedana.health < _ANOMALY_THRESHOLD
 
-        beat = CetanaBeat(
-            timestamp=time.time(),
-            vedana=vedana,
-            frequency_hz=self.frequency_hz,
-            beat_number=self._total_beats,
-            anomaly=is_anomaly,
-        )
+        with self._lock:
+            self._total_beats += 1
+            beat = CetanaBeat(
+                timestamp=time.time(),
+                vedana=vedana,
+                frequency_hz=self.frequency_hz,
+                beat_number=self._total_beats,
+                anomaly=is_anomaly,
+            )
+            self._history.append(beat)
 
-        self._history.append(beat)
+            if is_anomaly:
+                self._consecutive_anomalies += 1
+                anomaly_count = self._consecutive_anomalies
+            else:
+                self._consecutive_anomalies = 0
+                anomaly_count = 0
 
+        # Logging and callbacks outside lock (avoid holding lock during I/O)
         if is_anomaly:
-            self._consecutive_anomalies += 1
             logger.warning(
                 "Cetana anomaly #%d: health=%.2f (%s) — provider=%.2f error=%.2f context=%.2f",
-                self._consecutive_anomalies,
+                anomaly_count,
                 vedana.health,
                 vedana.guna,
                 vedana.provider_health,
@@ -206,14 +232,12 @@ class Cetana:
             )
             if self.on_anomaly:
                 self.on_anomaly(beat)
-        else:
-            self._consecutive_anomalies = 0
 
         logger.debug(
             "Beat #%d: health=%.2f freq=%.1fHz",
-            self._total_beats,
+            beat.beat_number,
             vedana.health,
-            self.frequency_hz,
+            beat.frequency_hz,
         )
 
         return beat
@@ -224,6 +248,8 @@ class Cetana:
         Higher health → slower pulse (SAMADHI, relaxed monitoring).
         Lower health → faster pulse (GAJENDRA, emergency mode).
         No if/else cliffs — smooth transitions between zones.
+
+        Called from daemon thread — frequency_hz written under _lock.
         """
         if health > _THRESHOLD_CALM:
             target = SAMADHI
@@ -237,7 +263,8 @@ class Cetana:
             target = GAJENDRA + t * (SADHANA - GAJENDRA)
 
         # Smooth transition (exponential moving average, avoid jerky changes)
-        self.frequency_hz = self.frequency_hz * 0.7 + target * 0.3
+        with self._lock:
+            self.frequency_hz = self.frequency_hz * 0.7 + target * 0.3
 
     def _install_signal_handlers(self) -> None:
         """Install SIGTERM/SIGINT handlers for graceful shutdown."""
