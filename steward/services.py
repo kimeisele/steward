@@ -85,6 +85,10 @@ class SVC_COMPRESSION:
     """MahaCompression — deterministic seed extraction for cache + learning."""
 
 
+class SVC_SIKSASTAKAM:
+    """SiksastakamSynth — 7-beat cache lifecycle from Verse 1."""
+
+
 class SVC_NORTH_STAR:
     """North Star — infrastructure-level goal seed (not LLM prompt).
 
@@ -220,7 +224,13 @@ def boot(
     north_star_seed = compression.compress(NORTH_STAR_TEXT).seed
     ServiceRegistry.register(SVC_NORTH_STAR, north_star_seed)
 
-    # 16. IntegrityChecker — boot-time validation (catch lazy-load failures early)
+    # 16. SiksastakamSynth (7-beat cache lifecycle from Verse 1)
+    from vibe_core.mahamantra.substrate.mantra.siksastakam import SiksastakamSynth
+
+    siksastakam = SiksastakamSynth()
+    ServiceRegistry.register(SVC_SIKSASTAKAM, siksastakam)
+
+    # 17. IntegrityChecker — boot-time validation (catch lazy-load failures early)
     from vibe_core.protocols.integrity import IntegrityChecker, IssueSeverity
 
     checker = IntegrityChecker()

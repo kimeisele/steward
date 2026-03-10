@@ -193,6 +193,21 @@ class AgentLoop:
             venu_diw = self._venu.step()
             logger.debug("Venu DIW: %d (position=%d)", venu_diw, (venu_diw & 0x3F))
 
+        # SikSasTakam: map Venu position to 7-beat cycle
+        # Beat 1 (CLEANSE_HEART_MIRROR) → proactive cache invalidation
+        # Beat 3 (SPREAD_MOONLIGHT) → graceful degradation awareness
+        if venu_diw and self._cache:
+            position = venu_diw & 0x3F  # 6-bit position (0-63)
+            beat = (position % 7) + 1  # 1-7 cycle
+            if beat == 1:  # CLEANSE_HEART_MIRROR — cache invalidation
+                stats = self._cache.get_stats()
+                evicted = self._cache._evict_expired()
+                if evicted:
+                    logger.info(
+                        "SikSasTakam Beat 1 (CLEANSE_HEART_MIRROR): purged %d stale entries",
+                        evicted,
+                    )
+
         # North Star alignment check — is this task aligned with agent purpose?
         from steward.services import SVC_NORTH_STAR
         north_star = ServiceRegistry.get(SVC_NORTH_STAR)
@@ -204,9 +219,13 @@ class AgentLoop:
         else:
             alignment = 1.0  # No north star = assume aligned
 
+        # Track beat for observability
+        venu_beat = ((venu_diw & 0x3F) % 7) + 1 if venu_diw else 0
+
         self._conversation.add(Message(role=MessageRole.USER, content=user_message))
         usage = AgentUsage()
         usage.venu_diw = venu_diw
+        usage.venu_beat = venu_beat
         usage.input_seed = cr.seed
         usage.cbr_budget = CBR_CEILING  # max possible; Buddhi DSP refines per-call
 

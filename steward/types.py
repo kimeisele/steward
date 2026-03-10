@@ -259,6 +259,7 @@ class AgentUsage:
     buddhi_reflections: int = 0  # number of reflect/redirect injections
     # Venu / substrate diagnostics
     venu_diw: int = 0  # DIW from VenuOrchestrator for this turn
+    venu_beat: int = 0  # SikSasTakam beat (1-7) derived from Venu position
     input_seed: int = 0  # MahaCompression seed for input
     cache_hit: bool = False  # whether cache bypass was used
     # CBR: Constant Bitrate Token Stream
