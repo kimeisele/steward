@@ -2,6 +2,9 @@
 
 Every test verifies BEHAVIOR: does the heartbeat respond correctly
 to vedana health signals? No field inspection, no dataclass noise.
+
+Uses polling with timeout instead of fixed sleep() delays
+to avoid flaky failures in CI environments.
 """
 
 import threading
@@ -44,6 +47,17 @@ def _make_vedana(health: float) -> VedanaSignal:
         return measure_vedana()
 
 
+def _poll(condition, timeout=3.0, interval=0.05):
+    """Poll until condition() is truthy or timeout expires. Returns final value."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        val = condition()
+        if val:
+            return val
+        time.sleep(interval)
+    return condition()
+
+
 class TestCetanaLifecycle:
     """Start, beat, stop — the basic life cycle."""
 
@@ -52,7 +66,6 @@ class TestCetanaLifecycle:
         cetana = Cetana(vedana_source=lambda: _make_vedana(0.9))
         cetana.start()
         assert cetana.is_alive
-        time.sleep(0.15)
         cetana.stop()
         assert not cetana.is_alive
 
@@ -63,7 +76,7 @@ class TestCetanaLifecycle:
             frequency_hz=20.0,  # Fast for testing
         )
         cetana.start()
-        time.sleep(0.3)
+        assert _poll(lambda: cetana.total_beats >= 2)
         cetana.stop()
         assert cetana.total_beats >= 2
 
@@ -75,7 +88,7 @@ class TestCetanaLifecycle:
         )
         assert cetana.last_beat is None
         cetana.start()
-        time.sleep(0.2)
+        _poll(lambda: cetana.last_beat is not None)
         cetana.stop()
         beat = cetana.last_beat
         assert beat is not None
@@ -110,7 +123,7 @@ class TestCetanaFrequencyAdaptation:
             frequency_hz=SADHANA,
         )
         cetana.start()
-        time.sleep(0.4)
+        _poll(lambda: cetana.total_beats >= 5)
         cetana.stop()
         # After several beats of healthy signal, frequency should drop
         assert cetana.frequency_hz < SADHANA
@@ -122,7 +135,7 @@ class TestCetanaFrequencyAdaptation:
             frequency_hz=SADHANA,
         )
         cetana.start()
-        time.sleep(0.4)
+        _poll(lambda: cetana.total_beats >= 5)
         cetana.stop()
         # After several beats of sick signal, frequency should increase
         assert cetana.frequency_hz > SADHANA
@@ -139,7 +152,8 @@ class TestCetanaFrequencyAdaptation:
         freq_sick = cetana.frequency_hz
 
         # Reset and adapt at high health
-        cetana.frequency_hz = SADHANA
+        with cetana._lock:
+            cetana.frequency_hz = SADHANA
         for _ in range(10):
             cetana._adapt_frequency(0.95)
         freq_healthy = cetana.frequency_hz
@@ -154,7 +168,7 @@ class TestCetanaFrequencyAdaptation:
             frequency_hz=SADHANA,
         )
         cetana.start()
-        time.sleep(0.5)
+        _poll(lambda: cetana.total_beats >= 10)
         cetana.stop()
         # EMA smoothing means it approaches but doesn't overshoot
         assert cetana.frequency_hz <= GAJENDRA + 0.01
@@ -173,7 +187,7 @@ class TestCetanaAnomalyDetection:
             frequency_hz=20.0,
         )
         cetana.start()
-        time.sleep(0.3)
+        _poll(lambda: len(anomalies) >= 1)
         cetana.stop()
         assert len(anomalies) >= 1
         assert all(b.anomaly for b in anomalies)
@@ -187,7 +201,7 @@ class TestCetanaAnomalyDetection:
             frequency_hz=20.0,
         )
         cetana.start()
-        time.sleep(0.3)
+        _poll(lambda: cetana.total_beats >= 5)
         cetana.stop()
         assert len(anomalies) == 0
 
@@ -203,14 +217,13 @@ class TestCetanaAnomalyDetection:
             frequency_hz=20.0,
         )
         cetana.start()
-        time.sleep(0.3)
-        assert cetana._consecutive_anomalies >= 1
+        _poll(lambda: cetana.stats()["consecutive_anomalies"] >= 1)
 
         # Recover
         health[0] = 0.9
-        time.sleep(0.3)
+        _poll(lambda: cetana.stats()["consecutive_anomalies"] == 0)
         cetana.stop()
-        assert cetana._consecutive_anomalies == 0
+        assert cetana.stats()["consecutive_anomalies"] == 0
 
     def test_no_callback_means_silent_anomaly(self):
         """Anomaly without callback still marks the beat, just no callback."""
@@ -220,7 +233,7 @@ class TestCetanaAnomalyDetection:
             frequency_hz=20.0,
         )
         cetana.start()
-        time.sleep(0.2)
+        _poll(lambda: cetana.last_beat is not None)
         cetana.stop()
         assert cetana.last_beat is not None
         assert cetana.last_beat.anomaly is True
@@ -244,7 +257,7 @@ class TestCetanaObservability:
             frequency_hz=20.0,
         )
         cetana.start()
-        time.sleep(0.2)
+        _poll(lambda: cetana.total_beats >= 1)
         s = cetana.stats()
         assert s["alive"] is True
         assert s["total_beats"] >= 1
@@ -259,7 +272,8 @@ class TestCetanaObservability:
             frequency_hz=100.0,  # Very fast to fill history
         )
         cetana.start()
-        time.sleep(0.5)
+        _poll(lambda: cetana.total_beats >= 110)  # Exceed history cap
         cetana.stop()
         # History is bounded by deque maxlen
-        assert len(cetana._history) <= 100
+        with cetana._lock:
+            assert len(cetana._history) <= 100

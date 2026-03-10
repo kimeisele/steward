@@ -23,7 +23,8 @@ from vibe_core.tools.tool_protocol import ToolResult
 
 logger = logging.getLogger("STEWARD.LOOP.DISPATCH")
 
-# Tool execution timeout (seconds) — prevents hung bash commands
+# Tool execution timeout (seconds) — single source of truth.
+# engine.py re-exports this as TOOL_TIMEOUT_SECONDS.
 TOOL_TIMEOUT_SECONDS = 120
 
 # Narasimha severity ordinal rank — module-level constant

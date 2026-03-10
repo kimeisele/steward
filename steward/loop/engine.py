@@ -31,7 +31,9 @@ import logging
 from typing import AsyncIterator
 
 from steward.antahkarana.gandha import VerdictAction
+from steward.antahkarana.ksetrajna import KsetraJna
 from steward.buddhi import Buddhi, BuddhiDirective
+from steward.protocols import HealthGate
 from steward.cbr import CBR_CEILING, CBR_SYSTEM_OVERHEAD
 from steward.context import ERROR_MARKER, SamskaraContext
 from steward.loop import json_parser, tool_dispatch
@@ -103,9 +105,7 @@ MAX_RESPONSE_CHARS = 2_000  # 500 tokens — CBR-proportional
 
 # Re-export from extracted modules (backward compat for tests)
 MAX_PARAM_CHARS = json_parser.MAX_PARAM_CHARS
-
-# Tool execution timeout (seconds) — prevents hung bash commands
-TOOL_TIMEOUT_SECONDS = 120
+TOOL_TIMEOUT_SECONDS = tool_dispatch.TOOL_TIMEOUT_SECONDS  # single source in tool_dispatch
 
 # LLM retry attempts on transient failure
 LLM_MAX_RETRIES = 1
@@ -142,6 +142,8 @@ class AgentLoop:
         venu: VenuOrchestrator | None = None,
         cache: EphemeralStorage | None = None,
         antaranga: AntarangaRegistry | None = None,
+        ksetrajna: KsetraJna | None = None,
+        health_gate: HealthGate | None = None,
     ) -> None:
         self._provider = provider
         self._registry = registry
@@ -161,8 +163,8 @@ class AgentLoop:
         self._cache = cache
         self._antaranga = antaranga
         self._antaranga_touched: set[int] = set()  # slots collided this round
-        self._ksetrajna = None  # Injected by agent for field observation
-        self._health_gate = None  # HealthGate protocol — Cetana → engine bridge
+        self._ksetrajna = ksetrajna
+        self._health_gate = health_gate
 
         # Ensure system prompt is first message
         if system_prompt and (not conversation.messages or conversation.messages[0].role != MessageRole.SYSTEM):
@@ -209,8 +211,7 @@ class AgentLoop:
             position = venu_diw & 0x3F  # 6-bit position (0-63)
             beat = (position % 7) + 1  # 1-7 cycle
             if beat == 1:  # CLEANSE_HEART_MIRROR — cache invalidation
-                stats = self._cache.get_stats()
-                evicted = self._cache._evict_expired()
+                evicted = self._cache.cleanup()
                 if evicted:
                     logger.info(
                         "SikSasTakam Beat 1 (CLEANSE_HEART_MIRROR): purged %d stale entries",
