@@ -93,6 +93,10 @@ class SVC_ANTARANGA:
     """AntarangaRegistry — 512-slot O(1) contiguous state chamber (16 KB)."""
 
 
+class SVC_MAHA_LLM:
+    """MahaLLMKernel — deterministic semantic engine (L0 zero-cost intent)."""
+
+
 class SVC_NORTH_STAR:
     """North Star — infrastructure-level goal seed (not LLM prompt).
 
@@ -240,7 +244,13 @@ def boot(
     antaranga = AntarangaRegistry()
     ServiceRegistry.register(SVC_ANTARANGA, antaranga)
 
-    # 18. IntegrityChecker — boot-time validation (catch lazy-load failures early)
+    # 18. MahaLLMKernel (L0: deterministic semantic engine — zero-cost intent routing)
+    from vibe_core.mahamantra.substrate.encoding.maha_llm_kernel import MahaLLMKernel
+
+    maha_llm = MahaLLMKernel()
+    ServiceRegistry.register(SVC_MAHA_LLM, maha_llm)
+
+    # 19. IntegrityChecker — boot-time validation (catch lazy-load failures early)
     from vibe_core.protocols.integrity import IntegrityChecker, IssueSeverity
 
     checker = IntegrityChecker()
