@@ -346,10 +346,19 @@ class Buddhi:
         effective_weight = task_weight * phase_mod
         cache_conf = self.seed_confidence(seed) if seed else 0.0
 
+        # VBR: Antaranga wave density — complexity signal from standing wave.
+        # Many active slots = agent used many distinct tools = complex task.
+        # Research: "TALE framework — ~70% token reduction via complexity-based allocation."
+        from steward.services import SVC_ANTARANGA
+        from vibe_core.di import ServiceRegistry
+        antaranga = ServiceRegistry.get(SVC_ANTARANGA)
+        wave_density = antaranga.active_count() / 512.0 if antaranga else 0.0
+
         cbr_out = process_cbr(
             context_pressure=context_pct,
             task_weight=effective_weight,
             cache_confidence=cache_conf,
+            wave_density=wave_density,
         )
         max_tokens = cbr_out.budget
 
