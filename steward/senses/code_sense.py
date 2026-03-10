@@ -5,6 +5,7 @@ Sees code structure through module analysis. Observes:
 - Python module layout (packages, modules, __init__.py)
 - Import graph health (missing imports, circular deps)
 - Code shape (class/function counts, file sizes)
+- LCOM4: class cohesion (connected components of method-attribute graph)
 
 Tanmatra: RUPA (form — the visible structure of code)
 Mahabhuta: TEJAS (fire — computational analysis)
@@ -31,6 +32,66 @@ logger = logging.getLogger("STEWARD.SENSE.CODE")
 # Max files to analyze (prevent slowness on huge repos)
 _MAX_FILES = 200
 
+# Minimum methods for LCOM4 to be meaningful
+_LCOM4_MIN_METHODS = 3
+
+
+def _compute_lcom4(class_node: ast.ClassDef) -> int:
+    """Compute LCOM4 (connected components of method-attribute graph).
+
+    LCOM4 = 1: perfectly cohesive (all methods share attributes).
+    LCOM4 > 1: class has independent responsibilities → should be split.
+
+    Only methods with self.attr access are considered (properties included).
+    Classes with fewer than _LCOM4_MIN_METHODS methods return 1 (trivially cohesive).
+    """
+    # Collect methods and their self.attr accesses
+    # Exclude dunder methods (__init__, __repr__, etc.) — they naturally
+    # touch all attributes and would falsely connect disjoint groups.
+    method_attrs: dict[str, set[str]] = {}
+    for node in class_node.body:
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        name = node.name
+        if name.startswith("__") and name.endswith("__"):
+            continue
+        attrs: set[str] = set()
+        # Walk method body for self.attr references
+        for child in ast.walk(node):
+            if isinstance(child, ast.Attribute) and isinstance(child.value, ast.Name) and child.value.id == "self":
+                attrs.add(child.attr)
+        if attrs:  # Only methods that touch self.*
+            method_attrs[name] = attrs
+
+    if len(method_attrs) < _LCOM4_MIN_METHODS:
+        return 1
+
+    # Build adjacency: two methods are connected if they share ≥1 attribute
+    methods = list(method_attrs.keys())
+    adj: dict[str, set[str]] = {m: set() for m in methods}
+    for i, m1 in enumerate(methods):
+        for m2 in methods[i + 1:]:
+            if method_attrs[m1] & method_attrs[m2]:
+                adj[m1].add(m2)
+                adj[m2].add(m1)
+
+    # Count connected components via BFS
+    visited: set[str] = set()
+    components = 0
+    for m in methods:
+        if m in visited:
+            continue
+        components += 1
+        queue = [m]
+        while queue:
+            current = queue.pop()
+            if current in visited:
+                continue
+            visited.add(current)
+            queue.extend(adj[current] - visited)
+
+    return components
+
 
 class CodeSense:
     """CAKSU — perceives code structure through module analysis.
@@ -55,7 +116,7 @@ class CodeSense:
         return self._cwd.is_dir()
 
     def perceive(self) -> SensePerception:
-        """Perceive code structure — modules, classes, functions, imports."""
+        """Perceive code structure — modules, classes, functions, imports, cohesion."""
         py_files = sorted(self._cwd.rglob("*.py"))[:_MAX_FILES]
 
         packages: list[str] = []
@@ -64,6 +125,7 @@ class CodeSense:
         total_lines = 0
         import_errors: list[str] = []
         large_files: list[str] = []
+        low_cohesion: list[dict[str, object]] = []
 
         for f in py_files:
             # Skip hidden dirs, __pycache__, .venv, node_modules
@@ -87,11 +149,20 @@ class CodeSense:
                     large_files.append(str(f.relative_to(self._cwd)))
 
                 tree = ast.parse(source, filename=str(f))
+                rel_path = str(f.relative_to(self._cwd))
                 # Only top-level defs — O(body) not O(all_nodes).
                 # ast.walk() traverses EVERY node and times out on large files.
                 for node in tree.body:
                     if isinstance(node, ast.ClassDef):
                         total_classes += 1
+                        # LCOM4: only for classes with 3+ methods
+                        lcom4 = _compute_lcom4(node)
+                        if lcom4 > 1:
+                            low_cohesion.append({
+                                "class": node.name,
+                                "file": rel_path,
+                                "lcom4": lcom4,
+                            })
                     elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
                         total_functions += 1
 
@@ -99,6 +170,9 @@ class CodeSense:
                 import_errors.append(str(f.relative_to(self._cwd)))
             except (OSError, UnicodeDecodeError):
                 continue
+
+        # Sort by worst LCOM4 first
+        low_cohesion.sort(key=lambda x: x["lcom4"], reverse=True)
 
         # Determine quality
         quality = "sattva"
@@ -110,6 +184,9 @@ class CodeSense:
 
         if large_files:
             intensity += min(0.2, len(large_files) * 0.05)
+
+        if low_cohesion:
+            intensity += min(0.2, len(low_cohesion) * 0.03)
 
         file_count = len([f for f in py_files if not any(
             p.startswith(".") or p == "__pycache__" or p in ("venv", ".venv")
@@ -127,6 +204,7 @@ class CodeSense:
                 "total_lines": total_lines,
                 "syntax_errors": import_errors[:10],
                 "large_files": large_files[:10],
+                "low_cohesion": low_cohesion[:10],
             },
             intensity=intensity,
             quality=quality,

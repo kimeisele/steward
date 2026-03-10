@@ -7,7 +7,7 @@ All perception is deterministic (zero LLM).
 import tempfile
 from pathlib import Path
 
-from steward.senses.code_sense import CodeSense
+from steward.senses.code_sense import CodeSense, _compute_lcom4
 from steward.senses.coordinator import SenseCoordinator
 from steward.senses.git_sense import GitSense
 from steward.senses.health_sense import HealthSense
@@ -166,6 +166,61 @@ class TestCodeSense:
             sense = CodeSense(cwd=tmpdir)
             perception = sense.perceive()
             assert len(perception.data["large_files"]) > 0
+
+    def test_lcom4_cohesive_class(self):
+        """A class where all methods share self attrs → LCOM4=1."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            Path(tmpdir, "cohesive.py").write_text(
+                "class Good:\n"
+                "    def __init__(self): self.x = 1; self.y = 2\n"
+                "    def a(self): return self.x + self.y\n"
+                "    def b(self): self.x = 3; return self.y\n"
+                "    def c(self): return self.x * self.y\n"
+            )
+            sense = CodeSense(cwd=tmpdir)
+            perception = sense.perceive()
+            assert perception.data["low_cohesion"] == []
+
+    def test_lcom4_incohesive_class(self):
+        """A class with disjoint method groups → LCOM4 > 1."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            Path(tmpdir, "split_me.py").write_text(
+                "class GodClass:\n"
+                "    def __init__(self):\n"
+                "        self.a = 1; self.b = 2; self.x = 3; self.y = 4\n"
+                "    def group1_m1(self): return self.a\n"
+                "    def group1_m2(self): return self.a + self.b\n"
+                "    def group1_m3(self): return self.b\n"
+                "    def group2_m1(self): return self.x\n"
+                "    def group2_m2(self): return self.x + self.y\n"
+                "    def group2_m3(self): return self.y\n"
+            )
+            sense = CodeSense(cwd=tmpdir)
+            perception = sense.perceive()
+            lc = perception.data["low_cohesion"]
+            assert len(lc) == 1
+            assert lc[0]["class"] == "GodClass"
+            assert lc[0]["lcom4"] >= 2  # at least 2 components
+
+    def test_lcom4_skips_small_classes(self):
+        """Classes with <3 methods are trivially cohesive."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            Path(tmpdir, "small.py").write_text(
+                "class Tiny:\n"
+                "    def a(self): self.x = 1\n"
+                "    def b(self): self.y = 2\n"
+            )
+            sense = CodeSense(cwd=tmpdir)
+            perception = sense.perceive()
+            assert perception.data["low_cohesion"] == []
+
+    def test_lcom4_in_perception_data(self):
+        """low_cohesion key always present in perception data."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            Path(tmpdir, "empty.py").write_text("x = 1\n")
+            sense = CodeSense(cwd=tmpdir)
+            perception = sense.perceive()
+            assert "low_cohesion" in perception.data
 
 
 # ── TestingSense (JIHVA) ──────────────────────────────────────────────────

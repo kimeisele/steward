@@ -194,14 +194,18 @@ class SenseCoordinator:
             return f"Project: {lang}"
 
         if jnanendriya == Jnanendriya.CAKSU:
-            # Code sense — compact: counts only, errors if any
+            # Code sense — compact: counts only, errors/cohesion if any
             files = data.get("python_files", 0)
             classes = data.get("total_classes", 0)
             functions = data.get("total_functions", 0)
             errors = data.get("syntax_errors", [])
+            low_cohesion = data.get("low_cohesion", [])
             line = f"Code: {files} files, {classes} cls, {functions} fn"
             if errors:
                 line += f", {len(errors)} syntax errors"
+            if low_cohesion:
+                worst = low_cohesion[0]
+                line += f", {len(low_cohesion)} low-cohesion cls (worst: {worst['class']} LCOM4={worst['lcom4']})"
             return line
 
         if jnanendriya == Jnanendriya.JIHVA:
