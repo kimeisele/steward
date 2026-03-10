@@ -30,7 +30,8 @@ from steward.config import StewardConfig, load_config
 from steward.context import SamskaraContext
 from steward.gaps import GapTracker
 from steward.loop.engine import AgentLoop
-from steward.protocols import RemotePerception
+from steward.protocols import RemotePerception, ToolProvider
+from steward.tool_providers import BuiltinToolProvider, FileSystemToolProvider, collect_tools
 from steward.senses import SenseCoordinator
 from steward.services import (
     SVC_ANTARANGA,
@@ -45,16 +46,6 @@ from steward.services import (
     boot,
 )
 from steward.session_ledger import SessionLedger
-from steward.tools.agent_internet import AgentInternetTool
-from steward.tools.bash import BashTool
-from steward.tools.edit import EditTool
-from steward.tools.glob import GlobTool
-from steward.tools.grep import GrepTool
-from steward.tools.http import HttpTool
-from steward.tools.read_file import ReadFileTool
-from steward.tools.sub_agent import SubAgentTool
-from steward.tools.web_search import WebSearchTool
-from steward.tools.write_file import WriteFileTool
 from steward.types import AgentEvent, ChamberProvider, Conversation, EventType, LLMProvider, Message, MessageRole, ToolResult
 from vibe_core.di import ServiceRegistry
 from vibe_core.mahamantra.substrate.manas.synaptic import HebbianSynaptic
@@ -142,6 +133,7 @@ class StewardAgent(GADBase):
         max_context_tokens: int | None = None,
         max_output_tokens: int | None = None,
         tools: list[Tool] | None = None,
+        tool_providers: list[ToolProvider] | None = None,
         config: StewardConfig | None = None,
     ) -> None:
         GADBase.__init__(self)
@@ -156,9 +148,9 @@ class StewardAgent(GADBase):
         # Initialize conversation
         self._conversation = Conversation(max_tokens=ctx_tokens)
 
-        # Build tool list
-        builtin_tools = self._builtin_tools()
-        all_tools = builtin_tools + (tools or [])
+        # Build tool list via ToolProvider protocol (pluggable discovery)
+        self._tool_providers = tool_providers or [BuiltinToolProvider(), FileSystemToolProvider()]
+        all_tools = collect_tools(self._tool_providers, self._cwd, extra_tools=tools)
 
         # Boot services (wires ToolRegistry, SafetyGuard, MahaAttention, Memory, EventBus)
         boot(tools=all_tools, provider=provider, cwd=self._cwd)
@@ -435,6 +427,7 @@ class StewardAgent(GADBase):
             "architecture": "sankhya_25",
             "kshetra_elements": len(STEWARD_KSHETRA) + 1,  # 24 Prakriti + 1 Jiva
             "tools": self._registry.list_tools(),
+            "tool_providers": [p.name for p in self._tool_providers],
             "providers": len(self._provider) if isinstance(self._provider, ChamberProvider) else 1,
             # ── Antahkarana (BG 13.6: inner instrument) ──
             "antahkarana": {
@@ -612,18 +605,3 @@ class StewardAgent(GADBase):
         agent_bus.emit_anomaly(beat.vedana.health, beat.vedana.guna, beat.beat_number)
 
     # ── Private Helpers ────────────────────────────────────────────────
-
-    def _builtin_tools(self) -> list[Tool]:
-        """Build the default tool set."""
-        return [
-            BashTool(cwd=self._cwd),
-            ReadFileTool(),
-            WriteFileTool(),
-            GlobTool(cwd=self._cwd),
-            EditTool(),
-            GrepTool(cwd=self._cwd),
-            HttpTool(),
-            WebSearchTool(),
-            AgentInternetTool(),
-            SubAgentTool(cwd=self._cwd),
-        ]

@@ -11,6 +11,8 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 
+import pytest
+
 from steward.agent import StewardAgent
 from steward.types import AgentEvent, EventType, LLMUsage, Message, NormalizedResponse, StreamDelta, ToolUse
 
@@ -541,6 +543,7 @@ class TestEndToEnd:
         result = agent.run_sync("What did you find?")
         assert "understand" in result.lower() or "Ok" in result
 
+    @pytest.mark.timeout(60)
     def test_state_reflects_conversation_growth(self):
         """get_state() shows conversation growing across turns."""
         llm = ScriptedLLM(
