@@ -211,8 +211,7 @@ class AgentLoop:
             position = venu_diw & 0x3F  # 6-bit position (0-63)
             beat = (position % 7) + 1  # 1-7 cycle
             if beat == 1:  # CLEANSE_HEART_MIRROR — cache invalidation
-                stats = self._cache.get_stats()
-                evicted = self._cache._evict_expired()
+                evicted = self._cache.cleanup()
                 if evicted:
                     logger.info(
                         "SikSasTakam Beat 1 (CLEANSE_HEART_MIRROR): purged %d stale entries",

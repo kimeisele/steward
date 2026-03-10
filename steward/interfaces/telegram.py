@@ -135,7 +135,7 @@ class TelegramBot:
         await update.message.reply_text(
             f"Context: {tokens}/{max_tokens} tokens ({pct}%)\n"
             f"Messages: {conv_len}\n"
-            f"Phase: {agent._buddhi.phase}{busy_indicator}"
+            f"Phase: {agent.buddhi_phase}{busy_indicator}"
         )
 
     async def handle_save(self, update, context) -> None:  # noqa: ANN001

@@ -208,7 +208,7 @@ def create_app():
                 status="ok",
                 version=__version__,
                 providers=len(_state["chamber"]) if _state["chamber"] else 0,
-                tools=agent._registry.list_tools(),
+                tools=agent.registry.list_tools(),
             )
         except HTTPException:
             return HealthResponse(status="no_providers", version=__version__, providers=0, tools=[])
