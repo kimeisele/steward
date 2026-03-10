@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
+from vibe_core.tools.tool_protocol import Tool
+
 
 @runtime_checkable
 class HealthGate(Protocol):
@@ -39,4 +41,27 @@ class RemotePerception(Protocol):
 
     def has_remote_perception(self) -> bool:
         """Can this sense perceive beyond local?"""
+        ...
+
+
+@runtime_checkable
+class ToolProvider(Protocol):
+    """Provides tools to the agent — pluggable tool discovery.
+
+    Implementations:
+        BuiltinToolProvider — hardcoded default tools (bash, read, write, etc.)
+        FileSystemToolProvider — discovers from .steward/tools/
+        Future: MCPToolProvider, FederationToolProvider
+
+    Federation: external repos register ToolProviders. Agent discovers
+    tools at boot without hardcoded imports.
+    """
+
+    @property
+    def name(self) -> str:
+        """Provider name for diagnostics."""
+        ...
+
+    def provide(self, cwd: str) -> list[Tool]:
+        """Discover and return available tools for the given workspace."""
         ...
