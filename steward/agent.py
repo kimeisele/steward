@@ -330,10 +330,9 @@ class StewardAgent(GADBase):
             venu=ServiceRegistry.get(SVC_VENU),
             cache=ServiceRegistry.get(SVC_CACHE),
             antaranga=ServiceRegistry.get(SVC_ANTARANGA),
+            ksetrajna=self._ksetrajna,
+            health_gate=self,  # StewardAgent implements HealthGate protocol
         )
-        # Wire field observers into engine — mid-turn, not just turn-boundary
-        loop._ksetrajna = self._ksetrajna
-        loop._health_gate = self  # HealthGate protocol — typed, no getattr
         async for event in loop.run(task):
             agent_bus.emit_signal(event)
             agent_bus.emit_event_bus(event)
