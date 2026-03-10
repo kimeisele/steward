@@ -33,6 +33,7 @@ from steward.loop.engine import AgentLoop
 from steward.protocols import RemotePerception
 from steward.senses import SenseCoordinator
 from steward.services import (
+    SVC_ANTARANGA,
     SVC_ATTENTION,
     SVC_CACHE,
     SVC_DIAMOND,
@@ -328,6 +329,7 @@ class StewardAgent(GADBase):
             json_mode=not self._custom_prompt,  # Brain-in-a-jar for default prompts only
             venu=ServiceRegistry.get(SVC_VENU),
             cache=ServiceRegistry.get(SVC_CACHE),
+            antaranga=ServiceRegistry.get(SVC_ANTARANGA),
         )
         # Wire field observers into engine — mid-turn, not just turn-boundary
         loop._ksetrajna = self._ksetrajna

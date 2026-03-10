@@ -53,6 +53,12 @@ from steward.types import (
 from vibe_core.di import ServiceRegistry
 from vibe_core.mahamantra.adapters.attention import MahaAttention
 from vibe_core.mahamantra.adapters.compression import MahaCompression
+from vibe_core.mahamantra.substrate.cell_system.antaranga import (
+    AntarangaRegistry,
+    FLAG_ACTIVE,
+    GENESIS_PRANA_U32,
+    INTEGRITY_FULL,
+)
 from vibe_core.mahamantra.substrate.vm.venu_orchestrator import VenuOrchestrator
 from vibe_core.playbook.ephemeral_storage import EphemeralStorage
 from vibe_core.protocols.mahajanas.nrisimha.types.narasimha import NarasimhaProtocol
@@ -135,6 +141,7 @@ class AgentLoop:
         json_mode: bool = True,
         venu: VenuOrchestrator | None = None,
         cache: EphemeralStorage | None = None,
+        antaranga: AntarangaRegistry | None = None,
     ) -> None:
         self._provider = provider
         self._registry = registry
@@ -152,6 +159,8 @@ class AgentLoop:
         self._json_mode = json_mode
         self._venu = venu
         self._cache = cache
+        self._antaranga = antaranga
+        self._antaranga_touched: set[int] = set()  # slots collided this round
         self._ksetrajna = None  # Injected by agent for field observation
         self._health_gate = None  # HealthGate protocol — Cetana → engine bridge
 
@@ -308,8 +317,10 @@ class AgentLoop:
                 self._conversation.add(Message(role=MessageRole.ASSISTANT, content=text))
                 usage.rounds = round_num + 1
 
-                # Quality signals: truncation + CBR overshoot
+                # Quality signals: truncation + CBR overshoot + Antaranga density
                 usage.truncated = was_truncated
+                if self._antaranga:
+                    usage.antaranga_active = self._antaranga.active_count()
                 usage.cbr_consumed = usage.total_tokens
                 usage.cbr_exceeded = usage.cbr_consumed > usage.cbr_budget
                 usage.cbr_reserve = max(0, usage.cbr_budget - usage.cbr_consumed)
@@ -440,6 +451,25 @@ class AgentLoop:
                             result = tool_dispatch.coerce_result(raw)
                             tool_dispatch.record_tool_file_ops(tc, result, self._safety_guard, self._memory)
 
+                            # Antaranga collision: tool execution → standing wave
+                            if self._antaranga:
+                                tool_seed = self._compression.compress(tc.name).seed
+                                slot = tool_seed % 512
+                                prana = GENESIS_PRANA_U32 if result.success else GENESIS_PRANA_U32 // 4
+                                integrity = INTEGRITY_FULL if result.success else INTEGRITY_FULL // 2
+                                self._antaranga.collide(
+                                    slot=slot,
+                                    v_source=cr.seed & 0xFFFFFFFF,
+                                    v_target=tool_seed & 0xFFFFFFFF,
+                                    v_operation=round_num & 0xFFFFFFFF,
+                                    v_arcanam=usage.tool_calls & 0xFFFFFFFF,
+                                    v_atma=venu_diw & 0xFFFFFFFF,
+                                    v_prana=prana,
+                                    v_integrity=integrity,
+                                    v_cycle=round_num & 0xFFFF,
+                                )
+                                self._antaranga_touched.add(slot)
+
                             output = result.output if result.success else f"{ERROR_MARKER} {result.error}"
                             output_str = str(output) if output else ""
                             # Prefix with tool name (JSON mode context — LLM needs to know which tool produced this)
@@ -493,6 +523,13 @@ class AgentLoop:
                     guidance = "[KsetraJna: stagnation detected] The field is not changing. Break the pattern — try a completely different approach or tool."
                     self._conversation.add(Message(role=MessageRole.USER, content=guidance))
                     usage.buddhi_reflections += 1
+
+            # Phase 6: Antaranga DIW modulation — Venu rhythm shapes standing wave
+            # Only modulate slots that were touched this round (avoid 512-scan)
+            if self._antaranga and venu_diw and self._antaranga_touched:
+                for slot_idx in self._antaranga_touched:
+                    self._antaranga.apply_diw(slot_idx, venu_diw)
+                self._antaranga_touched.clear()
 
         usage.rounds = MAX_TOOL_ROUNDS
         yield AgentEvent(type=EventType.ERROR, content="Maximum tool rounds exceeded")

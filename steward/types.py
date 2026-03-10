@@ -262,6 +262,7 @@ class AgentUsage:
     venu_beat: int = 0  # SikSasTakam beat (1-7) derived from Venu position
     input_seed: int = 0  # MahaCompression seed for input
     cache_hit: bool = False  # whether cache bypass was used
+    antaranga_active: int = 0  # Antaranga slots with prana > 0 (standing wave density)
     # CBR: Constant Bitrate Token Stream
     cbr_budget: int = 0  # tokens budgeted for this tick
     cbr_consumed: int = 0  # tokens actually consumed (0 on cache hit)
