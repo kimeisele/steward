@@ -116,7 +116,10 @@ def record_tool_file_ops(
         return
     path = str(tc.parameters.get("path", ""))
     if safety_guard:
-        getattr(safety_guard, f"record_file_{file_op}")(path)
+        if file_op == "read":
+            safety_guard.record_file_read(path)
+        elif file_op == "write":
+            safety_guard.record_file_write(path)
     if memory:
         record_file_op(memory, path, file_op)
 
