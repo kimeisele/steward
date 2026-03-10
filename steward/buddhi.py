@@ -521,6 +521,44 @@ class Buddhi:
         """Last gandha pattern name (for KsetraJna observation)."""
         return self._last_pattern
 
+    def end_turn(self) -> None:
+        """End current turn — delegates to Chitta for cross-turn merge."""
+        self._chitta.end_turn()
+
+    def synaptic_weights(self) -> list[float] | None:
+        """Get synaptic weight values (for vedana health calculation).
+
+        Returns None if no synaptic learning is configured.
+        Public API — avoids _synaptic._weights encapsulation violation.
+        """
+        if self._synaptic is None:
+            return None
+        snapshot = self._synaptic.snapshot()
+        return list(snapshot.values()) if snapshot else None
+
+    def chitta_summary(self) -> dict[str, object]:
+        """Serialize Chitta's cross-turn state for persistence."""
+        return self._chitta.to_summary()
+
+    def load_chitta_summary(self, summary: dict[str, object]) -> None:
+        """Restore Chitta's cross-turn state from a persisted summary."""
+        self._chitta.load_summary(summary)
+
+    @property
+    def chitta_prior_reads_count(self) -> int:
+        """Number of prior reads (for logging)."""
+        return len(self._chitta.prior_reads)
+
+    @property
+    def chitta_files_read(self) -> list[str]:
+        """Files read this turn (for session ledger)."""
+        return self._chitta.files_read
+
+    @property
+    def chitta_files_written(self) -> list[str]:
+        """Files written this turn (for session ledger)."""
+        return self._chitta.files_written
+
 
 def _phase_guidance(
     prev: ExecutionPhase,

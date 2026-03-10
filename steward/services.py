@@ -133,6 +133,10 @@ def boot(
     Returns:
         ServiceRegistry class (call .get(SVC_*) to retrieve services)
     """
+    # TODO(multi-agent): reset_all() nukes every registered service.
+    # If two StewardAgent instances share a process, the second boot()
+    # destroys the first agent's wiring. Needs scoped registries or
+    # per-agent namespaces in steward-protocol ServiceRegistry.
     ServiceRegistry.reset_all()
 
     # 1. ToolRegistry
@@ -342,8 +346,8 @@ def _check_narasimha(narasimha: object) -> None:
 
 def _check_provider(provider: object) -> None:
     """Integrity check: provider can accept calls."""
-    if not callable(getattr(provider, "invoke", None)):
-        raise RuntimeError("Provider missing invoke()")
+    if not isinstance(provider, LLMProvider):
+        raise RuntimeError("Provider does not implement LLMProvider protocol")
 
 
 def _check_venu_divinity(venu: object) -> None:

@@ -200,8 +200,10 @@ class Conversation:
 
         Priority order for eviction (highest first):
         1. Tool result messages (largest, least valuable long-term)
-        2. Oldest non-system, non-user messages
-        3. Oldest non-system messages
+        2. Oldest non-system messages
+
+        Uses single-pass filtering instead of repeated pop(i) to avoid
+        O(n²) performance on large conversation histories.
 
         When trimming occurs, inserts a summary marker so the LLM
         knows context was compacted.
@@ -209,26 +211,55 @@ class Conversation:
         if self.total_tokens <= self.max_tokens:
             return
 
-        trimmed_count = 0
-        # Phase 1: Drop oldest tool results first (they're biggest)
-        while self.total_tokens > self.max_tokens and len(self.messages) > 2:
-            for i, m in enumerate(self.messages):
-                if m.role == MessageRole.TOOL:
-                    self.messages.pop(i)
-                    trimmed_count += 1
-                    break
-            else:
-                break  # no more tool messages
+        budget = self.max_tokens
+        original_len = len(self.messages)
 
-        # Phase 2: Drop oldest non-system messages
-        while self.total_tokens > self.max_tokens and len(self.messages) > 2:
-            for i, m in enumerate(self.messages):
-                if m.role != MessageRole.SYSTEM:
-                    self.messages.pop(i)
-                    trimmed_count += 1
-                    break
-            else:
-                break  # only system messages left
+        # Phase 1: Drop tool results (largest, least valuable)
+        if self.total_tokens > budget:
+            keep: list[Message] = []
+            running_tokens = 0
+            # Separate tool results from other messages
+            non_tool: list[Message] = []
+            tool_msgs: list[Message] = []
+            for m in self.messages:
+                if m.role == MessageRole.TOOL:
+                    tool_msgs.append(m)
+                else:
+                    non_tool.append(m)
+
+            # Keep non-tool messages, then add back tool messages newest-first until budget
+            running_tokens = sum(m.estimated_tokens for m in non_tool)
+            keep = list(non_tool)
+            for m in reversed(tool_msgs):
+                if running_tokens + m.estimated_tokens <= budget:
+                    keep.append(m)
+                    running_tokens += m.estimated_tokens
+            # Restore original ordering (non-tool already in order, tools appended)
+            # Rebuild in original order by filtering
+            kept_ids = {id(m) for m in keep}
+            self.messages = [m for m in self.messages if id(m) in kept_ids]
+
+        # Phase 2: Drop oldest non-system messages until under budget
+        if self.total_tokens > budget and len(self.messages) > 2:
+            # Keep system messages + enough recent messages to fit budget
+            system_msgs = [m for m in self.messages if m.role == MessageRole.SYSTEM]
+            other_msgs = [m for m in self.messages if m.role != MessageRole.SYSTEM]
+
+            system_tokens = sum(m.estimated_tokens for m in system_msgs)
+            remaining_budget = budget - system_tokens
+
+            # Keep from the end (most recent) until budget exhausted
+            kept_other: list[Message] = []
+            for m in reversed(other_msgs):
+                if remaining_budget >= m.estimated_tokens:
+                    kept_other.append(m)
+                    remaining_budget -= m.estimated_tokens
+                else:
+                    break  # oldest messages dropped first
+            kept_other.reverse()
+            self.messages = system_msgs + kept_other
+
+        trimmed_count = original_len - len(self.messages)
 
         # Insert compaction marker after system message
         if trimmed_count > 0 and len(self.messages) >= 2:

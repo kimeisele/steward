@@ -22,7 +22,12 @@ def emit_startup(tools: list[str], cwd: str) -> None:
 
     bus = ServiceRegistry.get(SVC_SIGNAL_BUS)
     if bus is None:
+        logger.debug("SignalBus not registered — telemetry signals disabled")
         return
+
+    event_bus = ServiceRegistry.get(SVC_EVENT_BUS)
+    if event_bus is None:
+        logger.debug("EventBus not registered — Narada stream disabled")
     bus.emit(
         Signal(
             signal_type=SignalType.AGENT_STARTUP,

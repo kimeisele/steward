@@ -80,7 +80,8 @@ class GitSense:
         branch = self._git("rev-parse", "--abbrev-ref", "HEAD").strip() or "unknown"
         dirty_files = self._git("status", "--porcelain", "--short") or ""
         dirty_count = len([line for line in dirty_files.strip().split("\n") if line.strip()])
-        stash_count = len(self._git("stash", "list").strip().split("\n")) if self._git("stash", "list").strip() else 0
+        stash_output = self._git("stash", "list").strip()
+        stash_count = len(stash_output.split("\n")) if stash_output else 0
 
         # Recent commits (last 5)
         log_output = self._git("log", "--oneline", "-5", "--no-decorate") or ""

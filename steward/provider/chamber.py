@@ -458,6 +458,8 @@ class ProviderChamber:
     ) -> None:
         """Record a successful provider call."""
         if breaker:
+            # TODO(steward-protocol): Add CircuitBreaker.record_success() public API.
+            # ProviderChamber bypasses call() for custom orchestration.
             breaker._record_success()
 
         total_tokens = input_tokens + output_tokens
@@ -489,6 +491,7 @@ class ProviderChamber:
         self._total_failures += 1
 
         if breaker:
+            # TODO(steward-protocol): Add CircuitBreaker.record_failure() public API.
             err = error if isinstance(error, Exception) else Exception(error)
             breaker._record_failure(err)
 

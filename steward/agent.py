@@ -330,10 +330,9 @@ class StewardAgent(GADBase):
             venu=ServiceRegistry.get(SVC_VENU),
             cache=ServiceRegistry.get(SVC_CACHE),
             antaranga=ServiceRegistry.get(SVC_ANTARANGA),
+            ksetrajna=self._ksetrajna,
+            health_gate=self,  # StewardAgent implements HealthGate protocol
         )
-        # Wire field observers into engine — mid-turn, not just turn-boundary
-        loop._ksetrajna = self._ksetrajna
-        loop._health_gate = self  # HealthGate protocol — typed, no getattr
         async for event in loop.run(task):
             agent_bus.emit_signal(event)
             agent_bus.emit_event_bus(event)
@@ -350,7 +349,7 @@ class StewardAgent(GADBase):
                 self._buddhi.record_outcome(success)
                 agent_memory.save_synaptic(self._memory, self._synaptic)
                 # Cross-turn: merge reads, clear impressions, persist
-                self._buddhi._chitta.end_turn()
+                self._buddhi.end_turn()
                 self._ksetrajna.observe()  # Meta-observation at turn boundary
                 agent_memory.save_chitta(self._memory, self._buddhi)
                 agent_memory.save_gaps(self._memory, self._gaps)
@@ -375,6 +374,11 @@ class StewardAgent(GADBase):
     def config(self) -> StewardConfig:
         """Access the loaded configuration."""
         return self._config
+
+    @property
+    def buddhi_phase(self) -> str:
+        """Current execution phase (delegates to Buddhi)."""
+        return self._buddhi.phase
 
     def resume(self, conversation: Conversation) -> None:
         """Resume from a previous session's conversation.
@@ -539,8 +543,8 @@ class StewardAgent(GADBase):
             else 0.0
         )
 
-        # Synaptic weights
-        syn_weights = list(self._buddhi._synaptic._weights.values()) if self._buddhi._synaptic else None
+        # Synaptic weights — via public API (no private access)
+        syn_weights = self._buddhi.synaptic_weights()
 
         # Buddhi error/call counts from recent session
         session_stats = self._memory.recall("session_stats", session_id="steward") or {}
