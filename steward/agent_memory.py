@@ -20,11 +20,15 @@ logger = logging.getLogger("STEWARD.MEMORY")
 
 
 def load_synaptic(memory: MemoryProtocol, synaptic: HebbianSynaptic) -> None:
-    """Restore Hebbian synaptic weights from PersistentMemory."""
+    """Restore Hebbian synaptic weights from PersistentMemory.
+
+    TODO(steward-protocol): Add HebbianSynaptic.restore(dict) to avoid
+    direct _weights access. Until then, this is the only place that
+    bypasses encapsulation — kept intentionally in one module.
+    """
     data = memory.recall("synaptic_weights", session_id="steward")
     if data and isinstance(data, dict):
-        for key, weight in data.items():
-            synaptic._weights[key] = float(weight)
+        synaptic._weights.update({k: float(v) for k, v in data.items()})
         logger.debug("Synaptic weights restored: %d entries", len(data))
 
 
@@ -44,16 +48,16 @@ def load_chitta(memory: MemoryProtocol, buddhi: Buddhi) -> None:
     """Restore Chitta's cross-turn state from PersistentMemory."""
     summary = memory.recall("chitta_summary", session_id="steward")
     if summary and isinstance(summary, dict):
-        buddhi._chitta.load_summary(summary)
+        buddhi.load_chitta_summary(summary)
         logger.debug(
             "Chitta restored: %d prior reads",
-            len(buddhi._chitta.prior_reads),
+            buddhi.chitta_prior_reads_count,
         )
 
 
 def save_chitta(memory: MemoryProtocol, buddhi: Buddhi) -> None:
     """Persist Chitta's cross-turn state to PersistentMemory."""
-    summary = buddhi._chitta.to_summary()
+    summary = buddhi.chitta_summary()
     memory.remember(
         "chitta_summary",
         summary,
@@ -107,7 +111,6 @@ def record_session_ledger(
     usage: AgentUsage,
 ) -> None:
     """Record this task in the session ledger for cross-session learning."""
-    chitta = buddhi._chitta
     outcome = "error" if usage.buddhi_errors > usage.tool_calls // 2 else "success"
     if usage.buddhi_errors > 0 and outcome == "success":
         outcome = "partial"
@@ -120,8 +123,8 @@ def record_session_ledger(
             tokens=usage.input_tokens + usage.output_tokens,
             tool_calls=usage.tool_calls,
             rounds=usage.rounds,
-            files_read=chitta.files_read[:10],
-            files_written=chitta.files_written[:10],
+            files_read=buddhi.chitta_files_read[:10],
+            files_written=buddhi.chitta_files_written[:10],
             buddhi_action=usage.buddhi_action or "",
             buddhi_phase=str(usage.buddhi_phase) if usage.buddhi_phase else "",
             errors=usage.buddhi_errors,

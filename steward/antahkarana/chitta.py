@@ -17,6 +17,7 @@ knowing "where am I?" from "what have I done?"
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -77,6 +78,7 @@ class Chitta:
         self._impressions: list[Impression] = []
         self._round: int = 0
         self._prior_reads: set[str] = set()  # files read in prior turns
+        self._lock = threading.Lock()  # Protects _impressions and _prior_reads
 
     def record(
         self,
@@ -87,15 +89,15 @@ class Chitta:
         path: str = "",
     ) -> None:
         """Record a tool execution impression."""
-        self._impressions.append(
-            Impression(
-                name=name,
-                params_hash=params_hash,
-                success=success,
-                error=error,
-                path=path,
-            )
+        imp = Impression(
+            name=name,
+            params_hash=params_hash,
+            success=success,
+            error=error,
+            path=path,
         )
+        with self._lock:
+            self._impressions.append(imp)
 
     def advance_round(self) -> int:
         """Advance to next round, return new round number."""
@@ -104,8 +106,9 @@ class Chitta:
 
     @property
     def impressions(self) -> list[Impression]:
-        """All recorded impressions."""
-        return self._impressions
+        """All recorded impressions (snapshot copy for thread safety)."""
+        with self._lock:
+            return list(self._impressions)
 
     @property
     def round(self) -> int:
@@ -114,31 +117,35 @@ class Chitta:
 
     def recent(self, n: int) -> list[Impression]:
         """Get the last n impressions."""
-        if n <= len(self._impressions):
-            return self._impressions[-n:]
-        return list(self._impressions)
+        with self._lock:
+            if n <= len(self._impressions):
+                return list(self._impressions[-n:])
+            return list(self._impressions)
 
     def clear(self) -> None:
         """Clear all impressions and reset round counter.
 
         Also clears prior_reads — full reset for new session.
         """
-        self._impressions.clear()
-        self._round = 0
-        self._prior_reads.clear()
+        with self._lock:
+            self._impressions.clear()
+            self._round = 0
+            self._prior_reads.clear()
 
     def end_turn(self) -> None:
         """End current turn — merge reads into prior, clear impressions.
 
         Call this between turns to retain cross-turn file awareness
         while clearing per-turn impression history.
+        Round counter is NOT reset — it tracks cumulative rounds across turns.
         """
-        # Merge current turn's reads into prior_reads
-        for imp in self._impressions:
-            if imp.name in _READ_NAMES and imp.success and imp.path:
-                self._prior_reads.add(imp.path)
-        self._impressions.clear()
-        self._round = 0
+        with self._lock:
+            for imp in self._impressions:
+                if imp.name in _READ_NAMES and imp.success and imp.path:
+                    self._prior_reads.add(imp.path)
+            self._impressions.clear()
+            # NOTE: _round intentionally not reset here — tracks cross-turn progress.
+            # Only clear() resets round (full session reset).
 
     @property
     def phase(self) -> ExecutionPhase:
@@ -151,14 +158,17 @@ class Chitta:
 
         Deterministic — same impressions always produce same phase.
         """
-        if not self._impressions:
+        with self._lock:
+            impressions = list(self._impressions)
+
+        if not impressions:
             return PHASE_ORIENT
 
         # Aggregate counts
-        total_writes = sum(1 for i in self._impressions if i.name in _WRITE_NAMES and i.success)
+        total_writes = sum(1 for i in impressions if i.name in _WRITE_NAMES and i.success)
 
         # Recent window (last 3 impressions)
-        recent = self._impressions[-3:] if len(self._impressions) >= 3 else self._impressions
+        recent = impressions[-3:] if len(impressions) >= 3 else impressions
         recent_errors = sum(1 for i in recent if not i.success)
         recent_writes = sum(1 for i in recent if i.name in _WRITE_NAMES and i.success)
         recent_bash_ok = sum(1 for i in recent if i.name == "bash" and i.success)
@@ -180,7 +190,7 @@ class Chitta:
             return PHASE_EXECUTE
 
         # Read enough -> ready to act
-        total_reads = sum(1 for i in self._impressions if i.name in _READ_NAMES)
+        total_reads = sum(1 for i in impressions if i.name in _READ_NAMES)
         if total_reads >= 2:
             return PHASE_EXECUTE
 
@@ -189,35 +199,33 @@ class Chitta:
     @property
     def prior_reads(self) -> frozenset[str]:
         """Files read in previous turns (cross-turn awareness)."""
-        return frozenset(self._prior_reads)
+        with self._lock:
+            return frozenset(self._prior_reads)
 
     def was_file_read(self, path: str) -> bool:
         """Check if a file was read in current OR prior turns."""
-        if path in self._prior_reads:
-            return True
-        return any(i.name in _READ_NAMES and i.success and i.path == path for i in self._impressions)
+        with self._lock:
+            if path in self._prior_reads:
+                return True
+            return any(i.name in _READ_NAMES and i.success and i.path == path for i in self._impressions)
 
     @property
     def files_read(self) -> list[str]:
         """Unique file paths read (from read_file impressions, current turn only)."""
-        seen: set[str] = set()
-        result: list[str] = []
-        for i in self._impressions:
-            if i.name in _READ_NAMES and i.success and i.path and i.path not in seen:
-                seen.add(i.path)
-                result.append(i.path)
-        return result
+        with self._lock:
+            seen: set[str] = set()
+            result: list[str] = []
+            for i in self._impressions:
+                if i.name in _READ_NAMES and i.success and i.path and i.path not in seen:
+                    seen.add(i.path)
+                    result.append(i.path)
+            return result
 
     @property
     def files_written(self) -> list[str]:
         """Unique file paths written (from edit_file/write_file impressions)."""
-        seen: set[str] = set()
-        result: list[str] = []
-        for i in self._impressions:
-            if i.name in _WRITE_NAMES and i.success and i.path and i.path not in seen:
-                seen.add(i.path)
-                result.append(i.path)
-        return result
+        with self._lock:
+            return self._files_written_unlocked()
 
     def to_summary(self) -> dict[str, object]:
         """Serialize cross-turn state for persistence.
@@ -229,31 +237,45 @@ class Chitta:
 
         NOT saved: raw impressions (ephemeral, per-turn only).
         """
-        # Merge current reads into snapshot
-        all_reads = set(self._prior_reads)
-        for imp in self._impressions:
-            if imp.name in _READ_NAMES and imp.success and imp.path:
-                all_reads.add(imp.path)
+        with self._lock:
+            all_reads = set(self._prior_reads)
+            for imp in self._impressions:
+                if imp.name in _READ_NAMES and imp.success and imp.path:
+                    all_reads.add(imp.path)
+            written = self._files_written_unlocked()
         return {
             "prior_reads": sorted(all_reads),
-            "files_written": self.files_written,
+            "files_written": written,
             "last_phase": self.phase,
         }
+
+    def _files_written_unlocked(self) -> list[str]:
+        """Internal: compute files_written without acquiring lock (caller holds it)."""
+        seen: set[str] = set()
+        result: list[str] = []
+        for i in self._impressions:
+            if i.name in _WRITE_NAMES and i.success and i.path and i.path not in seen:
+                seen.add(i.path)
+                result.append(i.path)
+        return result
 
     def load_summary(self, summary: dict[str, object]) -> None:
         """Restore cross-turn state from a persisted summary."""
         prior = summary.get("prior_reads", [])
-        if isinstance(prior, list):
-            self._prior_reads = set(prior)
+        with self._lock:
+            if isinstance(prior, list):
+                self._prior_reads = set(prior)
 
     @property
     def stats(self) -> dict[str, object]:
         """Diagnostic stats from accumulated impressions."""
-        total = len(self._impressions)
-        errors = sum(1 for r in self._impressions if not r.success)
-        tool_counts: dict[str, int] = {}
-        for r in self._impressions:
-            tool_counts[r.name] = tool_counts.get(r.name, 0) + 1
+        with self._lock:
+            total = len(self._impressions)
+            errors = sum(1 for r in self._impressions if not r.success)
+            tool_counts: dict[str, int] = {}
+            for r in self._impressions:
+                tool_counts[r.name] = tool_counts.get(r.name, 0) + 1
+            n_prior = len(self._prior_reads)
         return {
             "rounds": self._round,
             "total_calls": total,
@@ -261,5 +283,5 @@ class Chitta:
             "error_ratio": errors / total if total else 0.0,
             "tool_distribution": tool_counts,
             "phase": self.phase,
-            "prior_reads": len(self._prior_reads),
+            "prior_reads": n_prior,
         }

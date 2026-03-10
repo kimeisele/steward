@@ -350,7 +350,7 @@ class StewardAgent(GADBase):
                 self._buddhi.record_outcome(success)
                 agent_memory.save_synaptic(self._memory, self._synaptic)
                 # Cross-turn: merge reads, clear impressions, persist
-                self._buddhi._chitta.end_turn()
+                self._buddhi.end_turn()
                 self._ksetrajna.observe()  # Meta-observation at turn boundary
                 agent_memory.save_chitta(self._memory, self._buddhi)
                 agent_memory.save_gaps(self._memory, self._gaps)
@@ -539,8 +539,8 @@ class StewardAgent(GADBase):
             else 0.0
         )
 
-        # Synaptic weights
-        syn_weights = list(self._buddhi._synaptic._weights.values()) if self._buddhi._synaptic else None
+        # Synaptic weights — via public API (no private access)
+        syn_weights = self._buddhi.synaptic_weights()
 
         # Buddhi error/call counts from recent session
         session_stats = self._memory.recall("session_stats", session_id="steward") or {}
