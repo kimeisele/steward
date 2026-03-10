@@ -27,7 +27,6 @@ write→read dependencies are detected and serialized into waves.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from typing import AsyncIterator
 
@@ -35,6 +34,7 @@ from steward.antahkarana.gandha import VerdictAction
 from steward.buddhi import Buddhi, BuddhiDirective
 from steward.cbr import CBR_CEILING, CBR_SYSTEM_OVERHEAD
 from steward.context import ERROR_MARKER, SamskaraContext
+from steward.loop import json_parser, tool_dispatch
 from steward.services import lean_tool_signatures
 from steward.summarizer import Summarizer, should_summarize
 from steward.types import (
@@ -47,7 +47,6 @@ from steward.types import (
     Message,
     MessageRole,
     NormalizedResponse,
-    StreamDelta,
     StreamingProvider,
     ToolUse,
 )
@@ -56,21 +55,12 @@ from vibe_core.mahamantra.adapters.attention import MahaAttention
 from vibe_core.mahamantra.adapters.compression import MahaCompression
 from vibe_core.mahamantra.substrate.vm.venu_orchestrator import VenuOrchestrator
 from vibe_core.playbook.ephemeral_storage import EphemeralStorage
-from vibe_core.protocols.mahajanas.nrisimha.types.narasimha import NarasimhaProtocol, ThreatLevel
+from vibe_core.protocols.mahajanas.nrisimha.types.narasimha import NarasimhaProtocol
 from vibe_core.protocols.memory import MemoryProtocol
 from vibe_core.runtime.tool_safety_guard import ToolSafetyGuard
 from vibe_core.tools.tool_protocol import ToolCall as ProtoToolCall
 from vibe_core.tools.tool_protocol import ToolResult
 from vibe_core.tools.tool_registry import ToolRegistry
-
-# Narasimha severity ordinal rank — module-level constant (not recreated per call)
-_SEVERITY_RANK = {
-    ThreatLevel.GREEN: 0,
-    ThreatLevel.YELLOW: 1,
-    ThreatLevel.ORANGE: 2,
-    ThreatLevel.RED: 3,
-    ThreatLevel.APOCALYPSE: 4,
-}
 
 logger = logging.getLogger("STEWARD.LOOP")
 
@@ -105,22 +95,14 @@ MAX_INPUT_CHARS = 4_000  # 1000 tokens — same discipline as tool output
 # LLM text response stored in conversation (output side)
 MAX_RESPONSE_CHARS = 2_000  # 500 tokens — CBR-proportional
 
-# Tool call parameter value (edit_file old_string/new_string)
-MAX_PARAM_CHARS = 2_000  # 500 tokens
+# Re-export from extracted modules (backward compat for tests)
+MAX_PARAM_CHARS = json_parser.MAX_PARAM_CHARS
 
 # Tool execution timeout (seconds) — prevents hung bash commands
 TOOL_TIMEOUT_SECONDS = 120
 
 # LLM retry attempts on transient failure
 LLM_MAX_RETRIES = 1
-
-# File operation dispatch — tool name → (op_type, safety_method)
-_FILE_OP_MAP: dict[str, str] = {
-    "read_file": "read",
-    "write_file": "write",
-    "edit_file": "write",
-}
-
 
 class AgentLoop:
     """Execute the agentic tool-use loop for a single turn.
@@ -241,7 +223,7 @@ class AgentLoop:
                 usage.cbr_consumed = 0
                 usage.cbr_reserve = CBR_CEILING  # full budget saved (cache hit)
                 # Strip JSON wrapper if present
-                _, parsed = self._parse_json_response(cached_response)
+                _, parsed = json_parser.parse_json_response(cached_response)
                 text = parsed if parsed else cached_response
                 self._conversation.add(Message(role=MessageRole.ASSISTANT, content=text))
                 yield AgentEvent(type=EventType.TEXT, content=text)
@@ -296,11 +278,11 @@ class AgentLoop:
             # Track tokens from LLM response
             self._accumulate_usage(response, usage)
 
-            tool_calls = self._extract_tool_calls(response)
+            tool_calls = json_parser.extract_tool_calls(response)
 
             if not tool_calls:
                 # Pure text response — turn is done
-                text = self._extract_text(response)
+                text = json_parser.extract_text(response)
                 was_truncated = len(text) > MAX_RESPONSE_CHARS
                 if was_truncated:
                     text = text[:MAX_RESPONSE_CHARS] + f"\n[truncated at {MAX_RESPONSE_CHARS} chars]"
@@ -364,7 +346,7 @@ class AgentLoop:
             self._conversation.add(
                 Message(
                     role=MessageRole.ASSISTANT,
-                    content=self._extract_text(response),
+                    content=json_parser.extract_text(response),
                     tool_uses=tool_calls,
                 )
             )
@@ -376,7 +358,7 @@ class AgentLoop:
                 usage.tool_calls += 1
                 yield AgentEvent(type=EventType.TOOL_CALL, tool_use=tc)
 
-                block_reason = self._check_tool_gates(tc)
+                block_reason = tool_dispatch.check_tool_gates(tc, self._attention, self._narasimha, self._safety_guard)
                 if block_reason:
                     self._conversation.add(
                         Message(role=MessageRole.TOOL, content=f"{ERROR_MARKER} {block_reason}", tool_use_id=tc.id)
@@ -403,7 +385,7 @@ class AgentLoop:
             # that tool B reads/tests, B must wait for A to complete.
             results: list[object] = []
             if to_execute:
-                waves = self._partition_by_dependency(to_execute)
+                waves = tool_dispatch.partition_by_dependency(to_execute)
                 if len(waves) > 1:
                     logger.info(
                         "Dependency-aware execution: %d waves (%s)",
@@ -436,8 +418,8 @@ class AgentLoop:
                             except BaseException as e:
                                 raw = e
                             results[idx] = raw
-                            result = self._coerce_result(raw)
-                            self._record_tool_file_ops(tc, result)
+                            result = tool_dispatch.coerce_result(raw)
+                            tool_dispatch.record_tool_file_ops(tc, result, self._safety_guard, self._memory)
 
                             output = result.output if result.success else f"{ERROR_MARKER} {result.error}"
                             output_str = str(output) if output else ""
@@ -513,41 +495,6 @@ class AgentLoop:
 
         return asyncio.run(_collect())
 
-    def _check_tool_gates(self, tc: ToolUse) -> str | None:
-        """Check all pre-execution gates for a tool call.
-
-        Returns error message if blocked, None if cleared.
-        Gates (in order): O(1) Lotus route → Narasimha → Iron Dome.
-        """
-        # Gate 1: O(1) Lotus route — verify tool exists
-        if self._attention:
-            route = self._attention.attend(tc.name)
-            if not route.found:
-                return f"Tool '{tc.name}' not found (O(1) route miss)"
-
-        # Gate 2: Narasimha killswitch — audit bash for dangerous patterns
-        if self._narasimha and tc.name == "bash":
-            cmd = str(tc.parameters.get("command", ""))
-            threat = self._narasimha.audit_agent(
-                "steward",
-                cmd,
-                {"tool": tc.name},
-            )
-            if threat and _SEVERITY_RANK.get(threat.severity, 0) >= _SEVERITY_RANK[ThreatLevel.RED]:
-                logger.warning("Narasimha blocked bash: %s", threat.description)
-                return f"Narasimha blocked: {threat.description}"
-
-        # Gate 3: Iron Dome safety check
-        if self._safety_guard:
-            allowed, violation = self._safety_guard.check_action(
-                tc.name,
-                tc.parameters,
-            )
-            if not allowed:
-                return violation.message if violation else "Blocked by safety guard"
-
-        return None  # All gates passed
-
     @staticmethod
     def _accumulate_usage(response: NormalizedResponse, usage: AgentUsage) -> None:
         """Extract token counts from NormalizedResponse and add to usage."""
@@ -560,81 +507,8 @@ class AgentLoop:
         usage.input_tokens += inp
         usage.output_tokens += out
 
-    def _record_file_op(self, path: str, op: str) -> None:
-        """Record file operation in Memory for cross-turn awareness."""
-        if not self._memory or not path:
-            return
-        # Track files touched this session
-        key = f"files_{op}"
-        existing = self._memory.recall(key, session_id="steward") or []
-        if path not in existing:
-            existing.append(path)
-            self._memory.remember(key, existing, session_id="steward", tags=["file_ops"])
-
-    @staticmethod
-    def _coerce_result(raw: object) -> ToolResult:
-        """Convert raw asyncio.gather result to ToolResult."""
-        if isinstance(raw, asyncio.TimeoutError):
-            return ToolResult(success=False, error=f"Tool timed out after {TOOL_TIMEOUT_SECONDS}s")
-        if isinstance(raw, BaseException):
-            return ToolResult(success=False, error=str(raw))
-        return raw  # type: ignore[return-value]
-
-    def _record_tool_file_ops(self, tc: ToolUse, result: ToolResult) -> None:
-        """Record file read/write for Iron Dome + Memory (branchless dispatch)."""
-        file_op = _FILE_OP_MAP.get(tc.name) if result.success else None
-        if not file_op:
-            return
-        path = str(tc.parameters.get("path", ""))
-        if self._safety_guard:
-            getattr(self._safety_guard, f"record_file_{file_op}")(path)
-        if self._memory:
-            self._record_file_op(path, file_op)
-
-    @staticmethod
-    def _partition_by_dependency(to_execute: list[tuple[ToolUse, object]]) -> list[list[int]]:
-        """Partition tool indices into dependency-ordered waves.
-
-        Protocol lesson (ActionStep.depends_on in steward-protocol):
-        If tool A writes a file that tool B reads/tests, B must wait
-        for A to complete. Tools within a wave run in parallel.
-        Waves run sequentially.
-
-        Returns list of waves, each wave is a list of indices into to_execute.
-        """
-        if len(to_execute) <= 1:
-            return [list(range(len(to_execute)))]
-
-        # Collect paths being written
-        written_paths: set[str] = set()
-        writer_indices: set[int] = set()
-        for i, (tc, _) in enumerate(to_execute):
-            if tc.name in ("write_file", "edit_file"):
-                path = tc.parameters.get("path", "")
-                if path:
-                    written_paths.add(path)
-                    writer_indices.add(i)
-
-        if not written_paths:
-            return [list(range(len(to_execute)))]  # No writes — all parallel
-
-        # Find non-writers that reference any written path
-        dependent_indices: set[int] = set()
-        for i, (tc, _) in enumerate(to_execute):
-            if i in writer_indices:
-                continue
-            for v in tc.parameters.values():
-                if isinstance(v, str) and any(wp in v for wp in written_paths):
-                    dependent_indices.add(i)
-                    break
-
-        if not dependent_indices:
-            return [list(range(len(to_execute)))]  # No dependencies — all parallel
-
-        # Wave 1: writers + independent, Wave 2: dependents
-        wave1 = [i for i in range(len(to_execute)) if i not in dependent_indices]
-        wave2 = sorted(dependent_indices)
-        return [wave1, wave2]
+    # Backward-compatible delegates — tests reference these as AgentLoop._*
+    _partition_by_dependency = staticmethod(tool_dispatch.partition_by_dependency)
 
     def _apply_buddhi_verdict(
         self,
@@ -806,180 +680,7 @@ class AgentLoop:
             logger.warning("Stream failed (%s: %s) — falling back", type(e).__name__, e)
             return await self._call_llm(directive)
 
-    @staticmethod
-    def _extract_raw_content(response: NormalizedResponse) -> str:
-        """Extract raw text content from NormalizedResponse."""
-        return response.content
-
-    @staticmethod
-    def _strip_fences(text: str) -> str:
-        """Strip markdown code fences (Google Gemini wraps JSON in ```json...```)."""
-        cleaned = text.strip()
-        if cleaned.startswith("```"):
-            first_nl = cleaned.find("\n")
-            if first_nl != -1:
-                cleaned = cleaned[first_nl + 1:]
-            else:
-                # No newline — ```json{...}``` on one line
-                cleaned = cleaned[3:]
-                if cleaned.lower().startswith("json"):
-                    cleaned = cleaned[4:]
-            if cleaned.rstrip().endswith("```"):
-                cleaned = cleaned.rstrip()[:-3].rstrip()
-        return cleaned
-
-    @staticmethod
-    def _extract_json_object(text: str) -> str | None:
-        """Extract first complete JSON object {...} from text via brace-matching.
-
-        Handles preamble text, malformed fences, or LLM chatter around JSON.
-        String-aware: ignores braces inside JSON string values.
-        """
-        start = text.find("{")
-        if start == -1:
-            return None
-        depth = 0
-        in_string = False
-        escape = False
-        for i in range(start, len(text)):
-            ch = text[i]
-            if escape:
-                escape = False
-                continue
-            if ch == "\\":
-                escape = True
-                continue
-            if ch == '"':
-                in_string = not in_string
-                continue
-            if in_string:
-                continue
-            if ch == "{":
-                depth += 1
-            elif ch == "}":
-                depth -= 1
-                if depth == 0:
-                    return text[start : i + 1]
-        return None
-
-    @staticmethod
-    def _parse_json_response(content: str) -> tuple[list[ToolUse], str]:
-        """Parse brain-in-a-jar JSON response into (tool_calls, response_text).
-
-        Formats:
-          {"tool": "name", "params": {...}}         → single tool call
-          {"tools": [{"name": "n", "params": {...}}, ...]} → parallel calls
-          {"response": "text"}                      → final answer
-
-        Returns ([], content) if not valid JSON — fallback to plain text.
-        """
-        if not content or not content.strip():
-            return [], ""
-
-        cleaned = AgentLoop._strip_fences(content)
-
-        data = None
-        try:
-            data = json.loads(cleaned)
-        except (json.JSONDecodeError, TypeError):
-            # Fallback: extract JSON object from mixed content (preamble, malformed fences)
-            extracted = AgentLoop._extract_json_object(cleaned)
-            if extracted:
-                try:
-                    data = json.loads(extracted)
-                    logger.info("JSON recovered from mixed content (extraction fallback)")
-                except (json.JSONDecodeError, TypeError):
-                    pass
-
-        if data is None:
-            # Log when content LOOKS like JSON but failed to parse — tool calls may be lost
-            if cleaned.lstrip()[:1] in ("{", "["):
-                logger.warning("JSON-like content unparseable — tool calls may be lost: %.200s", cleaned[:200])
-            return [], content
-
-        if not isinstance(data, dict):
-            return [], content
-
-        calls: list[ToolUse] = []
-
-        # Single tool call
-        if "tool" in data:
-            params = data.get("params", data.get("parameters", {}))
-            if isinstance(params, dict):
-                params = AgentLoop._clamp_params(params)
-            calls.append(ToolUse(
-                id="json_0",
-                name=str(data["tool"]),
-                parameters=params if isinstance(params, dict) else {},
-            ))
-            return calls, ""
-
-        # Multiple tool calls (parallel)
-        if "tools" in data and isinstance(data["tools"], list):
-            for i, tc in enumerate(data["tools"]):
-                if isinstance(tc, dict) and ("name" in tc or "tool" in tc):
-                    name = str(tc.get("name", tc.get("tool", "")))
-                    params = tc.get("params", tc.get("parameters", {}))
-                    if isinstance(params, dict):
-                        params = AgentLoop._clamp_params(params)
-                    calls.append(ToolUse(
-                        id=f"json_{i}",
-                        name=name,
-                        parameters=params if isinstance(params, dict) else {},
-                    ))
-            if calls:
-                return calls, ""
-
-        # Text response
-        if "response" in data:
-            return [], str(data["response"])
-
-        # Unknown JSON — treat as text
-        return [], content
-
-    @staticmethod
-    def _extract_text(response: NormalizedResponse) -> str:
-        """Extract text content from NormalizedResponse.
-
-        Brain-in-a-jar: extracts "response" value from JSON.
-        Fallback: raw text content.
-        """
-        raw = AgentLoop._extract_raw_content(response)
-        if raw:
-            _, response_text = AgentLoop._parse_json_response(raw)
-            if response_text:
-                return response_text
-        return raw
-
-    @staticmethod
-    def _clamp_params(params: dict) -> dict:
-        """Clamp tool parameter values to prevent context blowout.
-
-        Agent-city lesson: every field has an explicit size cap.
-        """
-        clamped: dict = {}
-        for k, v in params.items():
-            if isinstance(v, str) and len(v) > MAX_PARAM_CHARS:
-                clamped[k] = v[:MAX_PARAM_CHARS] + f"[truncated at {MAX_PARAM_CHARS}]"
-            else:
-                clamped[k] = v
-        return clamped
-
-    @staticmethod
-    def _extract_tool_calls(response: NormalizedResponse) -> list[ToolUse]:
-        """Extract tool calls from NormalizedResponse.
-
-        Priority:
-        1. Adapter-normalized tool_calls (already ToolUse from adapters)
-        2. Brain-in-a-jar JSON mode — parses content as JSON
-        """
-        if response.tool_calls:
-            return response.tool_calls
-
-        # Brain-in-a-jar: JSON mode — parse content as JSON
-        if response.content:
-            json_calls, _ = AgentLoop._parse_json_response(response.content)
-            if json_calls:
-                return json_calls
-
-        return []
+    # Backward-compatible delegates — tests reference these as AgentLoop._*
+    _parse_json_response = staticmethod(json_parser.parse_json_response)
+    _extract_json_object = staticmethod(json_parser.extract_json_object)
+    _clamp_params = staticmethod(json_parser.clamp_params)
