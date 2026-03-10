@@ -1,9 +1,13 @@
 """
 Write File Tool — Write or overwrite file contents.
+
+Post-write: .py files are syntax-checked via ast.parse(). If broken,
+the file is reverted (or not created) and the syntax error is returned.
 """
 
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 from typing import Any
 
@@ -50,6 +54,16 @@ class WriteFileTool(Tool):
         content = parameters["content"]
 
         try:
+            # Pre-write syntax check for .py files
+            if path.suffix == ".py":
+                try:
+                    ast.parse(content, filename=str(path))
+                except SyntaxError as e:
+                    return ToolResult(
+                        success=False,
+                        error=f"Syntax error in content: {e.msg} (line {e.lineno}). File NOT written.",
+                    )
+
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(content, encoding="utf-8")
             return ToolResult(

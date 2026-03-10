@@ -301,6 +301,7 @@ class AgentUsage:
     # Quality signals — self-reflection on output integrity
     truncated: bool = False  # output was truncated (hit char limit)
     cbr_exceeded: bool = False  # consumed > budget (over CBR)
+    json_retries: int = 0  # JSON parse failures that got retry feedback
 
     @property
     def total_tokens(self) -> int:

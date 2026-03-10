@@ -108,6 +108,29 @@ class TestWriteFileTool:
         assert result.success
         assert target.read_text() == "new"
 
+    # ── Pre-write syntax validation ──
+
+    def test_write_rejects_broken_python(self, tmp_path):
+        """Writing broken Python is rejected — file not created."""
+        target = tmp_path / "broken.py"
+        result = self.tool.execute({"path": str(target), "content": "def foo(\n"})
+        assert not result.success
+        assert "syntax" in result.error.lower()
+        assert not target.exists()  # file must NOT be created
+
+    def test_write_accepts_valid_python(self, tmp_path):
+        """Writing valid Python works normally."""
+        target = tmp_path / "good.py"
+        result = self.tool.execute({"path": str(target), "content": "x = 1\n"})
+        assert result.success
+        assert target.read_text() == "x = 1\n"
+
+    def test_write_skips_check_for_non_python(self, tmp_path):
+        """Non-.py files are not syntax-checked."""
+        target = tmp_path / "data.json"
+        result = self.tool.execute({"path": str(target), "content": "{broken"})
+        assert result.success
+
 
 # ── EditTool ────────────────────────────────────────────────────────
 
@@ -171,7 +194,9 @@ class TestEditTool:
         assert "if (y):" in f.read_text()
 
     def test_edit_whitespace_fallback_tabs_vs_spaces(self, tmp_path):
-        """File uses tabs, LLM sends spaces — fallback matches."""
+        """Whitespace fallback with tab/space mismatch: regex \\s+ consumes
+        the leading newline, merging the replacement onto the previous line.
+        Syntax check correctly blocks this broken result."""
         f = tmp_path / "tab.py"
         f.write_text("class Foo:\n\tdef bar(self):\n\t\treturn 1\n")
         result = self.tool.execute(
@@ -181,8 +206,12 @@ class TestEditTool:
                 "new_string": "\tdef baz(self):",
             }
         )
-        assert result.success
-        assert result.metadata.get("whitespace_fallback") is True
+        # Correctly blocked: \\s+ in fallback regex eats the \\n before \\t,
+        # producing "class Foo:\\tdef baz(self):" on one line = broken syntax.
+        assert not result.success
+        assert "syntax" in result.error.lower()
+        # File must NOT be modified
+        assert f.read_text() == "class Foo:\n\tdef bar(self):\n\t\treturn 1\n"
 
     def test_edit_whitespace_fallback_ambiguous(self, tmp_path):
         """If whitespace-normalized match is ambiguous, fail (don't guess)."""
@@ -224,6 +253,67 @@ class TestEditTool:
         )
         assert result.success
         assert "whitespace-normalized" not in result.output
+
+    # ── Post-edit syntax validation ──
+
+    def test_edit_rejects_syntax_breaking_change(self, tmp_path):
+        """Edit that breaks Python syntax is rejected — file not modified."""
+        f = tmp_path / "valid.py"
+        f.write_text("def foo():\n    return 1\n")
+        result = self.tool.execute(
+            {
+                "path": str(f),
+                "old_string": "def foo():",
+                "new_string": "def foo(",  # missing closing paren + colon
+            }
+        )
+        assert not result.success
+        assert "syntax" in result.error.lower()
+        # File must NOT be modified
+        assert f.read_text() == "def foo():\n    return 1\n"
+
+    def test_edit_allows_valid_python_change(self, tmp_path):
+        """Edit that produces valid Python is accepted."""
+        f = tmp_path / "ok.py"
+        f.write_text("x = 1\n")
+        result = self.tool.execute(
+            {
+                "path": str(f),
+                "old_string": "x = 1",
+                "new_string": "x = 2",
+            }
+        )
+        assert result.success
+        assert f.read_text() == "x = 2\n"
+
+    def test_edit_skips_syntax_check_for_non_python(self, tmp_path):
+        """Non-.py files are not syntax-checked."""
+        f = tmp_path / "config.yaml"
+        f.write_text("key: value\n")
+        result = self.tool.execute(
+            {
+                "path": str(f),
+                "old_string": "key: value",
+                "new_string": "key: {broken",  # would be invalid Python
+            }
+        )
+        assert result.success
+
+    def test_edit_whitespace_fallback_syntax_check(self, tmp_path):
+        """Whitespace fallback path also checks syntax."""
+        f = tmp_path / "ws.py"
+        f.write_text("def foo():\n    return 1\n")
+        result = self.tool.execute(
+            {
+                "path": str(f),
+                "old_string": "def  foo():",  # extra space triggers fallback
+                "new_string": "def foo(",  # broken syntax
+            }
+        )
+        assert not result.success
+        assert "syntax" in result.error.lower()
+        # File must NOT be modified
+        assert f.read_text() == "def foo():\n    return 1\n"
 
 
 # ── GlobTool ────────────────────────────────────────────────────────

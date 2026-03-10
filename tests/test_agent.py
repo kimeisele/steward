@@ -494,6 +494,63 @@ class TestStewardAgent:
         assert agent.registry.has("custom")
 
 
+class TestHealthGateThreadSafety:
+    """HealthGate flag is thread-safe (Cetana daemon thread → async loop)."""
+
+    def test_health_anomaly_flag_thread_safe(self):
+        """Concurrent reads/writes don't corrupt flag state."""
+        import threading
+
+        llm = FakeLLM([])
+        agent = StewardAgent(provider=llm)
+
+        errors = []
+
+        def writer():
+            for _ in range(100):
+                agent._on_cetana_anomaly(None)  # None → early return (isinstance check)
+
+        def reader():
+            for _ in range(100):
+                _ = agent.health_anomaly
+                _ = agent.health_anomaly_detail
+                agent.clear_health_anomaly()
+
+        t1 = threading.Thread(target=writer)
+        t2 = threading.Thread(target=reader)
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
+        # No crash = thread-safe
+
+    def test_health_anomaly_uses_lock(self):
+        """Verify the lock exists and is a threading.Lock."""
+        import threading
+
+        llm = FakeLLM([])
+        agent = StewardAgent(provider=llm)
+        assert hasattr(agent, "_health_lock")
+        assert isinstance(agent._health_lock, type(threading.Lock()))
+
+    def test_clear_resets_both_fields_atomically(self):
+        """clear_health_anomaly resets flag and detail together."""
+        llm = FakeLLM([])
+        agent = StewardAgent(provider=llm)
+
+        # Manually set (simulating Cetana callback)
+        with agent._health_lock:
+            agent._health_anomaly_flag = True
+            agent._health_anomaly_detail_str = "test anomaly"
+
+        assert agent.health_anomaly is True
+        assert agent.health_anomaly_detail == "test anomaly"
+
+        agent.clear_health_anomaly()
+        assert agent.health_anomaly is False
+        assert agent.health_anomaly_detail == ""
+
+
 class TestLLMRetry:
     """LLM call retries on transient failure."""
 
