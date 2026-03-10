@@ -87,7 +87,9 @@ class CodeSense:
                     large_files.append(str(f.relative_to(self._cwd)))
 
                 tree = ast.parse(source, filename=str(f))
-                for node in ast.walk(tree):
+                # Only top-level defs — O(body) not O(all_nodes).
+                # ast.walk() traverses EVERY node and times out on large files.
+                for node in tree.body:
                     if isinstance(node, ast.ClassDef):
                         total_classes += 1
                     elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
