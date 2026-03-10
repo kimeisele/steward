@@ -49,6 +49,7 @@ class CBRSignal:
     context_pressure: float  # 0.0 = empty, 1.0 = full context window
     task_weight: float  # 0.0 = trivial (query), 1.0 = heavy (implement)
     cache_confidence: float  # 0.0 = unknown, 1.0 = definitely cached
+    wave_density: float = 0.0  # 0.0 = no tools used, 1.0 = all 512 slots active (VBR)
 
 
 @dataclass(frozen=True)
@@ -135,6 +136,13 @@ class DSPProcessor:
         # 1. Gain staging: task_weight sets base amplitude (0.0-1.0)
         gain = signal.task_weight
 
+        # 1b. VBR boost: wave_density from Antaranga standing wave.
+        #     High density = complex task (many distinct tools) = needs more tokens.
+        #     Boost: gain += density × 0.3 (max 30% boost at full density).
+        #     Branchless: density=0 → no effect. density=1 → +0.3 gain.
+        #     Research: "TALE framework — complexity-based allocation" (VBR cognition).
+        gain += signal.wave_density * 0.3
+
         # 2. Compressor: context_pressure as sidechain input.
         #    Logarithmic attenuation — real dB math, not linear hack.
         #    Branchless: max(0, ...) handles below-threshold case (overshoot=0 → no effect).
@@ -182,6 +190,7 @@ def process_cbr(
     context_pressure: float,
     task_weight: float,
     cache_confidence: float = 0.0,
+    wave_density: float = 0.0,
 ) -> CBROutput:
     """Process CBR signal with default processor.
 
@@ -189,6 +198,7 @@ def process_cbr(
         context_pressure: 0.0 (empty) to 1.0 (full context window)
         task_weight: 0.0 (trivial query) to 1.0 (heavy implementation)
         cache_confidence: 0.0 (unknown) to 1.0 (definitely cached)
+        wave_density: 0.0 (no tools used) to 1.0 (all Antaranga slots active)
 
     Returns:
         CBROutput with budget, gain, and quality flags
@@ -198,5 +208,6 @@ def process_cbr(
             context_pressure=context_pressure,
             task_weight=task_weight,
             cache_confidence=cache_confidence,
+            wave_density=wave_density,
         )
     )
