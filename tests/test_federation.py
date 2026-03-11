@@ -299,3 +299,52 @@ class TestEndToEnd:
         # Stats reflect all operations
         s = bridge.stats()
         assert s["inbound_processed"] == 4
+
+
+# ── Federation Activation (DHARMA/MOKSHA phase integration) ──────
+
+
+class TestDharmaHeartbeat:
+    """DHARMA phase emits heartbeat to FederationBridge outbox."""
+
+    def test_emit_heartbeat_queues_to_outbox(self):
+        bridge = FederationBridge(agent_id="steward-test")
+        bridge.emit(OP_HEARTBEAT, {
+            "agent_id": "steward-test",
+            "health": 0.85,
+        })
+        assert bridge.stats()["outbound_pending"] == 1
+        # Verify payload
+        event = bridge._outbound[0]
+        assert event.operation == OP_HEARTBEAT
+        assert event.payload["health"] == 0.85
+
+    def test_heartbeat_flushed_via_transport(self):
+        bridge = FederationBridge(agent_id="steward-test")
+        bridge.emit(OP_HEARTBEAT, {"agent_id": "steward-test", "health": 0.9})
+        transport = FakeTransport()
+        flushed = bridge.flush_outbound(transport)
+        assert flushed == 1
+        assert bridge.stats()["outbound_pending"] == 0
+        msg = transport.inbox[0]
+        assert msg["source"] == "steward-test"
+        assert msg["operation"] == OP_HEARTBEAT
+
+
+class TestMokshaFlush:
+    """MOKSHA phase flushes outbound events via transport."""
+
+    def test_flush_clears_outbox(self):
+        bridge = FederationBridge()
+        bridge.emit("test", {"x": 1})
+        bridge.emit("test", {"x": 2})
+        transport = FakeTransport()
+        assert bridge.flush_outbound(transport) == 2
+        assert bridge.stats()["outbound_pending"] == 0
+        assert len(transport.inbox) == 2
+
+    def test_no_flush_without_transport(self):
+        """Without transport, outbox accumulates (local mode)."""
+        bridge = FederationBridge()
+        bridge.emit("test", {"x": 1})
+        assert bridge.stats()["outbound_pending"] == 1

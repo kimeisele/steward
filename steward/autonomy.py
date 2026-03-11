@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Awaitable, Callable
 
 from steward import agent_bus, agent_memory
 from steward.services import (
+    SVC_MARKETPLACE,
     SVC_SANKALPA,
     SVC_SYNAPSE_STORE,
     SVC_TASK_MANAGER,
@@ -222,6 +223,7 @@ class AutonomyEngine:
             TaskIntent.HEALTH_CHECK: self._execute_health_check,
             TaskIntent.SENSE_SCAN: self._execute_sense_scan,
             TaskIntent.CI_CHECK: self._execute_ci_check,
+            TaskIntent.FEDERATION_HEALTH: self._execute_federation_health,
             TaskIntent.UPDATE_DEPS: self._execute_update_deps,
             TaskIntent.REMOVE_DEAD_CODE: self._execute_remove_dead_code,
         }
@@ -352,6 +354,34 @@ class AutonomyEngine:
             logger.debug("Dead code check failed (non-fatal): %s", e)
             return None
 
+    def _execute_federation_health(self) -> str | None:
+        """Deterministic federation health check — 0 tokens.
+
+        Monitors: dead peers, outbox backlog, transport errors.
+        """
+        from steward.services import SVC_FEDERATION, SVC_REAPER
+
+        reaper = ServiceRegistry.get(SVC_REAPER)
+        federation = ServiceRegistry.get(SVC_FEDERATION)
+
+        problems: list[str] = []
+
+        if reaper is not None:
+            dead = reaper.dead_peers()
+            if dead:
+                problems.append(f"{len(dead)} dead peer(s): {[p.agent_id for p in dead]}")
+
+        if federation is not None:
+            stats = federation.stats()
+            if stats["outbound_pending"] > 10:
+                problems.append(f"outbox backlog: {stats['outbound_pending']} unsent")
+            if stats["errors"] > 0:
+                problems.append(f"federation errors: {stats['errors']}")
+
+        if problems:
+            return f"Federation degraded: {'; '.join(problems)}. Check transport connectivity."
+        return None
+
     # ── Guarded Fix Pipelines ──────────────────────────────────────────
 
     async def guarded_llm_fix(self, problem: str, intent_name: str = "") -> str | None:
@@ -375,6 +405,29 @@ class AutonomyEngine:
         context = problem_fingerprint(problem)
         hebbian_trigger = f"auto:{intent_name}:{context}" if (intent_name and context) else f"auto:{intent_name or 'unknown'}"
 
+        # Claim marketplace slot to prevent concurrent work on same problem
+        marketplace = ServiceRegistry.get(SVC_MARKETPLACE)
+        slot_id = f"fix:{intent_name}:{context}" if context else f"fix:{intent_name}"
+        claimed = False
+        if marketplace is not None:
+            outcome = marketplace.claim(slot_id, "steward")
+            if not outcome.granted:
+                logger.info("Slot %s held by %s — skipping", slot_id, outcome.holder)
+                return None
+            claimed = True
+
+        try:
+            return await self._guarded_llm_fix_inner(
+                problem, hebbian_trigger,
+            )
+        finally:
+            if claimed and marketplace is not None:
+                marketplace.release(slot_id, "steward")
+
+    async def _guarded_llm_fix_inner(
+        self, problem: str, hebbian_trigger: str,
+    ) -> str | None:
+        """Inner LLM fix pipeline — separated for slot guard cleanup."""
         # Step 1: Baseline tests
         test_cmd = "pytest -x -q"
         baseline = self._breaker.count_failures(test_cmd)
@@ -464,6 +517,17 @@ class AutonomyEngine:
             if (intent_name and context)
             else f"auto:{intent_name or 'unknown'}"
         )
+
+        # Claim marketplace slot to prevent concurrent work on same problem
+        marketplace = ServiceRegistry.get(SVC_MARKETPLACE)
+        slot_id = f"pr:{intent_name}:{context}" if context else f"pr:{intent_name}"
+        claimed = False
+        if marketplace is not None:
+            outcome = marketplace.claim(slot_id, "steward")
+            if not outcome.granted:
+                logger.info("Slot %s held by %s — skipping PR", slot_id, outcome.holder)
+                return None
+            claimed = True
 
         # Step 1: Create feature branch
         timestamp = str(int(_time.time()))
@@ -562,6 +626,9 @@ class AutonomyEngine:
             logger.error("Proactive fix failed for %s: %s", intent_name, e)
             self._cleanup_branch(branch_name)
             return None
+        finally:
+            if claimed and marketplace is not None:
+                marketplace.release(slot_id, "steward")
 
     # ── Branch/PR Management ───────────────────────────────────────────
 

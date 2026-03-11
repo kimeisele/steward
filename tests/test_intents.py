@@ -46,10 +46,17 @@ class TestTaskIntentEnum:
         assert TaskIntent.UPDATE_DEPS.is_proactive
         assert TaskIntent.REMOVE_DEAD_CODE.is_proactive
 
+    def test_federation_health_maps(self):
+        assert TaskIntent.from_intent_type("federation_health") == TaskIntent.FEDERATION_HEALTH
+
+    def test_federation_health_is_reactive(self):
+        assert not TaskIntent.FEDERATION_HEALTH.is_proactive
+
     def test_reactive_intents_are_not_proactive(self):
         assert not TaskIntent.HEALTH_CHECK.is_proactive
         assert not TaskIntent.SENSE_SCAN.is_proactive
         assert not TaskIntent.CI_CHECK.is_proactive
+        assert not TaskIntent.FEDERATION_HEALTH.is_proactive
 
     def test_all_intents_have_handlers(self):
         """Every TaskIntent value must have a corresponding handler.
@@ -64,6 +71,7 @@ class TestTaskIntentEnum:
         assert "ci_check" in values
         assert "update_deps" in values
         assert "remove_dead_code" in values
+        assert "federation_health" in values
 
 
 class TestDeterministicDispatch:
@@ -98,6 +106,57 @@ class TestDeterministicDispatch:
         agent = track_agent(StewardAgent(provider=fake_llm))
         result = agent._autonomy._execute_ci_check()
         assert result is None
+        assert fake_llm.call_count == 0
+
+    def test_dispatch_federation_health_healthy(self, fake_llm):
+        """Federation health check with no dead peers → no problem."""
+        from steward.agent import StewardAgent
+        from tests.conftest import track_agent
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+        result = agent._autonomy._execute_federation_health()
+        assert result is None
+        assert fake_llm.call_count == 0
+
+    def test_dispatch_federation_health_with_dead_peers(self, fake_llm):
+        """Federation health check detects dead peers."""
+        from steward.agent import StewardAgent
+        from steward.reaper import HeartbeatReaper, PeerStatus
+        from steward.services import SVC_REAPER
+        from tests.conftest import track_agent
+        from vibe_core.di import ServiceRegistry
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+        reaper = ServiceRegistry.get(SVC_REAPER)
+        # Manually inject a dead peer
+        from steward.reaper import PeerRecord
+        reaper._peers["dead-agent"] = PeerRecord(
+            agent_id="dead-agent",
+            last_seen=0,
+            trust=0.0,
+            status=PeerStatus.DEAD,
+        )
+        result = agent._autonomy._execute_federation_health()
+        assert result is not None
+        assert "dead peer" in result.lower()
+        assert "dead-agent" in result
+        assert fake_llm.call_count == 0
+
+    def test_dispatch_federation_health_with_outbox_backlog(self, fake_llm):
+        """Federation health check detects outbox backlog."""
+        from steward.agent import StewardAgent
+        from steward.services import SVC_FEDERATION
+        from tests.conftest import track_agent
+        from vibe_core.di import ServiceRegistry
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+        federation = ServiceRegistry.get(SVC_FEDERATION)
+        # Queue many outbound events to create backlog
+        for i in range(15):
+            federation.emit("test", {"i": i})
+        result = agent._autonomy._execute_federation_health()
+        assert result is not None
+        assert "outbox backlog" in result.lower()
         assert fake_llm.call_count == 0
 
     def test_dispatch_unknown_intent_returns_none(self, fake_llm):

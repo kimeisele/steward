@@ -125,6 +125,10 @@ class SVC_FEDERATION:
     """FederationBridge — cross-agent message routing."""
 
 
+class SVC_FEDERATION_TRANSPORT:
+    """FederationTransport — pluggable transport for cross-agent messaging."""
+
+
 class SVC_REAPER:
     """HeartbeatReaper — network garbage collection for federation peers."""
 
@@ -329,6 +333,17 @@ def boot(
     federation = FederationBridge(reaper=reaper, marketplace=marketplace)
     ServiceRegistry.register(SVC_FEDERATION, federation)
 
+    # 28. FederationTransport (auto-discover from environment)
+    import os
+
+    fed_dir = os.environ.get("STEWARD_FEDERATION_DIR")
+    if fed_dir:
+        from steward.federation_transport import FilesystemFederationTransport
+
+        transport = FilesystemFederationTransport(fed_dir)
+        ServiceRegistry.register(SVC_FEDERATION_TRANSPORT, transport)
+        logger.info("Federation transport: filesystem → %s", fed_dir)
+
     # 24. IntegrityChecker — boot-time validation (catch lazy-load failures early)
     from vibe_core.protocols.integrity import IntegrityChecker, IssueSeverity
 
@@ -517,6 +532,22 @@ def _add_steward_missions(sankalpa: object) -> None:
                 requires_ci_green=True,
                 requires_no_pending_intents=True,
                 max_executions_per_day=1,
+                enabled=True,
+            ),
+            SankalpaStrategy(
+                id="strategy_federation_health",
+                name="Federation Health Check",
+                description="Monitor peer liveness, outbox queue, transport health",
+                trigger=SankalpaTrigger(
+                    trigger_type=TriggerType.IDLE_BASED,
+                    idle_minutes=10,
+                ),
+                frequency=StrategyFrequency.DAILY,
+                intent_type="federation_health",
+                intent_template={},
+                requires_ci_green=False,
+                requires_no_pending_intents=True,
+                max_executions_per_day=12,
                 enabled=True,
             ),
         ],
