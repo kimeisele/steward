@@ -144,6 +144,24 @@ class SessionLedger:
             session.tool_calls,
         )
 
+    def record_autonomous(self, intent_name: str, found_problem: bool) -> None:
+        """Record an autonomous cycle (deterministic, no LLM).
+
+        Lighter than a full session record — no tokens, no tool calls.
+        Tracks what the agent did autonomously for cross-session awareness.
+        """
+        outcome = "problem_found" if found_problem else "clean"
+        self.record(
+            SessionRecord(
+                task=f"[autonomous] {intent_name}",
+                outcome=outcome,
+                summary=f"Deterministic {intent_name}: {'problem detected' if found_problem else 'no issues'}",
+                tokens=0,
+                tool_calls=0,
+                rounds=0,
+            )
+        )
+
     def prompt_context(self) -> str:
         """Generate context string for system prompt injection.
 

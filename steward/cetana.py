@@ -5,9 +5,14 @@ BG 13.6-7 lists cetana (consciousness/life symptoms) as part of the
 Ksetra (material field). It is the continuous background pulse that
 keeps the agent alive and responsive without external prompting.
 
-Cetana does NOT think or act. It OBSERVES and SIGNALS.
-The agent loop does the work. Cetana is like breathing — automatic,
-adaptive, and the first thing that stops when the agent dies.
+Cetana OBSERVES and SIGNALS via a 4-phase rotation (MURALI cycle):
+  GENESIS:  Discover — run senses, scan environment
+  DHARMA:   Govern   — check invariants, validate health
+  KARMA:    Execute  — work on highest-priority task
+  MOKSHA:   Reflect  — persist state, log stats, learn
+
+Each beat rotates to the next phase. The agent wires behavior into
+phases via the on_phase callback.
 
 Adaptive frequency based on vedana health:
   SAMADHI:  0.1Hz (10s)  — health > 0.8 (all calm, slow steady pulse)
@@ -17,19 +22,16 @@ Adaptive frequency based on vedana health:
 Architecture:
   - Background thread (daemon=True, dies with main process)
   - Reads vedana_source callable → VedanaSignal each beat
+  - Rotates through 4 phases (GENESIS → DHARMA → KARMA → MOKSHA)
   - Adjusts frequency based on health
   - Calls on_anomaly when health drops below threshold
+  - Calls on_phase for structured phase callbacks
   - Records beat history for observability
-
-Does NOT:
-  - Call the LLM
-  - Execute tools
-  - Modify conversation
-  - Make decisions (that's Buddhi's job)
 """
 
 from __future__ import annotations
 
+import enum
 import logging
 import signal
 import threading
@@ -39,6 +41,15 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from steward.antahkarana.vedana import VedanaSignal
+
+
+class Phase(enum.Enum):
+    """4-phase MURALI heartbeat cycle (from agent-city Mayor pattern)."""
+
+    GENESIS = 0  # Discover — run senses, scan environment
+    DHARMA = 1  # Govern — check invariants, validate health
+    KARMA = 2  # Execute — work on highest-priority task
+    MOKSHA = 3  # Reflect — persist state, log stats, learn
 
 logger = logging.getLogger("STEWARD.CETANA")
 
@@ -78,6 +89,7 @@ class CetanaBeat:
     vedana: VedanaSignal
     frequency_hz: float
     beat_number: int
+    phase: Phase = Phase.GENESIS
     anomaly: bool = False
 
 
@@ -104,10 +116,12 @@ class Cetana:
 
     vedana_source: Callable[[], VedanaSignal]
     on_anomaly: Callable[[CetanaBeat], None] | None = None
+    on_phase: Callable[[Phase, CetanaBeat], None] | None = None
     frequency_hz: float = SADHANA
     _stop_event: threading.Event = field(default_factory=lambda: _make_stopped_event(), init=False)
     _thread: threading.Thread | None = field(default=None, init=False, repr=False)
     _total_beats: int = field(default=0, init=False)
+    _phase: Phase = field(default=Phase.GENESIS, init=False)
     _history: deque[CetanaBeat] = field(default_factory=lambda: deque(maxlen=_MAX_HISTORY), init=False)
     _consecutive_anomalies: int = field(default=0, init=False)
     _lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
@@ -171,6 +185,7 @@ class Cetana:
                 "alive": self.is_alive,
                 "total_beats": self._total_beats,
                 "frequency_hz": self.frequency_hz,
+                "phase": self._phase.name,
                 "consecutive_anomalies": self._consecutive_anomalies,
                 "last_health": last.vedana.health if last else None,
                 "last_guna": last.vedana.guna if last else None,
@@ -193,21 +208,26 @@ class Cetana:
             self._stop_event.wait(timeout=sleep_time)
 
     def _beat(self) -> CetanaBeat:
-        """Execute one heartbeat — read vedana, detect anomalies.
+        """Execute one heartbeat — read vedana, detect anomalies, rotate phase.
 
         Called from daemon thread. vedana_source() is called outside the lock
         (it may be slow), then state is updated atomically under _lock.
+
+        Phase rotation: each beat advances GENESIS → DHARMA → KARMA → MOKSHA → GENESIS.
+        The on_phase callback fires AFTER state update, outside the lock.
         """
         vedana = self.vedana_source()
         is_anomaly = vedana.health < _ANOMALY_THRESHOLD
 
         with self._lock:
             self._total_beats += 1
+            current_phase = self._phase
             beat = CetanaBeat(
                 timestamp=time.time(),
                 vedana=vedana,
                 frequency_hz=self.frequency_hz,
                 beat_number=self._total_beats,
+                phase=current_phase,
                 anomaly=is_anomaly,
             )
             self._history.append(beat)
@@ -218,6 +238,9 @@ class Cetana:
             else:
                 self._consecutive_anomalies = 0
                 anomaly_count = 0
+
+            # Rotate to next phase (mod 4)
+            self._phase = Phase((current_phase.value + 1) % 4)
 
         # Logging and callbacks outside lock (avoid holding lock during I/O)
         if is_anomaly:
@@ -233,9 +256,13 @@ class Cetana:
             if self.on_anomaly:
                 self.on_anomaly(beat)
 
+        if self.on_phase:
+            self.on_phase(current_phase, beat)
+
         logger.debug(
-            "Beat #%d: health=%.2f freq=%.1fHz",
+            "Beat #%d [%s]: health=%.2f freq=%.1fHz",
             beat.beat_number,
+            current_phase.name,
             vedana.health,
             beat.frequency_hz,
         )

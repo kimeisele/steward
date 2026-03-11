@@ -152,6 +152,51 @@ def _format_event_json(event: AgentEvent) -> None:
 # ── Entry Points ─────────────────────────────────────────────────────
 
 
+def _run_autonomous(cwd: str | None = None, idle_minutes: int = 15, output_json: bool = False) -> None:
+    """Run one autonomous cycle: generate tasks → dispatch → exit.
+
+    Designed for cron: boots agent, runs deterministic checks, exits.
+    LLM provider is optional — deterministic intents don't need it.
+    If a real problem is found that needs LLM, provider must be available.
+    """
+    # Try to build provider — optional for deterministic-only runs
+    try:
+        chamber = build_chamber()
+        provider = chamber if len(chamber) > 0 else None
+    except Exception:
+        provider = None
+
+    if provider is None:
+        # No provider — use a stub that will fail if actually called
+        from steward.types import NormalizedResponse
+
+        class _NoProvider:
+            def invoke(self, **kwargs):
+                raise RuntimeError("No LLM provider configured — cannot execute LLM tasks")
+            def invoke_stream(self, **kwargs):
+                raise RuntimeError("No LLM provider configured — cannot execute LLM tasks")
+
+        provider = _NoProvider()
+        _err_console.print("[stats]No LLM provider — running deterministic checks only[/]")
+
+    agent = StewardAgent(provider=provider, cwd=cwd)
+
+    try:
+        result = agent.run_autonomous_sync(idle_minutes=idle_minutes)
+        if result:
+            if output_json:
+                print(json.dumps({"autonomous": True, "result": result}), flush=True)
+            else:
+                _console.print(f"[heading]Autonomous result:[/]\n{result}")
+        else:
+            if output_json:
+                print(json.dumps({"autonomous": True, "result": None}), flush=True)
+            else:
+                _console.print("[stats]Autonomous: no issues found[/]")
+    finally:
+        agent.close()
+
+
 async def _run_task(
     agent: StewardAgent,
     task: str,
@@ -216,6 +261,17 @@ def main() -> None:
         action="store_true",
         help="Run as HTTP API server (requires pip install steward-agent[api])",
     )
+    parser.add_argument(
+        "--autonomous",
+        action="store_true",
+        help="Run one autonomous cycle: generate tasks, dispatch deterministically, exit. For cron.",
+    )
+    parser.add_argument(
+        "--idle-minutes",
+        type=int,
+        default=15,
+        help="Override idle time for autonomous task generation (default: 15)",
+    )
 
     args = parser.parse_args()
 
@@ -231,6 +287,11 @@ def main() -> None:
         from steward.interfaces.api import main as api_main
 
         api_main()
+        return
+
+    # Autonomous mode — one deterministic cycle, no interactive
+    if args.autonomous:
+        _run_autonomous(cwd=args.cwd, idle_minutes=args.idle_minutes, output_json=args.output == "json")
         return
 
     # Build provider chamber from environment

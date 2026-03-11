@@ -97,6 +97,26 @@ class SVC_MAHA_LLM:
     """MahaLLMKernel — deterministic semantic engine (L0 zero-cost intent)."""
 
 
+class SVC_SYNAPSE_STORE:
+    """SynapseStore — persistent Hebbian weights across sessions."""
+
+
+class SVC_TASK_MANAGER:
+    """TaskManager — persistent task tracking with priority selection."""
+
+
+class SVC_SANKALPA:
+    """SankalpaOrchestrator — autonomous mission planning and intent generation."""
+
+
+class SVC_KNOWLEDGE_GRAPH:
+    """UnifiedKnowledgeGraph — 4-dimensional codebase understanding (zero tokens)."""
+
+
+class SVC_OUROBOROS:
+    """OuroborosLoopOrchestrator — self-healing pipeline (detect → verify → heal)."""
+
+
 class SVC_NORTH_STAR:
     """North Star — infrastructure-level goal seed (not LLM prompt).
 
@@ -210,15 +230,8 @@ def boot(
     cache = EphemeralStorage(max_entries=500, default_ttl=300)
     ServiceRegistry.register(SVC_CACHE, cache)
 
-    # 12. NagaDiamondProtocol (TDD enforcement — RED/GREEN gates)
-    from vibe_core.naga.diamond import NagaDiamondProtocol
-
-    diamond = NagaDiamondProtocol(
-        workspace=cwd_path,
-        auto_heal=False,  # Never auto-heal without consent
-        timeout_seconds=30,
-    )
-    ServiceRegistry.register(SVC_DIAMOND, diamond)
+    # 12. NagaDiamondProtocol — DEFERRED (registered but not consumed by agent loop)
+    # Will be activated when TDD gating is implemented.
 
     # 13. VenuOrchestrator (Krishna's Flute — O(1) DIW-based execution rhythm)
     from vibe_core.mahamantra.substrate.vm.venu_orchestrator import VenuOrchestrator
@@ -248,13 +261,41 @@ def boot(
     antaranga = AntarangaRegistry()
     ServiceRegistry.register(SVC_ANTARANGA, antaranga)
 
-    # 18. MahaLLMKernel (L0: deterministic semantic engine — zero-cost intent routing)
-    from vibe_core.mahamantra.substrate.encoding.maha_llm_kernel import MahaLLMKernel
+    # 18. MahaLLMKernel — DEFERRED (registered but not consumed by agent loop)
+    # Code lives in vibe_core.mahamantra.substrate.encoding.maha_llm_kernel
 
-    maha_llm = MahaLLMKernel()
-    ServiceRegistry.register(SVC_MAHA_LLM, maha_llm)
+    # 19. SynapseStore (persistent Hebbian weights — cross-session learning)
+    from vibe_core.state.synapse_store import SynapseStore
 
-    # 19. IntegrityChecker — boot-time validation (catch lazy-load failures early)
+    synapse_store = SynapseStore(workspace=cwd_path)
+    synapse_store.load()
+    ServiceRegistry.register(SVC_SYNAPSE_STORE, synapse_store)
+
+    # 20. TaskManager (persistent task tracking)
+    from vibe_core.task_management.task_manager import TaskManager
+
+    task_manager = TaskManager(project_root=cwd_path)
+    ServiceRegistry.register(SVC_TASK_MANAGER, task_manager)
+
+    # 21. SankalpaOrchestrator (autonomous mission planning — the "will")
+    from vibe_core.mahamantra.substrate.sankalpa.will import SankalpaOrchestrator
+
+    sankalpa = SankalpaOrchestrator(workspace=cwd_path)
+    _add_steward_missions(sankalpa)
+    ServiceRegistry.register(SVC_SANKALPA, sankalpa)
+
+    # 22. KnowledgeGraph (4-dimensional codebase understanding — zero tokens)
+    #     Lazy scan: graph is created empty at boot, populated on first query
+    #     via ensure_scanned(). Avoids ~200ms AST scan on every boot.
+    from vibe_core.knowledge.graph import UnifiedKnowledgeGraph
+
+    knowledge_graph = _LazyKnowledgeGraph(cwd_path)
+    ServiceRegistry.register(SVC_KNOWLEDGE_GRAPH, knowledge_graph)
+
+    # 23. Ouroboros — DEFERRED (registered but not consumed by agent loop)
+    # Code lives in vibe_core.ouroboros.loop_orchestrator
+
+    # 24. IntegrityChecker — boot-time validation (catch lazy-load failures early)
     from vibe_core.protocols.integrity import IntegrityChecker, IssueSeverity
 
     checker = IntegrityChecker()
@@ -281,11 +322,7 @@ def boot(
         lambda: _check_service_wired(SVC_CACHE, "EphemeralStorage"),
         IssueSeverity.HIGH,
     )
-    checker.register_checker(
-        "vajra_diamond_wired",
-        lambda: _check_service_wired(SVC_DIAMOND, "NagaDiamondProtocol"),
-        IssueSeverity.HIGH,
-    )
+    # vajra_diamond_wired — DEFERRED (Diamond not booted)
     checker.register_checker(
         "vajra_attention_wired",
         lambda: _check_service_wired(SVC_ATTENTION, "MahaAttention"),
@@ -311,6 +348,12 @@ def boot(
         lambda: _check_service_wired(SVC_ANTARANGA, "AntarangaRegistry"),
         IssueSeverity.HIGH,
     )
+    checker.register_checker(
+        "vajra_knowledge_graph_wired",
+        lambda: _check_service_wired(SVC_KNOWLEDGE_GRAPH, "UnifiedKnowledgeGraph"),
+        IssueSeverity.HIGH,
+    )
+    # vajra_ouroboros_wired — DEFERRED (Ouroboros not booted)
 
     ServiceRegistry.register(SVC_INTEGRITY, checker)
 
@@ -362,6 +405,109 @@ def _check_service_wired(svc_key: type, name: str) -> None:
     svc = ServiceRegistry.get(svc_key)
     if svc is None:
         raise RuntimeError(f"VAJRA: {name} not wired (SVC key: {svc_key.__name__})")
+
+
+def _add_steward_missions(sankalpa: object) -> None:
+    """Add steward-specific missions with 10-minute triggers for cron autonomy.
+
+    The default Sankalpa mission requires 60 min idle. Steward runs every 15 min,
+    so we need shorter triggers. This adds a "Steward Autonomy" mission that fires
+    after 10 minutes idle with no pending tasks.
+    """
+    from vibe_core.mahamantra.protocols.sankalpa.types import (
+        MissionPriority,
+        MissionStatus,
+        SankalpaMission,
+        SankalpaStrategy,
+        SankalpaTrigger,
+        StrategyFrequency,
+        TriggerType,
+    )
+
+    mission_id = "mission_steward_autonomy"
+    # Don't add if already exists (persisted from previous boot)
+    existing = sankalpa.registry.get_all_missions()
+    if any(m.id == mission_id for m in existing):
+        return
+
+    mission = SankalpaMission(
+        id=mission_id,
+        name="Steward Autonomy",
+        description="Autonomous codebase maintenance every 15 minutes",
+        priority=MissionPriority.HIGH,
+        status=MissionStatus.ACTIVE,
+        strategies=[
+            SankalpaStrategy(
+                id="strategy_quick_check",
+                name="Quick Health Check",
+                description="Run senses, check CI status, scan for issues",
+                trigger=SankalpaTrigger(
+                    trigger_type=TriggerType.IDLE_BASED,
+                    idle_minutes=10,
+                ),
+                frequency=StrategyFrequency.DAILY,
+                intent_type="health_check",
+                intent_template={"actions": ["sense_scan", "ci_check"]},
+                requires_ci_green=False,
+                requires_no_pending_intents=True,
+                max_executions_per_day=6,
+                enabled=True,
+            ),
+        ],
+        owner="steward",
+    )
+    sankalpa.registry.add_mission(mission)
+    logger.info("Sankalpa: added steward autonomy mission (10min trigger)")
+
+
+class _LazyKnowledgeGraph:
+    """KnowledgeGraph that only scans the codebase on first query.
+
+    Avoids ~200ms of AST parsing at boot. The graph is populated lazily
+    when ensure_scanned() is called (typically by the agent loop before
+    using get_context_for_task).
+    """
+
+    def __init__(self, workspace: object) -> None:
+        from vibe_core.knowledge.graph import UnifiedKnowledgeGraph
+        self._graph = UnifiedKnowledgeGraph()
+        self._workspace = workspace
+        self._scanned = False
+
+    def ensure_scanned(self) -> None:
+        """Populate the graph from the codebase if not already done."""
+        if self._scanned:
+            return
+        self._scanned = True
+        try:
+            from vibe_core.knowledge.code_scanner import CodeScanner
+            scanner = CodeScanner(self._graph)
+            stats = scanner.scan_directory(self._workspace)
+            logger.info(
+                "KnowledgeGraph: scanned %d files → %d modules, %d classes, %d functions",
+                stats.get("files_scanned", 0),
+                stats.get("modules_added", 0),
+                stats.get("classes_added", 0),
+                stats.get("functions_added", 0),
+            )
+        except Exception as e:
+            logger.warning("KnowledgeGraph scan failed (non-fatal): %s", e)
+
+    @property
+    def graph(self) -> object:
+        """Access the underlying UnifiedKnowledgeGraph (triggers scan if needed)."""
+        self.ensure_scanned()
+        return self._graph
+
+    def get_context_for_task(self, task_concept: str, depth: int = 1) -> dict:
+        """Delegate to underlying graph (triggers scan if needed)."""
+        self.ensure_scanned()
+        return self._graph.get_context_for_task(task_concept, depth)
+
+    def compile_prompt_context(self, task_concept: str) -> str:
+        """Delegate to underlying graph (triggers scan if needed)."""
+        self.ensure_scanned()
+        return self._graph.compile_prompt_context(task_concept)
 
 
 # ── Helpers ──────────────────────────────────────────────────────────

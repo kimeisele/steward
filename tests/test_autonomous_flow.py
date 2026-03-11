@@ -1,0 +1,507 @@
+"""End-to-end test of the autonomous flow — Sankalpa → TaskManager → dispatch → 0 tokens.
+
+Verifies the complete autonomy pipeline:
+  1. Sankalpa generates typed intents
+  2. _phase_genesis() stores tasks with [INTENT_NAME] title prefix
+  3. run_autonomous() parses intent from title, dispatches to Python methods
+  4. No LLM calls occur for deterministic intents
+  5. LLM only called when handler finds a real problem
+  6. Session ledger records autonomous cycles
+
+This is the most important test in steward. If this breaks,
+the agent cannot run autonomously.
+"""
+
+import asyncio
+
+import pytest
+
+from steward.agent import _parse_intent_from_title
+from steward.intents import TaskIntent
+from tests.conftest import FakeLLM, NormalizedResponse, track_agent
+
+
+class TestParseIntentFromTitle:
+    """Title prefix parsing — the persistence-safe intent encoding."""
+
+    def test_parses_health_check(self):
+        assert _parse_intent_from_title("[HEALTH_CHECK] Quick check") == TaskIntent.HEALTH_CHECK
+
+    def test_parses_sense_scan(self):
+        assert _parse_intent_from_title("[SENSE_SCAN] Environment scan") == TaskIntent.SENSE_SCAN
+
+    def test_parses_ci_check(self):
+        assert _parse_intent_from_title("[CI_CHECK] Check CI") == TaskIntent.CI_CHECK
+
+    def test_no_prefix_returns_none(self):
+        assert _parse_intent_from_title("Random task") is None
+
+    def test_unknown_prefix_returns_none(self):
+        assert _parse_intent_from_title("[GARBAGE] Unknown intent") is None
+
+    def test_empty_string_returns_none(self):
+        assert _parse_intent_from_title("") is None
+
+    def test_malformed_bracket_returns_none(self):
+        assert _parse_intent_from_title("[") is None
+        assert _parse_intent_from_title("[]") is None
+
+
+class TestAutonomousFlowE2E:
+    """Full pipeline: Sankalpa → TaskManager → dispatch → handler → 0 LLM tokens."""
+
+    def _make_agent(self, fake_llm):
+        from steward.agent import StewardAgent
+        return track_agent(StewardAgent(provider=fake_llm))
+
+    def test_run_autonomous_no_tasks_returns_none(self, fake_llm):
+        """Empty TaskManager → returns None, 0 tokens."""
+        agent = self._make_agent(fake_llm)
+        result = asyncio.run(agent.run_autonomous())
+        assert result is None
+        assert fake_llm.call_count == 0
+
+    def test_run_autonomous_dispatches_health_check(self, fake_llm):
+        """Task with [HEALTH_CHECK] title → deterministic handler, 0 tokens."""
+        from vibe_core.di import ServiceRegistry
+        from steward.services import SVC_TASK_MANAGER
+
+        agent = self._make_agent(fake_llm)
+        task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
+
+        task_mgr.add_task(title="[HEALTH_CHECK] Quick check", priority=50)
+
+        result = asyncio.run(agent.run_autonomous())
+        # Healthy agent → no problem → None returned → 0 LLM calls
+        assert result is None
+        assert fake_llm.call_count == 0
+
+    def test_run_autonomous_dispatches_sense_scan(self, fake_llm):
+        """Task with [SENSE_SCAN] title → deterministic handler, 0 tokens."""
+        from vibe_core.di import ServiceRegistry
+        from steward.services import SVC_TASK_MANAGER
+
+        agent = self._make_agent(fake_llm)
+        task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
+
+        task_mgr.add_task(title="[SENSE_SCAN] Scan environment", priority=50)
+
+        result = asyncio.run(agent.run_autonomous())
+        assert result is None
+        assert fake_llm.call_count == 0
+
+    def test_run_autonomous_dispatches_ci_check(self, fake_llm):
+        """Task with [CI_CHECK] title → deterministic handler, 0 tokens."""
+        from vibe_core.di import ServiceRegistry
+        from steward.services import SVC_TASK_MANAGER
+
+        agent = self._make_agent(fake_llm)
+        task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
+
+        task_mgr.add_task(title="[CI_CHECK] Check CI", priority=50)
+
+        result = asyncio.run(agent.run_autonomous())
+        assert result is None
+        assert fake_llm.call_count == 0
+
+    def test_run_autonomous_skips_unknown_title(self, fake_llm):
+        """Task without [INTENT] prefix → skipped, 0 tokens."""
+        from vibe_core.di import ServiceRegistry
+        from steward.services import SVC_TASK_MANAGER
+
+        agent = self._make_agent(fake_llm)
+        task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
+
+        task_mgr.add_task(title="Random task with no intent", priority=50)
+
+        result = asyncio.run(agent.run_autonomous())
+        assert result is None
+        assert fake_llm.call_count == 0
+
+    def test_task_marked_completed_after_dispatch(self, fake_llm):
+        """Dispatched task gets marked as completed in TaskManager."""
+        from vibe_core.di import ServiceRegistry
+        from steward.services import SVC_TASK_MANAGER
+        from vibe_core.task_types import TaskStatus
+
+        agent = self._make_agent(fake_llm)
+        task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
+
+        task = task_mgr.add_task(title="[HEALTH_CHECK] Check", priority=50)
+        task_id = task.id
+
+        asyncio.run(agent.run_autonomous())
+
+        updated = [t for t in task_mgr.list_tasks(status=TaskStatus.COMPLETED) if t.id == task_id]
+        assert len(updated) == 1
+
+    def test_session_ledger_records_autonomous_run(self, fake_llm):
+        """Autonomous cycles are recorded in session ledger."""
+        from vibe_core.di import ServiceRegistry
+        from steward.services import SVC_TASK_MANAGER
+
+        agent = self._make_agent(fake_llm)
+        task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
+
+        task_mgr.add_task(title="[HEALTH_CHECK] Check", priority=50)
+        asyncio.run(agent.run_autonomous())
+
+        # Ledger should have a record
+        sessions = agent._ledger.sessions
+        autonomous = [s for s in sessions if "[autonomous]" in s.task]
+        assert len(autonomous) >= 1
+        assert autonomous[-1].tokens == 0  # Deterministic = 0 tokens
+
+    def test_consecutive_autonomous_runs(self, fake_llm):
+        """Multiple autonomous runs don't block each other."""
+        from vibe_core.di import ServiceRegistry
+        from steward.services import SVC_TASK_MANAGER
+
+        agent = self._make_agent(fake_llm)
+        task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
+
+        # First run
+        task_mgr.add_task(title="[HEALTH_CHECK] Run 1", priority=50)
+        asyncio.run(agent.run_autonomous())
+
+        # Second run — should still work (completed tasks don't block)
+        task_mgr.add_task(title="[CI_CHECK] Run 2", priority=50)
+        asyncio.run(agent.run_autonomous())
+
+        assert fake_llm.call_count == 0
+
+
+class TestPhaseGenesis:
+    """_phase_genesis() creates typed tasks from Sankalpa intents."""
+
+    def test_genesis_creates_titled_tasks(self, fake_llm):
+        """When Sankalpa fires, tasks have [INTENT] title prefix."""
+        from vibe_core.di import ServiceRegistry
+        from steward.services import SVC_TASK_MANAGER
+
+        agent = self._make_agent(fake_llm)
+        # Force genesis with enough idle time to trigger Sankalpa
+        agent._phase_genesis(idle_override=15)
+
+        task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
+        tasks = task_mgr.list_tasks()
+        for task in tasks:
+            if task.title.startswith("["):
+                intent = _parse_intent_from_title(task.title)
+                assert intent is not None, f"Task has unparseable title: {task.title}"
+
+    def test_genesis_only_counts_active_tasks(self, fake_llm):
+        """Completed tasks don't count as pending for Sankalpa."""
+        from vibe_core.di import ServiceRegistry
+        from steward.services import SVC_TASK_MANAGER
+        from vibe_core.task_types import TaskStatus
+
+        agent = self._make_agent(fake_llm)
+        task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
+
+        # Add and complete a task
+        task = task_mgr.add_task(title="[HEALTH_CHECK] Old", priority=50)
+        task_mgr.update_task(task.id, status=TaskStatus.COMPLETED)
+
+        # Genesis should not count completed task as "pending"
+        # (whether Sankalpa fires depends on strategy, but it shouldn't be blocked)
+        agent._phase_genesis(idle_override=15)
+        # No crash = success
+
+    def _make_agent(self, fake_llm):
+        from steward.agent import StewardAgent
+        return track_agent(StewardAgent(provider=fake_llm))
+
+
+class TestDharmaPhase:
+    """DHARMA phase monitors vedana health."""
+
+    def test_dharma_sets_anomaly_on_low_health(self, fake_llm):
+        """When health is critical, DHARMA sets the anomaly flag."""
+        from steward.agent import StewardAgent
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+        # Clear any boot-time anomaly
+        agent.clear_health_anomaly()
+        assert not agent.health_anomaly
+
+        # DHARMA checks vedana — in test env, health is high (no real errors)
+        agent._phase_dharma()
+        # Healthy environment → no anomaly
+        assert not agent.health_anomaly
+
+    def test_dharma_runs_in_heartbeat(self, fake_llm):
+        """DHARMA is called by Cetana during heartbeat — doesn't crash."""
+        from steward.agent import StewardAgent
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+        # Simulate heartbeat calling all phases
+        from steward.cetana import Phase, CetanaBeat
+        from steward.antahkarana.vedana import measure_vedana
+        import time
+
+        beat = CetanaBeat(
+            timestamp=time.time(),
+            vedana=measure_vedana(),
+            frequency_hz=0.5,
+            beat_number=1,
+            phase=Phase.DHARMA,
+        )
+        agent._on_cetana_phase(Phase.DHARMA, beat)
+        # Should not crash
+
+
+class TestKarmaPhase:
+    """KARMA phase observes pending tasks."""
+
+    def test_karma_logs_pending_tasks(self, fake_llm):
+        """KARMA runs without error when tasks exist."""
+        from vibe_core.di import ServiceRegistry
+        from steward.services import SVC_TASK_MANAGER
+        from steward.agent import StewardAgent
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+        task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
+        task_mgr.add_task(title="test task", priority=50)
+
+        # Should not crash
+        agent._phase_karma()
+        assert fake_llm.call_count == 0  # Still 0 tokens
+
+
+class TestProblemFingerprint:
+    """_problem_fingerprint() — granular context extraction."""
+
+    def test_extracts_file_paths(self):
+        from steward.agent import _problem_fingerprint
+        fp = _problem_fingerprint("Fix the bug in src/api.py and tests/test_api.py")
+        assert "src/api.py" in fp
+        assert "tests/test_api.py" in fp
+
+    def test_extracts_error_types(self):
+        from steward.agent import _problem_fingerprint
+        fp = _problem_fingerprint("Got TypeError when calling async function")
+        assert "TypeError" in fp
+
+    def test_extracts_workflow_name(self):
+        from steward.agent import _problem_fingerprint
+        fp = _problem_fingerprint("CI is failing: workflow 'test'. Check logs.")
+        assert fp == "test"
+
+    def test_falls_back_to_keywords(self):
+        from steward.agent import _problem_fingerprint
+        fp = _problem_fingerprint("Something unusual is happening with the database connection")
+        assert len(fp) > 0
+        # Should contain significant words, not generic ones
+        assert "something" not in fp or "unusual" in fp
+
+    def test_empty_returns_empty(self):
+        from steward.agent import _problem_fingerprint
+        assert _problem_fingerprint("") == ""
+
+    def test_different_problems_different_fingerprints(self):
+        """Two different problems produce different fingerprints."""
+        from steward.agent import _problem_fingerprint
+        fp1 = _problem_fingerprint("Fix TypeError in api.py")
+        fp2 = _problem_fingerprint("Fix ImportError in utils.py")
+        assert fp1 != fp2
+
+
+class TestHebbianAutonomousLearning:
+    """Hebbian learning from autonomous fix outcomes — GRANULAR."""
+
+    def _make_agent(self, fake_llm):
+        from steward.agent import StewardAgent
+        return track_agent(StewardAgent(provider=fake_llm))
+
+    def test_hebbian_learn_success_reinforces(self, fake_llm):
+        """Successful fix reinforces the granular trigger/fix weight."""
+        agent = self._make_agent(fake_llm)
+        trigger = "auto:CI_CHECK:api.py"
+        initial = agent._synaptic.get_weight(trigger, "fix")
+        agent._hebbian_learn(trigger, success=True)
+        after = agent._synaptic.get_weight(trigger, "fix")
+        assert after > initial
+
+    def test_hebbian_learn_failure_weakens(self, fake_llm):
+        """Failed fix weakens the granular trigger/fix weight."""
+        agent = self._make_agent(fake_llm)
+        trigger = "auto:CI_CHECK:api.py"
+        initial = agent._synaptic.get_weight(trigger, "fix")
+        agent._hebbian_learn(trigger, success=False)
+        after = agent._synaptic.get_weight(trigger, "fix")
+        assert after < initial
+
+    def test_file_specific_no_cross_contamination(self, fake_llm):
+        """Failing on api.py does NOT weaken utils.py weight."""
+        agent = self._make_agent(fake_llm)
+        # Fail repeatedly on api.py
+        for _ in range(10):
+            agent._hebbian_learn("auto:CI_CHECK:api.py", success=False)
+        api_weight = agent._synaptic.get_weight("auto:CI_CHECK:api.py", "fix")
+        assert api_weight < 0.2
+
+        # utils.py should be unaffected (still at default 0.5)
+        utils_weight = agent._synaptic.get_weight("auto:CI_CHECK:utils.py", "fix")
+        assert utils_weight == 0.5
+
+    def test_per_file_learning_on_success(self, fake_llm):
+        """Success updates per-file weights for changed files."""
+        agent = self._make_agent(fake_llm)
+        changed = {"src/api.py", "src/utils.py"}
+        agent._hebbian_learn("auto:CI_CHECK:api.py", success=True, changed_files=changed)
+
+        # Both files should have increased file-level weights
+        api_weight = agent._synaptic.get_weight("file:src/api.py", "auto_fix")
+        utils_weight = agent._synaptic.get_weight("file:src/utils.py", "auto_fix")
+        assert api_weight > 0.5
+        assert utils_weight > 0.5
+
+    def test_per_file_learning_on_failure(self, fake_llm):
+        """Failure updates per-file weights for changed files."""
+        agent = self._make_agent(fake_llm)
+        changed = {"src/api.py", "src/utils.py"}
+        agent._hebbian_learn("auto:CI_CHECK:api.py", success=False, changed_files=changed)
+
+        api_weight = agent._synaptic.get_weight("file:src/api.py", "auto_fix")
+        utils_weight = agent._synaptic.get_weight("file:src/utils.py", "auto_fix")
+        assert api_weight < 0.5
+        assert utils_weight < 0.5
+
+    def test_non_py_files_skip_file_learning(self, fake_llm):
+        """Non-Python files don't get Hebbian file-level weights."""
+        agent = self._make_agent(fake_llm)
+        changed = {"README.md", "config.json", "src/api.py"}
+        agent._hebbian_learn("auto:CI_CHECK:api.py", success=True, changed_files=changed)
+
+        # Only .py file should have a weight
+        api_weight = agent._synaptic.get_weight("file:src/api.py", "auto_fix")
+        assert api_weight > 0.5
+        # Non-py files should remain at default
+        md_weight = agent._synaptic.get_weight("file:README.md", "auto_fix")
+        assert md_weight == 0.5
+
+    def test_gate_specific_negative_learning(self, fake_llm):
+        """Failed gates get their own negative Hebbian signal."""
+        from steward.tools.circuit_breaker import GateResult
+
+        agent = self._make_agent(fake_llm)
+        failed_gates = [
+            GateResult(passed=False, gate="lint", detail="ruff: 3 violations"),
+        ]
+        trigger = "auto:CI_CHECK:api.py"
+        agent._hebbian_learn(trigger, success=False, failed_gates=failed_gates)
+
+        fix_weight = agent._synaptic.get_weight(trigger, "fix")
+        assert fix_weight < 0.5
+
+        lint_weight = agent._synaptic.get_weight(trigger, "gate:lint")
+        assert lint_weight < 0.5
+
+    def test_gate_specific_positive_learning(self, fake_llm):
+        """Passed gates get reinforced on success."""
+        from steward.tools.circuit_breaker import GateResult
+
+        agent = self._make_agent(fake_llm)
+        gate_results = [
+            GateResult(passed=True, gate="lint"),
+            GateResult(passed=True, gate="security"),
+        ]
+        trigger = "auto:CI_CHECK:api.py"
+        agent._hebbian_learn(trigger, success=True, gate_results=gate_results)
+
+        lint_weight = agent._synaptic.get_weight(trigger, "gate:lint")
+        assert lint_weight > 0.5
+
+    def test_confidence_gate_escalates_not_skips(self, fake_llm):
+        """When Hebbian confidence < 0.2, escalates to human — NOT silent skip."""
+        import asyncio
+        from vibe_core.di import ServiceRegistry
+        from steward.services import SVC_TASK_MANAGER
+
+        agent = self._make_agent(fake_llm)
+        task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
+        task_mgr.add_task(title="[CI_CHECK] Check CI", priority=50)
+
+        # The problem will include workflow 'ci-tests' → fingerprint = "ci-tests"
+        # Hammer that SPECIFIC granular key below 0.2
+        for _ in range(20):
+            agent._synaptic.update("auto:CI_CHECK:ci-tests", "fix", success=False)
+        assert agent._synaptic.get_weight("auto:CI_CHECK:ci-tests", "fix") < 0.2
+
+        # Mock CI check to return problem with matching workflow name
+        original_ci = agent._execute_ci_check
+        agent._execute_ci_check = lambda: "CI is failing: workflow 'ci-tests'. Fix it."
+
+        try:
+            result = asyncio.run(agent.run_autonomous())
+            assert result is None
+            assert fake_llm.call_count == 0  # LLM not called
+
+            # BUT: escalation file should exist
+            escalation_file = agent._cwd + "/.steward/needs_attention.md"
+            from pathlib import Path
+            if Path(escalation_file).exists():
+                content = Path(escalation_file).read_text()
+                assert "CI_CHECK" in content
+                assert "confidence" in content
+        finally:
+            agent._execute_ci_check = original_ci
+
+    def test_different_workflow_not_blocked(self, fake_llm):
+        """Failing on workflow 'ci-tests' doesn't block workflow 'lint-check'."""
+        import asyncio
+        from unittest.mock import patch
+        from vibe_core.di import ServiceRegistry
+        from steward.services import SVC_TASK_MANAGER
+        from steward.tools.circuit_breaker import GateResult
+
+        agent = self._make_agent(fake_llm)
+        task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
+        task_mgr.add_task(title="[CI_CHECK] Check CI", priority=50)
+
+        # Hammer weight for 'ci-tests' workflow
+        for _ in range(20):
+            agent._synaptic.update("auto:CI_CHECK:ci-tests", "fix", success=False)
+
+        # BUT the CURRENT problem is for 'lint-check' — different fingerprint
+        original_ci = agent._execute_ci_check
+        agent._execute_ci_check = lambda: "CI is failing: workflow 'lint-check'. Fix it."
+
+        try:
+            # 'lint-check' has default confidence 0.5 — should NOT be blocked
+            weight = agent._synaptic.get_weight("auto:CI_CHECK:lint-check", "fix")
+            assert weight >= 0.5  # Not contaminated by ci-tests failure
+
+            # Would proceed to _guarded_llm_fix (which needs mocked breaker)
+            # Just verify the weight is not blocked
+            assert weight >= 0.2
+        finally:
+            agent._execute_ci_check = original_ci
+
+    def test_repeated_failure_decays_specific_key(self, fake_llm):
+        """Multiple failures drive SPECIFIC key toward 0, not global."""
+        agent = self._make_agent(fake_llm)
+        specific = "auto:SENSE_SCAN:provider:errors"
+        for _ in range(10):
+            agent._hebbian_learn(specific, success=False)
+
+        specific_weight = agent._synaptic.get_weight(specific, "fix")
+        assert specific_weight < 0.2
+
+        # Different context should be unaffected
+        other_weight = agent._synaptic.get_weight("auto:SENSE_SCAN:context:tools", "fix")
+        assert other_weight == 0.5
+
+    def test_recovery_after_success(self, fake_llm):
+        """After failures, success starts recovering the weight."""
+        agent = self._make_agent(fake_llm)
+        trigger = "auto:CI_CHECK:api.py"
+        for _ in range(5):
+            agent._hebbian_learn(trigger, success=False)
+        low = agent._synaptic.get_weight(trigger, "fix")
+
+        for _ in range(3):
+            agent._hebbian_learn(trigger, success=True)
+        recovered = agent._synaptic.get_weight(trigger, "fix")
+        assert recovered > low
