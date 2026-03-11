@@ -99,6 +99,41 @@ class ReaperConsequence:
     new_trust: float
 
 
+# ── State Machine Transition Table ──────────────────────────────────
+# O(1) dispatch: PeerStatus → (next_status, action, detail, flags)
+# No if/elif chains. Add a state = add a dict entry.
+
+
+@dataclass(frozen=True)
+class _Transition:
+    next_status: PeerStatus
+    action: str
+    detail_fn: object  # Callable[[float, float], str]
+    decay: bool = True  # Apply trust decay (vs hard zero)
+    evict: bool = False  # Remove from registry
+
+
+_STATE_TRANSITIONS: dict[PeerStatus, _Transition] = {
+    PeerStatus.ALIVE: _Transition(
+        next_status=PeerStatus.SUSPECT,
+        action="suspect",
+        detail_fn=lambda age, ttl: f"Lease expired ({age:.0f}s > {ttl:.0f}s TTL)",
+    ),
+    PeerStatus.SUSPECT: _Transition(
+        next_status=PeerStatus.DEAD,
+        action="dead",
+        detail_fn=lambda _age, _ttl: "Second missed window — slots reclaimable",
+    ),
+    PeerStatus.DEAD: _Transition(
+        next_status=PeerStatus.EVICTED,
+        action="evict",
+        detail_fn=lambda _age, _ttl: "Third strike — evicted from federation",
+        decay=False,
+        evict=True,
+    ),
+}
+
+
 @dataclass
 class HeartbeatReaper:
     """Network garbage collector — tracks federation peer liveness.
@@ -188,52 +223,30 @@ class HeartbeatReaper:
             if age <= self.lease_ttl_s:
                 continue  # Still within lease — healthy
 
+            transition = _STATE_TRANSITIONS.get(peer.status)
+            if transition is None:
+                continue
+
             old_status = peer.status.value
             old_trust = peer.trust
 
-            if peer.status == PeerStatus.ALIVE:
-                # Strike 1: ALIVE → SUSPECT
-                peer.status = PeerStatus.SUSPECT
-                peer.trust = max(0.0, peer.trust - self.trust_decay)
-                consequences.append(ReaperConsequence(
-                    agent_id=agent_id,
-                    action="suspect",
-                    detail=f"Lease expired ({age:.0f}s > {self.lease_ttl_s:.0f}s TTL)",
-                    old_status=old_status,
-                    new_status=peer.status.value,
-                    old_trust=old_trust,
-                    new_trust=peer.trust,
-                ))
+            peer.status = transition.next_status
+            peer.trust = max(0.0, peer.trust - self.trust_decay) if transition.decay else 0.0
+            detail = transition.detail_fn(age, self.lease_ttl_s)
 
-            elif peer.status == PeerStatus.SUSPECT:
-                # Strike 2: SUSPECT → DEAD
-                peer.status = PeerStatus.DEAD
-                peer.trust = max(0.0, peer.trust - self.trust_decay)
-                consequences.append(ReaperConsequence(
-                    agent_id=agent_id,
-                    action="dead",
-                    detail="Second missed window — slots reclaimable",
-                    old_status=old_status,
-                    new_status=peer.status.value,
-                    old_trust=old_trust,
-                    new_trust=peer.trust,
-                ))
-
-            elif peer.status == PeerStatus.DEAD:
-                # Strike 3: DEAD → EVICTED
-                peer.status = PeerStatus.EVICTED
-                peer.trust = 0.0
+            if transition.evict:
                 to_evict.append(agent_id)
-                consequences.append(ReaperConsequence(
-                    agent_id=agent_id,
-                    action="evict",
-                    detail="Third strike — evicted from federation",
-                    old_status=old_status,
-                    new_status=peer.status.value,
-                    old_trust=old_trust,
-                    new_trust=0.0,
-                ))
                 self._total_evictions += 1
+
+            consequences.append(ReaperConsequence(
+                agent_id=agent_id,
+                action=transition.action,
+                detail=detail,
+                old_status=old_status,
+                new_status=peer.status.value,
+                old_trust=old_trust,
+                new_trust=peer.trust,
+            ))
 
         # Remove evicted peers from active tracking
         for agent_id in to_evict:

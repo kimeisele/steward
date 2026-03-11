@@ -255,6 +255,16 @@ class StewardAgent(GADBase):
         self._health_anomaly_flag = False
         self._health_anomaly_detail_str = ""
         self._last_user_interaction = time.monotonic()
+
+        # Phase dispatch table — O(1) routing, no if/elif chain
+        from steward.cetana import Phase
+        self._phase_dispatch = {
+            Phase.GENESIS: self._phase_genesis,
+            Phase.DHARMA: self._phase_dharma,
+            Phase.KARMA: self._autonomy.phase_karma,
+            Phase.MOKSHA: self._phase_moksha,
+        }
+
         self._cetana = Cetana(
             vedana_source=lambda: self.vedana,
             on_anomaly=self._on_cetana_anomaly,
@@ -668,66 +678,60 @@ class StewardAgent(GADBase):
         self._cetana.stop()
 
     def _on_cetana_phase(self, phase: object, beat: object) -> None:
-        """Cetana 4-phase MURALI callback — wires infrastructure into heartbeat.
-
-        Runs in daemon thread. Must be fast and non-blocking.
-        GENESIS: refresh senses, generate tasks via Sankalpa
-        DHARMA: integrity checks (lightweight)
-        KARMA: trigger pending self-healing work
-        MOKSHA: persist learning state (SynapseStore)
-        """
+        """Cetana 4-phase MURALI callback — O(1) dispatch table."""
         from steward.cetana import Phase
 
         if not isinstance(phase, Phase):
             return
 
+        handler = self._phase_dispatch.get(phase)
+        if handler is None:
+            return
         try:
-            if phase == Phase.GENESIS:
-                self._autonomy.phase_genesis(
-                    last_interaction=self._last_user_interaction,
-                )
-            elif phase == Phase.DHARMA:
-                # DHARMA stays in agent — uses vedana + health lock (agent state)
-                v = self.vedana
-                if v.health < 0.3:
-                    with self._health_lock:
-                        self._health_anomaly_flag = True
-                        self._health_anomaly_detail_str = (
-                            f"DHARMA: health={v.health:.2f} ({v.guna}), "
-                            f"errors={v.error_pressure:.2f}, context={v.context_pressure:.2f}"
-                        )
-                    logger.warning("DHARMA: health critical (%.2f %s)", v.health, v.guna)
-                # Reaper: scan for dead federation peers
-                reaper = ServiceRegistry.get(SVC_REAPER)
-                if reaper is not None:
-                    consequences = reaper.reap()
-                    for c in consequences:
-                        logger.warning(
-                            "REAPER[%s]: %s → %s (trust %.2f→%.2f)",
-                            c.agent_id, c.old_status, c.new_status,
-                            c.old_trust, c.new_trust,
-                        )
-                # Marketplace: purge expired slot claims
-                marketplace = ServiceRegistry.get(SVC_MARKETPLACE)
-                if marketplace is not None:
-                    purged = marketplace.purge_expired()
-                    if purged:
-                        logger.info("MARKET: purged %d expired claims", purged)
-            elif phase == Phase.KARMA:
-                self._autonomy.phase_karma()
-            elif phase == Phase.MOKSHA:
-                self._autonomy.phase_moksha()
-                # Persist reaper state (federation peer registry)
-                reaper = ServiceRegistry.get(SVC_REAPER)
-                if reaper is not None:
-                    from pathlib import Path as _P
-                    reaper.save(_P(self._cwd) / ".steward" / "peers.json")
-                # Persist marketplace state (slot claims)
-                marketplace = ServiceRegistry.get(SVC_MARKETPLACE)
-                if marketplace is not None:
-                    marketplace.save(_P(self._cwd) / ".steward" / "marketplace.json")
+            handler()
         except Exception as e:
             logger.debug("Cetana phase %s error (non-fatal): %s", phase.name, e)
+
+    def _phase_genesis(self) -> None:
+        self._autonomy.phase_genesis(
+            last_interaction=self._last_user_interaction,
+        )
+
+    def _phase_dharma(self) -> None:
+        """DHARMA: health check + reaper + marketplace purge."""
+        v = self.vedana
+        if v.health < 0.3:
+            with self._health_lock:
+                self._health_anomaly_flag = True
+                self._health_anomaly_detail_str = (
+                    f"DHARMA: health={v.health:.2f} ({v.guna}), "
+                    f"errors={v.error_pressure:.2f}, context={v.context_pressure:.2f}"
+                )
+            logger.warning("DHARMA: health critical (%.2f %s)", v.health, v.guna)
+        reaper = ServiceRegistry.get(SVC_REAPER)
+        if reaper is not None:
+            consequences = reaper.reap()
+            for c in consequences:
+                logger.warning(
+                    "REAPER[%s]: %s → %s (trust %.2f→%.2f)",
+                    c.agent_id, c.old_status, c.new_status,
+                    c.old_trust, c.new_trust,
+                )
+        marketplace = ServiceRegistry.get(SVC_MARKETPLACE)
+        if marketplace is not None:
+            purged = marketplace.purge_expired()
+            if purged:
+                logger.info("MARKET: purged %d expired claims", purged)
+
+    def _phase_moksha(self) -> None:
+        """MOKSHA: persist all state."""
+        self._autonomy.phase_moksha()
+        reaper = ServiceRegistry.get(SVC_REAPER)
+        if reaper is not None:
+            reaper.save(Path(self._cwd) / ".steward" / "peers.json")
+        marketplace = ServiceRegistry.get(SVC_MARKETPLACE)
+        if marketplace is not None:
+            marketplace.save(Path(self._cwd) / ".steward" / "marketplace.json")
 
     def _on_cetana_anomaly(self, beat: object) -> None:
         """Cetana detected health anomaly — set flag + emit signal.

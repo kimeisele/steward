@@ -72,22 +72,11 @@ class AgentInternetTool(Tool):
 
     def execute(self, parameters: dict[str, Any]) -> ToolResult:
         action = str(parameters["action"])
+        handler = _ACTION_DISPATCH.get(action)
+        if handler is None:
+            return ToolResult(success=False, error=f"Unsupported action: {action}")
         try:
-            if action == "capabilities":
-                payload = fetch_semantic_capabilities()
-            elif action == "contracts":
-                payload = fetch_semantic_contracts(
-                    capability_id=_string_or_none(parameters.get("capability_id")),
-                    contract_id=_string_or_none(parameters.get("contract_id")),
-                    version=_int_or_none(parameters.get("version")),
-                )
-            else:
-                payload = invoke_semantic_http(
-                    capability_id=_string_or_none(parameters.get("capability_id")),
-                    contract_id=_string_or_none(parameters.get("contract_id")),
-                    version=_int_or_none(parameters.get("version")),
-                    input_payload=dict(parameters.get("input_payload", {})),
-                )
+            payload = handler(parameters)
             return ToolResult(success=True, output=json.dumps(payload, indent=2, sort_keys=True))
         except Exception as exc:
             return ToolResult(success=False, error=str(exc))
@@ -103,3 +92,31 @@ def _int_or_none(value: object) -> int | None:
     if value in (None, ""):
         return None
     return int(value)
+
+
+def _do_capabilities(params: dict) -> object:
+    return fetch_semantic_capabilities()
+
+
+def _do_contracts(params: dict) -> object:
+    return fetch_semantic_contracts(
+        capability_id=_string_or_none(params.get("capability_id")),
+        contract_id=_string_or_none(params.get("contract_id")),
+        version=_int_or_none(params.get("version")),
+    )
+
+
+def _do_call(params: dict) -> object:
+    return invoke_semantic_http(
+        capability_id=_string_or_none(params.get("capability_id")),
+        contract_id=_string_or_none(params.get("contract_id")),
+        version=_int_or_none(params.get("version")),
+        input_payload=dict(params.get("input_payload", {})),
+    )
+
+
+_ACTION_DISPATCH: dict[str, object] = {
+    "capabilities": _do_capabilities,
+    "contracts": _do_contracts,
+    "call": _do_call,
+}
