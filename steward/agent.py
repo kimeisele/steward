@@ -43,6 +43,7 @@ from steward.services import (
     SVC_MEMORY,
     SVC_NARASIMHA,
     SVC_NORTH_STAR,
+    SVC_REAPER,
     SVC_SAFETY_GUARD,
     SVC_SYNAPSE_STORE,
     SVC_TOOL_REGISTRY,
@@ -686,10 +687,25 @@ class StewardAgent(GADBase):
                             f"errors={v.error_pressure:.2f}, context={v.context_pressure:.2f}"
                         )
                     logger.warning("DHARMA: health critical (%.2f %s)", v.health, v.guna)
+                # Reaper: scan for dead federation peers
+                reaper = ServiceRegistry.get(SVC_REAPER)
+                if reaper is not None:
+                    consequences = reaper.reap()
+                    for c in consequences:
+                        logger.warning(
+                            "REAPER[%s]: %s → %s (trust %.2f→%.2f)",
+                            c.agent_id, c.old_status, c.new_status,
+                            c.old_trust, c.new_trust,
+                        )
             elif phase == Phase.KARMA:
                 self._autonomy.phase_karma()
             elif phase == Phase.MOKSHA:
                 self._autonomy.phase_moksha()
+                # Persist reaper state (federation peer registry)
+                reaper = ServiceRegistry.get(SVC_REAPER)
+                if reaper is not None:
+                    from pathlib import Path as _P
+                    reaper.save(_P(self._cwd) / ".steward" / "peers.json")
         except Exception as e:
             logger.debug("Cetana phase %s error (non-fatal): %s", phase.name, e)
 
