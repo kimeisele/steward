@@ -93,26 +93,28 @@ def _compute_lcom4(class_node: ast.ClassDef) -> int:
     return components
 
 
-def _method_complexity(func_node: ast.FunctionDef | ast.AsyncFunctionDef) -> int:
-    """McCabe cyclomatic complexity of a single method.
+# ── Branchless CC Dispatch ─────────────────────────────────────────
+# O(1) dict lookup per AST node instead of if/elif chains.
+# Extensible: add a type → add a dict entry. No code changes.
+_CC_WEIGHT: dict[type, object] = {
+    ast.If: 1,
+    ast.IfExp: 1,
+    ast.For: 1,
+    ast.AsyncFor: 1,
+    ast.While: 1,
+    ast.ExceptHandler: 1,
+    # BoolOp: weight is dynamic (len(values) - 1), handled via callable
+}
 
-    Counts decision points: if, for, while, except, boolean operators, ternary.
-    Base complexity is 1 (the method itself is one path).
-    """
+
+def _method_complexity(func_node: ast.FunctionDef | ast.AsyncFunctionDef) -> int:
+    """McCabe cyclomatic complexity — branchless O(1) dispatch per node."""
     cc = 1
     for node in ast.walk(func_node):
-        if isinstance(node, ast.If):
-            cc += 1
-        elif isinstance(node, ast.IfExp):
-            cc += 1
-        elif isinstance(node, (ast.For, ast.AsyncFor)):
-            cc += 1
-        elif isinstance(node, ast.While):
-            cc += 1
-        elif isinstance(node, ast.ExceptHandler):
-            cc += 1
+        weight = _CC_WEIGHT.get(type(node))
+        if weight is not None:
+            cc += weight
         elif isinstance(node, ast.BoolOp):
-            # `a and b` = 1 extra path, `a and b and c` = 2 extra paths
             cc += len(node.values) - 1
     return cc
 
