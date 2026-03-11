@@ -39,6 +39,9 @@ class TestParseIntentFromTitle:
     def test_parses_remove_dead_code(self):
         assert _parse_intent_from_title("[REMOVE_DEAD_CODE] Clean up") == TaskIntent.REMOVE_DEAD_CODE
 
+    def test_parses_federation_health(self):
+        assert _parse_intent_from_title("[FEDERATION_HEALTH] Check peers") == TaskIntent.FEDERATION_HEALTH
+
     def test_no_prefix_returns_none(self):
         assert _parse_intent_from_title("Random task") is None
 
@@ -107,6 +110,21 @@ class TestAutonomousFlowE2E:
         task_mgr.add_task(title="[CI_CHECK] Check CI", priority=50)
 
         result = asyncio.run(agent.run_autonomous())
+        assert result is None
+        assert fake_llm.call_count == 0
+
+    def test_run_autonomous_dispatches_federation_health(self, fake_llm):
+        """Task with [FEDERATION_HEALTH] title → deterministic handler, 0 tokens."""
+        from steward.services import SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
+
+        agent = self._make_agent(fake_llm)
+        task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
+
+        task_mgr.add_task(title="[FEDERATION_HEALTH] Check federation", priority=50)
+
+        result = asyncio.run(agent.run_autonomous())
+        # Healthy federation (no dead peers, no backlog) → None → 0 LLM calls
         assert result is None
         assert fake_llm.call_count == 0
 
