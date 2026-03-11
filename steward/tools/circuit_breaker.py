@@ -36,16 +36,7 @@ def _is_test_file(filepath: str) -> bool:
 
 
 def _count_test_elements(source: str) -> dict | None:
-    """Count test-relevant AST elements in Python source.
-
-    Returns dict with:
-    - test_functions: count of def test_*() and def test_*() methods
-    - asserts: count of assert statements
-    - trivial_asserts: count of `assert True`, `assert 1`, `assert "..."` (always-pass)
-    - test_classes: count of class Test*
-
-    Returns None if source can't be parsed.
-    """
+    """Count test-relevant AST elements — O(1) dispatch per node."""
     import ast
 
     try:
@@ -60,21 +51,30 @@ def _count_test_elements(source: str) -> dict | None:
         "test_classes": 0,
     }
 
+    def _count_func(node: object) -> None:
+        if node.name.startswith("test_"):
+            stats["test_functions"] += 1
+
+    def _count_class(node: object) -> None:
+        if node.name.startswith("Test"):
+            stats["test_classes"] += 1
+
+    def _count_assert(node: object) -> None:
+        stats["asserts"] += 1
+        if isinstance(node.test, ast.Constant) and node.test.value in (True, 1):
+            stats["trivial_asserts"] += 1
+
+    dispatch: dict[type, object] = {
+        ast.FunctionDef: _count_func,
+        ast.AsyncFunctionDef: _count_func,
+        ast.ClassDef: _count_class,
+        ast.Assert: _count_assert,
+    }
+
     for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            if node.name.startswith("test_"):
-                stats["test_functions"] += 1
-
-        elif isinstance(node, ast.ClassDef):
-            if node.name.startswith("Test"):
-                stats["test_classes"] += 1
-
-        elif isinstance(node, ast.Assert):
-            stats["asserts"] += 1
-            # Check for trivial assertions: assert True, assert 1, assert "string"
-            test_node = node.test
-            if isinstance(test_node, ast.Constant) and test_node.value in (True, 1):
-                stats["trivial_asserts"] += 1
+        handler = dispatch.get(type(node))
+        if handler is not None:
+            handler(node)
 
     return stats
 
@@ -143,17 +143,18 @@ def _decorator_leaf_name(decorator: object) -> str | None:
     """Extract the leaf name from a decorator AST node.
 
     Handles: @route, @app.route, @router.get, @app.router.get
-    Returns the rightmost name segment.
+    Returns the rightmost name segment. O(1) dispatch per node type.
     """
     import ast
 
-    if isinstance(decorator, ast.Name):
-        return decorator.id
-    elif isinstance(decorator, ast.Attribute):
-        return decorator.attr
-    elif isinstance(decorator, ast.Call):
-        return _decorator_leaf_name(decorator.func)
-    return None
+    _LEAF_EXTRACT: dict[type, object] = {
+        ast.Name: lambda n: n.id,
+        ast.Attribute: lambda n: n.attr,
+        ast.Call: lambda n: _decorator_leaf_name(n.func),
+    }
+
+    extractor = _LEAF_EXTRACT.get(type(decorator))
+    return extractor(decorator) if extractor is not None else None
 
 
 @dataclass
