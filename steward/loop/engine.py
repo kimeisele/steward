@@ -92,6 +92,10 @@ Reply ONLY with JSON:
 # Maximum tool-use iterations per turn to prevent infinite loops
 MAX_TOOL_ROUNDS = 50
 
+# When health anomaly fires mid-turn, cap remaining rounds to this.
+# Graceful degradation: finish current work quickly, don't break mid-task.
+ANOMALY_REMAINING_ROUNDS = 2
+
 # Char limits — CBR-aligned. 1 token ~= 4 chars.
 # Tool output: feeds back into context (input to next LLM call)
 MAX_TOOL_OUTPUT_CHARS = 4_000  # 1000 tokens — bounded context input
@@ -263,14 +267,23 @@ class AgentLoop:
         # Context management: once at turn start (not every round)
         self._manage_context()
 
+        max_rounds = MAX_TOOL_ROUNDS
         for round_num in range(MAX_TOOL_ROUNDS):
-            # Cetana health check — abort if heartbeat detected critical anomaly
+            # Cetana health check — cap remaining rounds when sick
             if self._health_gate and self._health_gate.health_anomaly:
                 detail = self._health_gate.health_anomaly_detail
                 self._health_gate.clear_health_anomaly()
-                logger.warning("Cetana anomaly detected mid-turn: %s", detail)
-                guidance = f"[Cetana: health anomaly] {detail}. Consider finishing quickly or switching to a lighter approach."
+                rounds_left = max_rounds - round_num
+                if rounds_left > ANOMALY_REMAINING_ROUNDS:
+                    max_rounds = round_num + ANOMALY_REMAINING_ROUNDS
+                    logger.warning(
+                        "Cetana anomaly — capping to %d more rounds (was %d): %s",
+                        ANOMALY_REMAINING_ROUNDS, rounds_left, detail,
+                    )
+                guidance = f"[Cetana: health anomaly] {detail}. Finish immediately — {max_rounds - round_num} rounds remaining."
                 self._conversation.add(Message(role=MessageRole.USER, content=guidance))
+            if round_num >= max_rounds:
+                break
 
             # Buddhi pre-flight: deterministic tool selection + token budget
             context_pct = (
@@ -547,8 +560,9 @@ class AgentLoop:
                     self._antaranga.apply_diw(slot_idx, venu_diw)
                 self._antaranga_touched.clear()
 
-        usage.rounds = MAX_TOOL_ROUNDS
-        yield AgentEvent(type=EventType.ERROR, content="Maximum tool rounds exceeded")
+        usage.rounds = max_rounds
+        msg = "Health anomaly — rounds capped" if max_rounds < MAX_TOOL_ROUNDS else "Maximum tool rounds exceeded"
+        yield AgentEvent(type=EventType.ERROR, content=msg)
 
     def run_sync(self, user_message: str) -> str:
         """Synchronous wrapper — runs the async loop and returns final text.

@@ -39,14 +39,11 @@ from steward.services import (
     SVC_ATTENTION,
     SVC_CACHE,
     SVC_COMPRESSION,
-    SVC_FEDERATION,
-    SVC_FEDERATION_TRANSPORT,
     SVC_FEEDBACK,
     SVC_MEMORY,
     SVC_NARASIMHA,
     SVC_NORTH_STAR,
-    SVC_MARKETPLACE,
-    SVC_REAPER,
+    SVC_PHASE_HOOKS,
     SVC_SAFETY_GUARD,
     SVC_SYNAPSE_STORE,
     SVC_TOOL_REGISTRY,
@@ -700,60 +697,34 @@ class StewardAgent(GADBase):
         )
 
     def _phase_dharma(self) -> None:
-        """DHARMA: health check + reaper + marketplace purge + federation."""
-        v = self.vedana
-        if v.health < 0.3:
+        """DHARMA: dispatch registered hooks (health, reaper, marketplace, federation)."""
+        ctx = self._make_phase_context()
+        hooks = ServiceRegistry.get(SVC_PHASE_HOOKS)
+        if hooks is not None:
+            from steward.phase_hook import DHARMA
+            hooks.dispatch(DHARMA, ctx)
+        # Read back mutable output from hooks
+        if ctx.health_anomaly:
             with self._health_lock:
                 self._health_anomaly_flag = True
-                self._health_anomaly_detail_str = (
-                    f"DHARMA: health={v.health:.2f} ({v.guna}), "
-                    f"errors={v.error_pressure:.2f}, context={v.context_pressure:.2f}"
-                )
-            logger.warning("DHARMA: health critical (%.2f %s)", v.health, v.guna)
-        reaper = ServiceRegistry.get(SVC_REAPER)
-        if reaper is not None:
-            consequences = reaper.reap()
-            for c in consequences:
-                logger.warning(
-                    "REAPER[%s]: %s → %s (trust %.2f→%.2f)",
-                    c.agent_id, c.old_status, c.new_status,
-                    c.old_trust, c.new_trust,
-                )
-        marketplace = ServiceRegistry.get(SVC_MARKETPLACE)
-        if marketplace is not None:
-            purged = marketplace.purge_expired()
-            if purged:
-                logger.info("MARKET: purged %d expired claims", purged)
-        # Federation: broadcast heartbeat + process inbound
-        federation = ServiceRegistry.get(SVC_FEDERATION)
-        if federation is not None:
-            from steward.federation import OP_HEARTBEAT
-
-            federation.emit(OP_HEARTBEAT, {
-                "agent_id": federation.agent_id,
-                "health": v.health,
-                "timestamp": time.time(),
-            })
-            transport = ServiceRegistry.get(SVC_FEDERATION_TRANSPORT)
-            if transport is not None:
-                federation.process_inbound(transport)
+                self._health_anomaly_detail_str = ctx.health_anomaly_detail
 
     def _phase_moksha(self) -> None:
-        """MOKSHA: persist all state + flush federation outbox."""
-        self._autonomy.phase_moksha()
-        reaper = ServiceRegistry.get(SVC_REAPER)
-        if reaper is not None:
-            reaper.save(Path(self._cwd) / ".steward" / "peers.json")
-        marketplace = ServiceRegistry.get(SVC_MARKETPLACE)
-        if marketplace is not None:
-            marketplace.save(Path(self._cwd) / ".steward" / "marketplace.json")
-        # Federation: flush outbound events via transport
-        federation = ServiceRegistry.get(SVC_FEDERATION)
-        transport = ServiceRegistry.get(SVC_FEDERATION_TRANSPORT)
-        if federation is not None and transport is not None:
-            flushed = federation.flush_outbound(transport)
-            if flushed:
-                logger.debug("FEDERATION: flushed %d outbound events", flushed)
+        """MOKSHA: dispatch registered hooks (synapse, persistence, federation)."""
+        ctx = self._make_phase_context()
+        hooks = ServiceRegistry.get(SVC_PHASE_HOOKS)
+        if hooks is not None:
+            from steward.phase_hook import MOKSHA
+            hooks.dispatch(MOKSHA, ctx)
+
+    def _make_phase_context(self) -> object:
+        """Build PhaseContext for hook dispatch."""
+        from steward.phase_hook import PhaseContext
+        return PhaseContext(
+            cwd=self._cwd,
+            vedana=self.vedana,
+            last_interaction=self._last_user_interaction,
+        )
 
     def _on_cetana_anomaly(self, beat: object) -> None:
         """Cetana detected health anomaly — set flag + emit signal.

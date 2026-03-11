@@ -133,6 +133,10 @@ class SVC_REAPER:
     """HeartbeatReaper — network garbage collection for federation peers."""
 
 
+class SVC_PHASE_HOOKS:
+    """PhaseHookRegistry — composable phase dispatch for MURALI."""
+
+
 class SVC_NORTH_STAR:
     """North Star — infrastructure-level goal seed (not LLM prompt).
 
@@ -343,6 +347,14 @@ def boot(
         transport = FilesystemFederationTransport(fed_dir)
         ServiceRegistry.register(SVC_FEDERATION_TRANSPORT, transport)
         logger.info("Federation transport: filesystem → %s", fed_dir)
+
+    # 29. PhaseHookRegistry (composable MURALI phase dispatch)
+    from steward.hooks import register_default_hooks
+    from steward.phase_hook import PhaseHookRegistry
+
+    phase_hooks = PhaseHookRegistry()
+    register_default_hooks(phase_hooks)
+    ServiceRegistry.register(SVC_PHASE_HOOKS, phase_hooks)
 
     # 24. IntegrityChecker — boot-time validation (catch lazy-load failures early)
     from vibe_core.protocols.integrity import IntegrityChecker, IssueSeverity

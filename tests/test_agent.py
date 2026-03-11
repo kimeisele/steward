@@ -551,6 +551,126 @@ class TestHealthGateThreadSafety:
         assert agent.health_anomaly_detail == ""
 
 
+class TestHealthAnomalyEngineConstraint:
+    """When health anomaly fires, the engine caps remaining tool rounds."""
+
+    def test_anomaly_caps_rounds(self):
+        """Health anomaly mid-turn limits remaining rounds to ANOMALY_REMAINING_ROUNDS."""
+        from steward.loop.engine import ANOMALY_REMAINING_ROUNDS
+
+        class AnomalyGate:
+            """Fake HealthGate that triggers anomaly on first check."""
+            def __init__(self):
+                self._triggered = False
+
+            @property
+            def health_anomaly(self) -> bool:
+                if not self._triggered:
+                    self._triggered = True
+                    return True
+                return False
+
+            @property
+            def health_anomaly_detail(self) -> str:
+                return "test: health=0.1"
+
+            def clear_health_anomaly(self) -> None:
+                pass
+
+        # LLM that keeps requesting tool calls to consume rounds
+        from steward.tools.bash import BashTool
+        reg = ToolRegistry()
+        reg.register(BashTool())
+        tc = ToolUse(id="call_1", name="bash", parameters={"command": "echo hi"})
+
+        # Many tool-call responses + final text — more than ANOMALY_REMAINING_ROUNDS
+        responses = [
+            FakeResponse(content="", tool_calls=[tc]),  # round 0: triggers anomaly
+            FakeResponse(content="", tool_calls=[tc]),  # round 1
+            FakeResponse(content="", tool_calls=[tc]),  # round 2 — should be capped here
+            FakeResponse(content="", tool_calls=[tc]),  # round 3 — should NOT reach
+            FakeResponse(content="", tool_calls=[tc]),  # round 4 — should NOT reach
+            FakeResponse(content="done"),                # final text
+        ]
+        llm = FakeLLM(responses)
+        conv = Conversation()
+        loop = AgentLoop(
+            provider=llm,
+            registry=reg,
+            conversation=conv,
+            health_gate=AnomalyGate(),
+        )
+        result, events = run_loop(loop, "do work")
+        # Engine should have stopped after ANOMALY_REMAINING_ROUNDS (2) tool rounds
+        # So we expect 2-3 LLM calls, not 5+
+        assert len(llm.calls) <= ANOMALY_REMAINING_ROUNDS + 1
+
+    def test_no_anomaly_runs_normally(self):
+        """Without anomaly, engine runs full rounds."""
+
+        class HealthyGate:
+            @property
+            def health_anomaly(self) -> bool:
+                return False
+
+            @property
+            def health_anomaly_detail(self) -> str:
+                return ""
+
+            def clear_health_anomaly(self) -> None:
+                pass
+
+        # Simple: LLM returns text on first call
+        llm = FakeLLM([FakeResponse(content="all good")])
+        reg = ToolRegistry()
+        conv = Conversation()
+        loop = AgentLoop(
+            provider=llm,
+            registry=reg,
+            conversation=conv,
+            health_gate=HealthyGate(),
+        )
+        result, events = run_loop(loop, "test")
+        assert result == "all good"
+
+    def test_anomaly_error_message_when_capped(self):
+        """When rounds are capped by anomaly, error message reflects it."""
+        from steward.loop.engine import ANOMALY_REMAINING_ROUNDS
+
+        class PermanentAnomalyGate:
+            """Always reports anomaly — simulates persistent critical health."""
+            @property
+            def health_anomaly(self) -> bool:
+                return True
+
+            @property
+            def health_anomaly_detail(self) -> str:
+                return "persistent critical"
+
+            def clear_health_anomaly(self) -> None:
+                pass  # doesn't actually clear — stays anomalous
+
+        # LLM that always wants more tool calls
+        from steward.tools.bash import BashTool
+        reg = ToolRegistry()
+        reg.register(BashTool())
+        tc = ToolUse(id="call_1", name="bash", parameters={"command": "echo hi"})
+        responses = [FakeResponse(content="", tool_calls=[tc])] * 10
+        llm = FakeLLM(responses)
+        conv = Conversation()
+        loop = AgentLoop(
+            provider=llm,
+            registry=reg,
+            conversation=conv,
+            health_gate=PermanentAnomalyGate(),
+        )
+        result, events = run_loop(loop, "work")
+        # Should hit the capped limit and emit error
+        error_events = [e for e in events if e.type == EventType.ERROR]
+        assert len(error_events) >= 1
+        assert "anomaly" in error_events[0].content.lower() or "capped" in error_events[0].content.lower()
+
+
 class TestLLMRetry:
     """LLM call retries on transient failure."""
 

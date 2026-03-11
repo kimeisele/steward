@@ -281,7 +281,7 @@ class TestGuardedLLMFix:
         agent = self._make_agent(fake_llm)
         for _ in range(MAX_CONSECUTIVE_ROLLBACKS):
             agent._breaker.record_rollback()
-        result = asyncio.run(agent._autonomy.guarded_llm_fix("fix something"))
+        result = asyncio.run(agent._autonomy.pipeline.guarded_llm_fix("fix something"))
         assert result is None
         assert fake_llm.call_count == 0
 
@@ -290,7 +290,7 @@ class TestGuardedLLMFix:
         import asyncio
         agent = self._make_agent(fake_llm)
         with patch.object(agent._breaker, "count_failures", return_value=None):
-            asyncio.run(agent._autonomy.guarded_llm_fix("fix something"))
+            asyncio.run(agent._autonomy.pipeline.guarded_llm_fix("fix something"))
         # LLM was called (unguarded fallback)
         assert fake_llm.call_count >= 1
 
@@ -300,7 +300,7 @@ class TestGuardedLLMFix:
         agent = self._make_agent(fake_llm)
         with patch.object(agent._breaker, "count_failures", return_value=0):
             with patch.object(agent._breaker, "changed_files", return_value=set()):
-                asyncio.run(agent._autonomy.guarded_llm_fix("check something"))
+                asyncio.run(agent._autonomy.pipeline.guarded_llm_fix("check something"))
         assert agent._breaker._consecutive_rollbacks == 0
 
     def test_worse_failures_trigger_rollback(self, fake_llm):
@@ -324,7 +324,7 @@ class TestGuardedLLMFix:
             ]):
                 with patch.object(agent._breaker, "run_gates", return_value=all_pass):
                     with patch.object(agent._breaker, "rollback_files", return_value=["src/foo.py", "src/bar.py"]) as mock_rb:
-                        result = asyncio.run(agent._autonomy.guarded_llm_fix("fix the bug"))
+                        result = asyncio.run(agent._autonomy.pipeline.guarded_llm_fix("fix the bug"))
         assert result is None  # Fix rejected
         mock_rb.assert_called_once_with({"src/foo.py", "src/bar.py"})
         assert agent._breaker._consecutive_rollbacks == 1
@@ -354,7 +354,7 @@ class TestGuardedLLMFix:
             ]):
                 with patch.object(agent._breaker, "run_gates", return_value=gate_results):
                     with patch.object(agent._breaker, "rollback_files", return_value=["src/foo.py"]):
-                        result = asyncio.run(agent._autonomy.guarded_llm_fix("fix the bug"))
+                        result = asyncio.run(agent._autonomy.pipeline.guarded_llm_fix("fix the bug"))
         assert result is None
         # Only 1 count_failures call (baseline) — NO post-fix test run
         assert count_calls[0] == 1

@@ -17,6 +17,7 @@ import asyncio
 import pytest
 
 from steward.autonomy import parse_intent_from_title as _parse_intent_from_title
+from steward.fix_pipeline import problem_fingerprint as _problem_fingerprint
 from steward.intents import TaskIntent
 from tests.conftest import FakeLLM, NormalizedResponse, track_agent
 
@@ -296,38 +297,32 @@ class TestKarmaPhase:
 
 
 class TestProblemFingerprint:
-    """_problem_fingerprint() — granular context extraction."""
+    """problem_fingerprint() — granular context extraction."""
 
     def test_extracts_file_paths(self):
-        from steward.autonomy import problem_fingerprint as _problem_fingerprint
         fp = _problem_fingerprint("Fix the bug in src/api.py and tests/test_api.py")
         assert "src/api.py" in fp
         assert "tests/test_api.py" in fp
 
     def test_extracts_error_types(self):
-        from steward.autonomy import problem_fingerprint as _problem_fingerprint
         fp = _problem_fingerprint("Got TypeError when calling async function")
         assert "TypeError" in fp
 
     def test_extracts_workflow_name(self):
-        from steward.autonomy import problem_fingerprint as _problem_fingerprint
         fp = _problem_fingerprint("CI is failing: workflow 'test'. Check logs.")
         assert fp == "test"
 
     def test_falls_back_to_keywords(self):
-        from steward.autonomy import problem_fingerprint as _problem_fingerprint
         fp = _problem_fingerprint("Something unusual is happening with the database connection")
         assert len(fp) > 0
         # Should contain significant words, not generic ones
         assert "something" not in fp or "unusual" in fp
 
     def test_empty_returns_empty(self):
-        from steward.autonomy import problem_fingerprint as _problem_fingerprint
         assert _problem_fingerprint("") == ""
 
     def test_different_problems_different_fingerprints(self):
         """Two different problems produce different fingerprints."""
-        from steward.autonomy import problem_fingerprint as _problem_fingerprint
         fp1 = _problem_fingerprint("Fix TypeError in api.py")
         fp2 = _problem_fingerprint("Fix ImportError in utils.py")
         assert fp1 != fp2
@@ -345,7 +340,7 @@ class TestHebbianAutonomousLearning:
         agent = self._make_agent(fake_llm)
         trigger = "auto:CI_CHECK:api.py"
         initial = agent._synaptic.get_weight(trigger, "fix")
-        agent._autonomy._hebbian_learn(trigger, success=True)
+        agent._autonomy.pipeline.hebbian_learn(trigger, success=True)
         after = agent._synaptic.get_weight(trigger, "fix")
         assert after > initial
 
@@ -354,7 +349,7 @@ class TestHebbianAutonomousLearning:
         agent = self._make_agent(fake_llm)
         trigger = "auto:CI_CHECK:api.py"
         initial = agent._synaptic.get_weight(trigger, "fix")
-        agent._autonomy._hebbian_learn(trigger, success=False)
+        agent._autonomy.pipeline.hebbian_learn(trigger, success=False)
         after = agent._synaptic.get_weight(trigger, "fix")
         assert after < initial
 
@@ -363,7 +358,7 @@ class TestHebbianAutonomousLearning:
         agent = self._make_agent(fake_llm)
         # Fail repeatedly on api.py
         for _ in range(10):
-            agent._autonomy._hebbian_learn("auto:CI_CHECK:api.py", success=False)
+            agent._autonomy.pipeline.hebbian_learn("auto:CI_CHECK:api.py", success=False)
         api_weight = agent._synaptic.get_weight("auto:CI_CHECK:api.py", "fix")
         assert api_weight < 0.2
 
@@ -375,7 +370,7 @@ class TestHebbianAutonomousLearning:
         """Success updates per-file weights for changed files."""
         agent = self._make_agent(fake_llm)
         changed = {"src/api.py", "src/utils.py"}
-        agent._autonomy._hebbian_learn("auto:CI_CHECK:api.py", success=True, changed_files=changed)
+        agent._autonomy.pipeline.hebbian_learn("auto:CI_CHECK:api.py", success=True, changed_files=changed)
 
         # Both files should have increased file-level weights
         api_weight = agent._synaptic.get_weight("file:src/api.py", "auto_fix")
@@ -387,7 +382,7 @@ class TestHebbianAutonomousLearning:
         """Failure updates per-file weights for changed files."""
         agent = self._make_agent(fake_llm)
         changed = {"src/api.py", "src/utils.py"}
-        agent._autonomy._hebbian_learn("auto:CI_CHECK:api.py", success=False, changed_files=changed)
+        agent._autonomy.pipeline.hebbian_learn("auto:CI_CHECK:api.py", success=False, changed_files=changed)
 
         api_weight = agent._synaptic.get_weight("file:src/api.py", "auto_fix")
         utils_weight = agent._synaptic.get_weight("file:src/utils.py", "auto_fix")
@@ -398,7 +393,7 @@ class TestHebbianAutonomousLearning:
         """Non-Python files don't get Hebbian file-level weights."""
         agent = self._make_agent(fake_llm)
         changed = {"README.md", "config.json", "src/api.py"}
-        agent._autonomy._hebbian_learn("auto:CI_CHECK:api.py", success=True, changed_files=changed)
+        agent._autonomy.pipeline.hebbian_learn("auto:CI_CHECK:api.py", success=True, changed_files=changed)
 
         # Only .py file should have a weight
         api_weight = agent._synaptic.get_weight("file:src/api.py", "auto_fix")
@@ -416,7 +411,7 @@ class TestHebbianAutonomousLearning:
             GateResult(passed=False, gate="lint", detail="ruff: 3 violations"),
         ]
         trigger = "auto:CI_CHECK:api.py"
-        agent._autonomy._hebbian_learn(trigger, success=False, failed_gates=failed_gates)
+        agent._autonomy.pipeline.hebbian_learn(trigger, success=False, failed_gates=failed_gates)
 
         fix_weight = agent._synaptic.get_weight(trigger, "fix")
         assert fix_weight < 0.5
@@ -434,7 +429,7 @@ class TestHebbianAutonomousLearning:
             GateResult(passed=True, gate="security"),
         ]
         trigger = "auto:CI_CHECK:api.py"
-        agent._autonomy._hebbian_learn(trigger, success=True, gate_results=gate_results)
+        agent._autonomy.pipeline.hebbian_learn(trigger, success=True, gate_results=gate_results)
 
         lint_weight = agent._synaptic.get_weight(trigger, "gate:lint")
         assert lint_weight > 0.5
@@ -457,8 +452,8 @@ class TestHebbianAutonomousLearning:
         assert agent._synaptic.get_weight("auto:CI_CHECK:ci-tests", "fix") < 0.2
 
         # Mock CI check to return problem with matching workflow name
-        original_ci = agent._autonomy._execute_ci_check
-        agent._autonomy._execute_ci_check = lambda: "CI is failing: workflow 'ci-tests'. Fix it."
+        original_ci = agent._autonomy.handlers.execute_ci_check
+        agent._autonomy.handlers.execute_ci_check = lambda: "CI is failing: workflow 'ci-tests'. Fix it."
 
         try:
             result = asyncio.run(agent.run_autonomous())
@@ -473,7 +468,7 @@ class TestHebbianAutonomousLearning:
                 assert "CI_CHECK" in content
                 assert "confidence" in content
         finally:
-            agent._autonomy._execute_ci_check = original_ci
+            agent._autonomy.handlers.execute_ci_check = original_ci
 
     def test_different_workflow_not_blocked(self, fake_llm):
         """Failing on workflow 'ci-tests' doesn't block workflow 'lint-check'."""
@@ -493,8 +488,8 @@ class TestHebbianAutonomousLearning:
             agent._synaptic.update("auto:CI_CHECK:ci-tests", "fix", success=False)
 
         # BUT the CURRENT problem is for 'lint-check' — different fingerprint
-        original_ci = agent._autonomy._execute_ci_check
-        agent._autonomy._execute_ci_check = lambda: "CI is failing: workflow 'lint-check'. Fix it."
+        original_ci = agent._autonomy.handlers.execute_ci_check
+        agent._autonomy.handlers.execute_ci_check = lambda: "CI is failing: workflow 'lint-check'. Fix it."
 
         try:
             # 'lint-check' has default confidence 0.5 — should NOT be blocked
@@ -505,14 +500,14 @@ class TestHebbianAutonomousLearning:
             # Just verify the weight is not blocked
             assert weight >= 0.2
         finally:
-            agent._autonomy._execute_ci_check = original_ci
+            agent._autonomy.handlers.execute_ci_check = original_ci
 
     def test_repeated_failure_decays_specific_key(self, fake_llm):
         """Multiple failures drive SPECIFIC key toward 0, not global."""
         agent = self._make_agent(fake_llm)
         specific = "auto:SENSE_SCAN:provider:errors"
         for _ in range(10):
-            agent._autonomy._hebbian_learn(specific, success=False)
+            agent._autonomy.pipeline.hebbian_learn(specific, success=False)
 
         specific_weight = agent._synaptic.get_weight(specific, "fix")
         assert specific_weight < 0.2
@@ -526,11 +521,11 @@ class TestHebbianAutonomousLearning:
         agent = self._make_agent(fake_llm)
         trigger = "auto:CI_CHECK:api.py"
         for _ in range(5):
-            agent._autonomy._hebbian_learn(trigger, success=False)
+            agent._autonomy.pipeline.hebbian_learn(trigger, success=False)
         low = agent._synaptic.get_weight(trigger, "fix")
 
         for _ in range(3):
-            agent._autonomy._hebbian_learn(trigger, success=True)
+            agent._autonomy.pipeline.hebbian_learn(trigger, success=True)
         recovered = agent._synaptic.get_weight(trigger, "fix")
         assert recovered > low
 
@@ -552,14 +547,14 @@ class TestProactiveDispatch:
         mock_result.returncode = 0
         mock_result.stdout = "[]"
         with patch("subprocess.run", return_value=mock_result):
-            result = agent._autonomy._execute_update_deps()
+            result = agent._autonomy.handlers.execute_update_deps()
         assert result is None  # No outdated deps
         assert fake_llm.call_count == 0
 
     def test_dispatch_remove_dead_code_runs_without_llm(self, fake_llm):
         """REMOVE_DEAD_CODE handler is deterministic — 0 tokens."""
         agent = self._make_agent(fake_llm)
-        agent._autonomy._execute_remove_dead_code()
+        agent._autonomy.handlers.execute_remove_dead_code()
         assert fake_llm.call_count == 0
 
     def test_dispatch_routes_proactive_intents(self, fake_llm):
@@ -621,7 +616,7 @@ class TestCleanupBranch:
         """Cleanup handles missing branches gracefully."""
         agent = self._make_agent(fake_llm)
         # Cleaning a non-existent branch should not raise
-        agent._autonomy._cleanup_branch("steward/nonexistent/123")
+        agent._autonomy.pipeline.cleanup_branch("steward/nonexistent/123")
 
 
 class TestGuardedPrFix:
@@ -635,7 +630,7 @@ class TestGuardedPrFix:
         """Suspended circuit breaker skips proactive fix."""
         agent = self._make_agent(fake_llm)
         agent._breaker._suspended_until = float("inf")
-        result = asyncio.run(agent._autonomy.guarded_pr_fix("Update deps", intent_name="UPDATE_DEPS"))
+        result = asyncio.run(agent._autonomy.pipeline.guarded_pr_fix("Update deps", intent_name="UPDATE_DEPS"))
         assert result is None
         assert fake_llm.call_count == 0
 
@@ -652,7 +647,7 @@ class TestGuardedPrFix:
         original_branch = r.stdout.strip()
 
         asyncio.run(
-            agent._autonomy.guarded_pr_fix("Update deps", intent_name="UPDATE_DEPS")
+            agent._autonomy.pipeline.guarded_pr_fix("Update deps", intent_name="UPDATE_DEPS")
         )
 
         # Should have returned to original branch (main)
