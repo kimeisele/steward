@@ -93,6 +93,50 @@ def _compute_lcom4(class_node: ast.ClassDef) -> int:
     return components
 
 
+def _method_complexity(func_node: ast.FunctionDef | ast.AsyncFunctionDef) -> int:
+    """McCabe cyclomatic complexity of a single method.
+
+    Counts decision points: if, for, while, except, boolean operators, ternary.
+    Base complexity is 1 (the method itself is one path).
+    """
+    cc = 1
+    for node in ast.walk(func_node):
+        if isinstance(node, ast.If):
+            cc += 1
+        elif isinstance(node, ast.IfExp):
+            cc += 1
+        elif isinstance(node, (ast.For, ast.AsyncFor)):
+            cc += 1
+        elif isinstance(node, ast.While):
+            cc += 1
+        elif isinstance(node, ast.ExceptHandler):
+            cc += 1
+        elif isinstance(node, ast.BoolOp):
+            # `a and b` = 1 extra path, `a and b and c` = 2 extra paths
+            cc += len(node.values) - 1
+    return cc
+
+
+def _compute_wmc(class_node: ast.ClassDef) -> int:
+    """Compute WMC (Weighted Methods per Class — sum of cyclomatic complexities).
+
+    WMC = sum of McCabe CC for each non-dunder method.
+    Low WMC (< ~20) = simple class (router, data holder, facade).
+    High WMC (> ~20) = complex class with deep branching logic.
+
+    Used alongside LCOM4 to distinguish routers (high LCOM4, low WMC)
+    from real god-classes (high LCOM4, high WMC).
+    """
+    total = 0
+    for node in class_node.body:
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if node.name.startswith("__") and node.name.endswith("__"):
+            continue
+        total += _method_complexity(node)
+    return total
+
+
 class CodeSense:
     """CAKSU — perceives code structure through module analysis.
 
@@ -158,10 +202,12 @@ class CodeSense:
                         # LCOM4: only for classes with 3+ methods
                         lcom4 = _compute_lcom4(node)
                         if lcom4 > 1:
+                            wmc = _compute_wmc(node)
                             low_cohesion.append({
                                 "class": node.name,
                                 "file": rel_path,
                                 "lcom4": lcom4,
+                                "wmc": wmc,
                             })
                     elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
                         total_functions += 1

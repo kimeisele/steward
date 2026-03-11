@@ -654,10 +654,10 @@ class TestCheckTestIntegrity:
 
 
 class TestCheckCohesion:
-    """check_cohesion() — LCOM4 gate prevents god-class regression."""
+    """check_cohesion() — 2D gate: LCOM4 × WMC prevents god-class regression."""
 
     def test_cohesive_class_passes(self, tmp_path):
-        """Class with LCOM4=1 passes the gate."""
+        """Class with LCOM4=1 passes regardless of WMC."""
         (tmp_path / "clean.py").write_text(
             "class Foo:\n"
             "    def __init__(self): self.x = 1\n"
@@ -669,32 +669,52 @@ class TestCheckCohesion:
         result = breaker.check_cohesion({"clean.py"})
         assert result.passed
 
-    def test_god_class_fails(self, tmp_path):
-        """Class with LCOM4 > 4 fails the gate."""
-        # 5 disconnected method groups — each touches its own field
-        (tmp_path / "god.py").write_text(
-            "class GodClass:\n"
-            "    def a1(self): return self.x\n"
-            "    def a2(self): return self.x\n"
-            "    def a3(self): return self.x\n"
-            "    def b1(self): return self.y\n"
-            "    def b2(self): return self.y\n"
-            "    def b3(self): return self.y\n"
-            "    def c1(self): return self.z\n"
-            "    def c2(self): return self.z\n"
-            "    def c3(self): return self.z\n"
-            "    def d1(self): return self.w\n"
-            "    def d2(self): return self.w\n"
-            "    def d3(self): return self.w\n"
-            "    def e1(self): return self.v\n"
-            "    def e2(self): return self.v\n"
-            "    def e3(self): return self.v\n"
-        )
+    def test_god_class_high_lcom4_high_wmc_fails(self, tmp_path):
+        """LCOM4 > 4 AND WMC > 20 → real god-class → FAIL."""
+        # 5 disconnected groups, each with branching logic → high WMC
+        lines = ["class GodClass:"]
+        for group, attr in [("a", "x"), ("b", "y"), ("c", "z"), ("d", "w"), ("e", "v")]:
+            for i in range(1, 4):
+                lines.append(
+                    f"    def {group}{i}(self):\n"
+                    f"        if self.{attr} > 0:\n"
+                    f"            for item in self.{attr}_list:\n"
+                    f"                if item and self.{attr} > 1:\n"
+                    f"                    return item\n"
+                    f"        return self.{attr}"
+                )
+        (tmp_path / "god.py").write_text("\n".join(lines))
         breaker = CircuitBreaker(cwd=str(tmp_path))
         result = breaker.check_cohesion({"god.py"})
         assert not result.passed
         assert "GodClass" in result.detail
-        assert "LCOM4=5" in result.detail
+        assert "LCOM4=" in result.detail
+        assert "WMC=" in result.detail
+
+    def test_router_high_lcom4_low_wmc_passes(self, tmp_path):
+        """LCOM4 > 4 AND WMC ≤ 20 → router pattern → PASS (false positive avoided)."""
+        # 5 disconnected groups but simple methods (CC=1 each) → low WMC
+        (tmp_path / "router.py").write_text(
+            "class Router:\n"
+            "    def handle_a1(self): return self.x\n"
+            "    def handle_a2(self): return self.x\n"
+            "    def handle_a3(self): return self.x\n"
+            "    def handle_b1(self): return self.y\n"
+            "    def handle_b2(self): return self.y\n"
+            "    def handle_b3(self): return self.y\n"
+            "    def handle_c1(self): return self.z\n"
+            "    def handle_c2(self): return self.z\n"
+            "    def handle_c3(self): return self.z\n"
+            "    def handle_d1(self): return self.w\n"
+            "    def handle_d2(self): return self.w\n"
+            "    def handle_d3(self): return self.w\n"
+            "    def handle_e1(self): return self.v\n"
+            "    def handle_e2(self): return self.v\n"
+            "    def handle_e3(self): return self.v\n"
+        )
+        breaker = CircuitBreaker(cwd=str(tmp_path))
+        result = breaker.check_cohesion({"router.py"})
+        assert result.passed  # WMC=15 (all CC=1) → below threshold
 
     def test_test_files_skipped(self, tmp_path):
         """Test files are not checked for cohesion."""
