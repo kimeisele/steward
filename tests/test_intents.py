@@ -75,7 +75,7 @@ class TestDeterministicDispatch:
         from tests.conftest import track_agent
 
         agent = track_agent(StewardAgent(provider=fake_llm))
-        result = agent._execute_health_check()
+        result = agent._autonomy._execute_health_check()
         # Healthy agent → no problem → no LLM needed
         assert result is None
         assert fake_llm.call_count == 0  # Zero LLM tokens
@@ -86,7 +86,7 @@ class TestDeterministicDispatch:
         from tests.conftest import track_agent
 
         agent = track_agent(StewardAgent(provider=fake_llm))
-        result = agent._execute_sense_scan()
+        result = agent._autonomy._execute_sense_scan()
         assert result is None
         assert fake_llm.call_count == 0
 
@@ -96,7 +96,7 @@ class TestDeterministicDispatch:
         from tests.conftest import track_agent
 
         agent = track_agent(StewardAgent(provider=fake_llm))
-        result = agent._execute_ci_check()
+        result = agent._autonomy._execute_ci_check()
         assert result is None
         assert fake_llm.call_count == 0
 
@@ -106,20 +106,25 @@ class TestDeterministicDispatch:
         from tests.conftest import track_agent
 
         agent = track_agent(StewardAgent(provider=fake_llm))
-        result = agent._dispatch_intent("not_a_real_intent")
+        result = agent._autonomy.dispatch_intent("not_a_real_intent")
         assert result is None
         assert fake_llm.call_count == 0
 
     def test_dispatch_routes_correctly(self, fake_llm):
         """Each TaskIntent routes to its correct handler."""
+        from unittest.mock import MagicMock, patch
+
         from steward.agent import StewardAgent
         from tests.conftest import track_agent
 
         agent = track_agent(StewardAgent(provider=fake_llm))
 
-        # All known intents should dispatch without error
-        for intent in TaskIntent:
-            result = agent._dispatch_intent(intent)
-            # Healthy test environment → no problems → all return None
-            assert result is None, f"Intent {intent.name} unexpectedly returned: {result}"
+        # Mock subprocess to avoid real pip call in UPDATE_DEPS
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "[]"
+        with patch("subprocess.run", return_value=mock_result):
+            for intent in TaskIntent:
+                result = agent._autonomy.dispatch_intent(intent)
+                assert result is None, f"Intent {intent.name} unexpectedly returned: {result}"
         assert fake_llm.call_count == 0

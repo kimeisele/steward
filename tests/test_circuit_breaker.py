@@ -281,7 +281,7 @@ class TestGuardedLLMFix:
         agent = self._make_agent(fake_llm)
         for _ in range(MAX_CONSECUTIVE_ROLLBACKS):
             agent._breaker.record_rollback()
-        result = asyncio.run(agent._guarded_llm_fix("fix something"))
+        result = asyncio.run(agent._autonomy.guarded_llm_fix("fix something"))
         assert result is None
         assert fake_llm.call_count == 0
 
@@ -290,7 +290,7 @@ class TestGuardedLLMFix:
         import asyncio
         agent = self._make_agent(fake_llm)
         with patch.object(agent._breaker, "count_failures", return_value=None):
-            asyncio.run(agent._guarded_llm_fix("fix something"))
+            asyncio.run(agent._autonomy.guarded_llm_fix("fix something"))
         # LLM was called (unguarded fallback)
         assert fake_llm.call_count >= 1
 
@@ -300,7 +300,7 @@ class TestGuardedLLMFix:
         agent = self._make_agent(fake_llm)
         with patch.object(agent._breaker, "count_failures", return_value=0):
             with patch.object(agent._breaker, "changed_files", return_value=set()):
-                asyncio.run(agent._guarded_llm_fix("check something"))
+                asyncio.run(agent._autonomy.guarded_llm_fix("check something"))
         assert agent._breaker._consecutive_rollbacks == 0
 
     def test_worse_failures_trigger_rollback(self, fake_llm):
@@ -324,7 +324,7 @@ class TestGuardedLLMFix:
             ]):
                 with patch.object(agent._breaker, "run_gates", return_value=all_pass):
                     with patch.object(agent._breaker, "rollback_files", return_value=["src/foo.py", "src/bar.py"]) as mock_rb:
-                        result = asyncio.run(agent._guarded_llm_fix("fix the bug"))
+                        result = asyncio.run(agent._autonomy.guarded_llm_fix("fix the bug"))
         assert result is None  # Fix rejected
         mock_rb.assert_called_once_with({"src/foo.py", "src/bar.py"})
         assert agent._breaker._consecutive_rollbacks == 1
@@ -354,7 +354,7 @@ class TestGuardedLLMFix:
             ]):
                 with patch.object(agent._breaker, "run_gates", return_value=gate_results):
                     with patch.object(agent._breaker, "rollback_files", return_value=["src/foo.py"]):
-                        result = asyncio.run(agent._guarded_llm_fix("fix the bug"))
+                        result = asyncio.run(agent._autonomy.guarded_llm_fix("fix the bug"))
         assert result is None
         # Only 1 count_failures call (baseline) — NO post-fix test run
         assert count_calls[0] == 1
@@ -653,6 +653,94 @@ class TestCheckTestIntegrity:
         assert "assertions removed" in result.detail.lower()
 
 
+class TestCheckCohesion:
+    """check_cohesion() — LCOM4 gate prevents god-class regression."""
+
+    def test_cohesive_class_passes(self, tmp_path):
+        """Class with LCOM4=1 passes the gate."""
+        (tmp_path / "clean.py").write_text(
+            "class Foo:\n"
+            "    def __init__(self): self.x = 1\n"
+            "    def a(self): return self.x\n"
+            "    def b(self): return self.x + 1\n"
+            "    def c(self): return self.x * 2\n"
+        )
+        breaker = CircuitBreaker(cwd=str(tmp_path))
+        result = breaker.check_cohesion({"clean.py"})
+        assert result.passed
+
+    def test_god_class_fails(self, tmp_path):
+        """Class with LCOM4 > 4 fails the gate."""
+        # 5 disconnected method groups — each touches its own field
+        (tmp_path / "god.py").write_text(
+            "class GodClass:\n"
+            "    def a1(self): return self.x\n"
+            "    def a2(self): return self.x\n"
+            "    def a3(self): return self.x\n"
+            "    def b1(self): return self.y\n"
+            "    def b2(self): return self.y\n"
+            "    def b3(self): return self.y\n"
+            "    def c1(self): return self.z\n"
+            "    def c2(self): return self.z\n"
+            "    def c3(self): return self.z\n"
+            "    def d1(self): return self.w\n"
+            "    def d2(self): return self.w\n"
+            "    def d3(self): return self.w\n"
+            "    def e1(self): return self.v\n"
+            "    def e2(self): return self.v\n"
+            "    def e3(self): return self.v\n"
+        )
+        breaker = CircuitBreaker(cwd=str(tmp_path))
+        result = breaker.check_cohesion({"god.py"})
+        assert not result.passed
+        assert "GodClass" in result.detail
+        assert "LCOM4=5" in result.detail
+
+    def test_test_files_skipped(self, tmp_path):
+        """Test files are not checked for cohesion."""
+        (tmp_path / "test_god.py").write_text(
+            "class TestGod:\n"
+            "    def a(self): return self.x\n"
+            "    def b(self): return self.y\n"
+            "    def c(self): return self.z\n"
+            "    def d(self): return self.w\n"
+            "    def e(self): return self.v\n"
+        )
+        breaker = CircuitBreaker(cwd=str(tmp_path))
+        result = breaker.check_cohesion({"test_god.py"})
+        assert result.passed
+
+    def test_non_python_files_skipped(self, tmp_path):
+        """Non-Python files are skipped."""
+        breaker = CircuitBreaker(cwd=str(tmp_path))
+        result = breaker.check_cohesion({"README.md"})
+        assert result.passed
+
+    def test_deleted_file_does_not_crash(self, tmp_path):
+        """Deleted files don't crash the gate."""
+        breaker = CircuitBreaker(cwd=str(tmp_path))
+        result = breaker.check_cohesion({"nonexistent.py"})
+        assert result.passed
+
+    def test_syntax_error_file_does_not_crash(self, tmp_path):
+        """Files with syntax errors are skipped gracefully."""
+        (tmp_path / "broken.py").write_text("class Broken(\n  def")
+        breaker = CircuitBreaker(cwd=str(tmp_path))
+        result = breaker.check_cohesion({"broken.py"})
+        assert result.passed
+
+    def test_small_class_passes(self, tmp_path):
+        """Classes with < 3 methods always pass (trivially cohesive)."""
+        (tmp_path / "tiny.py").write_text(
+            "class Tiny:\n"
+            "    def a(self): return self.x\n"
+            "    def b(self): return self.y\n"
+        )
+        breaker = CircuitBreaker(cwd=str(tmp_path))
+        result = breaker.check_cohesion({"tiny.py"})
+        assert result.passed
+
+
 class TestCheckApiSurface:
     """check_api_surface() — prevent deletion of public interfaces."""
 
@@ -837,7 +925,7 @@ class TestRunGates:
     def test_all_pass(self, tmp_path):
         breaker = CircuitBreaker(cwd=str(tmp_path))
         results = breaker.run_gates({"README.md"})
-        assert len(results) == 5
+        assert len(results) == 6
         assert all(r.passed for r in results)
 
     def test_returns_all_results_even_on_failure(self, tmp_path):
@@ -850,12 +938,13 @@ class TestRunGates:
         assert not blast[0].passed
 
     def test_all_six_gates_present(self, tmp_path):
-        """All 5 gate types are represented in results."""
+        """All 6 gate types are represented in results."""
         breaker = CircuitBreaker(cwd=str(tmp_path))
         results = breaker.run_gates({"code.py"})
         gate_names = {r.gate for r in results}
         assert "lint" in gate_names
         assert "security" in gate_names
         assert "blast_radius" in gate_names
+        assert "cohesion" in gate_names
         assert "test_integrity" in gate_names
         assert "api_surface" in gate_names
