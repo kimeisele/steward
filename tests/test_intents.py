@@ -83,7 +83,7 @@ class TestDeterministicDispatch:
         from tests.conftest import track_agent
 
         agent = track_agent(StewardAgent(provider=fake_llm))
-        result = agent._autonomy._execute_health_check()
+        result = agent._autonomy.handlers.execute_health_check()
         # Healthy agent → no problem → no LLM needed
         assert result is None
         assert fake_llm.call_count == 0  # Zero LLM tokens
@@ -94,7 +94,7 @@ class TestDeterministicDispatch:
         from tests.conftest import track_agent
 
         agent = track_agent(StewardAgent(provider=fake_llm))
-        result = agent._autonomy._execute_sense_scan()
+        result = agent._autonomy.handlers.execute_sense_scan()
         assert result is None
         assert fake_llm.call_count == 0
 
@@ -104,7 +104,7 @@ class TestDeterministicDispatch:
         from tests.conftest import track_agent
 
         agent = track_agent(StewardAgent(provider=fake_llm))
-        result = agent._autonomy._execute_ci_check()
+        result = agent._autonomy.handlers.execute_ci_check()
         assert result is None
         assert fake_llm.call_count == 0
 
@@ -114,7 +114,7 @@ class TestDeterministicDispatch:
         from tests.conftest import track_agent
 
         agent = track_agent(StewardAgent(provider=fake_llm))
-        result = agent._autonomy._execute_federation_health()
+        result = agent._autonomy.handlers.execute_federation_health()
         assert result is None
         assert fake_llm.call_count == 0
 
@@ -136,7 +136,7 @@ class TestDeterministicDispatch:
             trust=0.0,
             status=PeerStatus.DEAD,
         )
-        result = agent._autonomy._execute_federation_health()
+        result = agent._autonomy.handlers.execute_federation_health()
         assert result is not None
         assert "dead peer" in result.lower()
         assert "dead-agent" in result
@@ -154,7 +154,7 @@ class TestDeterministicDispatch:
         # Queue many outbound events to create backlog
         for i in range(15):
             federation.emit("test", {"i": i})
-        result = agent._autonomy._execute_federation_health()
+        result = agent._autonomy.handlers.execute_federation_health()
         assert result is not None
         assert "outbox backlog" in result.lower()
         assert fake_llm.call_count == 0
