@@ -116,28 +116,23 @@ class FederationBridge:
     _inbound_count: int = field(default=0, init=False)
     _outbound_count: int = field(default=0, init=False)
     _errors: int = field(default=0, init=False)
+    _op_dispatch: dict = field(default=None, init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        self._op_dispatch = {
+            OP_HEARTBEAT: self._handle_heartbeat,
+            OP_CLAIM_SLOT: self._handle_claim,
+            OP_RELEASE_SLOT: self._handle_release,
+        }
 
     def ingest(self, operation: str, payload: dict) -> bool:
-        """Route a single inbound message to the appropriate service.
-
-        Args:
-            operation: Message type (OP_HEARTBEAT, OP_CLAIM_SLOT, etc.)
-            payload: Message data
-
-        Returns:
-            True if handled, False if unknown/unroutable.
-        """
+        """Route inbound message via O(1) dispatch table."""
         self._inbound_count += 1
-
-        if operation == OP_HEARTBEAT:
-            return self._handle_heartbeat(payload)
-        if operation == OP_CLAIM_SLOT:
-            return self._handle_claim(payload)
-        if operation == OP_RELEASE_SLOT:
-            return self._handle_release(payload)
-
-        logger.debug("BRIDGE: unknown operation '%s'", operation)
-        return False
+        handler = self._op_dispatch.get(operation)
+        if handler is None:
+            logger.debug("BRIDGE: unknown operation '%s'", operation)
+            return False
+        return handler(payload)
 
     def process_inbound(self, transport: FederationTransport) -> int:
         """Read all pending messages from transport and route them.
