@@ -43,6 +43,7 @@ from steward.services import (
     SVC_MEMORY,
     SVC_NARASIMHA,
     SVC_NORTH_STAR,
+    SVC_MARKETPLACE,
     SVC_REAPER,
     SVC_SAFETY_GUARD,
     SVC_SYNAPSE_STORE,
@@ -706,6 +707,12 @@ class StewardAgent(GADBase):
                             c.agent_id, c.old_status, c.new_status,
                             c.old_trust, c.new_trust,
                         )
+                # Marketplace: purge expired slot claims
+                marketplace = ServiceRegistry.get(SVC_MARKETPLACE)
+                if marketplace is not None:
+                    purged = marketplace.purge_expired()
+                    if purged:
+                        logger.info("MARKET: purged %d expired claims", purged)
             elif phase == Phase.KARMA:
                 self._autonomy.phase_karma()
             elif phase == Phase.MOKSHA:
@@ -715,6 +722,10 @@ class StewardAgent(GADBase):
                 if reaper is not None:
                     from pathlib import Path as _P
                     reaper.save(_P(self._cwd) / ".steward" / "peers.json")
+                # Persist marketplace state (slot claims)
+                marketplace = ServiceRegistry.get(SVC_MARKETPLACE)
+                if marketplace is not None:
+                    marketplace.save(_P(self._cwd) / ".steward" / "marketplace.json")
         except Exception as e:
             logger.debug("Cetana phase %s error (non-fatal): %s", phase.name, e)
 
