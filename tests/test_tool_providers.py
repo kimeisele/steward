@@ -25,16 +25,16 @@ from vibe_core.tools.tool_protocol import Tool
 
 
 class TestBuiltinToolProvider:
-    """BuiltinToolProvider returns the core 10 tools."""
+    """BuiltinToolProvider returns the core tool set."""
 
     def test_name(self):
         provider = BuiltinToolProvider()
         assert provider.name == "builtin"
 
-    def test_provides_10_tools(self, tmp_path):
+    def test_provides_core_tools(self, tmp_path):
         provider = BuiltinToolProvider()
         tools = provider.provide(str(tmp_path))
-        assert len(tools) == 10
+        assert len(tools) == 12
 
     def test_tool_names(self, tmp_path):
         provider = BuiltinToolProvider()
@@ -46,6 +46,8 @@ class TestBuiltinToolProvider:
         assert "glob" in names
         assert "edit_file" in names
         assert "grep" in names
+        assert "git" in names
+        assert "query_codebase" in names
 
     def test_implements_protocol(self):
         provider = BuiltinToolProvider()
@@ -151,7 +153,7 @@ class TestCollectTools:
                 raise RuntimeError("boom")
 
         tools = collect_tools([BrokenProvider(), BuiltinToolProvider()], str(tmp_path))
-        assert len(tools) == 10  # builtin still works
+        assert len(tools) == 12  # builtin still works
 
 
 class TestAgentToolProviders:

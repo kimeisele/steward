@@ -36,12 +36,15 @@ class BuiltinToolProvider:
         return "builtin"
 
     def provide(self, cwd: str) -> list[Tool]:
+        from steward.senses.gh import get_gh_client
         from steward.tools.agent_internet import AgentInternetTool
         from steward.tools.bash import BashTool
         from steward.tools.edit import EditTool
+        from steward.tools.git import GitTool
         from steward.tools.glob import GlobTool
         from steward.tools.grep import GrepTool
         from steward.tools.http import HttpTool
+        from steward.tools.knowledge import KnowledgeGraphTool
         from steward.tools.read_file import ReadFileTool
         from steward.tools.sub_agent import SubAgentTool
         from steward.tools.web_search import WebSearchTool
@@ -54,10 +57,12 @@ class BuiltinToolProvider:
             GlobTool(cwd=cwd),
             EditTool(),
             GrepTool(cwd=cwd),
+            GitTool(cwd=cwd, gh_client=get_gh_client()),
             HttpTool(),
             WebSearchTool(),
             AgentInternetTool(),
             SubAgentTool(cwd=cwd),
+            KnowledgeGraphTool(),
         ]
 
 

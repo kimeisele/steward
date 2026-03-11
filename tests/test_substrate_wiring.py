@@ -792,7 +792,7 @@ class TestVBRCognition:
 
 
 class TestMahaLLMWiring:
-    """MahaLLMKernel must be wired as SVC_MAHA_LLM at boot."""
+    """MahaLLMKernel — DEFERRED (not booted), but SVC constant and lib still work."""
 
     def test_svc_maha_llm_exists(self):
         """SVC_MAHA_LLM key defined in services module."""
@@ -800,15 +800,13 @@ class TestMahaLLMWiring:
 
         assert SVC_MAHA_LLM is not None
 
-    def test_boot_wires_maha_llm(self):
-        """boot() registers MahaLLMKernel in ServiceRegistry."""
-        from vibe_core.mahamantra.substrate.encoding.maha_llm_kernel import MahaLLMKernel
-
+    def test_maha_llm_not_registered_at_boot(self):
+        """MahaLLM is deferred — not registered during boot()."""
         from steward.services import SVC_MAHA_LLM
 
         boot()
         kernel = ServiceRegistry.get(SVC_MAHA_LLM)
-        assert isinstance(kernel, MahaLLMKernel)
+        assert kernel is None  # Deferred — not in boot()
 
     def test_maha_llm_resonate_deterministic(self):
         """Same input always produces same resonance (guardian + words)."""

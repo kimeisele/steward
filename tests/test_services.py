@@ -236,31 +236,13 @@ class TestEphemeralStorageWiring:
         assert k1 == k2  # Same inputs → same key
 
 
-class TestDiamondProtocolWiring:
-    """Test NagaDiamondProtocol (SVC_DIAMOND) wiring."""
+class TestDiamondProtocolDeferred:
+    """Diamond is DEFERRED — not booted, but SVC constant exists."""
 
-    def test_boot_registers_diamond(self):
+    def test_diamond_not_registered_at_boot(self):
         boot(tools=[_DummyTool()])
         diamond = ServiceRegistry.get(SVC_DIAMOND)
-        assert diamond is not None
-
-    def test_diamond_is_naga_protocol(self):
-        from vibe_core.naga.diamond import NagaDiamondProtocol
-
-        boot(tools=[_DummyTool()])
-        diamond = ServiceRegistry.get(SVC_DIAMOND)
-        assert isinstance(diamond, NagaDiamondProtocol)
-
-    def test_diamond_auto_heal_disabled(self):
-        """Auto-heal must be OFF by default (safety)."""
-        boot(tools=[_DummyTool()])
-        diamond = ServiceRegistry.get(SVC_DIAMOND)
-        assert diamond._auto_heal is False
-
-    def test_diamond_timeout_configured(self):
-        boot(tools=[_DummyTool()])
-        diamond = ServiceRegistry.get(SVC_DIAMOND)
-        assert diamond._timeout == 30
+        assert diamond is None  # Deferred — not in boot()
 
 
 class TestVajraWiringChecks:
@@ -274,12 +256,13 @@ class TestVajraWiringChecks:
         names = [i.checker_name for i in report.issues]
         assert "vajra_cache_wired" not in names  # No issue = pass
 
-    def test_integrity_checks_diamond_wired(self):
+    def test_integrity_checks_diamond_deferred(self):
+        """Diamond integrity check is deferred — not registered."""
         boot(tools=[_DummyTool()])
         checker = ServiceRegistry.get(SVC_INTEGRITY)
         report = checker.check_all()
         names = [i.checker_name for i in report.issues]
-        assert "vajra_diamond_wired" not in names
+        assert "vajra_diamond_wired" not in names  # Check doesn't exist anymore
 
     def test_integrity_checks_attention_wired(self):
         boot(tools=[_DummyTool()])

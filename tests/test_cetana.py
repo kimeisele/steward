@@ -17,6 +17,7 @@ from steward.cetana import (
     SADHANA,
     Cetana,
     CetanaBeat,
+    Phase,
     _ANOMALY_THRESHOLD,
 )
 
@@ -237,6 +238,69 @@ class TestCetanaAnomalyDetection:
         cetana.stop()
         assert cetana.last_beat is not None
         assert cetana.last_beat.anomaly is True
+
+
+class TestCetanaPhaseRotation:
+    """4-phase MURALI cycle — GENESIS → DHARMA → KARMA → MOKSHA → repeat."""
+
+    def test_phases_rotate_in_order(self):
+        """Each beat advances to the next phase."""
+        phases_seen = []
+        cetana = Cetana(
+            vedana_source=lambda: _make_vedana(0.9),
+            on_phase=lambda phase, beat: phases_seen.append(phase),
+            frequency_hz=20.0,
+        )
+        cetana.start()
+        _poll(lambda: len(phases_seen) >= 8)
+        cetana.stop()
+        # First 4 should be the full cycle
+        assert phases_seen[:4] == [Phase.GENESIS, Phase.DHARMA, Phase.KARMA, Phase.MOKSHA]
+        # Next 4 repeat
+        assert phases_seen[4:8] == [Phase.GENESIS, Phase.DHARMA, Phase.KARMA, Phase.MOKSHA]
+
+    def test_beat_carries_phase(self):
+        """CetanaBeat.phase matches the phase when it was produced."""
+        beats = []
+        cetana = Cetana(
+            vedana_source=lambda: _make_vedana(0.9),
+            on_phase=lambda phase, beat: beats.append(beat),
+            frequency_hz=20.0,
+        )
+        cetana.start()
+        _poll(lambda: len(beats) >= 4)
+        cetana.stop()
+        assert beats[0].phase == Phase.GENESIS
+        assert beats[1].phase == Phase.DHARMA
+        assert beats[2].phase == Phase.KARMA
+        assert beats[3].phase == Phase.MOKSHA
+
+    def test_phase_in_stats(self):
+        """stats() reports current phase name."""
+        cetana = Cetana(
+            vedana_source=lambda: _make_vedana(0.9),
+            frequency_hz=20.0,
+        )
+        # Before start — default is GENESIS
+        assert cetana.stats()["phase"] == "GENESIS"
+        cetana.start()
+        _poll(lambda: cetana.total_beats >= 1)
+        cetana.stop()
+        # After at least one beat, phase has advanced
+        assert cetana.stats()["phase"] in {"GENESIS", "DHARMA", "KARMA", "MOKSHA"}
+
+    def test_no_on_phase_callback_still_rotates(self):
+        """Phase rotation works even without on_phase callback."""
+        cetana = Cetana(
+            vedana_source=lambda: _make_vedana(0.9),
+            on_phase=None,
+            frequency_hz=20.0,
+        )
+        cetana.start()
+        _poll(lambda: cetana.total_beats >= 4)
+        cetana.stop()
+        # After 4 beats starting from GENESIS, we're back to GENESIS
+        assert cetana.stats()["phase"] == "GENESIS"
 
 
 class TestCetanaObservability:

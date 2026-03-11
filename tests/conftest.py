@@ -74,8 +74,12 @@ def pytest_collection_modifyitems(config, items):
 
 
 @pytest.fixture(autouse=True)
-def _reset_singletons(monkeypatch):
+def _reset_singletons(monkeypatch, tmp_path):
     """Reset ServiceRegistry + prevent real API calls between tests.
+
+    Also redirects Path.cwd() to tmp_path so StewardAgent doesn't scan
+    the real project directory (eliminates ~500ms per agent construction
+    from sense filesystem scans).
 
     Without this, test outcomes depend on ordering (VenuOrchestrator
     accumulates ticks, ServiceRegistry leaks across tests).
@@ -85,6 +89,10 @@ def _reset_singletons(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
     monkeypatch.delenv("MISTRAL_API_KEY", raising=False)
+
+    # Redirect Path.cwd() so agents don't scan the real project.
+    # Tests that need real cwd can pass cwd= explicitly.
+    monkeypatch.setattr(Path, "cwd", staticmethod(lambda: tmp_path))
 
     yield
 
@@ -187,3 +195,37 @@ def fake_llm_factory():
             llm = fake_llm_factory([FakeResponse(content="done")])
     """
     return FakeLLM
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# AGENT CLEANUP — stop Cetana threads, prevent accumulation
+# ═══════════════════════════════════════════════════════════════════════
+
+_active_agents: list = []
+
+
+@pytest.fixture(autouse=True)
+def _cleanup_agents():
+    """Stop Cetana daemon threads after each test.
+
+    Without this, 79 daemon threads accumulate during the test run,
+    each polling vedana at 0.5Hz. Wastes CPU and causes flaky timing.
+    """
+    _active_agents.clear()
+    yield
+    for agent in _active_agents:
+        try:
+            agent.close()
+        except Exception:
+            pass
+    _active_agents.clear()
+
+
+def track_agent(agent: object) -> object:
+    """Register an agent for automatic cleanup after the test.
+
+    Usage in tests:
+        agent = track_agent(StewardAgent(provider=llm))
+    """
+    _active_agents.append(agent)
+    return agent
