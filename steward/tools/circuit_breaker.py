@@ -504,6 +504,50 @@ class CircuitBreaker:
 
         return GateResult(passed=True, gate="blast_radius")
 
+    def check_cohesion(self, changed_files: set[str]) -> GateResult:
+        """Cohesion gate — prevent god-class regression via LCOM4.
+
+        Parses changed Python source files with AST, computes LCOM4 for
+        every class, and FAILS if any class exceeds the threshold.
+        This is the "stay pristine" gate — once you fix a god-class,
+        the gate prevents it from ever coming back.
+        """
+        import ast
+
+        from steward.senses.code_sense import _compute_lcom4
+
+        max_lcom4 = 4  # Threshold: LCOM4 > 4 means disconnected responsibilities
+
+        py_files = [f for f in changed_files if f.endswith(".py") and not _is_test_file(f)]
+        if not py_files:
+            return GateResult(passed=True, gate="cohesion")
+
+        violations = []
+        for filepath in py_files:
+            full_path = Path(self.cwd) / filepath
+            if not full_path.exists():
+                continue
+            try:
+                source = full_path.read_text()
+                tree = ast.parse(source)
+            except (SyntaxError, OSError):
+                continue
+
+            for node in tree.body:
+                if not isinstance(node, ast.ClassDef):
+                    continue
+                score = _compute_lcom4(node)
+                if score > max_lcom4:
+                    violations.append(f"{node.name} in {filepath} (LCOM4={score})")
+
+        if violations:
+            return GateResult(
+                passed=False,
+                gate="cohesion",
+                detail=f"God-class regression: {'; '.join(violations)}",
+            )
+        return GateResult(passed=True, gate="cohesion")
+
     def check_test_integrity(self, changed_files: set[str]) -> GateResult:
         """Test integrity gate — prevent Goodhart test gaming via AST.
 
@@ -690,6 +734,7 @@ class CircuitBreaker:
             self.check_lint(changed_files),
             self.check_security(changed_files),
             self.check_blast_radius(changed_files),
+            self.check_cohesion(changed_files),
             self.check_test_integrity(changed_files),
             self.check_api_surface(changed_files),
         ]
