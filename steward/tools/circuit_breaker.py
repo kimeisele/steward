@@ -505,18 +505,23 @@ class CircuitBreaker:
         return GateResult(passed=True, gate="blast_radius")
 
     def check_cohesion(self, changed_files: set[str]) -> GateResult:
-        """Cohesion gate — prevent god-class regression via LCOM4.
+        """Cohesion gate — 2D matrix: LCOM4 × WMC.
 
-        Parses changed Python source files with AST, computes LCOM4 for
-        every class, and FAILS if any class exceeds the threshold.
-        This is the "stay pristine" gate — once you fix a god-class,
-        the gate prevents it from ever coming back.
+        LCOM4 alone produces false positives on routers and facades
+        (high LCOM4 but low complexity). The second dimension — WMC
+        (Weighted Methods per Class, sum of cyclomatic complexities) —
+        distinguishes simple routers from real god-classes:
+
+            LCOM4 ≤ 4            → PASS (cohesive enough)
+            LCOM4 > 4, WMC ≤ 20 → PASS (router/facade — false positive)
+            LCOM4 > 4, WMC > 20 → FAIL (real god-class)
         """
         import ast
 
-        from steward.senses.code_sense import _compute_lcom4
+        from steward.senses.code_sense import _compute_lcom4, _compute_wmc
 
-        max_lcom4 = 4  # Threshold: LCOM4 > 4 means disconnected responsibilities
+        max_lcom4 = 4   # Structural threshold: disconnected method groups
+        max_wmc = 20     # Complexity threshold: branching density
 
         py_files = [f for f in changed_files if f.endswith(".py") and not _is_test_file(f)]
         if not py_files:
@@ -536,9 +541,13 @@ class CircuitBreaker:
             for node in tree.body:
                 if not isinstance(node, ast.ClassDef):
                     continue
-                score = _compute_lcom4(node)
-                if score > max_lcom4:
-                    violations.append(f"{node.name} in {filepath} (LCOM4={score})")
+                lcom4 = _compute_lcom4(node)
+                if lcom4 > max_lcom4:
+                    wmc = _compute_wmc(node)
+                    if wmc > max_wmc:
+                        violations.append(
+                            f"{node.name} in {filepath} (LCOM4={lcom4}, WMC={wmc})"
+                        )
 
         if violations:
             return GateResult(
