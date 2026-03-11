@@ -117,6 +117,10 @@ class SVC_OUROBOROS:
     """OuroborosLoopOrchestrator — self-healing pipeline (detect → verify → heal)."""
 
 
+class SVC_REAPER:
+    """HeartbeatReaper — network garbage collection for federation peers."""
+
+
 class SVC_NORTH_STAR:
     """North Star — infrastructure-level goal seed (not LLM prompt).
 
@@ -294,6 +298,14 @@ def boot(
 
     # 23. Ouroboros — DEFERRED (registered but not consumed by agent loop)
     # Code lives in vibe_core.ouroboros.loop_orchestrator
+
+    # 25. HeartbeatReaper (federation peer liveness + trust degradation)
+    from steward.reaper import HeartbeatReaper
+
+    reaper = HeartbeatReaper()
+    peers_path = cwd_path / ".steward" / "peers.json"
+    reaper.load(peers_path)
+    ServiceRegistry.register(SVC_REAPER, reaper)
 
     # 24. IntegrityChecker — boot-time validation (catch lazy-load failures early)
     from vibe_core.protocols.integrity import IntegrityChecker, IssueSeverity
