@@ -117,6 +117,10 @@ class SVC_OUROBOROS:
     """OuroborosLoopOrchestrator — self-healing pipeline (detect → verify → heal)."""
 
 
+class SVC_MARKETPLACE:
+    """Marketplace — slot conflict resolution for federation peers."""
+
+
 class SVC_REAPER:
     """HeartbeatReaper — network garbage collection for federation peers."""
 
@@ -306,6 +310,14 @@ def boot(
     peers_path = cwd_path / ".steward" / "peers.json"
     reaper.load(peers_path)
     ServiceRegistry.register(SVC_REAPER, reaper)
+
+    # 26. Marketplace (slot conflict resolution for federation peers)
+    from steward.marketplace import Marketplace
+
+    marketplace = Marketplace()
+    market_path = cwd_path / ".steward" / "marketplace.json"
+    marketplace.load(market_path)
+    ServiceRegistry.register(SVC_MARKETPLACE, marketplace)
 
     # 24. IntegrityChecker — boot-time validation (catch lazy-load failures early)
     from vibe_core.protocols.integrity import IntegrityChecker, IssueSeverity
