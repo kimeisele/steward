@@ -121,6 +121,10 @@ class SVC_MARKETPLACE:
     """Marketplace — slot conflict resolution for federation peers."""
 
 
+class SVC_FEDERATION:
+    """FederationBridge — cross-agent message routing."""
+
+
 class SVC_REAPER:
     """HeartbeatReaper — network garbage collection for federation peers."""
 
@@ -318,6 +322,12 @@ def boot(
     market_path = cwd_path / ".steward" / "marketplace.json"
     marketplace.load(market_path)
     ServiceRegistry.register(SVC_MARKETPLACE, marketplace)
+
+    # 27. FederationBridge (cross-agent message routing → Reaper + Marketplace)
+    from steward.federation import FederationBridge
+
+    federation = FederationBridge(reaper=reaper, marketplace=marketplace)
+    ServiceRegistry.register(SVC_FEDERATION, federation)
 
     # 24. IntegrityChecker — boot-time validation (catch lazy-load failures early)
     from vibe_core.protocols.integrity import IntegrityChecker, IssueSeverity
