@@ -23,11 +23,25 @@ class TaskIntent(enum.Enum):
 
     Each value maps to a SankalpaIntent.intent_type string.
     Each intent dispatches to a hardcoded Python method — no LLM.
+
+    Two categories:
+    - Reactive: fix problems on current branch (HEALTH_CHECK, CI_CHECK)
+    - Proactive: improvements via PR (UPDATE_DEPS, REMOVE_DEAD_CODE)
     """
 
+    # Reactive — fix problems directly
     HEALTH_CHECK = "health_check"
     SENSE_SCAN = "sense_scan"
     CI_CHECK = "ci_check"
+
+    # Proactive — improvements via feature branch + PR
+    UPDATE_DEPS = "update_deps"
+    REMOVE_DEAD_CODE = "remove_dead_code"
+
+    @property
+    def is_proactive(self) -> bool:
+        """Proactive intents create PRs instead of direct fixes."""
+        return self in _PROACTIVE_INTENTS
 
     @classmethod
     def from_intent_type(cls, intent_type: str) -> TaskIntent | None:
@@ -39,6 +53,9 @@ class TaskIntent(enum.Enum):
             if member.value == intent_type:
                 return member
         return None
+
+
+_PROACTIVE_INTENTS = frozenset({TaskIntent.UPDATE_DEPS, TaskIntent.REMOVE_DEAD_CODE})
 
 
 # Metadata key used in TaskManager tasks to store the intent type

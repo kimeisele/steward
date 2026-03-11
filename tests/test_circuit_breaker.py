@@ -9,8 +9,8 @@ from unittest.mock import patch
 import pytest
 
 from steward.tools.circuit_breaker import (
-    CircuitBreaker,
     MAX_CONSECUTIVE_ROLLBACKS,
+    CircuitBreaker,
 )
 
 
@@ -290,7 +290,7 @@ class TestGuardedLLMFix:
         import asyncio
         agent = self._make_agent(fake_llm)
         with patch.object(agent._breaker, "count_failures", return_value=None):
-            result = asyncio.run(agent._guarded_llm_fix("fix something"))
+            asyncio.run(agent._guarded_llm_fix("fix something"))
         # LLM was called (unguarded fallback)
         assert fake_llm.call_count >= 1
 
@@ -300,12 +300,13 @@ class TestGuardedLLMFix:
         agent = self._make_agent(fake_llm)
         with patch.object(agent._breaker, "count_failures", return_value=0):
             with patch.object(agent._breaker, "changed_files", return_value=set()):
-                result = asyncio.run(agent._guarded_llm_fix("check something"))
+                asyncio.run(agent._guarded_llm_fix("check something"))
         assert agent._breaker._consecutive_rollbacks == 0
 
     def test_worse_failures_trigger_rollback(self, fake_llm):
         """When failures increase after LLM fix, all changes are rolled back."""
         import asyncio
+
         from steward.tools.circuit_breaker import GateResult
         agent = self._make_agent(fake_llm)
         call_count = [0]
@@ -331,6 +332,7 @@ class TestGuardedLLMFix:
     def test_failed_gate_triggers_rollback_before_tests(self, fake_llm):
         """When a gate fails, rollback happens WITHOUT running the test suite."""
         import asyncio
+
         from steward.tools.circuit_breaker import GateResult
         agent = self._make_agent(fake_llm)
 
@@ -516,13 +518,326 @@ class TestCheckBlastRadius:
         assert result.passed
 
 
+class TestCheckTestIntegrity:
+    """check_test_integrity() — prevent Goodhart test gaming."""
+
+    def _init_repo(self, path):
+        subprocess.run(["git", "init"], cwd=str(path), capture_output=True)
+        subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=str(path), capture_output=True)
+        subprocess.run(["git", "config", "user.name", "Test"], cwd=str(path), capture_output=True)
+
+    def test_unchanged_tests_pass(self, tmp_path):
+        """Tests with same structure before/after → pass."""
+        self._init_repo(tmp_path)
+        test_code = (
+            "def test_add():\n    assert 1 + 1 == 2\n\n"
+            "def test_sub():\n    assert 3 - 1 == 2\n"
+        )
+        (tmp_path / "test_math.py").write_text(test_code)
+        subprocess.run(["git", "add", "."], cwd=str(tmp_path), capture_output=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=str(tmp_path), capture_output=True)
+        # Minor change that doesn't affect structure
+        (tmp_path / "test_math.py").write_text(
+            "def test_add():\n    assert 1 + 1 == 2  # verified\n\n"
+            "def test_sub():\n    assert 3 - 1 == 2\n"
+        )
+        breaker = CircuitBreaker(cwd=str(tmp_path))
+        result = breaker.check_test_integrity({"test_math.py"})
+        assert result.passed
+
+    def test_deleted_test_function_fails(self, tmp_path):
+        """Removing a test function → FAIL."""
+        self._init_repo(tmp_path)
+        (tmp_path / "test_api.py").write_text(
+            "def test_create():\n    assert True\n\n"
+            "def test_delete():\n    assert True\n"
+        )
+        subprocess.run(["git", "add", "."], cwd=str(tmp_path), capture_output=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=str(tmp_path), capture_output=True)
+        # Remove one test function
+        (tmp_path / "test_api.py").write_text(
+            "def test_create():\n    assert True\n"
+        )
+        breaker = CircuitBreaker(cwd=str(tmp_path))
+        result = breaker.check_test_integrity({"test_api.py"})
+        assert not result.passed
+        assert "test function" in result.detail.lower()
+
+    def test_trivial_assert_true_fails(self, tmp_path):
+        """Adding `assert True` where real assertions existed → FAIL."""
+        self._init_repo(tmp_path)
+        (tmp_path / "test_calc.py").write_text(
+            "def test_divide():\n    assert 10 / 2 == 5\n    assert 6 / 3 == 2\n"
+        )
+        subprocess.run(["git", "add", "."], cwd=str(tmp_path), capture_output=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=str(tmp_path), capture_output=True)
+        # Replace real assertions with trivial ones
+        (tmp_path / "test_calc.py").write_text(
+            "def test_divide():\n    assert True\n    assert True\n"
+        )
+        breaker = CircuitBreaker(cwd=str(tmp_path))
+        result = breaker.check_test_integrity({"test_calc.py"})
+        assert not result.passed
+        assert "trivial" in result.detail.lower()
+
+    def test_adding_tests_passes(self, tmp_path):
+        """Adding new test functions → pass (improvement)."""
+        self._init_repo(tmp_path)
+        (tmp_path / "test_new.py").write_text(
+            "def test_one():\n    assert 1 == 1\n"
+        )
+        subprocess.run(["git", "add", "."], cwd=str(tmp_path), capture_output=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=str(tmp_path), capture_output=True)
+        # Add more tests
+        (tmp_path / "test_new.py").write_text(
+            "def test_one():\n    assert 1 == 1\n\n"
+            "def test_two():\n    assert 2 == 2\n\n"
+            "def test_three():\n    assert 3 == 3\n"
+        )
+        breaker = CircuitBreaker(cwd=str(tmp_path))
+        result = breaker.check_test_integrity({"test_new.py"})
+        assert result.passed
+
+    def test_non_test_files_skipped(self, tmp_path):
+        """Non-test files don't trigger integrity checks."""
+        breaker = CircuitBreaker(cwd=str(tmp_path))
+        result = breaker.check_test_integrity({"src/api.py", "utils.py"})
+        assert result.passed
+
+    def test_new_test_file_passes(self, tmp_path):
+        """New test files (not in HEAD) → pass (no baseline)."""
+        self._init_repo(tmp_path)
+        (tmp_path / "dummy.txt").write_text("init\n")
+        subprocess.run(["git", "add", "."], cwd=str(tmp_path), capture_output=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=str(tmp_path), capture_output=True)
+        # New test file not in HEAD
+        (tmp_path / "test_brand_new.py").write_text(
+            "def test_hello():\n    assert True\n"
+        )
+        breaker = CircuitBreaker(cwd=str(tmp_path))
+        result = breaker.check_test_integrity({"test_brand_new.py"})
+        assert result.passed
+
+    def test_deleted_test_file_fails(self, tmp_path):
+        """Deleting a test file entirely → FAIL."""
+        self._init_repo(tmp_path)
+        (tmp_path / "test_core.py").write_text(
+            "def test_core():\n    assert 1 == 1\n"
+        )
+        subprocess.run(["git", "add", "."], cwd=str(tmp_path), capture_output=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=str(tmp_path), capture_output=True)
+        # Delete the test file
+        (tmp_path / "test_core.py").unlink()
+        breaker = CircuitBreaker(cwd=str(tmp_path))
+        result = breaker.check_test_integrity({"test_core.py"})
+        assert not result.passed
+        assert "deleted" in result.detail.lower()
+
+    def test_significant_assertion_drop_fails(self, tmp_path):
+        """Losing >30% of assertions → FAIL."""
+        self._init_repo(tmp_path)
+        (tmp_path / "test_full.py").write_text(
+            "def test_a():\n    assert 1\n    assert 2\n    assert 3\n"
+            "    assert 4\n    assert 5\n    assert 6\n    assert 7\n"
+            "    assert 8\n    assert 9\n    assert 10\n"
+        )
+        subprocess.run(["git", "add", "."], cwd=str(tmp_path), capture_output=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=str(tmp_path), capture_output=True)
+        # Drop to 2 assertions (80% loss)
+        (tmp_path / "test_full.py").write_text(
+            "def test_a():\n    assert 1\n    assert 2\n"
+        )
+        breaker = CircuitBreaker(cwd=str(tmp_path))
+        result = breaker.check_test_integrity({"test_full.py"})
+        assert not result.passed
+        assert "assertions removed" in result.detail.lower()
+
+
+class TestCheckApiSurface:
+    """check_api_surface() — prevent deletion of public interfaces."""
+
+    def _init_repo(self, path):
+        subprocess.run(["git", "init"], cwd=str(path), capture_output=True)
+        subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=str(path), capture_output=True)
+        subprocess.run(["git", "config", "user.name", "Test"], cwd=str(path), capture_output=True)
+
+    def test_unchanged_api_passes(self, tmp_path):
+        """No change to public surface → pass."""
+        self._init_repo(tmp_path)
+        (tmp_path / "api.py").write_text(
+            "__all__ = ['create_user', 'delete_user']\n\n"
+            "def create_user():\n    pass\n\n"
+            "def delete_user():\n    pass\n"
+        )
+        subprocess.run(["git", "add", "."], cwd=str(tmp_path), capture_output=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=str(tmp_path), capture_output=True)
+        # Add internal change only
+        (tmp_path / "api.py").write_text(
+            "__all__ = ['create_user', 'delete_user']\n\n"
+            "def create_user():\n    return True  # improved\n\n"
+            "def delete_user():\n    pass\n"
+        )
+        breaker = CircuitBreaker(cwd=str(tmp_path))
+        result = breaker.check_api_surface({"api.py"})
+        assert result.passed
+
+    def test_removed_all_export_fails(self, tmp_path):
+        """Removing an entry from __all__ → FAIL."""
+        self._init_repo(tmp_path)
+        (tmp_path / "api.py").write_text(
+            "__all__ = ['create_user', 'delete_user']\n\n"
+            "def create_user():\n    pass\n\n"
+            "def delete_user():\n    pass\n"
+        )
+        subprocess.run(["git", "add", "."], cwd=str(tmp_path), capture_output=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=str(tmp_path), capture_output=True)
+        # Remove delete_user from __all__
+        (tmp_path / "api.py").write_text(
+            "__all__ = ['create_user']\n\n"
+            "def create_user():\n    pass\n"
+        )
+        breaker = CircuitBreaker(cwd=str(tmp_path))
+        result = breaker.check_api_surface({"api.py"})
+        assert not result.passed
+        assert "delete_user" in result.detail
+
+    def test_removed_decorated_endpoint_fails(self, tmp_path):
+        """Removing a @route decorated function → FAIL."""
+        self._init_repo(tmp_path)
+        (tmp_path / "views.py").write_text(
+            "from flask import Flask\n"
+            "app = Flask(__name__)\n\n"
+            "@app.route('/users')\n"
+            "def list_users():\n    return []\n\n"
+            "@app.route('/health')\n"
+            "def health():\n    return 'ok'\n"
+        )
+        subprocess.run(["git", "add", "."], cwd=str(tmp_path), capture_output=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=str(tmp_path), capture_output=True)
+        # Remove the health endpoint
+        (tmp_path / "views.py").write_text(
+            "from flask import Flask\n"
+            "app = Flask(__name__)\n\n"
+            "@app.route('/users')\n"
+            "def list_users():\n    return []\n"
+        )
+        breaker = CircuitBreaker(cwd=str(tmp_path))
+        result = breaker.check_api_surface({"views.py"})
+        assert not result.passed
+        assert "health" in result.detail
+
+    def test_removed_multiple_public_functions_fails(self, tmp_path):
+        """Removing 2+ public functions → FAIL."""
+        self._init_repo(tmp_path)
+        (tmp_path / "utils.py").write_text(
+            "def parse_json():\n    pass\n\n"
+            "def format_date():\n    pass\n\n"
+            "def validate_email():\n    pass\n"
+        )
+        subprocess.run(["git", "add", "."], cwd=str(tmp_path), capture_output=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=str(tmp_path), capture_output=True)
+        # Remove 2 public functions
+        (tmp_path / "utils.py").write_text(
+            "def parse_json():\n    pass\n"
+        )
+        breaker = CircuitBreaker(cwd=str(tmp_path))
+        result = breaker.check_api_surface({"utils.py"})
+        assert not result.passed
+        assert "public names removed" in result.detail
+
+    def test_removing_single_public_function_passes(self, tmp_path):
+        """Removing 1 public function → pass (normal refactoring)."""
+        self._init_repo(tmp_path)
+        (tmp_path / "utils.py").write_text(
+            "def parse_json():\n    pass\n\n"
+            "def old_helper():\n    pass\n"
+        )
+        subprocess.run(["git", "add", "."], cwd=str(tmp_path), capture_output=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=str(tmp_path), capture_output=True)
+        # Remove 1 function — allowed (refactoring)
+        (tmp_path / "utils.py").write_text(
+            "def parse_json():\n    pass\n"
+        )
+        breaker = CircuitBreaker(cwd=str(tmp_path))
+        result = breaker.check_api_surface({"utils.py"})
+        assert result.passed
+
+    def test_adding_public_functions_passes(self, tmp_path):
+        """Adding new public API → pass (improvement)."""
+        self._init_repo(tmp_path)
+        (tmp_path / "api.py").write_text(
+            "def get_users():\n    pass\n"
+        )
+        subprocess.run(["git", "add", "."], cwd=str(tmp_path), capture_output=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=str(tmp_path), capture_output=True)
+        (tmp_path / "api.py").write_text(
+            "def get_users():\n    pass\n\n"
+            "def create_user():\n    pass\n"
+        )
+        breaker = CircuitBreaker(cwd=str(tmp_path))
+        result = breaker.check_api_surface({"api.py"})
+        assert result.passed
+
+    def test_test_files_skipped(self, tmp_path):
+        """Test files don't trigger API surface checks."""
+        breaker = CircuitBreaker(cwd=str(tmp_path))
+        result = breaker.check_api_surface({"test_api.py", "tests/test_utils.py"})
+        assert result.passed
+
+    def test_deleted_source_file_with_public_api_fails(self, tmp_path):
+        """Deleting a source file that had public API → FAIL."""
+        self._init_repo(tmp_path)
+        (tmp_path / "module.py").write_text(
+            "__all__ = ['important_func']\n\n"
+            "def important_func():\n    return 42\n"
+        )
+        subprocess.run(["git", "add", "."], cwd=str(tmp_path), capture_output=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=str(tmp_path), capture_output=True)
+        (tmp_path / "module.py").unlink()
+        breaker = CircuitBreaker(cwd=str(tmp_path))
+        result = breaker.check_api_surface({"module.py"})
+        assert not result.passed
+        assert "deleted" in result.detail.lower()
+
+    def test_new_file_passes(self, tmp_path):
+        """New files (not in HEAD) → pass (no baseline)."""
+        self._init_repo(tmp_path)
+        (tmp_path / "dummy.txt").write_text("init\n")
+        subprocess.run(["git", "add", "."], cwd=str(tmp_path), capture_output=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=str(tmp_path), capture_output=True)
+        (tmp_path / "new_module.py").write_text(
+            "def new_function():\n    pass\n"
+        )
+        breaker = CircuitBreaker(cwd=str(tmp_path))
+        result = breaker.check_api_surface({"new_module.py"})
+        assert result.passed
+
+    def test_private_function_removal_passes(self, tmp_path):
+        """Removing private functions (_prefixed) → pass."""
+        self._init_repo(tmp_path)
+        (tmp_path / "internal.py").write_text(
+            "def _helper():\n    pass\n\n"
+            "def _internal():\n    pass\n\n"
+            "def public_api():\n    pass\n"
+        )
+        subprocess.run(["git", "add", "."], cwd=str(tmp_path), capture_output=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=str(tmp_path), capture_output=True)
+        # Remove private functions — that's fine
+        (tmp_path / "internal.py").write_text(
+            "def public_api():\n    pass\n"
+        )
+        breaker = CircuitBreaker(cwd=str(tmp_path))
+        result = breaker.check_api_surface({"internal.py"})
+        assert result.passed
+
+
 class TestRunGates:
     """run_gates() — orchestrator."""
 
     def test_all_pass(self, tmp_path):
         breaker = CircuitBreaker(cwd=str(tmp_path))
         results = breaker.run_gates({"README.md"})
-        assert len(results) == 3
+        assert len(results) == 5
         assert all(r.passed for r in results)
 
     def test_returns_all_results_even_on_failure(self, tmp_path):
@@ -533,3 +848,14 @@ class TestRunGates:
         blast = [r for r in results if r.gate == "blast_radius"]
         assert len(blast) == 1
         assert not blast[0].passed
+
+    def test_all_six_gates_present(self, tmp_path):
+        """All 5 gate types are represented in results."""
+        breaker = CircuitBreaker(cwd=str(tmp_path))
+        results = breaker.run_gates({"code.py"})
+        gate_names = {r.gate for r in results}
+        assert "lint" in gate_names
+        assert "security" in gate_names
+        assert "blast_radius" in gate_names
+        assert "test_integrity" in gate_names
+        assert "api_surface" in gate_names

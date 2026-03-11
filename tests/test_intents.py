@@ -36,6 +36,21 @@ class TestTaskIntentEnum:
     def test_intent_type_key_is_string(self):
         assert isinstance(INTENT_TYPE_KEY, str)
 
+    def test_update_deps_maps(self):
+        assert TaskIntent.from_intent_type("update_deps") == TaskIntent.UPDATE_DEPS
+
+    def test_remove_dead_code_maps(self):
+        assert TaskIntent.from_intent_type("remove_dead_code") == TaskIntent.REMOVE_DEAD_CODE
+
+    def test_proactive_intents_are_proactive(self):
+        assert TaskIntent.UPDATE_DEPS.is_proactive
+        assert TaskIntent.REMOVE_DEAD_CODE.is_proactive
+
+    def test_reactive_intents_are_not_proactive(self):
+        assert not TaskIntent.HEALTH_CHECK.is_proactive
+        assert not TaskIntent.SENSE_SCAN.is_proactive
+        assert not TaskIntent.CI_CHECK.is_proactive
+
     def test_all_intents_have_handlers(self):
         """Every TaskIntent value must have a corresponding handler.
 
@@ -47,6 +62,8 @@ class TestTaskIntentEnum:
         assert "health_check" in values
         assert "sense_scan" in values
         assert "ci_check" in values
+        assert "update_deps" in values
+        assert "remove_dead_code" in values
 
 
 class TestDeterministicDispatch:
@@ -54,8 +71,8 @@ class TestDeterministicDispatch:
 
     def test_dispatch_health_check(self, fake_llm):
         """Health check handler runs without LLM calls."""
-        from tests.conftest import track_agent
         from steward.agent import StewardAgent
+        from tests.conftest import track_agent
 
         agent = track_agent(StewardAgent(provider=fake_llm))
         result = agent._execute_health_check()
@@ -65,8 +82,8 @@ class TestDeterministicDispatch:
 
     def test_dispatch_sense_scan(self, fake_llm):
         """Sense scan handler runs without LLM calls."""
-        from tests.conftest import track_agent
         from steward.agent import StewardAgent
+        from tests.conftest import track_agent
 
         agent = track_agent(StewardAgent(provider=fake_llm))
         result = agent._execute_sense_scan()
@@ -75,8 +92,8 @@ class TestDeterministicDispatch:
 
     def test_dispatch_ci_check(self, fake_llm):
         """CI check handler runs without LLM calls."""
-        from tests.conftest import track_agent
         from steward.agent import StewardAgent
+        from tests.conftest import track_agent
 
         agent = track_agent(StewardAgent(provider=fake_llm))
         result = agent._execute_ci_check()
@@ -85,8 +102,8 @@ class TestDeterministicDispatch:
 
     def test_dispatch_unknown_intent_returns_none(self, fake_llm):
         """Unknown intent types are skipped, not fed to LLM."""
-        from tests.conftest import track_agent
         from steward.agent import StewardAgent
+        from tests.conftest import track_agent
 
         agent = track_agent(StewardAgent(provider=fake_llm))
         result = agent._dispatch_intent("not_a_real_intent")
@@ -95,8 +112,8 @@ class TestDeterministicDispatch:
 
     def test_dispatch_routes_correctly(self, fake_llm):
         """Each TaskIntent routes to its correct handler."""
-        from tests.conftest import track_agent
         from steward.agent import StewardAgent
+        from tests.conftest import track_agent
 
         agent = track_agent(StewardAgent(provider=fake_llm))
 

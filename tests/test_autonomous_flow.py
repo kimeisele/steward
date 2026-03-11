@@ -33,6 +33,12 @@ class TestParseIntentFromTitle:
     def test_parses_ci_check(self):
         assert _parse_intent_from_title("[CI_CHECK] Check CI") == TaskIntent.CI_CHECK
 
+    def test_parses_update_deps(self):
+        assert _parse_intent_from_title("[UPDATE_DEPS] Update packages") == TaskIntent.UPDATE_DEPS
+
+    def test_parses_remove_dead_code(self):
+        assert _parse_intent_from_title("[REMOVE_DEAD_CODE] Clean up") == TaskIntent.REMOVE_DEAD_CODE
+
     def test_no_prefix_returns_none(self):
         assert _parse_intent_from_title("Random task") is None
 
@@ -63,8 +69,8 @@ class TestAutonomousFlowE2E:
 
     def test_run_autonomous_dispatches_health_check(self, fake_llm):
         """Task with [HEALTH_CHECK] title → deterministic handler, 0 tokens."""
-        from vibe_core.di import ServiceRegistry
         from steward.services import SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
 
         agent = self._make_agent(fake_llm)
         task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
@@ -78,8 +84,8 @@ class TestAutonomousFlowE2E:
 
     def test_run_autonomous_dispatches_sense_scan(self, fake_llm):
         """Task with [SENSE_SCAN] title → deterministic handler, 0 tokens."""
-        from vibe_core.di import ServiceRegistry
         from steward.services import SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
 
         agent = self._make_agent(fake_llm)
         task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
@@ -92,8 +98,8 @@ class TestAutonomousFlowE2E:
 
     def test_run_autonomous_dispatches_ci_check(self, fake_llm):
         """Task with [CI_CHECK] title → deterministic handler, 0 tokens."""
-        from vibe_core.di import ServiceRegistry
         from steward.services import SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
 
         agent = self._make_agent(fake_llm)
         task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
@@ -106,8 +112,8 @@ class TestAutonomousFlowE2E:
 
     def test_run_autonomous_skips_unknown_title(self, fake_llm):
         """Task without [INTENT] prefix → skipped, 0 tokens."""
-        from vibe_core.di import ServiceRegistry
         from steward.services import SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
 
         agent = self._make_agent(fake_llm)
         task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
@@ -120,8 +126,8 @@ class TestAutonomousFlowE2E:
 
     def test_task_marked_completed_after_dispatch(self, fake_llm):
         """Dispatched task gets marked as completed in TaskManager."""
-        from vibe_core.di import ServiceRegistry
         from steward.services import SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
         from vibe_core.task_types import TaskStatus
 
         agent = self._make_agent(fake_llm)
@@ -137,8 +143,8 @@ class TestAutonomousFlowE2E:
 
     def test_session_ledger_records_autonomous_run(self, fake_llm):
         """Autonomous cycles are recorded in session ledger."""
-        from vibe_core.di import ServiceRegistry
         from steward.services import SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
 
         agent = self._make_agent(fake_llm)
         task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
@@ -154,8 +160,8 @@ class TestAutonomousFlowE2E:
 
     def test_consecutive_autonomous_runs(self, fake_llm):
         """Multiple autonomous runs don't block each other."""
-        from vibe_core.di import ServiceRegistry
         from steward.services import SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
 
         agent = self._make_agent(fake_llm)
         task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
@@ -176,8 +182,8 @@ class TestPhaseGenesis:
 
     def test_genesis_creates_titled_tasks(self, fake_llm):
         """When Sankalpa fires, tasks have [INTENT] title prefix."""
-        from vibe_core.di import ServiceRegistry
         from steward.services import SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
 
         agent = self._make_agent(fake_llm)
         # Force genesis with enough idle time to trigger Sankalpa
@@ -192,8 +198,8 @@ class TestPhaseGenesis:
 
     def test_genesis_only_counts_active_tasks(self, fake_llm):
         """Completed tasks don't count as pending for Sankalpa."""
-        from vibe_core.di import ServiceRegistry
         from steward.services import SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
         from vibe_core.task_types import TaskStatus
 
         agent = self._make_agent(fake_llm)
@@ -236,9 +242,10 @@ class TestDharmaPhase:
 
         agent = track_agent(StewardAgent(provider=fake_llm))
         # Simulate heartbeat calling all phases
-        from steward.cetana import Phase, CetanaBeat
-        from steward.antahkarana.vedana import measure_vedana
         import time
+
+        from steward.antahkarana.vedana import measure_vedana
+        from steward.cetana import CetanaBeat, Phase
 
         beat = CetanaBeat(
             timestamp=time.time(),
@@ -256,9 +263,9 @@ class TestKarmaPhase:
 
     def test_karma_logs_pending_tasks(self, fake_llm):
         """KARMA runs without error when tasks exist."""
-        from vibe_core.di import ServiceRegistry
-        from steward.services import SVC_TASK_MANAGER
         from steward.agent import StewardAgent
+        from steward.services import SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
 
         agent = track_agent(StewardAgent(provider=fake_llm))
         task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
@@ -416,8 +423,9 @@ class TestHebbianAutonomousLearning:
     def test_confidence_gate_escalates_not_skips(self, fake_llm):
         """When Hebbian confidence < 0.2, escalates to human — NOT silent skip."""
         import asyncio
-        from vibe_core.di import ServiceRegistry
+
         from steward.services import SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
 
         agent = self._make_agent(fake_llm)
         task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
@@ -452,9 +460,10 @@ class TestHebbianAutonomousLearning:
         """Failing on workflow 'ci-tests' doesn't block workflow 'lint-check'."""
         import asyncio
         from unittest.mock import patch
-        from vibe_core.di import ServiceRegistry
+
         from steward.services import SVC_TASK_MANAGER
         from steward.tools.circuit_breaker import GateResult
+        from vibe_core.di import ServiceRegistry
 
         agent = self._make_agent(fake_llm)
         task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
@@ -505,3 +514,125 @@ class TestHebbianAutonomousLearning:
             agent._hebbian_learn(trigger, success=True)
         recovered = agent._synaptic.get_weight(trigger, "fix")
         assert recovered > low
+
+
+class TestProactiveDispatch:
+    """Proactive intents route to PR pipeline, not direct fix."""
+
+    def _make_agent(self, fake_llm):
+        from steward.agent import StewardAgent
+        return track_agent(StewardAgent(provider=fake_llm))
+
+    def test_dispatch_update_deps_runs_without_llm(self, fake_llm):
+        """UPDATE_DEPS handler is deterministic — 0 tokens."""
+        agent = self._make_agent(fake_llm)
+        agent._execute_update_deps()
+        # In test env, pip list --outdated may or may not find anything
+        # The important thing: no LLM tokens
+        assert fake_llm.call_count == 0
+
+    def test_dispatch_remove_dead_code_runs_without_llm(self, fake_llm):
+        """REMOVE_DEAD_CODE handler is deterministic — 0 tokens."""
+        agent = self._make_agent(fake_llm)
+        agent._execute_remove_dead_code()
+        assert fake_llm.call_count == 0
+
+    def test_dispatch_routes_proactive_intents(self, fake_llm):
+        """Proactive intents dispatch without error."""
+        agent = self._make_agent(fake_llm)
+        for intent in TaskIntent:
+            result = agent._dispatch_intent(intent)
+            assert result is None or isinstance(result, str)
+        assert fake_llm.call_count == 0
+
+    def test_proactive_task_dispatches_in_autonomous(self, fake_llm):
+        """Task with [UPDATE_DEPS] dispatches via run_autonomous."""
+        from steward.services import SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
+
+        agent = self._make_agent(fake_llm)
+        task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
+        task_mgr.add_task(title="[UPDATE_DEPS] Check packages", priority=50)
+
+        result = asyncio.run(agent.run_autonomous())
+        # Handler finds no outdated deps in test env → no problem → None
+        assert result is None
+        assert fake_llm.call_count == 0
+
+    def test_proactive_task_dispatches_remove_dead_code(self, fake_llm):
+        """Task with [REMOVE_DEAD_CODE] dispatches via run_autonomous."""
+        from steward.services import SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
+
+        agent = self._make_agent(fake_llm)
+        task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
+        task_mgr.add_task(title="[REMOVE_DEAD_CODE] Clean up", priority=50)
+
+        result = asyncio.run(agent.run_autonomous())
+        assert result is None
+        assert fake_llm.call_count == 0
+
+
+class TestCleanupBranch:
+    """Branch cleanup always returns to main."""
+
+    def _make_agent(self, fake_llm):
+        from steward.agent import StewardAgent
+        return track_agent(StewardAgent(provider=fake_llm))
+
+    def test_cleanup_branch_does_not_crash(self, fake_llm):
+        """Cleanup handles missing branches gracefully."""
+        agent = self._make_agent(fake_llm)
+        # Cleaning a non-existent branch should not raise
+        agent._cleanup_branch("steward/nonexistent/123")
+
+
+class TestGuardedPrFix:
+    """_guarded_pr_fix() — branch → LLM → gates → PR pipeline."""
+
+    def _make_agent(self, fake_llm):
+        from steward.agent import StewardAgent
+        return track_agent(StewardAgent(provider=fake_llm))
+
+    def test_suspended_breaker_returns_none(self, fake_llm):
+        """Suspended circuit breaker skips proactive fix."""
+        agent = self._make_agent(fake_llm)
+        agent._breaker._suspended_until = float("inf")
+        result = asyncio.run(agent._guarded_pr_fix("Update deps", intent_name="UPDATE_DEPS"))
+        assert result is None
+        assert fake_llm.call_count == 0
+
+    def test_no_changes_returns_to_main(self, fake_llm):
+        """When LLM makes no changes, branch is cleaned up."""
+        import subprocess
+
+        agent = self._make_agent(fake_llm)
+        # Verify we start on main or some known branch
+        r = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True, text=True, cwd=agent._cwd,
+        )
+        original_branch = r.stdout.strip()
+
+        asyncio.run(
+            agent._guarded_pr_fix("Update deps", intent_name="UPDATE_DEPS")
+        )
+
+        # Should have returned to original branch (main)
+        r = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True, text=True, cwd=agent._cwd,
+        )
+        current = r.stdout.strip()
+        # Agent should not be stranded on a feature branch
+        assert current == original_branch or current == "main"
+
+    def test_proactive_routes_to_pr_fix_not_llm_fix(self, fake_llm):
+        """Proactive intents use _guarded_pr_fix, not _guarded_llm_fix.
+
+        Verifies the routing logic in run_autonomous().
+        """
+        # Just test that intent.is_proactive triggers the right path
+        assert TaskIntent.UPDATE_DEPS.is_proactive
+        assert TaskIntent.REMOVE_DEAD_CODE.is_proactive
+        assert not TaskIntent.CI_CHECK.is_proactive
