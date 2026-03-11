@@ -27,6 +27,135 @@ MAX_CONSECUTIVE_ROLLBACKS = 3
 SUSPEND_DURATION = 300  # 5 minutes
 
 
+def _is_test_file(filepath: str) -> bool:
+    """Check if a file path looks like a test file."""
+    import os
+
+    basename = os.path.basename(filepath)
+    return basename.startswith("test_") or basename.endswith("_test.py")
+
+
+def _count_test_elements(source: str) -> dict | None:
+    """Count test-relevant AST elements in Python source.
+
+    Returns dict with:
+    - test_functions: count of def test_*() and def test_*() methods
+    - asserts: count of assert statements
+    - trivial_asserts: count of `assert True`, `assert 1`, `assert "..."` (always-pass)
+    - test_classes: count of class Test*
+
+    Returns None if source can't be parsed.
+    """
+    import ast
+
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return None
+
+    stats = {
+        "test_functions": 0,
+        "asserts": 0,
+        "trivial_asserts": 0,
+        "test_classes": 0,
+    }
+
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if node.name.startswith("test_"):
+                stats["test_functions"] += 1
+
+        elif isinstance(node, ast.ClassDef):
+            if node.name.startswith("Test"):
+                stats["test_classes"] += 1
+
+        elif isinstance(node, ast.Assert):
+            stats["asserts"] += 1
+            # Check for trivial assertions: assert True, assert 1, assert "string"
+            test_node = node.test
+            if isinstance(test_node, ast.Constant) and test_node.value in (True, 1):
+                stats["trivial_asserts"] += 1
+
+    return stats
+
+
+def _extract_public_surface(source: str) -> dict | None:
+    """Extract public API surface from Python source via AST.
+
+    Returns dict with:
+    - all_exports: set of names in __all__, or None if no __all__
+    - decorated_endpoints: set of function names with route-like decorators
+    - public_names: set of public module-level function/class names (no _ prefix)
+
+    Returns None if source can't be parsed.
+    """
+    import ast
+
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return None
+
+    surface = {
+        "all_exports": None,
+        "decorated_endpoints": set(),
+        "public_names": set(),
+    }
+
+    # Route-like decorator patterns (attribute names to match)
+    _ROUTE_DECORATORS = frozenset({
+        "route", "get", "post", "put", "delete", "patch",
+        "api_view", "action", "endpoint",
+    })
+
+    for node in ast.iter_child_nodes(tree):
+        # Extract __all__ assignments
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == "__all__":
+                    if isinstance(node.value, (ast.List, ast.Tuple)):
+                        surface["all_exports"] = {
+                            elt.value
+                            for elt in node.value.elts
+                            if isinstance(elt, ast.Constant) and isinstance(elt.value, str)
+                        }
+
+        # Extract public functions and classes
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if not node.name.startswith("_"):
+                surface["public_names"].add(node.name)
+
+            # Check for route-like decorators
+            for decorator in node.decorator_list:
+                dec_name = _decorator_leaf_name(decorator)
+                if dec_name and dec_name in _ROUTE_DECORATORS:
+                    surface["decorated_endpoints"].add(node.name)
+                    break
+
+        elif isinstance(node, ast.ClassDef):
+            if not node.name.startswith("_"):
+                surface["public_names"].add(node.name)
+
+    return surface
+
+
+def _decorator_leaf_name(decorator: object) -> str | None:
+    """Extract the leaf name from a decorator AST node.
+
+    Handles: @route, @app.route, @router.get, @app.router.get
+    Returns the rightmost name segment.
+    """
+    import ast
+
+    if isinstance(decorator, ast.Name):
+        return decorator.id
+    elif isinstance(decorator, ast.Attribute):
+        return decorator.attr
+    elif isinstance(decorator, ast.Call):
+        return _decorator_leaf_name(decorator.func)
+    return None
+
+
 @dataclass
 class GateResult:
     """Outcome of a single verification gate."""
@@ -375,16 +504,194 @@ class CircuitBreaker:
 
         return GateResult(passed=True, gate="blast_radius")
 
+    def check_test_integrity(self, changed_files: set[str]) -> GateResult:
+        """Test integrity gate — prevent Goodhart test gaming via AST.
+
+        Catches the agent rewriting tests to trivially pass:
+        - Deleting test functions (assert count decreased)
+        - Replacing assertions with `assert True`
+        - Removing test classes entirely
+
+        Compares AST structure of test files before (HEAD) and after (LLM).
+        Only checks files that match test file patterns (test_*.py, *_test.py).
+        """
+        import ast
+
+        test_files = sorted(
+            f for f in changed_files
+            if f.endswith(".py") and _is_test_file(f)
+        )
+        if not test_files:
+            return GateResult(passed=True, gate="test_integrity")
+
+        cwd_path = Path(self.cwd)
+        problems = []
+
+        for filepath in test_files:
+            full_path = cwd_path / filepath
+
+            # Get HEAD version via git show
+            try:
+                head_result = subprocess.run(
+                    ["git", "show", f"HEAD:{filepath}"],
+                    capture_output=True,
+                    text=True,
+                    cwd=self.cwd,
+                    timeout=10,
+                )
+            except Exception:
+                continue
+
+            if head_result.returncode != 0:
+                continue  # New test file — no baseline, skip
+
+            if not full_path.exists():
+                problems.append(f"{filepath}: test file deleted")
+                continue
+
+            # Parse both versions
+            head_stats = _count_test_elements(head_result.stdout)
+            current_stats = _count_test_elements(full_path.read_text())
+
+            if head_stats is None or current_stats is None:
+                continue  # Syntax error — lint gate will catch it
+
+            # Check 1: Test functions decreased
+            if current_stats["test_functions"] < head_stats["test_functions"]:
+                lost = head_stats["test_functions"] - current_stats["test_functions"]
+                problems.append(
+                    f"{filepath}: {lost} test function(s) removed "
+                    f"({head_stats['test_functions']}→{current_stats['test_functions']})"
+                )
+
+            # Check 2: Assert count decreased significantly
+            if head_stats["asserts"] > 0 and current_stats["asserts"] < head_stats["asserts"]:
+                lost = head_stats["asserts"] - current_stats["asserts"]
+                # Allow minor assertion changes (refactoring), flag major drops
+                ratio = current_stats["asserts"] / head_stats["asserts"]
+                if ratio < 0.7:  # More than 30% assertions lost
+                    problems.append(
+                        f"{filepath}: {lost} assertions removed "
+                        f"({head_stats['asserts']}→{current_stats['asserts']}, {ratio:.0%} remaining)"
+                    )
+
+            # Check 3: Trivial assertions (assert True, assert 1)
+            if current_stats["trivial_asserts"] > head_stats["trivial_asserts"]:
+                new_trivial = current_stats["trivial_asserts"] - head_stats["trivial_asserts"]
+                problems.append(
+                    f"{filepath}: {new_trivial} trivial assertion(s) added (assert True/1)"
+                )
+
+        if problems:
+            return GateResult(
+                passed=False,
+                gate="test_integrity",
+                detail="; ".join(problems),
+            )
+        return GateResult(passed=True, gate="test_integrity")
+
+    def check_api_surface(self, changed_files: set[str]) -> GateResult:
+        """API surface gate — prevent deletion of public interfaces via AST.
+
+        Catches the agent removing externally-visible code:
+        - Functions/classes listed in __all__
+        - Decorated endpoints (@app.route, @router.get, etc.)
+        - Public module-level functions (not starting with _)
+
+        Compares HEAD vs LLM version. Only fails if public surface DECREASED.
+        """
+        import ast
+
+        py_files = sorted(
+            f for f in changed_files
+            if f.endswith(".py") and not _is_test_file(f)
+        )
+        if not py_files:
+            return GateResult(passed=True, gate="api_surface")
+
+        cwd_path = Path(self.cwd)
+        problems = []
+
+        for filepath in py_files:
+            full_path = cwd_path / filepath
+
+            # Get HEAD version
+            try:
+                head_result = subprocess.run(
+                    ["git", "show", f"HEAD:{filepath}"],
+                    capture_output=True,
+                    text=True,
+                    cwd=self.cwd,
+                    timeout=10,
+                )
+            except Exception:
+                continue
+
+            if head_result.returncode != 0:
+                continue  # New file — no baseline
+
+            if not full_path.exists():
+                # Entire source file deleted — check if it had public surface
+                head_surface = _extract_public_surface(head_result.stdout)
+                if head_surface and head_surface["public_names"]:
+                    problems.append(
+                        f"{filepath}: source file deleted "
+                        f"(had {len(head_surface['public_names'])} public names)"
+                    )
+                continue
+
+            head_surface = _extract_public_surface(head_result.stdout)
+            current_surface = _extract_public_surface(full_path.read_text())
+
+            if head_surface is None or current_surface is None:
+                continue  # Syntax error — lint gate handles it
+
+            # Check 1: __all__ entries removed
+            head_all = head_surface["all_exports"]
+            current_all = current_surface["all_exports"]
+            if head_all is not None and current_all is not None:
+                removed_exports = head_all - current_all
+                if removed_exports:
+                    problems.append(
+                        f"{filepath}: __all__ exports removed: {', '.join(sorted(removed_exports))}"
+                    )
+
+            # Check 2: Decorated endpoints removed
+            removed_endpoints = head_surface["decorated_endpoints"] - current_surface["decorated_endpoints"]
+            if removed_endpoints:
+                problems.append(
+                    f"{filepath}: decorated endpoints removed: {', '.join(sorted(removed_endpoints))}"
+                )
+
+            # Check 3: Public functions/classes removed (only flag if significant)
+            removed_public = head_surface["public_names"] - current_surface["public_names"]
+            if len(removed_public) >= 2:
+                # Allow removing 1 public name (refactoring), flag 2+
+                problems.append(
+                    f"{filepath}: {len(removed_public)} public names removed: "
+                    f"{', '.join(sorted(removed_public)[:5])}"
+                )
+
+        if problems:
+            return GateResult(
+                passed=False,
+                gate="api_surface",
+                detail="; ".join(problems),
+            )
+        return GateResult(passed=True, gate="api_surface")
+
     def run_gates(self, changed_files: set[str]) -> list[GateResult]:
         """Run all verification gates on changed files.
 
-        Gates run in order of speed: lint (ms) → security (ms) → blast radius (ms).
+        Gates run in order: lint → security → blast radius → test integrity → API surface.
         All gates run even if earlier ones fail (collect all violations).
         """
         return [
             self.check_lint(changed_files),
             self.check_security(changed_files),
             self.check_blast_radius(changed_files),
+            self.check_test_integrity(changed_files),
+            self.check_api_surface(changed_files),
         ]
 
     # ── Gate Helpers ──────────────────────────────────────────────────

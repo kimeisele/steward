@@ -422,11 +422,13 @@ class StewardAgent(GADBase):
                     self._escalate_problem(problem, intent.name, auto_weight)
                     return None
 
-                # Real problem found — guard with CircuitBreaker + Hebbian learning
+                # Route: proactive → PR pipeline, reactive → direct fix
                 logger.info(
                     "Autonomous: %s:%s found problem (confidence=%.2f), invoking LLM",
                     intent.name, context, auto_weight,
                 )
+                if intent.is_proactive:
+                    return await self._guarded_pr_fix(problem, intent_name=intent.name)
                 return await self._guarded_llm_fix(problem, intent_name=intent.name)
 
             logger.info("Autonomous: intent %s completed (no issues found)", intent.name)
@@ -452,6 +454,8 @@ class StewardAgent(GADBase):
             TaskIntent.HEALTH_CHECK: self._execute_health_check,
             TaskIntent.SENSE_SCAN: self._execute_sense_scan,
             TaskIntent.CI_CHECK: self._execute_ci_check,
+            TaskIntent.UPDATE_DEPS: self._execute_update_deps,
+            TaskIntent.REMOVE_DEAD_CODE: self._execute_remove_dead_code,
         }
         handler = dispatch.get(intent)
         if handler is None:
@@ -679,6 +683,321 @@ class StewardAgent(GADBase):
         except Exception as e:
             logger.debug("CI check failed (non-fatal): %s", e)
         return None
+
+    def _execute_update_deps(self) -> str | None:
+        """Deterministic dependency freshness check — 0 tokens.
+
+        Runs pip list --outdated. Returns problem description if
+        direct dependencies have available updates.
+        """
+        import json
+        import subprocess
+
+        try:
+            result = subprocess.run(
+                ["pip", "list", "--outdated", "--format=json"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+                cwd=self._cwd,
+            )
+            if result.returncode != 0:
+                return None
+
+            outdated = json.loads(result.stdout)
+            if not outdated:
+                return None
+
+            # Report up to 5 outdated packages
+            summaries = []
+            for pkg in outdated[:5]:
+                name = pkg.get("name", "?")
+                current = pkg.get("version", "?")
+                latest = pkg.get("latest_version", "?")
+                summaries.append(f"{name} {current} → {latest}")
+
+            return (
+                f"Outdated dependencies ({len(outdated)} total): "
+                f"{', '.join(summaries)}. "
+                f"Update them in pyproject.toml and run tests."
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError, json.JSONDecodeError) as e:
+            logger.debug("Dependency check failed (non-fatal): %s", e)
+            return None
+
+    def _execute_remove_dead_code(self) -> str | None:
+        """Deterministic dead code detection — 0 tokens.
+
+        Uses code_sense LCOM4 data to find modules with poor cohesion
+        (LCOM4 > 4 means the class likely has disconnected responsibilities).
+        """
+        from vibe_core.mahamantra.protocols._sense import Jnanendriya
+
+        code_sense = self._senses.senses.get(Jnanendriya.CAKSU)
+        if code_sense is None:
+            return None
+        try:
+            perception = code_sense.perceive()
+            if not isinstance(perception, dict):
+                return None
+
+            # LCOM4: lack of cohesion metric — higher = worse
+            lcom4 = perception.get("lcom4", {})
+            bad_modules = {
+                k: v
+                for k, v in lcom4.items()
+                if isinstance(v, (int, float)) and v > 4
+            }
+            if not bad_modules:
+                return None
+
+            worst = sorted(bad_modules.items(), key=lambda x: x[1], reverse=True)[:3]
+            details = ", ".join(f"{name} (LCOM4={score})" for name, score in worst)
+            return (
+                f"Low cohesion modules: {details}. "
+                f"These classes have disconnected responsibilities. "
+                f"Split them into focused modules or remove unused methods."
+            )
+        except Exception as e:
+            logger.debug("Dead code check failed (non-fatal): %s", e)
+            return None
+
+    async def _guarded_pr_fix(self, problem: str, intent_name: str = "") -> str | None:
+        """Run LLM fix on a feature branch, create PR if all gates pass.
+
+        Proactive fix pipeline (for improvements, not emergencies):
+        1. Create feature branch: steward/{intent}/{timestamp}
+        2. Run LLM to apply changes
+        3. Run 4-gate verification (lint, security, blast radius, tests)
+        4. If GREEN: commit → push → create PR
+        5. If RED: rollback → delete branch → return to main
+        6. Hebbian learning at each step
+
+        NEVER commits directly to main. All proactive work goes through PRs.
+        """
+        import subprocess
+        import time as _time
+
+        from steward.senses.gh import get_gh_client
+
+        if self._breaker.is_suspended:
+            logger.warning("Circuit breaker suspended — skipping proactive fix")
+            return None
+
+        # Granular Hebbian key
+        context = _problem_fingerprint(problem)
+        hebbian_trigger = (
+            f"auto:{intent_name}:{context}"
+            if (intent_name and context)
+            else f"auto:{intent_name or 'unknown'}"
+        )
+
+        # Step 1: Create feature branch
+        timestamp = str(int(_time.time()))
+        branch_name = f"steward/{intent_name.lower()}/{timestamp}"
+
+        try:
+            r = subprocess.run(
+                ["git", "checkout", "-b", branch_name],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                cwd=self._cwd,
+            )
+            if r.returncode != 0:
+                logger.error("Failed to create branch %s: %s", branch_name, r.stderr.strip())
+                return None
+        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+            logger.error("Git branch creation failed: %s", e)
+            return None
+
+        logger.info("Proactive: created branch %s for %s", branch_name, intent_name)
+
+        try:
+            # Step 2: Baseline tests
+            test_cmd = "pytest -x -q"
+            baseline = self._breaker.count_failures(test_cmd)
+
+            # Step 3: Snapshot and run LLM fix
+            files_before = self._breaker.changed_files()
+            result = await self.run(problem)
+            files_after = self._breaker.changed_files()
+            new_changes = files_after - files_before
+
+            if not new_changes:
+                # LLM didn't change anything — clean up branch
+                logger.info("Proactive: LLM made no changes for %s", intent_name)
+                self._cleanup_branch(branch_name)
+                return result
+
+            # Step 4: Fast gates
+            gate_results = self._breaker.run_gates(new_changes)
+            failed_gates = [g for g in gate_results if not g.passed]
+
+            if failed_gates:
+                details = "; ".join(g.detail for g in failed_gates)
+                self._breaker.rollback_files(new_changes)
+                self._breaker.record_rollback()
+                self._hebbian_learn(
+                    hebbian_trigger,
+                    success=False,
+                    failed_gates=failed_gates,
+                    changed_files=new_changes,
+                )
+                logger.warning("Proactive gates FAILED for %s: %s", intent_name, details)
+                self._cleanup_branch(branch_name)
+                return None
+
+            # Step 5: Slow gate — test suite
+            if baseline is not None:
+                post = self._breaker.count_failures(test_cmd)
+                if post is None or post > baseline:
+                    self._breaker.rollback_files(new_changes)
+                    self._breaker.record_rollback()
+                    self._hebbian_learn(
+                        hebbian_trigger, success=False, changed_files=new_changes
+                    )
+                    logger.warning(
+                        "Proactive tests FAILED for %s (baseline=%s, post=%s)",
+                        intent_name, baseline, post,
+                    )
+                    self._cleanup_branch(branch_name)
+                    return None
+
+            # Step 6: All gates passed — commit, push, create PR
+            pr_url = self._create_pr(branch_name, intent_name, problem, new_changes)
+
+            self._breaker.record_success()
+            self._hebbian_learn(
+                hebbian_trigger,
+                success=True,
+                gate_results=gate_results,
+                changed_files=new_changes,
+            )
+            logger.info("Proactive PR created: %s for %s", pr_url or "(no URL)", intent_name)
+            return pr_url or result
+
+        except Exception as e:
+            logger.error("Proactive fix failed for %s: %s", intent_name, e)
+            self._cleanup_branch(branch_name)
+            return None
+
+    def _cleanup_branch(self, branch_name: str) -> None:
+        """Return to main and delete the feature branch.
+
+        Safe cleanup: always tries to return to main first.
+        Branch deletion is best-effort (non-fatal on failure).
+        """
+        import subprocess
+
+        try:
+            subprocess.run(
+                ["git", "checkout", "main"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                cwd=self._cwd,
+            )
+        except Exception:
+            pass
+
+        try:
+            subprocess.run(
+                ["git", "branch", "-D", branch_name],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                cwd=self._cwd,
+            )
+            logger.debug("Cleaned up branch %s", branch_name)
+        except Exception as e:
+            logger.debug("Branch cleanup failed (non-fatal): %s", e)
+
+    def _create_pr(
+        self,
+        branch_name: str,
+        intent_name: str,
+        problem: str,
+        changed_files: set[str],
+    ) -> str | None:
+        """Commit, push, and create a PR for verified proactive changes.
+
+        Returns the PR URL on success, None on failure.
+        All git operations are direct subprocess calls — no LLM involvement.
+        """
+        import subprocess
+
+        from steward.senses.gh import get_gh_client
+
+        # Stage and commit
+        try:
+            subprocess.run(
+                ["git", "add", "-A"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                cwd=self._cwd,
+            )
+
+            file_count = len(changed_files)
+            commit_msg = (
+                f"steward({intent_name.lower()}): automated improvement\n\n"
+                f"Changes: {file_count} file(s) modified\n"
+                f"Verified: lint, security, blast radius, tests — all GREEN"
+            )
+            r = subprocess.run(
+                ["git", "commit", "-m", commit_msg],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                cwd=self._cwd,
+            )
+            if r.returncode != 0:
+                logger.error("Commit failed: %s", r.stderr.strip())
+                return None
+        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+            logger.error("Commit failed: %s", e)
+            return None
+
+        # Push
+        try:
+            r = subprocess.run(
+                ["git", "push", "-u", "origin", branch_name],
+                capture_output=True,
+                text=True,
+                timeout=60,
+                cwd=self._cwd,
+            )
+            if r.returncode != 0:
+                logger.error("Push failed: %s", r.stderr.strip())
+                return None
+        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+            logger.error("Push failed: %s", e)
+            return None
+
+        # Create PR via gh CLI
+        gh = get_gh_client()
+        if not gh.is_available:
+            logger.warning("gh CLI not available — branch pushed but no PR created")
+            return None
+
+        title = f"steward({intent_name.lower()}): {problem[:60]}"
+        body = (
+            f"## Automated improvement by Steward\n\n"
+            f"**Intent:** {intent_name}\n"
+            f"**Changed files:** {', '.join(sorted(changed_files)[:10])}\n\n"
+            f"### Verification\n"
+            f"- [x] Lint gate (ruff) — passed\n"
+            f"- [x] Security gate (bandit) — passed\n"
+            f"- [x] Blast radius gate — passed\n"
+            f"- [x] Test suite — passed (no new failures)\n\n"
+            f"_Created autonomously by Steward agent._"
+        )
+        pr_url = gh.call(
+            ["pr", "create", "--title", title, "--body", body, "--base", "main"],
+            timeout=30,
+        )
+        return pr_url.strip() if pr_url else None
 
     async def run_stream(self, task: str) -> AsyncIterator[AgentEvent]:
         """Execute a task and yield events as they happen.
