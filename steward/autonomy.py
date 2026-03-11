@@ -121,6 +121,8 @@ class AutonomyEngine:
         cwd: str,
         run_fn: Callable[[str], Awaitable[str]],
         vedana_fn: Callable[[], object],
+        git_actuator: object | None = None,
+        github_actuator: object | None = None,
     ) -> None:
         self._breaker = breaker
         self._senses = senses
@@ -130,6 +132,8 @@ class AutonomyEngine:
         self._cwd = cwd
         self._run_fn = run_fn
         self._vedana_fn = vedana_fn
+        self._git = git_actuator
+        self._github = github_actuator
 
     # ── Public API ─────────────────────────────────────────────────────
 
@@ -465,20 +469,26 @@ class AutonomyEngine:
         timestamp = str(int(_time.time()))
         branch_name = f"steward/{intent_name.lower()}/{timestamp}"
 
-        try:
-            r = subprocess.run(
-                ["git", "checkout", "-b", branch_name],
-                capture_output=True,
-                text=True,
-                timeout=10,
-                cwd=self._cwd,
-            )
-            if r.returncode != 0:
-                logger.error("Failed to create branch %s: %s", branch_name, r.stderr.strip())
+        if self._git is not None:
+            result = self._git.create_branch(branch_name)
+            if not result.success:
+                logger.error("Failed to create branch %s: %s", branch_name, result.error)
                 return None
-        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
-            logger.error("Git branch creation failed: %s", e)
-            return None
+        else:
+            try:
+                r = subprocess.run(
+                    ["git", "checkout", "-b", branch_name],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    cwd=self._cwd,
+                )
+                if r.returncode != 0:
+                    logger.error("Failed to create branch %s: %s", branch_name, r.stderr.strip())
+                    return None
+            except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+                logger.error("Git branch creation failed: %s", e)
+                return None
 
         logger.info("Proactive: created branch %s for %s", branch_name, intent_name)
 
@@ -556,10 +566,12 @@ class AutonomyEngine:
     # ── Branch/PR Management ───────────────────────────────────────────
 
     def _cleanup_branch(self, branch_name: str) -> None:
-        """Return to main and delete feature branch.
+        """Return to main and delete feature branch via GitActuator."""
+        if self._git is not None:
+            self._git.cleanup_branch(branch_name)
+            return
 
-        Safe: handles missing branches, dirty state. Always returns to main.
-        """
+        # Fallback: raw subprocess (legacy path, for tests without actuators)
         import subprocess
 
         try:
@@ -585,48 +597,52 @@ class AutonomyEngine:
         problem: str,
         changed_files: set[str],
     ) -> str | None:
-        """Commit changes, push branch, create PR via GitHub CLI.
+        """Commit, push, create PR via actuators.
 
-        Returns PR URL on success, None on failure. Never fails loudly —
-        a failed PR creation is logged but doesn't crash the pipeline.
+        Returns PR URL on success, None on failure.
+        Uses GitActuator + GitHubActuator when available, raw subprocess fallback.
         """
-        import subprocess
-
         try:
-            # Stage changed files
-            for f in changed_files:
-                subprocess.run(
-                    ["git", "add", f],
-                    capture_output=True, text=True, timeout=10, cwd=self._cwd,
-                )
-
-            # Commit
+            # Step 1: Commit
             commit_msg = f"fix({intent_name.lower()}): {problem[:80]}"
-            r = subprocess.run(
-                ["git", "commit", "-m", commit_msg],
-                capture_output=True, text=True, timeout=30, cwd=self._cwd,
-            )
-            if r.returncode != 0:
-                logger.warning("Git commit failed: %s", r.stderr.strip())
-                return None
 
-            # Push
-            r = subprocess.run(
-                ["git", "push", "-u", "origin", branch_name],
-                capture_output=True, text=True, timeout=60, cwd=self._cwd,
-            )
-            if r.returncode != 0:
-                logger.warning("Git push failed: %s", r.stderr.strip())
-                return None
+            if self._git is not None:
+                result = self._git.commit(commit_msg, files=changed_files)
+                if not result.success:
+                    logger.warning("Git commit failed: %s", result.error)
+                    return None
+            else:
+                import subprocess
+                for f in changed_files:
+                    subprocess.run(
+                        ["git", "add", f],
+                        capture_output=True, text=True, timeout=10, cwd=self._cwd,
+                    )
+                r = subprocess.run(
+                    ["git", "commit", "-m", commit_msg],
+                    capture_output=True, text=True, timeout=30, cwd=self._cwd,
+                )
+                if r.returncode != 0:
+                    logger.warning("Git commit failed: %s", r.stderr.strip())
+                    return None
 
-            # Create PR
-            from steward.senses.gh import get_gh_client
+            # Step 2: Push
+            if self._git is not None:
+                result = self._git.push(branch_name)
+                if not result.success:
+                    logger.warning("Git push failed: %s", result.error)
+                    return None
+            else:
+                import subprocess
+                r = subprocess.run(
+                    ["git", "push", "-u", "origin", branch_name],
+                    capture_output=True, text=True, timeout=60, cwd=self._cwd,
+                )
+                if r.returncode != 0:
+                    logger.warning("Git push failed: %s", r.stderr.strip())
+                    return None
 
-            gh = get_gh_client()
-            if gh is None:
-                logger.warning("GhClient unavailable — skipping PR creation")
-                return None
-
+            # Step 3: Create PR
             files_list = "\n".join(f"- `{f}`" for f in sorted(changed_files))
             body = (
                 f"## Autonomous Fix: {intent_name}\n\n"
@@ -636,18 +652,31 @@ class AutonomyEngine:
                 f"- [x] Lint gate (ruff)\n"
                 f"- [x] Security gate (bandit)\n"
                 f"- [x] Blast radius gate\n"
-                f"- [x] Test integrity gate (AST)\n"
-                f"- [x] API surface gate (AST)\n"
+                f"- [x] Cohesion gate (LCOM4)\n"
+                f"- [x] Test integrity gate\n"
+                f"- [x] API surface gate\n"
                 f"- [x] Test suite (no new failures)\n"
             )
+            pr_title = f"steward: {intent_name.lower()} — {problem[:60]}"
 
-            pr_url = gh.create_pr(
-                title=f"steward: {intent_name.lower()} — {problem[:60]}",
-                body=body,
-                head=branch_name,
-                base="main",
-            )
-            return pr_url
+            if self._github is not None:
+                pr_result = self._github.create_pr(
+                    title=pr_title,
+                    body=body,
+                    head=branch_name,
+                    base="main",
+                )
+                return pr_result.url if pr_result.success else None
+            else:
+                from steward.senses.gh import get_gh_client
+                gh = get_gh_client()
+                if gh is None:
+                    return None
+                return gh.call(
+                    ["pr", "create", "--title", pr_title, "--body", body,
+                     "--head", branch_name, "--base", "main"],
+                    timeout=30,
+                )
 
         except Exception as e:
             logger.warning("PR creation failed: %s", e)

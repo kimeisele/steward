@@ -198,6 +198,13 @@ class StewardAgent(GADBase):
         # 5 Jnanendriyas — deterministic environmental perception (zero LLM)
         self._senses = SenseCoordinator(cwd=self._cwd)
 
+        # Actuators — real muscles for git/GitHub operations
+        from steward.actuators import GitActuator, GitHubActuator
+        from steward.senses.gh import get_gh_client
+
+        self._git_actuator = GitActuator(cwd=self._cwd)
+        self._github_actuator = GitHubActuator(gh_client=get_gh_client())
+
         # AutonomyEngine — all autonomous task detection, dispatch, and fix logic
         # Extracted from StewardAgent to reduce LCOM4 (god-class → focused modules)
         self._autonomy = AutonomyEngine(
@@ -209,6 +216,8 @@ class StewardAgent(GADBase):
             cwd=self._cwd,
             run_fn=self.run,
             vedana_fn=lambda: self.vedana,
+            git_actuator=self._git_actuator,
+            github_actuator=self._github_actuator,
         )
 
         # Gap tracker — self-awareness of capability gaps
