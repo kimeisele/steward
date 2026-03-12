@@ -39,6 +39,7 @@ class BuiltinToolProvider:
         from steward.senses.gh import get_gh_client
         from steward.tools.agent_internet import AgentInternetTool
         from steward.tools.bash import BashTool
+        from steward.tools.delegate import DelegateToPeerTool
         from steward.tools.edit import EditTool
         from steward.tools.git import GitTool
         from steward.tools.glob import GlobTool
@@ -63,6 +64,7 @@ class BuiltinToolProvider:
             AgentInternetTool(),
             SubAgentTool(cwd=cwd),
             KnowledgeGraphTool(),
+            DelegateToPeerTool(),
         ]
 
 
