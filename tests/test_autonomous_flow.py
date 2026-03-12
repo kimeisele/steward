@@ -19,6 +19,7 @@ import pytest
 from steward.autonomy import parse_intent_from_title as _parse_intent_from_title
 from steward.fix_pipeline import problem_fingerprint as _problem_fingerprint
 from steward.intents import TaskIntent
+from steward.types import MessageRole
 from tests.conftest import FakeLLM, NormalizedResponse, track_agent
 
 
@@ -381,6 +382,91 @@ class TestDaemonMode:
 
         # Cetana should be stopped
         assert not agent._cetana.is_alive
+
+
+class TestDaemonMemoryManagement:
+    """Verify conversation resets between tasks — no state bloat."""
+
+    def test_conversation_resets_between_dispatches(self, fake_llm):
+        """Each _dispatch_next_task() starts with clean conversation."""
+        from steward.agent import StewardAgent
+        from steward.services import SVC_TASK_MANAGER
+        from steward.types import Message, MessageRole
+        from vibe_core.di import ServiceRegistry
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+        task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
+
+        # Stuff conversation with messages (simulates previous task)
+        for i in range(10):
+            agent._conversation.add(
+                Message(role=MessageRole.USER, content=f"old message {i}" * 100)
+            )
+        tokens_before = agent._conversation.total_tokens
+        assert tokens_before > 500, "Setup: conversation should have accumulated tokens"
+
+        # Dispatch a task — conversation should reset first
+        task_mgr.add_task(title="[HEALTH_CHECK] Quick check", priority=50)
+        agent._autonomy.phase_karma()
+
+        # After dispatch, conversation should be clean (system msg only)
+        assert len(agent._conversation.messages) <= 2  # system + maybe 1 user
+        assert agent._conversation.total_tokens < tokens_before
+
+    def test_system_prompt_survives_reset(self, fake_llm):
+        """System message is preserved across conversation resets."""
+        from steward.agent import StewardAgent
+        from steward.types import Message
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+
+        # Add a system message (normally done by run_stream on first call)
+        sys_msg = Message(role=MessageRole.SYSTEM, content="You are steward.")
+        agent._conversation.messages.insert(0, sys_msg)
+        # Add some user messages too
+        agent._conversation.add(Message(role=MessageRole.USER, content="hello"))
+
+        agent._reset_conversation()
+
+        assert len(agent._conversation.messages) == 1
+        assert agent._conversation.messages[0].role == MessageRole.SYSTEM
+        assert agent._conversation.messages[0].content == "You are steward."
+
+    def test_hebbian_weights_persist_across_resets(self, fake_llm):
+        """Hebbian learning survives conversation reset — real memory."""
+        from steward.agent import StewardAgent
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+
+        # Set a Hebbian weight
+        agent._autonomy._synaptic.update("test_key", "fix", success=True)
+        weight_before = agent._autonomy._synaptic.get_weight("test_key", "fix")
+        assert weight_before > 0.5
+
+        # Reset conversation
+        agent._reset_conversation()
+
+        # Hebbian weight should survive
+        weight_after = agent._autonomy._synaptic.get_weight("test_key", "fix")
+        assert weight_after == weight_before
+
+    def test_multiple_dispatches_no_growth(self, fake_llm):
+        """Multiple KARMA dispatches don't accumulate conversation state."""
+        from steward.agent import StewardAgent
+        from steward.services import SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+        task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
+
+        # Run 5 task dispatches
+        for i in range(5):
+            task_mgr.add_task(title=f"[HEALTH_CHECK] Check {i}", priority=50)
+            agent._autonomy.phase_karma()
+
+        # Conversation should be minimal — not 5 tasks worth of history
+        assert len(agent._conversation.messages) <= 2
+        assert agent._conversation.total_tokens < 500
 
 
 class TestProblemFingerprint:
