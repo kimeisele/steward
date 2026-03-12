@@ -1,16 +1,16 @@
 """
-Filesystem Federation Transport — shared directory for cross-agent messaging.
+Federation Transport — Adapts steward-protocol's FederationNadi for the bridge.
 
-Implements the FederationTransport protocol using JSON files in a shared
-directory. Works immediately for local development (steward + agent-internet
-on the same machine). No network, no dependencies.
+Two transport implementations:
+  - NadiFederationTransport: Uses FederationNadi from steward-protocol
+    (nadi_outbox.json / nadi_inbox.json). Compatible with agent-city and
+    agent-internet's filesystem federation. Works over git (push/pull = network).
+  - FilesystemFederationTransport: Legacy shared-directory transport for
+    backwards compatibility with STEWARD_FEDERATION_DIR.
 
-Directory structure:
-    {base_dir}/
-        outbox/   ← we READ from here (other agents' messages TO us)
-        inbox/    ← we WRITE to here (our messages FOR other agents)
-
-Configure via STEWARD_FEDERATION_DIR environment variable.
+Configure via:
+  STEWARD_FEDERATION_DIR → NadiFederationTransport (preferred)
+  Falls back to FilesystemFederationTransport if FederationNadi unavailable.
 """
 
 from __future__ import annotations
@@ -23,8 +23,58 @@ from pathlib import Path
 logger = logging.getLogger("STEWARD.FEDERATION.TRANSPORT")
 
 
+class NadiFederationTransport:
+    """Adapts steward-protocol's FederationNadi to the FederationTransport protocol.
+
+    FederationNadi (steward-protocol) uses nadi_outbox.json / nadi_inbox.json —
+    the canonical cross-repo format shared by agent-city and agent-internet.
+
+    This adapter satisfies the FederationTransport protocol:
+        read_outbox() -> list[dict]
+        append_to_inbox(messages) -> int
+    """
+
+    def __init__(self, federation_dir: str) -> None:
+        from vibe_core.mahamantra.federation import FederationNadi
+
+        self._nadi = FederationNadi(federation_dir=federation_dir)
+
+    def read_outbox(self) -> list[dict]:
+        """Read messages from nadi_outbox.json (other agents' messages TO us).
+
+        Returns list of dicts with {source, target, operation, payload, ...}.
+        FederationNadi handles TTL expiry and deduplication.
+        """
+        messages = self._nadi.receive()
+        return [msg.to_dict() for msg in messages]
+
+    def append_to_inbox(self, messages: list[object]) -> int:
+        """Write messages to nadi_inbox.json (our messages FOR other agents).
+
+        Accepts dicts or FederationMessage-like objects. Converts to
+        FederationMessage format for cross-repo compatibility.
+        """
+        from vibe_core.mahamantra.federation import FederationMessage
+
+        count = 0
+        for msg in messages:
+            if isinstance(msg, dict):
+                fm = FederationMessage.from_dict(msg)
+            elif hasattr(msg, "to_dict"):
+                fm = FederationMessage.from_dict(msg.to_dict())
+            else:
+                continue
+            if self._nadi.send_message(fm):
+                count += 1
+        return count
+
+
 class FilesystemFederationTransport:
-    """Federation transport via shared filesystem directory.
+    """Legacy transport via shared filesystem directory.
+
+    Uses outbox/ and inbox/ subdirectories with separate JSON files.
+    Kept for backwards compatibility with STEWARD_FEDERATION_DIR when
+    NadiFederationTransport is not available.
 
     Satisfies the FederationTransport protocol:
         read_outbox() -> list[dict]
@@ -74,3 +124,16 @@ class FilesystemFederationTransport:
         except OSError as e:
             logger.warning("Failed to write %s: %s", path, e)
             return 0
+
+
+def create_transport(federation_dir: str) -> object:
+    """Create the best available transport for the given federation directory.
+
+    Tries NadiFederationTransport first (steward-protocol's canonical format).
+    Falls back to FilesystemFederationTransport if FederationNadi unavailable.
+    """
+    try:
+        return NadiFederationTransport(federation_dir)
+    except (ImportError, Exception) as e:
+        logger.info("NadiFederationTransport unavailable (%s), using filesystem fallback", e)
+        return FilesystemFederationTransport(federation_dir)
