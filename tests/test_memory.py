@@ -118,10 +118,14 @@ class TestMemoryFileTracking:
         try:
             # First read the file (Iron Dome requires read before write)
             tc_read = ToolUse(id="call_read", name="read_file", parameters={"path": path})
-            tc_write = ToolUse(id="call_write", name="write_file", parameters={
-                        "path": path,
-                        "content": "new content",
-                    })
+            tc_write = ToolUse(
+                id="call_write",
+                name="write_file",
+                parameters={
+                    "path": path,
+                    "content": "new content",
+                },
+            )
             responses = [
                 FakeResponse(content="", tool_calls=[tc_read]),
                 FakeResponse(content="", tool_calls=[tc_write]),

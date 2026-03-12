@@ -117,6 +117,30 @@ class SVC_OUROBOROS:
     """OuroborosLoopOrchestrator — self-healing pipeline (detect → verify → heal)."""
 
 
+class SVC_MARKETPLACE:
+    """Marketplace — slot conflict resolution for federation peers."""
+
+
+class SVC_FEDERATION:
+    """FederationBridge — cross-agent message routing."""
+
+
+class SVC_FEDERATION_TRANSPORT:
+    """FederationTransport — pluggable transport for cross-agent messaging."""
+
+
+class SVC_GIT_NADI_SYNC:
+    """GitNadiSync — git pull/push for federation nadi files."""
+
+
+class SVC_REAPER:
+    """HeartbeatReaper — network garbage collection for federation peers."""
+
+
+class SVC_PHASE_HOOKS:
+    """PhaseHookRegistry — composable phase dispatch for MURALI."""
+
+
 class SVC_NORTH_STAR:
     """North Star — infrastructure-level goal seed (not LLM prompt).
 
@@ -295,6 +319,55 @@ def boot(
     # 23. Ouroboros — DEFERRED (registered but not consumed by agent loop)
     # Code lives in vibe_core.ouroboros.loop_orchestrator
 
+    # 25. HeartbeatReaper (federation peer liveness + trust degradation)
+    from steward.reaper import HeartbeatReaper
+
+    reaper = HeartbeatReaper()
+    peers_path = cwd_path / ".steward" / "peers.json"
+    reaper.load(peers_path)
+    ServiceRegistry.register(SVC_REAPER, reaper)
+
+    # 26. Marketplace (slot conflict resolution for federation peers)
+    from steward.marketplace import Marketplace
+
+    marketplace = Marketplace()
+    market_path = cwd_path / ".steward" / "marketplace.json"
+    marketplace.load(market_path)
+    ServiceRegistry.register(SVC_MARKETPLACE, marketplace)
+
+    # 27. FederationBridge (cross-agent message routing → Reaper + Marketplace)
+    from steward.federation import FederationBridge
+
+    federation = FederationBridge(reaper=reaper, marketplace=marketplace)
+    ServiceRegistry.register(SVC_FEDERATION, federation)
+
+    # 28. FederationTransport (auto-discover from environment)
+    import os
+
+    fed_dir = os.environ.get("STEWARD_FEDERATION_DIR")
+    if fed_dir:
+        from steward.federation_transport import create_transport
+
+        transport = create_transport(fed_dir)
+        ServiceRegistry.register(SVC_FEDERATION_TRANSPORT, transport)
+        logger.info("Federation transport: %s → %s", type(transport).__name__, fed_dir)
+
+        # 28b. GitNadiSync (git network layer for federation — only if git checkout)
+        from steward.git_nadi_sync import GitNadiSync
+
+        git_sync = GitNadiSync(fed_dir)
+        if git_sync.is_git_repo:
+            ServiceRegistry.register(SVC_GIT_NADI_SYNC, git_sync)
+            logger.info("Git nadi sync: active (interval=%ds)", git_sync._sync_interval_s)
+
+    # 29. PhaseHookRegistry (composable MURALI phase dispatch)
+    from steward.hooks import register_default_hooks
+    from steward.phase_hook import PhaseHookRegistry
+
+    phase_hooks = PhaseHookRegistry()
+    register_default_hooks(phase_hooks)
+    ServiceRegistry.register(SVC_PHASE_HOOKS, phase_hooks)
+
     # 24. IntegrityChecker — boot-time validation (catch lazy-load failures early)
     from vibe_core.protocols.integrity import IntegrityChecker, IssueSeverity
 
@@ -383,6 +456,7 @@ def _check_tools_registered(registry: ToolRegistry) -> None:
 def _check_narasimha(narasimha: object) -> None:
     """Integrity check: Narasimha protocol is functional."""
     from vibe_core.protocols.mahajanas.nrisimha.types.narasimha import NarasimhaProtocol
+
     if not isinstance(narasimha, NarasimhaProtocol):
         raise RuntimeError("NarasimhaProtocol missing audit_agent()")
 
@@ -396,6 +470,7 @@ def _check_provider(provider: object) -> None:
 def _check_venu_divinity(venu: object) -> None:
     """Integrity check: VenuOrchestrator structural verification."""
     from vibe_core.mahamantra.substrate.vm.venu_orchestrator import VenuOrchestrator
+
     if not isinstance(venu, VenuOrchestrator) or not venu.verify_divinity():
         raise RuntimeError("VenuOrchestrator failed divinity verification")
 
@@ -485,6 +560,22 @@ def _add_steward_missions(sankalpa: object) -> None:
                 max_executions_per_day=1,
                 enabled=True,
             ),
+            SankalpaStrategy(
+                id="strategy_federation_health",
+                name="Federation Health Check",
+                description="Monitor peer liveness, outbox queue, transport health",
+                trigger=SankalpaTrigger(
+                    trigger_type=TriggerType.IDLE_BASED,
+                    idle_minutes=10,
+                ),
+                frequency=StrategyFrequency.DAILY,
+                intent_type="federation_health",
+                intent_template={},
+                requires_ci_green=False,
+                requires_no_pending_intents=True,
+                max_executions_per_day=12,
+                enabled=True,
+            ),
         ],
         owner="steward",
     )
@@ -502,6 +593,7 @@ class _LazyKnowledgeGraph:
 
     def __init__(self, workspace: object) -> None:
         from vibe_core.knowledge.graph import UnifiedKnowledgeGraph
+
         self._graph = UnifiedKnowledgeGraph()
         self._workspace = workspace
         self._scanned = False
@@ -513,6 +605,7 @@ class _LazyKnowledgeGraph:
         self._scanned = True
         try:
             from vibe_core.knowledge.code_scanner import CodeScanner
+
             scanner = CodeScanner(self._graph)
             stats = scanner.scan_directory(self._workspace)
             logger.info(

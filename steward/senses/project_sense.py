@@ -159,4 +159,3 @@ class ProjectSense:
                 if f.is_file() and not f.name.startswith("."):
                     found.append(f.name)
         return sorted(found)[:20]  # cap at 20
-

@@ -36,16 +36,7 @@ def _is_test_file(filepath: str) -> bool:
 
 
 def _count_test_elements(source: str) -> dict | None:
-    """Count test-relevant AST elements in Python source.
-
-    Returns dict with:
-    - test_functions: count of def test_*() and def test_*() methods
-    - asserts: count of assert statements
-    - trivial_asserts: count of `assert True`, `assert 1`, `assert "..."` (always-pass)
-    - test_classes: count of class Test*
-
-    Returns None if source can't be parsed.
-    """
+    """Count test-relevant AST elements — O(1) dispatch per node."""
     import ast
 
     try:
@@ -60,21 +51,30 @@ def _count_test_elements(source: str) -> dict | None:
         "test_classes": 0,
     }
 
+    def _count_func(node: object) -> None:
+        if node.name.startswith("test_"):
+            stats["test_functions"] += 1
+
+    def _count_class(node: object) -> None:
+        if node.name.startswith("Test"):
+            stats["test_classes"] += 1
+
+    def _count_assert(node: object) -> None:
+        stats["asserts"] += 1
+        if isinstance(node.test, ast.Constant) and node.test.value in (True, 1):
+            stats["trivial_asserts"] += 1
+
+    dispatch: dict[type, object] = {
+        ast.FunctionDef: _count_func,
+        ast.AsyncFunctionDef: _count_func,
+        ast.ClassDef: _count_class,
+        ast.Assert: _count_assert,
+    }
+
     for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            if node.name.startswith("test_"):
-                stats["test_functions"] += 1
-
-        elif isinstance(node, ast.ClassDef):
-            if node.name.startswith("Test"):
-                stats["test_classes"] += 1
-
-        elif isinstance(node, ast.Assert):
-            stats["asserts"] += 1
-            # Check for trivial assertions: assert True, assert 1, assert "string"
-            test_node = node.test
-            if isinstance(test_node, ast.Constant) and test_node.value in (True, 1):
-                stats["trivial_asserts"] += 1
+        handler = dispatch.get(type(node))
+        if handler is not None:
+            handler(node)
 
     return stats
 
@@ -103,10 +103,19 @@ def _extract_public_surface(source: str) -> dict | None:
     }
 
     # Route-like decorator patterns (attribute names to match)
-    _ROUTE_DECORATORS = frozenset({
-        "route", "get", "post", "put", "delete", "patch",
-        "api_view", "action", "endpoint",
-    })
+    _ROUTE_DECORATORS = frozenset(
+        {
+            "route",
+            "get",
+            "post",
+            "put",
+            "delete",
+            "patch",
+            "api_view",
+            "action",
+            "endpoint",
+        }
+    )
 
     for node in ast.iter_child_nodes(tree):
         # Extract __all__ assignments
@@ -143,17 +152,18 @@ def _decorator_leaf_name(decorator: object) -> str | None:
     """Extract the leaf name from a decorator AST node.
 
     Handles: @route, @app.route, @router.get, @app.router.get
-    Returns the rightmost name segment.
+    Returns the rightmost name segment. O(1) dispatch per node type.
     """
     import ast
 
-    if isinstance(decorator, ast.Name):
-        return decorator.id
-    elif isinstance(decorator, ast.Attribute):
-        return decorator.attr
-    elif isinstance(decorator, ast.Call):
-        return _decorator_leaf_name(decorator.func)
-    return None
+    _LEAF_EXTRACT: dict[type, object] = {
+        ast.Name: lambda n: n.id,
+        ast.Attribute: lambda n: n.attr,
+        ast.Call: lambda n: _decorator_leaf_name(n.func),
+    }
+
+    extractor = _LEAF_EXTRACT.get(type(decorator))
+    return extractor(decorator) if extractor is not None else None
 
 
 @dataclass
@@ -268,7 +278,9 @@ class CircuitBreaker:
             self.record_rollback()
             logger.warning(
                 "Fix rolled back: %s (failures %d → %d)",
-                file_path, baseline, post,
+                file_path,
+                baseline,
+                post,
             )
             return FixResult(
                 rolled_back=True,
@@ -303,6 +315,7 @@ class CircuitBreaker:
 
             # Parse "N failed" from pytest output
             import re
+
             match = re.search(r"(\d+) failed", result.stdout + result.stderr)
             if match:
                 return int(match.group(1))
@@ -379,7 +392,8 @@ class CircuitBreaker:
             self._suspended_until = time.monotonic() + SUSPEND_DURATION
             logger.warning(
                 "Circuit breaker SUSPENDED for %ds after %d consecutive rollbacks",
-                SUSPEND_DURATION, self._consecutive_rollbacks,
+                SUSPEND_DURATION,
+                self._consecutive_rollbacks,
             )
 
     def record_success(self) -> None:
@@ -405,9 +419,7 @@ class CircuitBreaker:
             return GateResult(passed=True, gate="lint")
 
         # Count violations on current (LLM-modified) files
-        post_count = self._run_tool_count(
-            ["ruff", "check", "--no-fix", "--quiet"] + py_files
-        )
+        post_count = self._run_tool_count(["ruff", "check", "--no-fix", "--quiet"] + py_files)
         if post_count is None:
             return GateResult(passed=True, gate="lint", detail="ruff not available")
         if post_count == 0:
@@ -504,6 +516,57 @@ class CircuitBreaker:
 
         return GateResult(passed=True, gate="blast_radius")
 
+    def check_cohesion(self, changed_files: set[str]) -> GateResult:
+        """Cohesion gate — 2D matrix: LCOM4 × WMC.
+
+        LCOM4 alone produces false positives on routers and facades
+        (high LCOM4 but low complexity). The second dimension — WMC
+        (Weighted Methods per Class, sum of cyclomatic complexities) —
+        distinguishes simple routers from real god-classes:
+
+            LCOM4 ≤ 4            → PASS (cohesive enough)
+            LCOM4 > 4, WMC ≤ 20 → PASS (router/facade — false positive)
+            LCOM4 > 4, WMC > 20 → FAIL (real god-class)
+        """
+        import ast
+
+        from steward.senses.code_sense import _compute_lcom4, _compute_wmc
+
+        max_lcom4 = 4  # Structural threshold: disconnected method groups
+        max_wmc = 20  # Complexity threshold: branching density
+
+        py_files = [f for f in changed_files if f.endswith(".py") and not _is_test_file(f)]
+        if not py_files:
+            return GateResult(passed=True, gate="cohesion")
+
+        violations = []
+        for filepath in py_files:
+            full_path = Path(self.cwd) / filepath
+            if not full_path.exists():
+                continue
+            try:
+                source = full_path.read_text()
+                tree = ast.parse(source)
+            except (SyntaxError, OSError):
+                continue
+
+            for node in tree.body:
+                if not isinstance(node, ast.ClassDef):
+                    continue
+                lcom4 = _compute_lcom4(node)
+                if lcom4 > max_lcom4:
+                    wmc = _compute_wmc(node)
+                    if wmc > max_wmc:
+                        violations.append(f"{node.name} in {filepath} (LCOM4={lcom4}, WMC={wmc})")
+
+        if violations:
+            return GateResult(
+                passed=False,
+                gate="cohesion",
+                detail=f"God-class regression: {'; '.join(violations)}",
+            )
+        return GateResult(passed=True, gate="cohesion")
+
     def check_test_integrity(self, changed_files: set[str]) -> GateResult:
         """Test integrity gate — prevent Goodhart test gaming via AST.
 
@@ -517,10 +580,7 @@ class CircuitBreaker:
         """
         import ast
 
-        test_files = sorted(
-            f for f in changed_files
-            if f.endswith(".py") and _is_test_file(f)
-        )
+        test_files = sorted(f for f in changed_files if f.endswith(".py") and _is_test_file(f))
         if not test_files:
             return GateResult(passed=True, gate="test_integrity")
 
@@ -578,9 +638,7 @@ class CircuitBreaker:
             # Check 3: Trivial assertions (assert True, assert 1)
             if current_stats["trivial_asserts"] > head_stats["trivial_asserts"]:
                 new_trivial = current_stats["trivial_asserts"] - head_stats["trivial_asserts"]
-                problems.append(
-                    f"{filepath}: {new_trivial} trivial assertion(s) added (assert True/1)"
-                )
+                problems.append(f"{filepath}: {new_trivial} trivial assertion(s) added (assert True/1)")
 
         if problems:
             return GateResult(
@@ -602,10 +660,7 @@ class CircuitBreaker:
         """
         import ast
 
-        py_files = sorted(
-            f for f in changed_files
-            if f.endswith(".py") and not _is_test_file(f)
-        )
+        py_files = sorted(f for f in changed_files if f.endswith(".py") and not _is_test_file(f))
         if not py_files:
             return GateResult(passed=True, gate="api_surface")
 
@@ -635,8 +690,7 @@ class CircuitBreaker:
                 head_surface = _extract_public_surface(head_result.stdout)
                 if head_surface and head_surface["public_names"]:
                     problems.append(
-                        f"{filepath}: source file deleted "
-                        f"(had {len(head_surface['public_names'])} public names)"
+                        f"{filepath}: source file deleted (had {len(head_surface['public_names'])} public names)"
                     )
                 continue
 
@@ -652,24 +706,19 @@ class CircuitBreaker:
             if head_all is not None and current_all is not None:
                 removed_exports = head_all - current_all
                 if removed_exports:
-                    problems.append(
-                        f"{filepath}: __all__ exports removed: {', '.join(sorted(removed_exports))}"
-                    )
+                    problems.append(f"{filepath}: __all__ exports removed: {', '.join(sorted(removed_exports))}")
 
             # Check 2: Decorated endpoints removed
             removed_endpoints = head_surface["decorated_endpoints"] - current_surface["decorated_endpoints"]
             if removed_endpoints:
-                problems.append(
-                    f"{filepath}: decorated endpoints removed: {', '.join(sorted(removed_endpoints))}"
-                )
+                problems.append(f"{filepath}: decorated endpoints removed: {', '.join(sorted(removed_endpoints))}")
 
             # Check 3: Public functions/classes removed (only flag if significant)
             removed_public = head_surface["public_names"] - current_surface["public_names"]
             if len(removed_public) >= 2:
                 # Allow removing 1 public name (refactoring), flag 2+
                 problems.append(
-                    f"{filepath}: {len(removed_public)} public names removed: "
-                    f"{', '.join(sorted(removed_public)[:5])}"
+                    f"{filepath}: {len(removed_public)} public names removed: {', '.join(sorted(removed_public)[:5])}"
                 )
 
         if problems:
@@ -690,6 +739,7 @@ class CircuitBreaker:
             self.check_lint(changed_files),
             self.check_security(changed_files),
             self.check_blast_radius(changed_files),
+            self.check_cohesion(changed_files),
             self.check_test_integrity(changed_files),
             self.check_api_surface(changed_files),
         ]
@@ -753,9 +803,7 @@ class CircuitBreaker:
         """
         return self._differential_check(
             py_files,
-            lambda files: self._run_tool_count(
-                ["ruff", "check", "--no-fix", "--quiet"] + files
-            ),
+            lambda files: self._run_tool_count(["ruff", "check", "--no-fix", "--quiet"] + files),
         )
 
     def _baseline_security_count(self, py_files: list[str]) -> int:

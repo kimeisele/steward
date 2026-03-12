@@ -88,9 +88,7 @@ class TestEndToEnd:
             [
                 ToolCallResponse(
                     content="Let me check.",
-                    tool_calls=[
-                        ToolUse(id="call_1", name="glob", parameters={'pattern': '*.py'})
-                    ],
+                    tool_calls=[ToolUse(id="call_1", name="glob", parameters={"pattern": "*.py"})],
                 ),
                 TextResponse("I found some Python files."),
             ]
@@ -129,9 +127,7 @@ class TestEndToEnd:
             [
                 ToolCallResponse(
                     content="Reading file.",
-                    tool_calls=[
-                        ToolUse(id="call_1", name="glob", parameters={'pattern': '*.md'})
-                    ],
+                    tool_calls=[ToolUse(id="call_1", name="glob", parameters={"pattern": "*.md"})],
                 ),
                 TextResponse("Done reading."),
             ]
@@ -243,53 +239,45 @@ class TestEndToEnd:
                 # Round 1: Read file → ORIENT
                 ToolCallResponse(
                     content="Let me read the code.",
-                    tool_calls=[
-                        ToolUse(id="call_1", name="read_file", parameters={"path": main_py})
-                    ],
+                    tool_calls=[ToolUse(id="call_1", name="read_file", parameters={"path": main_py})],
                 ),
                 # Round 2: Read another file → 2 reads → EXECUTE
                 ToolCallResponse(
                     content="Let me check another file.",
-                    tool_calls=[
-                        ToolUse(id="call_2", name="read_file", parameters={"path": lib_py})
-                    ],
+                    tool_calls=[ToolUse(id="call_2", name="read_file", parameters={"path": lib_py})],
                 ),
                 # Round 3: Edit the file → stays EXECUTE
                 ToolCallResponse(
                     content="I'll fix the bug.",
                     tool_calls=[
-                        ToolUse(id="call_3", name="edit_file", parameters={
-                            "path": main_py,
-                            "old_string": "old_value",
-                            "new_string": "new_value",
-                        })
+                        ToolUse(
+                            id="call_3",
+                            name="edit_file",
+                            parameters={
+                                "path": main_py,
+                                "old_string": "old_value",
+                                "new_string": "new_value",
+                            },
+                        )
                     ],
                 ),
                 # Rounds 4-6: Read after write → push recent window past the write → VERIFY
                 ToolCallResponse(
                     content="Let me verify the change.",
-                    tool_calls=[
-                        ToolUse(id="call_4", name="read_file", parameters={"path": main_py})
-                    ],
+                    tool_calls=[ToolUse(id="call_4", name="read_file", parameters={"path": main_py})],
                 ),
                 ToolCallResponse(
                     content="Checking more.",
-                    tool_calls=[
-                        ToolUse(id="call_5", name="read_file", parameters={"path": test_py})
-                    ],
+                    tool_calls=[ToolUse(id="call_5", name="read_file", parameters={"path": test_py})],
                 ),
                 ToolCallResponse(
                     content="Reading lib.",
-                    tool_calls=[
-                        ToolUse(id="call_6", name="read_file", parameters={"path": lib_py})
-                    ],
+                    tool_calls=[ToolUse(id="call_6", name="read_file", parameters={"path": lib_py})],
                 ),
                 # Round 7: Run tests → COMPLETE
                 ToolCallResponse(
                     content="Running tests.",
-                    tool_calls=[
-                        ToolUse(id="call_7", name="bash", parameters={"command": "echo 'all tests passed'"})
-                    ],
+                    tool_calls=[ToolUse(id="call_7", name="bash", parameters={"command": "echo 'all tests passed'"})],
                 ),
                 # Final: text response
                 TextResponse("All tests pass. Bug fixed."),
@@ -356,9 +344,7 @@ class TestEndToEnd:
             error_responses.append(
                 ToolCallResponse(
                     content=f"Trying tool {i}.",
-                    tool_calls=[
-                        ToolUse(id=f"call_{i}", name="nonexistent_tool", parameters={"x": "y"})
-                    ],
+                    tool_calls=[ToolUse(id=f"call_{i}", name="nonexistent_tool", parameters={"x": "y"})],
                 )
             )
         error_responses.append(TextResponse("This shouldn't be reached."))
@@ -391,9 +377,7 @@ class TestEndToEnd:
             identical_responses.append(
                 ToolCallResponse(
                     content="Looking for files.",
-                    tool_calls=[
-                        ToolUse(id=f"call_{i}", name="glob", parameters={"pattern": "*.py"})
-                    ],
+                    tool_calls=[ToolUse(id=f"call_{i}", name="glob", parameters={"pattern": "*.py"})],
                 )
             )
         identical_responses.append(TextResponse("Ok, I'll try something else."))
@@ -519,9 +503,7 @@ class TestEndToEnd:
                 # Turn 1: read a file
                 ToolCallResponse(
                     content="Reading.",
-                    tool_calls=[
-                        ToolUse(id="c1", name="glob", parameters={'pattern': '*.py'})
-                    ],
+                    tool_calls=[ToolUse(id="c1", name="glob", parameters={"pattern": "*.py"})],
                 ),
                 TextResponse("Found files."),
                 # Turn 2: just text

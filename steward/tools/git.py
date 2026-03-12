@@ -63,10 +63,7 @@ class GitTool(Tool):
             "action": {
                 "type": "string",
                 "required": True,
-                "description": (
-                    "Git action: status, diff, branch_create, checkout, "
-                    "commit, push, pr_create, pr_list"
-                ),
+                "description": ("Git action: status, diff, branch_create, checkout, commit, push, pr_create, pr_list"),
             },
             "branch": {
                 "type": "string",

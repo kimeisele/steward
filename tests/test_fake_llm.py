@@ -35,11 +35,13 @@ class TestFakeLLM:
 
     def test_custom_responses_in_order(self):
         """Responses are returned in sequence."""
-        llm = FakeLLM([
-            FakeResponse(content="first"),
-            FakeResponse(content="second"),
-            FakeResponse(content="third"),
-        ])
+        llm = FakeLLM(
+            [
+                FakeResponse(content="first"),
+                FakeResponse(content="second"),
+                FakeResponse(content="third"),
+            ]
+        )
         assert llm.invoke(messages=[]).content == "first"
         assert llm.invoke(messages=[]).content == "second"
         assert llm.invoke(messages=[]).content == "third"
@@ -137,10 +139,12 @@ class TestFakeLLMEdgeCases:
 
     def test_sequential_calls_isolated(self):
         """Multiple sequential calls don't interfere — kwargs are recorded independently."""
-        llm = FakeLLM([
-            FakeResponse(content="a"),
-            FakeResponse(content="b"),
-        ])
+        llm = FakeLLM(
+            [
+                FakeResponse(content="a"),
+                FakeResponse(content="b"),
+            ]
+        )
         r1 = llm.invoke(messages=[{"m": 1}])
         r2 = llm.invoke(messages=[{"m": 2}])
         assert r1.content == "a"

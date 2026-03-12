@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import logging
 import subprocess
-from datetime import datetime
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -45,10 +45,15 @@ class GitSense:
     Remote perception (when GhClient available): CI status, open PRs.
     """
 
+    # TTL for remote perception cache — gh CLI calls are expensive (~2s)
+    _REMOTE_TTL = 60.0  # seconds
+
     def __init__(self, cwd: str | None = None, gh_client: GhClient | None = None) -> None:
         self._cwd = cwd or str(Path.cwd())
         self._is_git = self._check_git_repo()
         self._gh = gh_client
+        self._remote_cache: dict | None = None
+        self._remote_cache_time: float = 0.0
 
     def has_remote_perception(self) -> bool:
         """RemotePerception protocol — True when gh CLI is available."""
@@ -168,17 +173,30 @@ class GitSense:
             return ""
 
     def _perceive_remote(self) -> dict | None:
-        """Perceive GitHub state via gh CLI. Returns None if unavailable."""
+        """Perceive GitHub state via gh CLI. TTL-cached to avoid 2s+ penalty.
+
+        gh CLI calls are the #1 boot bottleneck (~2.4s for 2 calls).
+        Cache results for _REMOTE_TTL seconds — CI status doesn't change every second.
+        """
         if not self._gh or not self._gh.is_available:
             return None
+
+        # Return cached result if within TTL
+        now = time.monotonic()
+        if self._remote_cache is not None and (now - self._remote_cache_time) < self._REMOTE_TTL:
+            return self._remote_cache
 
         remote: dict = {}
 
         # CI status: last 3 workflow runs
-        runs = self._gh.call_json([
-            "run", "list", "--limit=3",
-            "--json=status,conclusion,updatedAt,name",
-        ])
+        runs = self._gh.call_json(
+            [
+                "run",
+                "list",
+                "--limit=3",
+                "--json=status,conclusion,updatedAt,name",
+            ]
+        )
         if runs and isinstance(runs, list):
             remote["ci_runs"] = len(runs)
             latest = runs[0] if runs else {}
@@ -186,14 +204,22 @@ class GitSense:
             remote["ci_conclusion"] = latest.get("conclusion", "unknown")
 
         # Open PRs
-        prs = self._gh.call_json([
-            "pr", "list", "--state=open",
-            "--json=number,title,headRefName", "--limit=10",
-        ])
+        prs = self._gh.call_json(
+            [
+                "pr",
+                "list",
+                "--state=open",
+                "--json=number,title,headRefName",
+                "--limit=10",
+            ]
+        )
         if prs is not None and isinstance(prs, list):
             remote["open_prs"] = len(prs)
 
-        return remote or None
+        result = remote or None
+        self._remote_cache = result
+        self._remote_cache_time = now
+        return result
 
     def _check_upstream(self) -> str:
         """Check relationship with upstream branch."""
@@ -209,4 +235,3 @@ class GitSense:
         if base == local:
             return "behind"
         return "diverged"
-

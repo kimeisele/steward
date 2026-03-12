@@ -63,7 +63,16 @@ class HealthSense:
         stale_threshold = now - (_STALE_DAYS * 86400)
 
         source_exts = {".py", ".js", ".ts", ".jsx", ".tsx", ".go", ".rs", ".java", ".rb"}
-        skip_dirs = {"__pycache__", ".git", "node_modules", ".venv", "venv", ".mypy_cache", ".pytest_cache", ".ruff_cache"}
+        skip_dirs = {
+            "__pycache__",
+            ".git",
+            "node_modules",
+            ".venv",
+            "venv",
+            ".mypy_cache",
+            ".pytest_cache",
+            ".ruff_cache",
+        }
 
         large_files: list[str] = []
         stale_files: list[str] = []
@@ -144,4 +153,3 @@ class HealthSense:
         if perception.quality == "tamas":
             return perception.intensity
         return perception.intensity * 0.2
-

@@ -206,9 +206,7 @@ class TestCodeSense:
         """Classes with <3 methods are trivially cohesive."""
         with tempfile.TemporaryDirectory() as tmpdir:
             Path(tmpdir, "small.py").write_text(
-                "class Tiny:\n"
-                "    def a(self): self.x = 1\n"
-                "    def b(self): self.y = 2\n"
+                "class Tiny:\n    def a(self): self.x = 1\n    def b(self): self.y = 2\n"
             )
             sense = CodeSense(cwd=tmpdir)
             perception = sense.perceive()
@@ -221,6 +219,163 @@ class TestCodeSense:
             sense = CodeSense(cwd=tmpdir)
             perception = sense.perceive()
             assert "low_cohesion" in perception.data
+
+    def test_wmc_in_low_cohesion_entries(self):
+        """low_cohesion entries include WMC alongside LCOM4."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            Path(tmpdir, "split.py").write_text(
+                "class Split:\n"
+                "    def a(self): return self.x\n"
+                "    def b(self): return self.x\n"
+                "    def c(self): return self.y\n"
+                "    def d(self): return self.y\n"
+                "    def e(self): return self.z\n"
+            )
+            sense = CodeSense(cwd=tmpdir)
+            perception = sense.perceive()
+            lc = perception.data["low_cohesion"]
+            assert len(lc) >= 1
+            assert "wmc" in lc[0]
+            assert isinstance(lc[0]["wmc"], int)
+
+
+# ── WMC (Weighted Methods per Class) ────────────────────────────────────
+
+
+class TestWMC:
+    """_compute_wmc() — cyclomatic complexity per class."""
+
+    def test_simple_methods(self):
+        """Methods with no branching → WMC = method count (CC=1 each)."""
+        import ast
+        from steward.senses.code_sense import _compute_wmc
+
+        source = (
+            "class Simple:\n"
+            "    def a(self): return self.x\n"
+            "    def b(self): return self.y\n"
+            "    def c(self): return self.z\n"
+        )
+        tree = ast.parse(source)
+        cls = tree.body[0]
+        assert _compute_wmc(cls) == 3  # 3 methods × CC=1
+
+    def test_branching_methods(self):
+        """Methods with if/for/while → WMC > method count."""
+        import ast
+        from steward.senses.code_sense import _compute_wmc
+
+        source = (
+            "class Complex:\n"
+            "    def a(self):\n"
+            "        if self.x: return 1\n"
+            "        elif self.y: return 2\n"
+            "        return 0\n"
+            "    def b(self):\n"
+            "        for i in range(10):\n"
+            "            if i > 5: break\n"
+            "        return i\n"
+            "    def c(self):\n"
+            "        while self.z:\n"
+            "            self.z -= 1\n"
+        )
+        tree = ast.parse(source)
+        cls = tree.body[0]
+        wmc = _compute_wmc(cls)
+        # a: 1 + 2 (if + elif) = 3
+        # b: 1 + 1 (for) + 1 (if) = 3
+        # c: 1 + 1 (while) = 2
+        assert wmc == 8
+
+    def test_boolean_operators(self):
+        """BoolOps (and/or) add to complexity."""
+        import ast
+        from steward.senses.code_sense import _compute_wmc
+
+        source = (
+            "class BoolOps:\n"
+            "    def check(self):\n"
+            "        if self.x and self.y or self.z:\n"
+            "            return True\n"
+            "    def validate(self):\n"
+            "        return self.a and self.b and self.c\n"
+            "    def simple(self): return self.d\n"
+        )
+        tree = ast.parse(source)
+        cls = tree.body[0]
+        wmc = _compute_wmc(cls)
+        # check: 1 (base) + 1 (if) + 1 (and) + 1 (or) = 4
+        # validate: 1 (base) + 2 (and-and: 3 values - 1) = 3
+        # simple: 1 (base)
+        assert wmc == 8
+
+    def test_except_handlers(self):
+        """Try/except adds complexity per handler."""
+        import ast
+        from steward.senses.code_sense import _compute_wmc
+
+        source = (
+            "class TryHard:\n"
+            "    def risky(self):\n"
+            "        try:\n"
+            "            self.x()\n"
+            "        except ValueError:\n"
+            "            pass\n"
+            "        except TypeError:\n"
+            "            pass\n"
+            "    def safe(self): return self.y\n"
+            "    def also_safe(self): return self.z\n"
+        )
+        tree = ast.parse(source)
+        cls = tree.body[0]
+        wmc = _compute_wmc(cls)
+        # risky: 1 + 2 (two except handlers) = 3
+        # safe: 1, also_safe: 1
+        assert wmc == 5
+
+    def test_dunder_methods_excluded(self):
+        """__init__ and other dunders don't count toward WMC."""
+        import ast
+        from steward.senses.code_sense import _compute_wmc
+
+        source = (
+            "class WithInit:\n"
+            "    def __init__(self):\n"
+            "        if self.x: self.y = 1\n"
+            "        for i in range(10): pass\n"
+            "    def __repr__(self): return str(self.z)\n"
+            "    def simple(self): return self.w\n"
+        )
+        tree = ast.parse(source)
+        cls = tree.body[0]
+        assert _compute_wmc(cls) == 1  # Only simple() counts
+
+    def test_empty_class(self):
+        """Class with no methods → WMC=0."""
+        import ast
+        from steward.senses.code_sense import _compute_wmc
+
+        source = "class Empty:\n    x = 1\n"
+        tree = ast.parse(source)
+        cls = tree.body[0]
+        assert _compute_wmc(cls) == 0
+
+    def test_ternary_expression(self):
+        """Ternary (IfExp) counts as a decision point."""
+        import ast
+        from steward.senses.code_sense import _compute_wmc
+
+        source = (
+            "class Ternary:\n"
+            "    def pick(self): return self.x if self.y else self.z\n"
+            "    def plain(self): return self.a\n"
+            "    def also(self): return self.b\n"
+        )
+        tree = ast.parse(source)
+        cls = tree.body[0]
+        wmc = _compute_wmc(cls)
+        # pick: 1 + 1 (IfExp) = 2, plain: 1, also: 1
+        assert wmc == 4
 
 
 # ── TestingSense (JIHVA) ──────────────────────────────────────────────────
@@ -389,17 +544,13 @@ class TestPerceptionDataContract:
         coordinator = SenseCoordinator(cwd=".")
         agg = coordinator.perceive_all()
         for sense, perception in agg.perceptions.items():
-            assert 0.0 <= perception.intensity <= 1.0, (
-                f"{sense}: intensity {perception.intensity} out of range"
-            )
+            assert 0.0 <= perception.intensity <= 1.0, f"{sense}: intensity {perception.intensity} out of range"
 
     def test_all_perceptions_have_valid_quality(self):
         coordinator = SenseCoordinator(cwd=".")
         agg = coordinator.perceive_all()
         for sense, perception in agg.perceptions.items():
-            assert perception.quality in ("sattva", "rajas", "tamas"), (
-                f"{sense}: invalid quality {perception.quality}"
-            )
+            assert perception.quality in ("sattva", "rajas", "tamas"), f"{sense}: invalid quality {perception.quality}"
 
     def test_all_perceptions_have_data_dict(self):
         coordinator = SenseCoordinator(cwd=".")

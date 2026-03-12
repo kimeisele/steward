@@ -1,0 +1,59 @@
+# Steward Daemon — Autonomous Superagent (systemd unit)
+#
+# Install:
+#   sudo cp deploy/steward.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now steward
+#
+# Logs:
+#   journalctl -u steward -f
+#
+# Override environment:
+#   sudo systemctl edit steward
+#   → [Service]
+#   → Environment="GOOGLE_API_KEY=..."
+
+[Unit]
+Description=Steward Autonomous Superagent Daemon
+Documentation=https://github.com/kimeisele/steward
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=steward
+Group=steward
+WorkingDirectory=/opt/steward/workspace
+
+# The daemon: boots once, Cetana heartbeat drives all work
+ExecStart=/opt/steward/venv/bin/python -m steward --autonomous
+
+# Graceful shutdown (Cetana handles SIGTERM)
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+# Auto-restart on crash (5s delay, max 5 attempts in 5 min)
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+# Environment file for secrets (API keys, federation config)
+EnvironmentFile=-/opt/steward/.env
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/steward /tmp
+
+# Allow git operations for federation
+ReadWritePaths=/opt/steward/federation
+
+# Logging to journald (structured, rotated automatically)
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=steward
+
+[Install]
+WantedBy=multi-user.target

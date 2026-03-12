@@ -33,10 +33,10 @@ from typing import AsyncIterator
 from steward.antahkarana.gandha import VerdictAction
 from steward.antahkarana.ksetrajna import KsetraJna
 from steward.buddhi import Buddhi, BuddhiDirective
-from steward.protocols import HealthGate
 from steward.cbr import CBR_CEILING, CBR_SYSTEM_OVERHEAD
 from steward.context import ERROR_MARKER, SamskaraContext
 from steward.loop import json_parser, tool_dispatch
+from steward.protocols import HealthGate
 from steward.services import lean_tool_signatures
 from steward.summarizer import Summarizer, should_summarize
 from steward.types import (
@@ -55,10 +55,10 @@ from steward.types import (
 from vibe_core.mahamantra.adapters.attention import MahaAttention
 from vibe_core.mahamantra.adapters.compression import MahaCompression
 from vibe_core.mahamantra.substrate.cell_system.antaranga import (
-    AntarangaRegistry,
     FLAG_ACTIVE,
     GENESIS_PRANA_U32,
     INTEGRITY_FULL,
+    AntarangaRegistry,
 )
 from vibe_core.mahamantra.substrate.vm.venu_orchestrator import VenuOrchestrator
 from vibe_core.playbook.ephemeral_storage import EphemeralStorage
@@ -92,15 +92,25 @@ Reply ONLY with JSON:
 # Maximum tool-use iterations per turn to prevent infinite loops
 MAX_TOOL_ROUNDS = 50
 
-# Char limits — CBR-aligned. 1 token ~= 4 chars.
+# When health anomaly fires mid-turn, cap remaining rounds to this.
+# Graceful degradation: finish current work quickly, don't break mid-task.
+ANOMALY_REMAINING_ROUNDS = 2
+
+# Char limits — CBR-aligned. 1 token ~= 3 chars (code/JSON).
+# HARD CAPS: these protect free-tier rate limits.
 # Tool output: feeds back into context (input to next LLM call)
-MAX_TOOL_OUTPUT_CHARS = 4_000  # 1000 tokens — bounded context input
+MAX_TOOL_OUTPUT_CHARS = 2_000  # ~667 tokens — tight. Tool output is context COST.
 
 # User input: hard boundary
-MAX_INPUT_CHARS = 4_000  # 1000 tokens — same discipline as tool output
+MAX_INPUT_CHARS = 2_000  # ~667 tokens — tight.
 
 # LLM text response stored in conversation (output side)
-MAX_RESPONSE_CHARS = 2_000  # 500 tokens — CBR-proportional
+MAX_RESPONSE_CHARS = 1_500  # ~500 tokens — CBR-proportional
+
+# Hard input budget per LLM call (total context tokens sent to provider).
+# Free-tier providers limit TPM. Every token sent costs budget.
+# System prompt (~300) + conversation + tool results must fit within this.
+MAX_INPUT_TOKENS_PER_CALL = 3_000  # hard wall — context trimmed to fit
 
 # Re-export from extracted modules (backward compat for tests)
 MAX_PARAM_CHARS = json_parser.MAX_PARAM_CHARS
@@ -108,6 +118,7 @@ TOOL_TIMEOUT_SECONDS = tool_dispatch.TOOL_TIMEOUT_SECONDS  # single source in to
 
 # LLM retry attempts on transient failure
 LLM_MAX_RETRIES = 1
+
 
 class AgentLoop:
     """Execute the agentic tool-use loop for a single turn.
@@ -238,7 +249,7 @@ class AgentLoop:
         usage.venu_diw = venu_diw
         usage.venu_beat = venu_beat
         usage.input_seed = cr.seed
-        usage.cbr_budget = CBR_CEILING  # max possible; Buddhi DSP refines per-call
+        # cbr_budget: accumulates per-round (input cap + output budget)
 
         # Cache check: only replay when Hebbian confidence is HIGH (> 0.7).
         # This means the seed has been seen 5+ times successfully.
@@ -263,14 +274,25 @@ class AgentLoop:
         # Context management: once at turn start (not every round)
         self._manage_context()
 
+        max_rounds = MAX_TOOL_ROUNDS
         for round_num in range(MAX_TOOL_ROUNDS):
-            # Cetana health check — abort if heartbeat detected critical anomaly
+            # Cetana health check — cap remaining rounds when sick
             if self._health_gate and self._health_gate.health_anomaly:
                 detail = self._health_gate.health_anomaly_detail
                 self._health_gate.clear_health_anomaly()
-                logger.warning("Cetana anomaly detected mid-turn: %s", detail)
-                guidance = f"[Cetana: health anomaly] {detail}. Consider finishing quickly or switching to a lighter approach."
+                rounds_left = max_rounds - round_num
+                if rounds_left > ANOMALY_REMAINING_ROUNDS:
+                    max_rounds = round_num + ANOMALY_REMAINING_ROUNDS
+                    logger.warning(
+                        "Cetana anomaly — capping to %d more rounds (was %d): %s",
+                        ANOMALY_REMAINING_ROUNDS,
+                        rounds_left,
+                        detail,
+                    )
+                guidance = f"[Cetana: health anomaly] {detail}. Finish immediately — {max_rounds - round_num} rounds remaining."
                 self._conversation.add(Message(role=MessageRole.USER, content=guidance))
+            if round_num >= max_rounds:
+                break
 
             # Buddhi pre-flight: deterministic tool selection + token budget
             context_pct = (
@@ -284,7 +306,12 @@ class AgentLoop:
                 usage.buddhi_guna = directive.guna.value
                 usage.buddhi_tier = directive.tier.value
             usage.buddhi_phase = directive.phase
-            usage.cbr_budget = directive.max_tokens  # DSP-computed budget
+            # Budget per round = input cap + output cap. Total = sum across rounds.
+            usage.cbr_budget += MAX_INPUT_TOKENS_PER_CALL + directive.max_tokens
+
+            # HARD CONTEXT TRIM: enforce input budget before every LLM call.
+            # Free-tier providers limit TPM. Every input token costs budget.
+            self._enforce_input_budget()
 
             # Try streaming if provider supports it
             streamed_text_deltas: list[str] = []
@@ -319,9 +346,7 @@ class AgentLoop:
                     self._conversation.add(
                         Message(role=MessageRole.ASSISTANT, content=json_parser.extract_raw_content(response))
                     )
-                    self._conversation.add(
-                        Message(role=MessageRole.USER, content=f"[JSON error] {json_error}")
-                    )
+                    self._conversation.add(Message(role=MessageRole.USER, content=f"[JSON error] {json_error}"))
                     usage.json_retries += 1
                     continue  # Re-enter the loop — LLM gets another shot
 
@@ -337,6 +362,8 @@ class AgentLoop:
                 usage.truncated = was_truncated
                 if self._antaranga:
                     usage.antaranga_active = self._antaranga.active_count()
+                # CBR measures TOTAL cost (input + output). Input tokens cost
+                # money and burn free-tier rate limits. No hiding the real cost.
                 usage.cbr_consumed = usage.total_tokens
                 usage.cbr_exceeded = usage.cbr_consumed > usage.cbr_budget
                 usage.cbr_reserve = max(0, usage.cbr_budget - usage.cbr_consumed)
@@ -366,7 +393,9 @@ class AgentLoop:
                 if was_truncated:
                     logger.info("Quality: response truncated at %d chars (seed %d)", MAX_RESPONSE_CHARS, cr.seed)
                 if usage.cbr_exceeded:
-                    logger.info("Quality: CBR exceeded %d/%d tokens (seed %d)", usage.cbr_consumed, usage.cbr_budget, cr.seed)
+                    logger.info(
+                        "Quality: CBR exceeded %d/%d tokens (seed %d)", usage.cbr_consumed, usage.cbr_budget, cr.seed
+                    )
 
                 # Brain-in-a-jar: check if streamed deltas are JSON (don't yield raw JSON)
                 if streamed_text_deltas:
@@ -547,8 +576,9 @@ class AgentLoop:
                     self._antaranga.apply_diw(slot_idx, venu_diw)
                 self._antaranga_touched.clear()
 
-        usage.rounds = MAX_TOOL_ROUNDS
-        yield AgentEvent(type=EventType.ERROR, content="Maximum tool rounds exceeded")
+        usage.rounds = max_rounds
+        msg = "Health anomaly — rounds capped" if max_rounds < MAX_TOOL_ROUNDS else "Maximum tool rounds exceeded"
+        yield AgentEvent(type=EventType.ERROR, content=msg)
 
     def run_sync(self, user_message: str) -> str:
         """Synchronous wrapper — runs the async loop and returns final text.
@@ -635,6 +665,34 @@ class AgentLoop:
 
         return None
 
+    def _enforce_input_budget(self) -> None:
+        """HARD WALL: trim conversation to fit within MAX_INPUT_TOKENS_PER_CALL.
+
+        Free-tier providers charge/limit input tokens. Every token sent to
+        the LLM costs budget. This runs before EVERY LLM call (not just at
+        turn start) and aggressively evicts old messages to stay within budget.
+
+        Strategy: keep system message + most recent messages. Drop oldest first.
+        """
+        estimated = self._conversation.total_tokens
+        if estimated <= MAX_INPUT_TOKENS_PER_CALL:
+            return
+
+        # Trim to fit — temporarily lower max_tokens so _trim() evicts
+        before = estimated
+        original_max = self._conversation.max_tokens
+        self._conversation.max_tokens = MAX_INPUT_TOKENS_PER_CALL
+        self._conversation._trim()
+        self._conversation.max_tokens = original_max
+        after = self._conversation.total_tokens
+        if after < before:
+            logger.warning(
+                "Context trimmed: %d → %d tokens (budget=%d)",
+                before,
+                after,
+                MAX_INPUT_TOKENS_PER_CALL,
+            )
+
     def _manage_context(self) -> None:
         """Context budget management — runs before every LLM call.
 
@@ -692,6 +750,7 @@ class AgentLoop:
         else:
             # Legacy mode: send full tool schemas (custom prompts, backward compat)
             from steward.services import tool_descriptions_for_llm
+
             all_tools = tool_descriptions_for_llm(self._registry)
             if all_tools:
                 kwargs["tools"] = all_tools

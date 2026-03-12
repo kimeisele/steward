@@ -34,6 +34,9 @@ class TaskIntent(enum.Enum):
     SENSE_SCAN = "sense_scan"
     CI_CHECK = "ci_check"
 
+    # Reactive — federation monitoring
+    FEDERATION_HEALTH = "federation_health"
+
     # Proactive — improvements via feature branch + PR
     UPDATE_DEPS = "update_deps"
     REMOVE_DEAD_CODE = "remove_dead_code"

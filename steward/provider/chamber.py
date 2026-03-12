@@ -318,7 +318,9 @@ class ProviderChamber:
         alive_count = sum(1 for c in self._cells if c.is_alive)
         logger.error(
             "ALL providers exhausted (%d total, %d alive, %d failures)",
-            len(self._cells), alive_count, self._total_failures,
+            len(self._cells),
+            alive_count,
+            self._total_failures,
         )
         return None
 
@@ -408,7 +410,9 @@ class ProviderChamber:
         alive_count = sum(1 for c in self._cells if c.is_alive)
         logger.error(
             "ALL providers exhausted for streaming (%d total, %d alive, %d failures)",
-            len(self._cells), alive_count, self._total_failures,
+            len(self._cells),
+            alive_count,
+            self._total_failures,
         )
 
     @property

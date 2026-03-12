@@ -44,12 +44,12 @@ class ManasPerception:
 # Trinity function -> SemanticActionType affinity
 # MahaBuddhi returns lowercase trinity names from seed VM
 _FUNCTION_AFFINITY: dict[str, SemanticActionType] = {
-    "creator": SemanticActionType.IMPLEMENT,     # Brahma
-    "maintainer": SemanticActionType.MONITOR,     # Vishnu
-    "destroyer": SemanticActionType.REFACTOR,     # Shiva
-    "carrier": SemanticActionType.IMPLEMENT,      # agent-city trinity
-    "deliverer": SemanticActionType.RESPOND,      # agent-city trinity
-    "enhancer": SemanticActionType.REFACTOR,      # agent-city trinity
+    "creator": SemanticActionType.IMPLEMENT,  # Brahma
+    "maintainer": SemanticActionType.MONITOR,  # Vishnu
+    "destroyer": SemanticActionType.REFACTOR,  # Shiva
+    "carrier": SemanticActionType.IMPLEMENT,  # agent-city trinity
+    "deliverer": SemanticActionType.RESPOND,  # agent-city trinity
+    "enhancer": SemanticActionType.REFACTOR,  # agent-city trinity
 }
 
 # Approach -> SemanticActionType affinity
