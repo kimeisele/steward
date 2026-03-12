@@ -244,7 +244,9 @@ def create_app():
         """Proxy published agent-internet semantic contract descriptors."""
         try:
             agent_internet_proxy.load_agent_internet_proxy_config()
-            return agent_internet_proxy.fetch_semantic_contracts(capability_id=capability_id, contract_id=contract_id, version=version)
+            return agent_internet_proxy.fetch_semantic_contracts(
+                capability_id=capability_id, contract_id=contract_id, version=version
+            )
         except ValueError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         except RuntimeError as exc:

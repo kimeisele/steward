@@ -34,7 +34,7 @@ class TestBuiltinToolProvider:
     def test_provides_core_tools(self, tmp_path):
         provider = BuiltinToolProvider()
         tools = provider.provide(str(tmp_path))
-        assert len(tools) == 12
+        assert len(tools) == 13
 
     def test_tool_names(self, tmp_path):
         provider = BuiltinToolProvider()
@@ -48,6 +48,7 @@ class TestBuiltinToolProvider:
         assert "grep" in names
         assert "git" in names
         assert "query_codebase" in names
+        assert "delegate_to_peer" in names
 
     def test_implements_protocol(self):
         provider = BuiltinToolProvider()
@@ -78,7 +79,8 @@ class TestFileSystemToolProvider:
         tools_dir.mkdir(parents=True)
 
         # Write a minimal tool module matching Tool ABC interface
-        (tools_dir / "hello.py").write_text(textwrap.dedent("""\
+        (tools_dir / "hello.py").write_text(
+            textwrap.dedent("""\
             from vibe_core.tools.tool_protocol import Tool, ToolResult
 
             class HelloTool(Tool):
@@ -99,7 +101,8 @@ class TestFileSystemToolProvider:
 
                 def execute(self, parameters: dict) -> ToolResult:
                     return ToolResult(success=True, output="Hello!")
-        """))
+        """)
+        )
 
         provider = FileSystemToolProvider()
         tools = provider.provide(str(tmp_path))
@@ -149,11 +152,12 @@ class TestCollectTools:
 
         class BrokenProvider:
             name = "broken"
+
             def provide(self, cwd: str) -> list:
                 raise RuntimeError("boom")
 
         tools = collect_tools([BrokenProvider(), BuiltinToolProvider()], str(tmp_path))
-        assert len(tools) == 12  # builtin still works
+        assert len(tools) == 13  # builtin still works
 
 
 class TestAgentToolProviders:
@@ -162,6 +166,7 @@ class TestAgentToolProviders:
     def test_discover_reports_providers(self):
         """discover() shows tool_providers in output."""
         import inspect
+
         from steward.agent import StewardAgent
 
         sig = inspect.signature(StewardAgent.__init__)

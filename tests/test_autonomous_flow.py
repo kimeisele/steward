@@ -16,8 +16,10 @@ import asyncio
 
 import pytest
 
-from steward.agent import _parse_intent_from_title
+from steward.autonomy import parse_intent_from_title as _parse_intent_from_title
+from steward.fix_pipeline import problem_fingerprint as _problem_fingerprint
 from steward.intents import TaskIntent
+from steward.types import MessageRole
 from tests.conftest import FakeLLM, NormalizedResponse, track_agent
 
 
@@ -39,6 +41,9 @@ class TestParseIntentFromTitle:
     def test_parses_remove_dead_code(self):
         assert _parse_intent_from_title("[REMOVE_DEAD_CODE] Clean up") == TaskIntent.REMOVE_DEAD_CODE
 
+    def test_parses_federation_health(self):
+        assert _parse_intent_from_title("[FEDERATION_HEALTH] Check peers") == TaskIntent.FEDERATION_HEALTH
+
     def test_no_prefix_returns_none(self):
         assert _parse_intent_from_title("Random task") is None
 
@@ -58,6 +63,7 @@ class TestAutonomousFlowE2E:
 
     def _make_agent(self, fake_llm):
         from steward.agent import StewardAgent
+
         return track_agent(StewardAgent(provider=fake_llm))
 
     def test_run_autonomous_no_tasks_returns_none(self, fake_llm):
@@ -110,6 +116,21 @@ class TestAutonomousFlowE2E:
         assert result is None
         assert fake_llm.call_count == 0
 
+    def test_run_autonomous_dispatches_federation_health(self, fake_llm):
+        """Task with [FEDERATION_HEALTH] title → deterministic handler, 0 tokens."""
+        from steward.services import SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
+
+        agent = self._make_agent(fake_llm)
+        task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
+
+        task_mgr.add_task(title="[FEDERATION_HEALTH] Check federation", priority=50)
+
+        result = asyncio.run(agent.run_autonomous())
+        # Healthy federation (no dead peers, no backlog) → None → 0 LLM calls
+        assert result is None
+        assert fake_llm.call_count == 0
+
     def test_run_autonomous_skips_unknown_title(self, fake_llm):
         """Task without [INTENT] prefix → skipped, 0 tokens."""
         from steward.services import SVC_TASK_MANAGER
@@ -123,6 +144,36 @@ class TestAutonomousFlowE2E:
         result = asyncio.run(agent.run_autonomous())
         assert result is None
         assert fake_llm.call_count == 0
+
+    def test_run_autonomous_dispatches_federated_task(self, fake_llm):
+        """Task with [FED:source] prefix → dispatched to LLM fix pipeline + callback."""
+        from steward.services import SVC_FEDERATION, SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
+        from vibe_core.task_types import TaskStatus
+
+        agent = self._make_agent(fake_llm)
+        task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
+
+        task_mgr.add_task(
+            title="[FED:agent-internet] Fix failing test_api_routes",
+            priority=70,
+        )
+
+        result = asyncio.run(agent.run_autonomous())
+        # Federated tasks go to LLM (FakeLLM returns "ok")
+        assert fake_llm.call_count >= 1
+
+        # Task should be completed
+        completed = task_mgr.list_tasks(status=TaskStatus.COMPLETED)
+        assert any("[FED:agent-internet]" in t.title for t in completed)
+
+        # Callback emitted to federation bridge
+        bridge = ServiceRegistry.get(SVC_FEDERATION)
+        if bridge is not None:
+            assert len(bridge._outbound) >= 1
+            callback = bridge._outbound[-1]
+            assert callback.operation in ("task_completed", "task_failed")
+            assert callback.payload["source_agent"] == "agent-internet"
 
     def test_task_marked_completed_after_dispatch(self, fake_llm):
         """Dispatched task gets marked as completed in TaskManager."""
@@ -187,7 +238,7 @@ class TestPhaseGenesis:
 
         agent = self._make_agent(fake_llm)
         # Force genesis with enough idle time to trigger Sankalpa
-        agent._phase_genesis(idle_override=15)
+        agent._autonomy.phase_genesis(idle_override=15)
 
         task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
         tasks = task_mgr.list_tasks()
@@ -211,11 +262,12 @@ class TestPhaseGenesis:
 
         # Genesis should not count completed task as "pending"
         # (whether Sankalpa fires depends on strategy, but it shouldn't be blocked)
-        agent._phase_genesis(idle_override=15)
+        agent._autonomy.phase_genesis(idle_override=15)
         # No crash = success
 
     def _make_agent(self, fake_llm):
         from steward.agent import StewardAgent
+
         return track_agent(StewardAgent(provider=fake_llm))
 
 
@@ -232,7 +284,9 @@ class TestDharmaPhase:
         assert not agent.health_anomaly
 
         # DHARMA checks vedana — in test env, health is high (no real errors)
-        agent._phase_dharma()
+        from steward.cetana import Phase
+
+        agent._on_cetana_phase(Phase.DHARMA, None)
         # Healthy environment → no anomaly
         assert not agent.health_anomaly
 
@@ -259,56 +313,221 @@ class TestDharmaPhase:
 
 
 class TestKarmaPhase:
-    """KARMA phase observes pending tasks."""
+    """KARMA phase dispatches pending tasks (daemon mode workhorse)."""
 
-    def test_karma_logs_pending_tasks(self, fake_llm):
-        """KARMA runs without error when tasks exist."""
+    def test_karma_dispatches_task(self, fake_llm):
+        """KARMA picks up a typed task and dispatches it. 0 LLM tokens."""
+        from steward.agent import StewardAgent
+        from steward.services import SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
+        from vibe_core.task_types import TaskStatus
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+        task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
+        task_mgr.add_task(title="[HEALTH_CHECK] Quick check", priority=50)
+
+        agent._autonomy.phase_karma()
+
+        # Task dispatched and completed
+        completed = task_mgr.list_tasks(status=TaskStatus.COMPLETED)
+        assert len(completed) >= 1
+        assert fake_llm.call_count == 0  # Deterministic — 0 tokens
+
+    def test_karma_noop_when_no_tasks(self, fake_llm):
+        """KARMA returns immediately when no tasks pending."""
+        from steward.agent import StewardAgent
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+        # No tasks added — should be a no-op
+        agent._autonomy.phase_karma()
+        assert fake_llm.call_count == 0
+
+    def test_karma_handles_untyped_task(self, fake_llm):
+        """KARMA completes tasks without [INTENT] prefix as no-ops."""
+        from steward.agent import StewardAgent
+        from steward.services import SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
+        from vibe_core.task_types import TaskStatus
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+        task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
+        task_mgr.add_task(title="random task without intent", priority=50)
+
+        agent._autonomy.phase_karma()
+
+        completed = task_mgr.list_tasks(status=TaskStatus.COMPLETED)
+        assert len(completed) >= 1
+        assert fake_llm.call_count == 0
+
+
+class TestDaemonMode:
+    """Persistent daemon — boot once, Cetana drives work."""
+
+    def test_run_daemon_blocks_until_stop(self, fake_llm):
+        """run_daemon() blocks main thread until Cetana stop signal."""
+        import threading
+
+        from steward.agent import StewardAgent
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+
+        started = threading.Event()
+        exited = threading.Event()
+
+        def run():
+            started.set()
+            agent.run_daemon()
+            exited.set()
+
+        t = threading.Thread(target=run, daemon=True)
+        t.start()
+
+        # Daemon should be blocking
+        assert started.wait(timeout=2.0), "Daemon thread did not start"
+        assert not exited.is_set(), "Daemon exited prematurely"
+
+        # Send stop signal
+        agent._cetana._stop_event.set()
+        assert exited.wait(timeout=2.0), "Daemon did not exit after stop signal"
+
+    def test_daemon_graceful_shutdown(self, fake_llm):
+        """close() after run_daemon() saves state and stops Cetana."""
+        import threading
+
+        from steward.agent import StewardAgent
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+
+        def run():
+            agent.run_daemon()
+
+        t = threading.Thread(target=run, daemon=True)
+        t.start()
+
+        # Let it run briefly
+        import time
+
+        time.sleep(0.1)
+
+        # Stop and close
+        agent._cetana._stop_event.set()
+        t.join(timeout=2.0)
+        agent.close()
+
+        # Cetana should be stopped
+        assert not agent._cetana.is_alive
+
+
+class TestDaemonMemoryManagement:
+    """Verify conversation resets between tasks — no state bloat."""
+
+    def test_conversation_resets_between_dispatches(self, fake_llm):
+        """Each _dispatch_next_task() starts with clean conversation."""
+        from steward.agent import StewardAgent
+        from steward.services import SVC_TASK_MANAGER
+        from steward.types import Message, MessageRole
+        from vibe_core.di import ServiceRegistry
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+        task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
+
+        # Stuff conversation with messages (simulates previous task)
+        for i in range(10):
+            agent._conversation.add(Message(role=MessageRole.USER, content=f"old message {i}" * 100))
+        tokens_before = agent._conversation.total_tokens
+        assert tokens_before > 500, "Setup: conversation should have accumulated tokens"
+
+        # Dispatch a task — conversation should reset first
+        task_mgr.add_task(title="[HEALTH_CHECK] Quick check", priority=50)
+        agent._autonomy.phase_karma()
+
+        # After dispatch, conversation should be clean (system msg only)
+        assert len(agent._conversation.messages) <= 2  # system + maybe 1 user
+        assert agent._conversation.total_tokens < tokens_before
+
+    def test_system_prompt_survives_reset(self, fake_llm):
+        """System message is preserved across conversation resets."""
+        from steward.agent import StewardAgent
+        from steward.types import Message
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+
+        # Add a system message (normally done by run_stream on first call)
+        sys_msg = Message(role=MessageRole.SYSTEM, content="You are steward.")
+        agent._conversation.messages.insert(0, sys_msg)
+        # Add some user messages too
+        agent._conversation.add(Message(role=MessageRole.USER, content="hello"))
+
+        agent._reset_conversation()
+
+        assert len(agent._conversation.messages) == 1
+        assert agent._conversation.messages[0].role == MessageRole.SYSTEM
+        assert agent._conversation.messages[0].content == "You are steward."
+
+    def test_hebbian_weights_persist_across_resets(self, fake_llm):
+        """Hebbian learning survives conversation reset — real memory."""
+        from steward.agent import StewardAgent
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+
+        # Set a Hebbian weight
+        agent._autonomy._synaptic.update("test_key", "fix", success=True)
+        weight_before = agent._autonomy._synaptic.get_weight("test_key", "fix")
+        assert weight_before > 0.5
+
+        # Reset conversation
+        agent._reset_conversation()
+
+        # Hebbian weight should survive
+        weight_after = agent._autonomy._synaptic.get_weight("test_key", "fix")
+        assert weight_after == weight_before
+
+    def test_multiple_dispatches_no_growth(self, fake_llm):
+        """Multiple KARMA dispatches don't accumulate conversation state."""
         from steward.agent import StewardAgent
         from steward.services import SVC_TASK_MANAGER
         from vibe_core.di import ServiceRegistry
 
         agent = track_agent(StewardAgent(provider=fake_llm))
         task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
-        task_mgr.add_task(title="test task", priority=50)
 
-        # Should not crash
-        agent._phase_karma()
-        assert fake_llm.call_count == 0  # Still 0 tokens
+        # Run 5 task dispatches
+        for i in range(5):
+            task_mgr.add_task(title=f"[HEALTH_CHECK] Check {i}", priority=50)
+            agent._autonomy.phase_karma()
+
+        # Conversation should be minimal — not 5 tasks worth of history
+        assert len(agent._conversation.messages) <= 2
+        assert agent._conversation.total_tokens < 500
 
 
 class TestProblemFingerprint:
-    """_problem_fingerprint() — granular context extraction."""
+    """problem_fingerprint() — granular context extraction."""
 
     def test_extracts_file_paths(self):
-        from steward.agent import _problem_fingerprint
         fp = _problem_fingerprint("Fix the bug in src/api.py and tests/test_api.py")
         assert "src/api.py" in fp
         assert "tests/test_api.py" in fp
 
     def test_extracts_error_types(self):
-        from steward.agent import _problem_fingerprint
         fp = _problem_fingerprint("Got TypeError when calling async function")
         assert "TypeError" in fp
 
     def test_extracts_workflow_name(self):
-        from steward.agent import _problem_fingerprint
         fp = _problem_fingerprint("CI is failing: workflow 'test'. Check logs.")
         assert fp == "test"
 
     def test_falls_back_to_keywords(self):
-        from steward.agent import _problem_fingerprint
         fp = _problem_fingerprint("Something unusual is happening with the database connection")
         assert len(fp) > 0
         # Should contain significant words, not generic ones
         assert "something" not in fp or "unusual" in fp
 
     def test_empty_returns_empty(self):
-        from steward.agent import _problem_fingerprint
         assert _problem_fingerprint("") == ""
 
     def test_different_problems_different_fingerprints(self):
         """Two different problems produce different fingerprints."""
-        from steward.agent import _problem_fingerprint
         fp1 = _problem_fingerprint("Fix TypeError in api.py")
         fp2 = _problem_fingerprint("Fix ImportError in utils.py")
         assert fp1 != fp2
@@ -319,6 +538,7 @@ class TestHebbianAutonomousLearning:
 
     def _make_agent(self, fake_llm):
         from steward.agent import StewardAgent
+
         return track_agent(StewardAgent(provider=fake_llm))
 
     def test_hebbian_learn_success_reinforces(self, fake_llm):
@@ -326,7 +546,7 @@ class TestHebbianAutonomousLearning:
         agent = self._make_agent(fake_llm)
         trigger = "auto:CI_CHECK:api.py"
         initial = agent._synaptic.get_weight(trigger, "fix")
-        agent._hebbian_learn(trigger, success=True)
+        agent._autonomy.pipeline.hebbian_learn(trigger, success=True)
         after = agent._synaptic.get_weight(trigger, "fix")
         assert after > initial
 
@@ -335,7 +555,7 @@ class TestHebbianAutonomousLearning:
         agent = self._make_agent(fake_llm)
         trigger = "auto:CI_CHECK:api.py"
         initial = agent._synaptic.get_weight(trigger, "fix")
-        agent._hebbian_learn(trigger, success=False)
+        agent._autonomy.pipeline.hebbian_learn(trigger, success=False)
         after = agent._synaptic.get_weight(trigger, "fix")
         assert after < initial
 
@@ -344,7 +564,7 @@ class TestHebbianAutonomousLearning:
         agent = self._make_agent(fake_llm)
         # Fail repeatedly on api.py
         for _ in range(10):
-            agent._hebbian_learn("auto:CI_CHECK:api.py", success=False)
+            agent._autonomy.pipeline.hebbian_learn("auto:CI_CHECK:api.py", success=False)
         api_weight = agent._synaptic.get_weight("auto:CI_CHECK:api.py", "fix")
         assert api_weight < 0.2
 
@@ -356,7 +576,7 @@ class TestHebbianAutonomousLearning:
         """Success updates per-file weights for changed files."""
         agent = self._make_agent(fake_llm)
         changed = {"src/api.py", "src/utils.py"}
-        agent._hebbian_learn("auto:CI_CHECK:api.py", success=True, changed_files=changed)
+        agent._autonomy.pipeline.hebbian_learn("auto:CI_CHECK:api.py", success=True, changed_files=changed)
 
         # Both files should have increased file-level weights
         api_weight = agent._synaptic.get_weight("file:src/api.py", "auto_fix")
@@ -368,7 +588,7 @@ class TestHebbianAutonomousLearning:
         """Failure updates per-file weights for changed files."""
         agent = self._make_agent(fake_llm)
         changed = {"src/api.py", "src/utils.py"}
-        agent._hebbian_learn("auto:CI_CHECK:api.py", success=False, changed_files=changed)
+        agent._autonomy.pipeline.hebbian_learn("auto:CI_CHECK:api.py", success=False, changed_files=changed)
 
         api_weight = agent._synaptic.get_weight("file:src/api.py", "auto_fix")
         utils_weight = agent._synaptic.get_weight("file:src/utils.py", "auto_fix")
@@ -379,7 +599,7 @@ class TestHebbianAutonomousLearning:
         """Non-Python files don't get Hebbian file-level weights."""
         agent = self._make_agent(fake_llm)
         changed = {"README.md", "config.json", "src/api.py"}
-        agent._hebbian_learn("auto:CI_CHECK:api.py", success=True, changed_files=changed)
+        agent._autonomy.pipeline.hebbian_learn("auto:CI_CHECK:api.py", success=True, changed_files=changed)
 
         # Only .py file should have a weight
         api_weight = agent._synaptic.get_weight("file:src/api.py", "auto_fix")
@@ -397,7 +617,7 @@ class TestHebbianAutonomousLearning:
             GateResult(passed=False, gate="lint", detail="ruff: 3 violations"),
         ]
         trigger = "auto:CI_CHECK:api.py"
-        agent._hebbian_learn(trigger, success=False, failed_gates=failed_gates)
+        agent._autonomy.pipeline.hebbian_learn(trigger, success=False, failed_gates=failed_gates)
 
         fix_weight = agent._synaptic.get_weight(trigger, "fix")
         assert fix_weight < 0.5
@@ -415,7 +635,7 @@ class TestHebbianAutonomousLearning:
             GateResult(passed=True, gate="security"),
         ]
         trigger = "auto:CI_CHECK:api.py"
-        agent._hebbian_learn(trigger, success=True, gate_results=gate_results)
+        agent._autonomy.pipeline.hebbian_learn(trigger, success=True, gate_results=gate_results)
 
         lint_weight = agent._synaptic.get_weight(trigger, "gate:lint")
         assert lint_weight > 0.5
@@ -438,8 +658,8 @@ class TestHebbianAutonomousLearning:
         assert agent._synaptic.get_weight("auto:CI_CHECK:ci-tests", "fix") < 0.2
 
         # Mock CI check to return problem with matching workflow name
-        original_ci = agent._execute_ci_check
-        agent._execute_ci_check = lambda: "CI is failing: workflow 'ci-tests'. Fix it."
+        original_ci = agent._autonomy.handlers.execute_ci_check
+        agent._autonomy.handlers.execute_ci_check = lambda: "CI is failing: workflow 'ci-tests'. Fix it."
 
         try:
             result = asyncio.run(agent.run_autonomous())
@@ -449,12 +669,13 @@ class TestHebbianAutonomousLearning:
             # BUT: escalation file should exist
             escalation_file = agent._cwd + "/.steward/needs_attention.md"
             from pathlib import Path
+
             if Path(escalation_file).exists():
                 content = Path(escalation_file).read_text()
                 assert "CI_CHECK" in content
                 assert "confidence" in content
         finally:
-            agent._execute_ci_check = original_ci
+            agent._autonomy.handlers.execute_ci_check = original_ci
 
     def test_different_workflow_not_blocked(self, fake_llm):
         """Failing on workflow 'ci-tests' doesn't block workflow 'lint-check'."""
@@ -474,8 +695,8 @@ class TestHebbianAutonomousLearning:
             agent._synaptic.update("auto:CI_CHECK:ci-tests", "fix", success=False)
 
         # BUT the CURRENT problem is for 'lint-check' — different fingerprint
-        original_ci = agent._execute_ci_check
-        agent._execute_ci_check = lambda: "CI is failing: workflow 'lint-check'. Fix it."
+        original_ci = agent._autonomy.handlers.execute_ci_check
+        agent._autonomy.handlers.execute_ci_check = lambda: "CI is failing: workflow 'lint-check'. Fix it."
 
         try:
             # 'lint-check' has default confidence 0.5 — should NOT be blocked
@@ -486,14 +707,14 @@ class TestHebbianAutonomousLearning:
             # Just verify the weight is not blocked
             assert weight >= 0.2
         finally:
-            agent._execute_ci_check = original_ci
+            agent._autonomy.handlers.execute_ci_check = original_ci
 
     def test_repeated_failure_decays_specific_key(self, fake_llm):
         """Multiple failures drive SPECIFIC key toward 0, not global."""
         agent = self._make_agent(fake_llm)
         specific = "auto:SENSE_SCAN:provider:errors"
         for _ in range(10):
-            agent._hebbian_learn(specific, success=False)
+            agent._autonomy.pipeline.hebbian_learn(specific, success=False)
 
         specific_weight = agent._synaptic.get_weight(specific, "fix")
         assert specific_weight < 0.2
@@ -507,11 +728,11 @@ class TestHebbianAutonomousLearning:
         agent = self._make_agent(fake_llm)
         trigger = "auto:CI_CHECK:api.py"
         for _ in range(5):
-            agent._hebbian_learn(trigger, success=False)
+            agent._autonomy.pipeline.hebbian_learn(trigger, success=False)
         low = agent._synaptic.get_weight(trigger, "fix")
 
         for _ in range(3):
-            agent._hebbian_learn(trigger, success=True)
+            agent._autonomy.pipeline.hebbian_learn(trigger, success=True)
         recovered = agent._synaptic.get_weight(trigger, "fix")
         assert recovered > low
 
@@ -521,32 +742,48 @@ class TestProactiveDispatch:
 
     def _make_agent(self, fake_llm):
         from steward.agent import StewardAgent
+
         return track_agent(StewardAgent(provider=fake_llm))
 
     def test_dispatch_update_deps_runs_without_llm(self, fake_llm):
         """UPDATE_DEPS handler is deterministic — 0 tokens."""
+        from unittest.mock import MagicMock, patch
+
         agent = self._make_agent(fake_llm)
-        agent._execute_update_deps()
-        # In test env, pip list --outdated may or may not find anything
-        # The important thing: no LLM tokens
+        # Mock subprocess to avoid real pip call (takes 30-60s)
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "[]"
+        with patch("subprocess.run", return_value=mock_result):
+            result = agent._autonomy.handlers.execute_update_deps()
+        assert result is None  # No outdated deps
         assert fake_llm.call_count == 0
 
     def test_dispatch_remove_dead_code_runs_without_llm(self, fake_llm):
         """REMOVE_DEAD_CODE handler is deterministic — 0 tokens."""
         agent = self._make_agent(fake_llm)
-        agent._execute_remove_dead_code()
+        agent._autonomy.handlers.execute_remove_dead_code()
         assert fake_llm.call_count == 0
 
     def test_dispatch_routes_proactive_intents(self, fake_llm):
         """Proactive intents dispatch without error."""
+        from unittest.mock import MagicMock, patch
+
         agent = self._make_agent(fake_llm)
-        for intent in TaskIntent:
-            result = agent._dispatch_intent(intent)
-            assert result is None or isinstance(result, str)
+        # Mock subprocess to avoid real pip call in UPDATE_DEPS
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "[]"
+        with patch("subprocess.run", return_value=mock_result):
+            for intent in TaskIntent:
+                result = agent._autonomy.dispatch_intent(intent)
+                assert result is None or isinstance(result, str)
         assert fake_llm.call_count == 0
 
     def test_proactive_task_dispatches_in_autonomous(self, fake_llm):
         """Task with [UPDATE_DEPS] dispatches via run_autonomous."""
+        from unittest.mock import MagicMock, patch
+
         from steward.services import SVC_TASK_MANAGER
         from vibe_core.di import ServiceRegistry
 
@@ -554,8 +791,11 @@ class TestProactiveDispatch:
         task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
         task_mgr.add_task(title="[UPDATE_DEPS] Check packages", priority=50)
 
-        result = asyncio.run(agent.run_autonomous())
-        # Handler finds no outdated deps in test env → no problem → None
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "[]"
+        with patch("subprocess.run", return_value=mock_result):
+            result = asyncio.run(agent.run_autonomous())
         assert result is None
         assert fake_llm.call_count == 0
 
@@ -578,13 +818,14 @@ class TestCleanupBranch:
 
     def _make_agent(self, fake_llm):
         from steward.agent import StewardAgent
+
         return track_agent(StewardAgent(provider=fake_llm))
 
     def test_cleanup_branch_does_not_crash(self, fake_llm):
         """Cleanup handles missing branches gracefully."""
         agent = self._make_agent(fake_llm)
         # Cleaning a non-existent branch should not raise
-        agent._cleanup_branch("steward/nonexistent/123")
+        agent._autonomy.pipeline.cleanup_branch("steward/nonexistent/123")
 
 
 class TestGuardedPrFix:
@@ -592,13 +833,14 @@ class TestGuardedPrFix:
 
     def _make_agent(self, fake_llm):
         from steward.agent import StewardAgent
+
         return track_agent(StewardAgent(provider=fake_llm))
 
     def test_suspended_breaker_returns_none(self, fake_llm):
         """Suspended circuit breaker skips proactive fix."""
         agent = self._make_agent(fake_llm)
         agent._breaker._suspended_until = float("inf")
-        result = asyncio.run(agent._guarded_pr_fix("Update deps", intent_name="UPDATE_DEPS"))
+        result = asyncio.run(agent._autonomy.pipeline.guarded_pr_fix("Update deps", intent_name="UPDATE_DEPS"))
         assert result is None
         assert fake_llm.call_count == 0
 
@@ -610,18 +852,20 @@ class TestGuardedPrFix:
         # Verify we start on main or some known branch
         r = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            capture_output=True, text=True, cwd=agent._cwd,
+            capture_output=True,
+            text=True,
+            cwd=agent._cwd,
         )
         original_branch = r.stdout.strip()
 
-        asyncio.run(
-            agent._guarded_pr_fix("Update deps", intent_name="UPDATE_DEPS")
-        )
+        asyncio.run(agent._autonomy.pipeline.guarded_pr_fix("Update deps", intent_name="UPDATE_DEPS"))
 
         # Should have returned to original branch (main)
         r = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            capture_output=True, text=True, cwd=agent._cwd,
+            capture_output=True,
+            text=True,
+            cwd=agent._cwd,
         )
         current = r.stdout.strip()
         # Agent should not be stranded on a feature branch

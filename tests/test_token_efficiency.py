@@ -149,19 +149,21 @@ class TestToolOutputLimits:
             big_file = Path(tmp) / "huge.txt"
             big_file.write_text("x" * 100_000)
 
-            llm = ScriptedLLM([
-                ToolCallResponse(
-                    content="Reading.",
-                    tool_calls=[
-                        ToolUse(
-                            id="c1",
-                            name="read_file",
-                            parameters={"path": str(big_file)},
-                        )
-                    ],
-                ),
-                TextResponse("Done."),
-            ])
+            llm = ScriptedLLM(
+                [
+                    ToolCallResponse(
+                        content="Reading.",
+                        tool_calls=[
+                            ToolUse(
+                                id="c1",
+                                name="read_file",
+                                parameters={"path": str(big_file)},
+                            )
+                        ],
+                    ),
+                    TextResponse("Done."),
+                ]
+            )
             agent = StewardAgent(provider=llm, system_prompt="test")
 
             events: list[AgentEvent] = []
@@ -173,9 +175,7 @@ class TestToolOutputLimits:
             asyncio.run(collect())
 
             # Find tool result in conversation
-            tool_msgs = [
-                m for m in agent.conversation.messages if m.role == MessageRole.TOOL
-            ]
+            tool_msgs = [m for m in agent.conversation.messages if m.role == MessageRole.TOOL]
             for msg in tool_msgs:
                 assert len(msg.content) <= MAX_TOOL_OUTPUT_CHARS + 200, (
                     f"Tool output is {len(msg.content)} chars, exceeds limit of {MAX_TOOL_OUTPUT_CHARS}"
@@ -193,15 +193,15 @@ class TestConversationBloat:
 
         Without the name, the LLM can't tell which tool produced which result.
         """
-        llm = ScriptedLLM([
-            ToolCallResponse(
-                content="Listing.",
-                tool_calls=[
-                    ToolUse(id="c1", name="glob", parameters={"pattern": "*.py"})
-                ],
-            ),
-            TextResponse("Found files."),
-        ])
+        llm = ScriptedLLM(
+            [
+                ToolCallResponse(
+                    content="Listing.",
+                    tool_calls=[ToolUse(id="c1", name="glob", parameters={"pattern": "*.py"})],
+                ),
+                TextResponse("Found files."),
+            ]
+        )
         agent = StewardAgent(provider=llm, system_prompt="test")
         agent.run_sync("List files")
 
@@ -234,9 +234,7 @@ class TestConversationBloat:
             pass
 
         # All TOOL messages should be merged into ONE user message
-        user_msgs_after_assistant = [
-            d for d in dicts[3:] if d["role"] == MessageRole.USER
-        ]
+        user_msgs_after_assistant = [d for d in dicts[3:] if d["role"] == MessageRole.USER]
         assert len(user_msgs_after_assistant) == 1, (
             f"Expected 1 merged user message for 3 tool results, got {len(user_msgs_after_assistant)}"
         )
@@ -253,11 +251,13 @@ class TestConversationBloat:
         """
         conv = Conversation()
         tu = ToolUse(id="c1", name="bash", parameters={"command": "ls"})
-        conv.add(Message(
-            role=MessageRole.ASSISTANT,
-            content='{"tool": "bash", "params": {"command": "ls"}}',
-            tool_uses=[tu],
-        ))
+        conv.add(
+            Message(
+                role=MessageRole.ASSISTANT,
+                content='{"tool": "bash", "params": {"command": "ls"}}',
+                tool_uses=[tu],
+            )
+        )
         dicts = conv.to_dicts()
         for d in dicts:
             assert "tool_calls" not in d, "Brain-in-a-jar: no tool_calls in API output"
@@ -358,9 +358,7 @@ class TestJsonMode:
 
     def test_json_tool_call_parsed(self):
         """LLM returning JSON tool call must be parsed correctly."""
-        tool_calls, text = AgentLoop._parse_json_response(
-            '{"tool": "read_file", "params": {"path": "/foo/bar.py"}}'
-        )
+        tool_calls, text = AgentLoop._parse_json_response('{"tool": "read_file", "params": {"path": "/foo/bar.py"}}')
         assert len(tool_calls) == 1
         assert tool_calls[0].name == "read_file"
         assert tool_calls[0].parameters == {"path": "/foo/bar.py"}
@@ -378,17 +376,13 @@ class TestJsonMode:
 
     def test_json_response_parsed(self):
         """LLM returning text response must be extracted correctly."""
-        tool_calls, text = AgentLoop._parse_json_response(
-            '{"response": "Here are the files: main.py, lib.py"}'
-        )
+        tool_calls, text = AgentLoop._parse_json_response('{"response": "Here are the files: main.py, lib.py"}')
         assert len(tool_calls) == 0
         assert "main.py" in text
 
     def test_json_with_markdown_fences(self):
         """Google Gemini wraps JSON in markdown fences — must be stripped."""
-        tool_calls, text = AgentLoop._parse_json_response(
-            '```json\n{"tool": "bash", "params": {"command": "ls"}}\n```'
-        )
+        tool_calls, text = AgentLoop._parse_json_response('```json\n{"tool": "bash", "params": {"command": "ls"}}\n```')
         assert len(tool_calls) == 1
         assert tool_calls[0].name == "bash"
 
@@ -409,9 +403,7 @@ class TestJsonMode:
         assert "Reply ONLY with JSON:" in system_msg.content, (
             "Brain-in-a-jar: system prompt must include JSON instruction"
         )
-        assert "bash" in system_msg.content, (
-            "Brain-in-a-jar: system prompt must include tool signatures"
-        )
+        assert "bash" in system_msg.content, "Brain-in-a-jar: system prompt must include tool signatures"
 
     def test_json_extraction_from_preamble(self):
         """LLM wraps JSON in preamble text — extraction fallback must recover."""
@@ -425,17 +417,13 @@ class TestJsonMode:
     def test_json_extraction_from_malformed_fences(self):
         """Malformed markdown fences — extraction fallback must recover."""
         # Missing closing fence
-        tool_calls, text = AgentLoop._parse_json_response(
-            '```json\n{"tool": "read_file", "params": {"path": "/x.py"}}'
-        )
+        tool_calls, text = AgentLoop._parse_json_response('```json\n{"tool": "read_file", "params": {"path": "/x.py"}}')
         assert len(tool_calls) == 1
         assert tool_calls[0].name == "read_file"
 
     def test_json_extraction_single_line_fence(self):
         """Single-line fence: ```json{"tool":...}``` — must recover."""
-        tool_calls, text = AgentLoop._parse_json_response(
-            '```json{"tool": "glob", "params": {"pattern": "*.py"}}```'
-        )
+        tool_calls, text = AgentLoop._parse_json_response('```json{"tool": "glob", "params": {"pattern": "*.py"}}```')
         assert len(tool_calls) == 1
         assert tool_calls[0].name == "glob"
 
@@ -454,21 +442,22 @@ class TestJsonMode:
 
     def test_extract_json_object_handles_nested(self):
         """Nested JSON objects — must find complete outer object."""
-        result = AgentLoop._extract_json_object(
-            'prefix {"tool": "edit", "params": {"path": "/x", "old": "{"}} suffix'
-        )
+        result = AgentLoop._extract_json_object('prefix {"tool": "edit", "params": {"path": "/x", "old": "{"}} suffix')
         assert result is not None
         # Should be parseable JSON
         import json
+
         parsed = json.loads(result)
         assert parsed["tool"] == "edit"
 
     def test_json_mode_full_roundtrip(self):
         """Full roundtrip: JSON tool call → execute → JSON response."""
-        llm = JsonModeLLM([
-            '{"tool": "glob", "params": {"pattern": "*.py"}}',
-            '{"response": "Found Python files."}',
-        ])
+        llm = JsonModeLLM(
+            [
+                '{"tool": "glob", "params": {"pattern": "*.py"}}',
+                '{"response": "Found Python files."}',
+            ]
+        )
         agent = StewardAgent(provider=llm)
 
         events: list[AgentEvent] = []
@@ -570,19 +559,21 @@ class TestChaos:
             huge = Path(tmp) / "huge.txt"
             huge.write_text("data\n" * 200_000)  # ~1MB
 
-            llm = ScriptedLLM([
-                ToolCallResponse(
-                    content="Reading.",
-                    tool_calls=[
-                        ToolUse(
-                            id="c1",
-                            name="read_file",
-                            parameters={"path": str(huge)},
-                        )
-                    ],
-                ),
-                TextResponse("Done."),
-            ])
+            llm = ScriptedLLM(
+                [
+                    ToolCallResponse(
+                        content="Reading.",
+                        tool_calls=[
+                            ToolUse(
+                                id="c1",
+                                name="read_file",
+                                parameters={"path": str(huge)},
+                            )
+                        ],
+                    ),
+                    TextResponse("Done."),
+                ]
+            )
             agent = StewardAgent(provider=llm, system_prompt="test")
             agent.run_sync("Read the file")
 
@@ -610,10 +601,12 @@ class TestChaos:
 
     def test_param_clamping_prevents_context_bomb(self):
         """Tool parameters exceeding MAX_PARAM_CHARS must be clamped."""
-        clamped = AgentLoop._clamp_params({
-            "content": "x" * 100_000,
-            "path": "/normal/path",
-        })
+        clamped = AgentLoop._clamp_params(
+            {
+                "content": "x" * 100_000,
+                "path": "/normal/path",
+            }
+        )
         assert len(clamped["content"]) <= MAX_PARAM_CHARS + 50
         assert clamped["path"] == "/normal/path"
 
@@ -627,7 +620,7 @@ class TestChaos:
             "null",
             "[]",
             '{"unknown_key": "value"}',
-            '```\n{broken}\n```',
+            "```\n{broken}\n```",
         ]:
             tool_calls, text = AgentLoop._parse_json_response(bad_json)
             # Should not crash — either returns calls or text, never raises
@@ -653,8 +646,7 @@ class TestPranaBudget:
         # At high context %, max_tokens should be lower
         if d1.max_tokens and d2.max_tokens:
             assert d2.max_tokens <= d1.max_tokens, (
-                f"At 80% context, max_tokens ({d2.max_tokens}) should be <= "
-                f"max_tokens at 10% ({d1.max_tokens})"
+                f"At 80% context, max_tokens ({d2.max_tokens}) should be <= max_tokens at 10% ({d1.max_tokens})"
             )
 
     def test_samskara_compaction_reduces_tokens(self):
@@ -674,9 +666,7 @@ class TestPranaBudget:
         if samskara.should_compact(conv, threshold=0.5):
             samskara.compact(conv)
             after = conv.total_tokens
-            assert after <= before, (
-                f"Samskara compaction should reduce tokens: {before} → {after}"
-            )
+            assert after <= before, f"Samskara compaction should reduce tokens: {before} → {after}"
 
 
 # ── 8. COMPRESSION PRIMITIVES ──────────────────────────────────────
@@ -714,9 +704,7 @@ class TestCompressionPrimitives:
 
         # Verify by checking that MahaCompression is used in engine
         source = inspect.getsource(AgentLoop.run)
-        assert "compress" in source, (
-            "AgentLoop.run must call MahaCompression.compress() at entry point"
-        )
+        assert "compress" in source, "AgentLoop.run must call MahaCompression.compress() at entry point"
 
     def test_maha_attention_o1_route(self):
         """MahaAttention must route tools in O(1) — no linear scan."""
@@ -745,21 +733,25 @@ class TestTokenAccounting:
 
     def test_usage_tracks_all_llm_calls(self):
         """AgentUsage must count every LLM call."""
-        llm = ScriptedLLM([
-            ToolCallResponse(
-                content="",
-                tool_calls=[
-                    ToolUse(id="c1", name="glob", parameters={"pattern": "*.py"}),
-                ],
-            ),
-            TextResponse("Done."),
-        ])
+        llm = ScriptedLLM(
+            [
+                ToolCallResponse(
+                    content="",
+                    tool_calls=[
+                        ToolUse(id="c1", name="glob", parameters={"pattern": "*.py"}),
+                    ],
+                ),
+                TextResponse("Done."),
+            ]
+        )
         agent = StewardAgent(provider=llm, system_prompt="test")
 
         events: list[AgentEvent] = []
+
         async def collect():
             async for event in agent.run_stream("Find files"):
                 events.append(event)
+
         asyncio.run(collect())
 
         done_events = [e for e in events if e.type == EventType.DONE]
@@ -776,9 +768,11 @@ class TestTokenAccounting:
         agent = StewardAgent(provider=llm, system_prompt="test")
 
         events: list[AgentEvent] = []
+
         async def collect():
             async for event in agent.run_stream("hello"):
                 events.append(event)
+
         asyncio.run(collect())
 
         done_events = [e for e in events if e.type == EventType.DONE]

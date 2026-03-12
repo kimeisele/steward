@@ -29,19 +29,25 @@ def _make_vedana(health: float) -> VedanaSignal:
     """
     if health >= 0.9:
         return measure_vedana(
-            provider_alive=5, provider_total=5,
-            recent_errors=0, recent_calls=10,
+            provider_alive=5,
+            provider_total=5,
+            recent_errors=0,
+            recent_calls=10,
             context_used=0.0,
             synaptic_weights=[0.9, 0.9, 0.9],
-            tool_successes=10, tool_total=10,
+            tool_successes=10,
+            tool_total=10,
         )
     elif health <= 0.15:
         return measure_vedana(
-            provider_alive=0, provider_total=5,
-            recent_errors=10, recent_calls=10,
+            provider_alive=0,
+            provider_total=5,
+            recent_errors=10,
+            recent_calls=10,
             context_used=0.95,
             synaptic_weights=[0.1, 0.1, 0.1],
-            tool_successes=0, tool_total=10,
+            tool_successes=0,
+            tool_total=10,
         )
     else:
         # Mid-range — defaults give ~0.6-0.7

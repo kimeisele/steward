@@ -16,6 +16,7 @@ Both feed into Buddhi for discrimination.
 from __future__ import annotations
 
 import logging
+import time
 from pathlib import Path
 
 from steward.senses.code_sense import CodeSense
@@ -44,10 +45,14 @@ class SenseCoordinator:
     Implements ManasProtocol from steward-protocol.
     """
 
+    # TTL for perception cache — don't re-run expensive senses within this window
+    _PERCEPTION_TTL = 30.0  # seconds
+
     def __init__(self, cwd: str | None = None) -> None:
         self._cwd = cwd or str(Path.cwd())
         self._senses: dict[Jnanendriya, SenseProtocol] = {}
         self._last_perception: AggregatePerception | None = None
+        self._last_perceive_time: float = 0.0
         self._boot()
 
     @property
@@ -59,12 +64,17 @@ class SenseCoordinator:
         self._senses[sense.jnanendriya] = sense
         logger.debug("Registered sense: %s", sense.jnanendriya.value)
 
-    def perceive_all(self) -> AggregatePerception:
+    def perceive_all(self, force: bool = False) -> AggregatePerception:
         """Collect perception from all active senses.
 
-        This is the main method — polls all senses and combines
-        their input into AggregatePerception.
+        TTL-cached: returns cached result if called within _PERCEPTION_TTL seconds.
+        Use force=True to bypass cache (e.g., when intent handler needs fresh data).
         """
+        now = time.monotonic()
+        if not force and self._last_perception and (now - self._last_perceive_time) < self._PERCEPTION_TTL:
+            logger.debug("Perception cached (%.1fs old)", now - self._last_perceive_time)
+            return self._last_perception
+
         aggregate = AggregatePerception()
 
         for jnanendriya, sense in self._senses.items():
@@ -78,6 +88,7 @@ class SenseCoordinator:
                 logger.warning("Sense %s failed: %s", jnanendriya.value, e)
 
         self._last_perception = aggregate
+        self._last_perceive_time = now
 
         if aggregate.perceptions:
             logger.info(
@@ -118,10 +129,7 @@ class SenseCoordinator:
         pain = self._last_perception.total_pain
         if pain > 0.3:
             dominant = self._last_perception.dominant_sense
-            parts.append(
-                f"\nAttention: pain={pain:.1f}"
-                + (f", dominant={dominant.value}" if dominant else "")
-            )
+            parts.append(f"\nAttention: pain={pain:.1f}" + (f", dominant={dominant.value}" if dominant else ""))
 
         return "\n".join(parts)
 
@@ -139,13 +147,15 @@ class SenseCoordinator:
 
     # The 5 Jnanendriyas are Vedic Tattvas — architectural constants, not plugins.
     # BG 3.26.47-52: Sabda, Sparsa, Rupa, Rasa, Gandha — exactly 5, no more, no fewer.
-    _REQUIRED_SENSES = frozenset({
-        Jnanendriya.SROTRA,   # Ear (hears git)
-        Jnanendriya.TVAK,     # Skin (feels project structure)
-        Jnanendriya.CAKSU,    # Eye (sees code)
-        Jnanendriya.JIHVA,    # Tongue (tastes tests)
-        Jnanendriya.GHRANA,   # Nose (smells health)
-    })
+    _REQUIRED_SENSES = frozenset(
+        {
+            Jnanendriya.SROTRA,  # Ear (hears git)
+            Jnanendriya.TVAK,  # Skin (feels project structure)
+            Jnanendriya.CAKSU,  # Eye (sees code)
+            Jnanendriya.JIHVA,  # Tongue (tastes tests)
+            Jnanendriya.GHRANA,  # Nose (smells health)
+        }
+    )
 
     def _boot(self) -> None:
         """Boot all 5 senses — fails hard if any sense is missing."""
@@ -227,4 +237,3 @@ class SenseCoordinator:
             return f"Health: {file_count} source files, clean"
 
         return ""
-

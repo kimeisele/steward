@@ -45,37 +45,59 @@ _console = Console(theme=_THEME, highlight=False)
 _err_console = Console(theme=_THEME, stderr=True, highlight=False)
 
 
-# ── Human-Readable Event Rendering ──────────────────────────────────
+# ── Human-Readable Event Rendering (O(1) dispatch) ────────────────
+
+
+def _fmt_text_delta(event: AgentEvent) -> None:
+    _console.print(str(event.content or ""), end="")
+
+
+def _fmt_text(event: AgentEvent) -> None:
+    _console.print(f"\n{event.content}")
+
+
+def _fmt_tool_call(event: AgentEvent) -> None:
+    if not event.tool_use:
+        return
+    tc = event.tool_use
+    display = _tool_display(tc.name, tc.parameters)
+    _console.print(f"  [tool.name]{escape(tc.name)}[/] [tool.param]{escape(display)}[/]")
+
+
+def _fmt_tool_result(event: AgentEvent) -> None:
+    if not isinstance(event.content, ToolResult):
+        return
+    if event.content.success:
+        preview = str(event.content.output)[:120] if event.content.output else "ok"
+        _console.print(f"  [tool.ok]>[/] [stats]{escape(preview)}[/]")
+    else:
+        _console.print(f"  [tool.err]x {escape(event.content.error or 'failed')}[/]")
+
+
+def _fmt_done(event: AgentEvent) -> None:
+    if event.usage:
+        _print_usage(event.usage)
+
+
+def _fmt_error(event: AgentEvent) -> None:
+    _err_console.print(f"[error]Error: {escape(str(event.content))}[/]")
+
+
+_FORMAT_DISPATCH: dict[EventType, object] = {
+    EventType.TEXT_DELTA: _fmt_text_delta,
+    EventType.TEXT: _fmt_text,
+    EventType.TOOL_CALL: _fmt_tool_call,
+    EventType.TOOL_RESULT: _fmt_tool_result,
+    EventType.DONE: _fmt_done,
+    EventType.ERROR: _fmt_error,
+}
 
 
 def _format_event(event: AgentEvent) -> None:
-    """Render an AgentEvent to the terminal (human mode)."""
-    if event.type == EventType.TEXT_DELTA:
-        _console.print(str(event.content or ""), end="")
-        return
-
-    if event.type == EventType.TEXT:
-        _console.print(f"\n{event.content}")
-
-    elif event.type == EventType.TOOL_CALL and event.tool_use:
-        tc = event.tool_use
-        # Extract the most informative parameter for display
-        display = _tool_display(tc.name, tc.parameters)
-        _console.print(f"  [tool.name]{escape(tc.name)}[/] [tool.param]{escape(display)}[/]")
-
-    elif event.type == EventType.TOOL_RESULT:
-        if isinstance(event.content, ToolResult):
-            if event.content.success:
-                preview = str(event.content.output)[:120] if event.content.output else "ok"
-                _console.print(f"  [tool.ok]>[/] [stats]{escape(preview)}[/]")
-            else:
-                _console.print(f"  [tool.err]x {escape(event.content.error or 'failed')}[/]")
-
-    elif event.type == EventType.DONE and event.usage:
-        _print_usage(event.usage)
-
-    elif event.type == EventType.ERROR:
-        _err_console.print(f"[error]Error: {escape(str(event.content))}[/]")
+    """Render an AgentEvent to the terminal — O(1) dispatch."""
+    handler = _FORMAT_DISPATCH.get(event.type)
+    if handler is not None:
+        handler(event)
 
 
 _TOOL_PARAM_KEY: dict[str, str] = {
@@ -119,21 +141,26 @@ def _print_usage(u: AgentUsage) -> None:
 # ── JSON Event Rendering ────────────────────────────────────────────
 
 
-def _format_event_json(event: AgentEvent) -> None:
-    """Render an AgentEvent as JSON (machine mode)."""
-    obj: dict[str, object] = {"type": str(event.type)}
+def _json_content(event: AgentEvent, obj: dict) -> None:
+    obj["content"] = str(event.content or "")
 
-    if event.type in (EventType.TEXT, EventType.TEXT_DELTA, EventType.ERROR):
-        obj["content"] = str(event.content or "")
-    elif event.type == EventType.TOOL_CALL and event.tool_use:
+
+def _json_tool_call(event: AgentEvent, obj: dict) -> None:
+    if event.tool_use:
         obj["tool"] = event.tool_use.name
         obj["parameters"] = event.tool_use.parameters
         obj["call_id"] = event.tool_use.id
-    elif event.type == EventType.TOOL_RESULT and event.content:
+
+
+def _json_tool_result(event: AgentEvent, obj: dict) -> None:
+    if event.content:
         obj["success"] = getattr(event.content, "success", None)
         obj["output"] = str(getattr(event.content, "output", ""))[:500]
         obj["error"] = getattr(event.content, "error", None)
-    elif event.type == EventType.DONE and event.usage:
+
+
+def _json_done(event: AgentEvent, obj: dict) -> None:
+    if event.usage:
         u = event.usage
         obj["usage"] = {
             "input_tokens": u.input_tokens,
@@ -146,18 +173,35 @@ def _format_event_json(event: AgentEvent) -> None:
             "buddhi_phase": u.buddhi_phase,
         }
 
+
+_JSON_DISPATCH: dict[EventType, object] = {
+    EventType.TEXT: _json_content,
+    EventType.TEXT_DELTA: _json_content,
+    EventType.ERROR: _json_content,
+    EventType.TOOL_CALL: _json_tool_call,
+    EventType.TOOL_RESULT: _json_tool_result,
+    EventType.DONE: _json_done,
+}
+
+
+def _format_event_json(event: AgentEvent) -> None:
+    """Render an AgentEvent as JSON — O(1) dispatch."""
+    obj: dict[str, object] = {"type": str(event.type)}
+    handler = _JSON_DISPATCH.get(event.type)
+    if handler is not None:
+        handler(event, obj)
     print(json.dumps(obj), flush=True)
 
 
 # ── Entry Points ─────────────────────────────────────────────────────
 
 
-def _run_autonomous(cwd: str | None = None, idle_minutes: int = 15, output_json: bool = False) -> None:
-    """Run one autonomous cycle: generate tasks → dispatch → exit.
+def _run_autonomous(cwd: str | None = None) -> None:
+    """Run as persistent daemon — boot once, Cetana heartbeat drives work.
 
-    Designed for cron: boots agent, runs deterministic checks, exits.
-    LLM provider is optional — deterministic intents don't need it.
-    If a real problem is found that needs LLM, provider must be available.
+    NOT cron-based. Agent stays alive in memory. Import overhead: 0 after boot.
+    Cetana 4-phase heartbeat (GENESIS→DHARMA→KARMA→MOKSHA) drives all work.
+    Kill with SIGTERM/SIGINT for graceful shutdown.
     """
     # Try to build provider — optional for deterministic-only runs
     try:
@@ -167,12 +211,11 @@ def _run_autonomous(cwd: str | None = None, idle_minutes: int = 15, output_json:
         provider = None
 
     if provider is None:
-        # No provider — use a stub that will fail if actually called
-        from steward.types import NormalizedResponse
 
         class _NoProvider:
             def invoke(self, **kwargs):
                 raise RuntimeError("No LLM provider configured — cannot execute LLM tasks")
+
             def invoke_stream(self, **kwargs):
                 raise RuntimeError("No LLM provider configured — cannot execute LLM tasks")
 
@@ -182,17 +225,7 @@ def _run_autonomous(cwd: str | None = None, idle_minutes: int = 15, output_json:
     agent = StewardAgent(provider=provider, cwd=cwd)
 
     try:
-        result = agent.run_autonomous_sync(idle_minutes=idle_minutes)
-        if result:
-            if output_json:
-                print(json.dumps({"autonomous": True, "result": result}), flush=True)
-            else:
-                _console.print(f"[heading]Autonomous result:[/]\n{result}")
-        else:
-            if output_json:
-                print(json.dumps({"autonomous": True, "result": None}), flush=True)
-            else:
-                _console.print("[stats]Autonomous: no issues found[/]")
+        agent.run_daemon()  # Blocks until SIGTERM/SIGINT
     finally:
         agent.close()
 
@@ -264,13 +297,7 @@ def main() -> None:
     parser.add_argument(
         "--autonomous",
         action="store_true",
-        help="Run one autonomous cycle: generate tasks, dispatch deterministically, exit. For cron.",
-    )
-    parser.add_argument(
-        "--idle-minutes",
-        type=int,
-        default=15,
-        help="Override idle time for autonomous task generation (default: 15)",
+        help="Run as persistent daemon: boot once, Cetana heartbeat drives work. Kill with SIGTERM.",
     )
 
     args = parser.parse_args()
@@ -289,9 +316,9 @@ def main() -> None:
         api_main()
         return
 
-    # Autonomous mode — one deterministic cycle, no interactive
+    # Autonomous mode — persistent daemon, Cetana heartbeat drives work
     if args.autonomous:
-        _run_autonomous(cwd=args.cwd, idle_minutes=args.idle_minutes, output_json=args.output == "json")
+        _run_autonomous(cwd=args.cwd)
         return
 
     # Build provider chamber from environment

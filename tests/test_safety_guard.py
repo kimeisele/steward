@@ -20,10 +20,6 @@ from vibe_core.tools.tool_registry import ToolRegistry
 # ── Fake LLM ─────────────────────────────────────────────────────────
 
 
-
-
-
-
 @dataclass
 class FakeResponse:
     content: str = ""
@@ -74,7 +70,9 @@ class TestSafetyGuard:
         reg = ToolRegistry()
         reg.register(EditTool())
 
-        tc = ToolUse(id="call_edit", name="edit_file", parameters={"path": path, "old_string": "hello", "new_string": "goodbye"})
+        tc = ToolUse(
+            id="call_edit", name="edit_file", parameters={"path": path, "old_string": "hello", "new_string": "goodbye"}
+        )
         llm = FakeLLM(
             [
                 FakeResponse(content="", tool_calls=[tc]),
@@ -115,7 +113,9 @@ class TestSafetyGuard:
         # Step 1: read
         tc_read = ToolUse(id="call_read", name="read_file", parameters={"path": path})
         # Step 2: edit
-        tc_edit = ToolUse(id="call_edit", name="edit_file", parameters={"path": path, "old_string": "hello", "new_string": "goodbye"})
+        tc_edit = ToolUse(
+            id="call_edit", name="edit_file", parameters={"path": path, "old_string": "hello", "new_string": "goodbye"}
+        )
         llm = FakeLLM(
             [
                 FakeResponse(content="", tool_calls=[tc_read]),

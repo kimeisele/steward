@@ -70,7 +70,7 @@ def _compute_lcom4(class_node: ast.ClassDef) -> int:
     methods = list(method_attrs.keys())
     adj: dict[str, set[str]] = {m: set() for m in methods}
     for i, m1 in enumerate(methods):
-        for m2 in methods[i + 1:]:
+        for m2 in methods[i + 1 :]:
             if method_attrs[m1] & method_attrs[m2]:
                 adj[m1].add(m2)
                 adj[m2].add(m1)
@@ -91,6 +91,52 @@ def _compute_lcom4(class_node: ast.ClassDef) -> int:
             queue.extend(adj[current] - visited)
 
     return components
+
+
+# ── Branchless CC Dispatch ─────────────────────────────────────────
+# O(1) dict lookup per AST node instead of if/elif chains.
+# Extensible: add a type → add a dict entry. No code changes.
+_CC_WEIGHT: dict[type, object] = {
+    ast.If: 1,
+    ast.IfExp: 1,
+    ast.For: 1,
+    ast.AsyncFor: 1,
+    ast.While: 1,
+    ast.ExceptHandler: 1,
+    # BoolOp: weight is dynamic (len(values) - 1), handled via callable
+}
+
+
+def _method_complexity(func_node: ast.FunctionDef | ast.AsyncFunctionDef) -> int:
+    """McCabe cyclomatic complexity — branchless O(1) dispatch per node."""
+    cc = 1
+    for node in ast.walk(func_node):
+        weight = _CC_WEIGHT.get(type(node))
+        if weight is not None:
+            cc += weight
+        elif isinstance(node, ast.BoolOp):
+            cc += len(node.values) - 1
+    return cc
+
+
+def _compute_wmc(class_node: ast.ClassDef) -> int:
+    """Compute WMC (Weighted Methods per Class — sum of cyclomatic complexities).
+
+    WMC = sum of McCabe CC for each non-dunder method.
+    Low WMC (< ~20) = simple class (router, data holder, facade).
+    High WMC (> ~20) = complex class with deep branching logic.
+
+    Used alongside LCOM4 to distinguish routers (high LCOM4, low WMC)
+    from real god-classes (high LCOM4, high WMC).
+    """
+    total = 0
+    for node in class_node.body:
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if node.name.startswith("__") and node.name.endswith("__"):
+            continue
+        total += _method_complexity(node)
+    return total
 
 
 class CodeSense:
@@ -158,11 +204,15 @@ class CodeSense:
                         # LCOM4: only for classes with 3+ methods
                         lcom4 = _compute_lcom4(node)
                         if lcom4 > 1:
-                            low_cohesion.append({
-                                "class": node.name,
-                                "file": rel_path,
-                                "lcom4": lcom4,
-                            })
+                            wmc = _compute_wmc(node)
+                            low_cohesion.append(
+                                {
+                                    "class": node.name,
+                                    "file": rel_path,
+                                    "lcom4": lcom4,
+                                    "wmc": wmc,
+                                }
+                            )
                     elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
                         total_functions += 1
 
@@ -188,10 +238,16 @@ class CodeSense:
         if low_cohesion:
             intensity += min(0.2, len(low_cohesion) * 0.03)
 
-        file_count = len([f for f in py_files if not any(
-            p.startswith(".") or p == "__pycache__" or p in ("venv", ".venv")
-            for p in f.relative_to(self._cwd).parts
-        )])
+        file_count = len(
+            [
+                f
+                for f in py_files
+                if not any(
+                    p.startswith(".") or p == "__pycache__" or p in ("venv", ".venv")
+                    for p in f.relative_to(self._cwd).parts
+                )
+            ]
+        )
 
         return SensePerception(
             sense=Jnanendriya.CAKSU,
@@ -216,4 +272,3 @@ class CodeSense:
         if perception.quality == "tamas":
             return perception.intensity
         return perception.intensity * 0.2
-

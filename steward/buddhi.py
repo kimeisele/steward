@@ -134,18 +134,18 @@ def unregister_tool(namespace: ToolNamespace, tool_name: str) -> None:
 # This feeds the DSP signal processor, not hardcoded token counts.
 # 0.0 = trivial (just a tool call), 1.0 = heavy (edit_file + bash)
 _ACTION_WEIGHT: dict[SemanticActionType, float] = {
-    SemanticActionType.RESEARCH: 0.0,    # just tool calls
-    SemanticActionType.ANALYZE: 0.0,     # observe only
-    SemanticActionType.MONITOR: 0.0,     # observe only
-    SemanticActionType.REVIEW: 0.0,      # observe only
-    SemanticActionType.PLAN: 0.0,        # think, don't write
-    SemanticActionType.TEST: 0.0,        # just run bash
-    SemanticActionType.DESIGN: 0.5,      # plan + describe
+    SemanticActionType.RESEARCH: 0.0,  # just tool calls
+    SemanticActionType.ANALYZE: 0.0,  # observe only
+    SemanticActionType.MONITOR: 0.0,  # observe only
+    SemanticActionType.REVIEW: 0.0,  # observe only
+    SemanticActionType.PLAN: 0.0,  # think, don't write
+    SemanticActionType.TEST: 0.0,  # just run bash
+    SemanticActionType.DESIGN: 0.5,  # plan + describe
     SemanticActionType.SYNTHESIZE: 0.5,  # aggregate
-    SemanticActionType.RESPOND: 0.5,     # text response
-    SemanticActionType.IMPLEMENT: 1.0,   # edit_file needs room
-    SemanticActionType.REFACTOR: 1.0,    # rewrite code
-    SemanticActionType.DEBUG: 1.0,       # edit + bash
+    SemanticActionType.RESPOND: 0.5,  # text response
+    SemanticActionType.IMPLEMENT: 1.0,  # edit_file needs room
+    SemanticActionType.REFACTOR: 1.0,  # rewrite code
+    SemanticActionType.DEBUG: 1.0,  # edit + bash
 }
 
 # ── ModelTier — cost-aware LLM routing ─────────────────────────────
@@ -184,9 +184,9 @@ _ACTION_TIER: dict[SemanticActionType, ModelTier] = {
 # The phase attenuates the input signal, not the output budget.
 # EXECUTE = unity gain (1.0), everything else reduces the signal.
 _PHASE_MODULATION: dict[ExecutionPhase, float] = {
-    ExecutionPhase.ORIENT: 0.5,    # exploring — half amplitude
-    ExecutionPhase.EXECUTE: 1.0,   # implementing — full amplitude
-    ExecutionPhase.VERIFY: 0.5,    # testing — half amplitude
+    ExecutionPhase.ORIENT: 0.5,  # exploring — half amplitude
+    ExecutionPhase.EXECUTE: 1.0,  # implementing — full amplitude
+    ExecutionPhase.VERIFY: 0.5,  # testing — half amplitude
     ExecutionPhase.COMPLETE: 0.5,  # summarizing — half amplitude
 }
 
@@ -351,6 +351,7 @@ class Buddhi:
         # Research: "TALE framework — ~70% token reduction via complexity-based allocation."
         from steward.services import SVC_ANTARANGA
         from vibe_core.di import ServiceRegistry
+
         antaranga = ServiceRegistry.get(SVC_ANTARANGA)
         wave_density = antaranga.active_count() / 512.0 if antaranga else 0.0
 

@@ -97,6 +97,7 @@ class TestVedanaComponentWeights:
             _W_SYNAPTIC,
             _W_TOOL,
         )
+
         total = _W_PROVIDER + _W_ERROR + _W_CONTEXT + _W_SYNAPTIC + _W_TOOL
         assert abs(total - 1.0) < 1e-9
 

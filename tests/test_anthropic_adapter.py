@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from steward.provider import AnthropicAdapter
+from steward.provider.adapters import AnthropicAdapter
 
 
 @dataclass

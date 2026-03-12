@@ -1,0 +1,35 @@
+"""
+Steward Phase Hooks — Composable capabilities for MURALI phase dispatch.
+
+Each hook is a focused piece of phase logic. Registration happens at boot.
+Adding new capabilities = adding a hook here, not editing agent.py.
+"""
+
+from __future__ import annotations
+
+from steward.hooks.dharma import (
+    DharmaFederationHook,
+    DharmaHealthHook,
+    DharmaMarketplaceHook,
+    DharmaReaperHook,
+)
+from steward.hooks.moksha import (
+    MokshaFederationHook,
+    MokshaPersistenceHook,
+    MokshaSynapseHook,
+)
+from steward.phase_hook import PhaseHookRegistry
+
+
+def register_default_hooks(registry: PhaseHookRegistry) -> None:
+    """Register all built-in steward hooks."""
+    # DHARMA hooks (priority order: health → reaper → marketplace → federation)
+    registry.register(DharmaHealthHook())
+    registry.register(DharmaReaperHook())
+    registry.register(DharmaMarketplaceHook())
+    registry.register(DharmaFederationHook())
+
+    # MOKSHA hooks (priority order: synapse → persistence → federation)
+    registry.register(MokshaSynapseHook())
+    registry.register(MokshaPersistenceHook())
+    registry.register(MokshaFederationHook())
