@@ -14,6 +14,7 @@ from steward.phase_hook import MOKSHA, BasePhaseHook, PhaseContext
 from steward.services import (
     SVC_FEDERATION,
     SVC_FEDERATION_TRANSPORT,
+    SVC_GIT_NADI_SYNC,
     SVC_MARKETPLACE,
     SVC_REAPER,
     SVC_SYNAPSE_STORE,
@@ -96,3 +97,8 @@ class MokshaFederationHook(BasePhaseHook):
             flushed = federation.flush_outbound(transport)
             if flushed:
                 logger.debug("FEDERATION: flushed %d outbound events", flushed)
+
+                # Git push after flushing — publish messages to remote
+                git_sync = ServiceRegistry.get(SVC_GIT_NADI_SYNC)
+                if git_sync is not None:
+                    git_sync.push()
