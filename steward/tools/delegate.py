@@ -1,8 +1,9 @@
 """
 Delegate-to-Peer Tool — Outbound task delegation to federation peers.
 
-Gives Buddhi (the LLM) the ability to delegate tasks to the most capable
-peer in the federation. The tool:
+Karmendriya (action organ) for federation command. Buddhi (the cognitive
+pipeline) decides WHEN to delegate; the LLM (provider) is just the
+execution substrate. This tool is the mechanism Buddhi uses to act.
 
 1. Queries the Reaper for alive peers sorted by trust
 2. Optionally filters by required capability
@@ -11,8 +12,6 @@ peer in the federation. The tool:
 
 The agent does NOT block or poll. KARMA phase resumes the task when
 OP_TASK_COMPLETED arrives via inbound federation.
-
-This is a Karmendriya (action organ) — the agent's ability to command.
 """
 
 from __future__ import annotations
