@@ -184,7 +184,9 @@ class HeartbeatReaper:
                 peer.trust = min(1.0, peer.trust + self.trust_decay * 0.5)
                 logger.info(
                     "REAPER: peer '%s' resurrected (%s → ALIVE, trust=%.2f)",
-                    agent_id, old, peer.trust,
+                    agent_id,
+                    old,
+                    peer.trust,
                 )
         else:
             peer = PeerRecord(
@@ -238,15 +240,17 @@ class HeartbeatReaper:
                 to_evict.append(agent_id)
                 self._total_evictions += 1
 
-            consequences.append(ReaperConsequence(
-                agent_id=agent_id,
-                action=transition.action,
-                detail=detail,
-                old_status=old_status,
-                new_status=peer.status.value,
-                old_trust=old_trust,
-                new_trust=peer.trust,
-            ))
+            consequences.append(
+                ReaperConsequence(
+                    agent_id=agent_id,
+                    action=transition.action,
+                    detail=detail,
+                    old_status=old_status,
+                    new_status=peer.status.value,
+                    old_trust=old_trust,
+                    new_trust=peer.trust,
+                )
+            )
 
         # Remove evicted peers from active tracking
         for agent_id in to_evict:

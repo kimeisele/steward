@@ -578,6 +578,7 @@ class TestHebbianTierEscalation:
         directive = buddhi.pre_flight("fix the broken test", 0)
         # Tier matches action default (whatever Manas classifies)
         from steward.buddhi import _ACTION_TIER
+
         assert directive.tier == _ACTION_TIER[directive.action]
 
     def test_flash_escalates_to_standard_on_low_weight(self):

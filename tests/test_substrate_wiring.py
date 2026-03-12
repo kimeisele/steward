@@ -152,11 +152,13 @@ class TestToolOutputCompression:
 
         # Create engine with fake provider
         provider = MagicMock()
-        provider.invoke = MagicMock(return_value=MagicMock(
-            content='{"response": "done"}',
-            tool_calls=None,
-            usage=None,
-        ))
+        provider.invoke = MagicMock(
+            return_value=MagicMock(
+                content='{"response": "done"}',
+                tool_calls=None,
+                usage=None,
+            )
+        )
 
         from vibe_core.tools.tool_registry import ToolRegistry
 
@@ -291,9 +293,7 @@ class TestCacheDrivenBypass:
 
         source = inspect.getsource(AgentLoop.run)
         # Engine should store results in cache
-        assert "cache" in source.lower() or "put" in source.lower(), (
-            "AgentLoop.run() must cache LLM responses"
-        )
+        assert "cache" in source.lower() or "put" in source.lower(), "AgentLoop.run() must cache LLM responses"
 
 
 # ── Venu-Driven Turn Rhythm ──────────────────────────────────────────
@@ -350,9 +350,9 @@ class TestLearningEffect:
         seed = mc.compress("fix the bug in main.py").seed
         v, va, mu = venu.route(seed)
         # All components within bounds
-        assert 0 <= v < 64    # VENU: 6 bits
+        assert 0 <= v < 64  # VENU: 6 bits
         assert 0 <= va < 512  # VAMSI: 9 bits
-        assert 0 <= mu < 16   # MURALI: 4 bits
+        assert 0 <= mu < 16  # MURALI: 4 bits
 
     def test_buddhi_records_seed_outcome(self):
         """Buddhi.record_seed() stores seed-level Hebbian weight."""
@@ -644,8 +644,11 @@ class TestAntarangaWiring:
 
         reg.collide(
             slot=slot,
-            v_source=42, v_target=tool_seed & 0xFFFFFFFF,
-            v_operation=0, v_arcanam=1, v_atma=0,
+            v_source=42,
+            v_target=tool_seed & 0xFFFFFFFF,
+            v_operation=0,
+            v_arcanam=1,
+            v_atma=0,
             v_prana=GENESIS_PRANA_U32,
             v_integrity=INTEGRITY_FULL,
             v_cycle=0,
@@ -667,14 +670,30 @@ class TestAntarangaWiring:
         slot = 7
 
         # First collision: PRESENCE (takes slot)
-        reg.collide(slot=slot, v_source=1, v_target=2, v_operation=3,
-                    v_arcanam=4, v_atma=5,
-                    v_prana=GENESIS_PRANA_U32, v_integrity=INTEGRITY_FULL, v_cycle=0)
+        reg.collide(
+            slot=slot,
+            v_source=1,
+            v_target=2,
+            v_operation=3,
+            v_arcanam=4,
+            v_atma=5,
+            v_prana=GENESIS_PRANA_U32,
+            v_integrity=INTEGRITY_FULL,
+            v_cycle=0,
+        )
 
         # Second collision: RESONANCE (prana accumulates)
-        reg.collide(slot=slot, v_source=10, v_target=20, v_operation=30,
-                    v_arcanam=40, v_atma=50,
-                    v_prana=GENESIS_PRANA_U32, v_integrity=INTEGRITY_FULL, v_cycle=1)
+        reg.collide(
+            slot=slot,
+            v_source=10,
+            v_target=20,
+            v_operation=30,
+            v_arcanam=40,
+            v_atma=50,
+            v_prana=GENESIS_PRANA_U32,
+            v_integrity=INTEGRITY_FULL,
+            v_cycle=1,
+        )
 
         # Prana should be higher than single injection
         assert reg.prana_at(slot) > GENESIS_PRANA_U32
@@ -691,9 +710,18 @@ class TestAntarangaWiring:
         venu = VenuOrchestrator()
 
         # Create an active slot
-        reg.set_slot(slot=0, source=1, target=2, operation=3,
-                     arcanam=4, atma_nivedanam=5, flags=1,
-                     prana=GENESIS_PRANA_U32, integrity=INTEGRITY_FULL, cycle=0)
+        reg.set_slot(
+            slot=0,
+            source=1,
+            target=2,
+            operation=3,
+            arcanam=4,
+            atma_nivedanam=5,
+            flags=1,
+            prana=GENESIS_PRANA_U32,
+            integrity=INTEGRITY_FULL,
+            cycle=0,
+        )
 
         initial_prana = reg.prana_at(0)
         diw = venu.step()
@@ -756,13 +784,17 @@ class TestVBRCognition:
 
         # No wave density
         out_no_wave = process_cbr(
-            context_pressure=0.3, task_weight=0.8, cache_confidence=0.0,
+            context_pressure=0.3,
+            task_weight=0.8,
+            cache_confidence=0.0,
             wave_density=0.0,
         )
 
         # High wave density (many tools used)
         out_high_wave = process_cbr(
-            context_pressure=0.3, task_weight=0.8, cache_confidence=0.0,
+            context_pressure=0.3,
+            task_weight=0.8,
+            cache_confidence=0.0,
             wave_density=0.8,
         )
 
@@ -773,8 +805,7 @@ class TestVBRCognition:
         from steward.cbr import process_cbr
 
         out1 = process_cbr(context_pressure=0.3, task_weight=0.5, cache_confidence=0.0)
-        out2 = process_cbr(context_pressure=0.3, task_weight=0.5, cache_confidence=0.0,
-                           wave_density=0.0)
+        out2 = process_cbr(context_pressure=0.3, task_weight=0.5, cache_confidence=0.0, wave_density=0.0)
         assert out1.budget == out2.budget
 
     def test_wave_density_max_boost_bounded(self):
@@ -782,7 +813,9 @@ class TestVBRCognition:
         from steward.cbr import CBR_CEILING, process_cbr
 
         out = process_cbr(
-            context_pressure=0.0, task_weight=1.0, cache_confidence=0.0,
+            context_pressure=0.0,
+            task_weight=1.0,
+            cache_confidence=0.0,
             wave_density=1.0,
         )
         assert out.budget <= CBR_CEILING

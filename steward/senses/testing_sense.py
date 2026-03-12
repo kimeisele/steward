@@ -232,10 +232,9 @@ class TestingSense:
         try:
             content = pyproject.read_text(encoding="utf-8")
             # Extract testpaths
-            match = re.search(r'testpaths\s*=\s*\[([^\]]+)\]', content)
+            match = re.search(r"testpaths\s*=\s*\[([^\]]+)\]", content)
             if match:
                 return f"testpaths={match.group(1).strip()}"
         except OSError:
             pass
         return ""
-

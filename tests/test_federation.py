@@ -51,9 +51,13 @@ class TestInboundHeartbeat:
     def test_heartbeat_routes_to_reaper(self):
         reaper = HeartbeatReaper()
         bridge = FederationBridge(reaper=reaper)
-        assert bridge.ingest(OP_HEARTBEAT, {
-            "agent_id": "peer-1", "timestamp": time.time(),
-        })
+        assert bridge.ingest(
+            OP_HEARTBEAT,
+            {
+                "agent_id": "peer-1",
+                "timestamp": time.time(),
+            },
+        )
         assert reaper.get_peer("peer-1") is not None
 
     def test_heartbeat_without_agent_id_rejected(self):
@@ -68,9 +72,13 @@ class TestInboundHeartbeat:
     def test_heartbeat_with_source(self):
         reaper = HeartbeatReaper()
         bridge = FederationBridge(reaper=reaper)
-        bridge.ingest(OP_HEARTBEAT, {
-            "agent_id": "peer-1", "source": "wiki",
-        })
+        bridge.ingest(
+            OP_HEARTBEAT,
+            {
+                "agent_id": "peer-1",
+                "source": "wiki",
+            },
+        )
         peer = reaper.get_peer("peer-1")
         assert peer.source == "wiki"
 
@@ -82,17 +90,27 @@ class TestInboundClaim:
     def test_claim_routes_to_marketplace(self):
         market = Marketplace()
         bridge = FederationBridge(marketplace=market)
-        assert bridge.ingest(OP_CLAIM_SLOT, {
-            "slot_id": "task:1", "agent_id": "peer-1", "trust": 0.8,
-        })
+        assert bridge.ingest(
+            OP_CLAIM_SLOT,
+            {
+                "slot_id": "task:1",
+                "agent_id": "peer-1",
+                "trust": 0.8,
+            },
+        )
         assert market.get_holder("task:1") == "peer-1"
 
     def test_claim_emits_outcome_event(self):
         market = Marketplace()
         bridge = FederationBridge(marketplace=market)
-        bridge.ingest(OP_CLAIM_SLOT, {
-            "slot_id": "task:1", "agent_id": "peer-1", "trust": 0.5,
-        })
+        bridge.ingest(
+            OP_CLAIM_SLOT,
+            {
+                "slot_id": "task:1",
+                "agent_id": "peer-1",
+                "trust": 0.5,
+            },
+        )
         assert len(bridge._outbound) == 1
         event = bridge._outbound[0]
         assert event.operation == OP_CLAIM_OUTCOME
@@ -101,9 +119,13 @@ class TestInboundClaim:
 
     def test_claim_without_marketplace_returns_false(self):
         bridge = FederationBridge()
-        assert not bridge.ingest(OP_CLAIM_SLOT, {
-            "slot_id": "task:1", "agent_id": "peer-1",
-        })
+        assert not bridge.ingest(
+            OP_CLAIM_SLOT,
+            {
+                "slot_id": "task:1",
+                "agent_id": "peer-1",
+            },
+        )
 
     def test_claim_missing_slot_id_rejected(self):
         market = Marketplace()
@@ -119,13 +141,23 @@ class TestInboundClaim:
         market = Marketplace(default_ttl_s=600)
         bridge = FederationBridge(marketplace=market)
         # First claim
-        bridge.ingest(OP_CLAIM_SLOT, {
-            "slot_id": "task:1", "agent_id": "peer-1", "trust": 0.9,
-        })
+        bridge.ingest(
+            OP_CLAIM_SLOT,
+            {
+                "slot_id": "task:1",
+                "agent_id": "peer-1",
+                "trust": 0.9,
+            },
+        )
         # Contested claim (lower trust, should be denied)
-        bridge.ingest(OP_CLAIM_SLOT, {
-            "slot_id": "task:1", "agent_id": "peer-2", "trust": 0.3,
-        })
+        bridge.ingest(
+            OP_CLAIM_SLOT,
+            {
+                "slot_id": "task:1",
+                "agent_id": "peer-2",
+                "trust": 0.3,
+            },
+        )
         assert len(bridge._outbound) == 2
         denied = bridge._outbound[1]
         assert denied.payload["granted"] is False
@@ -140,16 +172,24 @@ class TestInboundRelease:
         market = Marketplace()
         market.claim("task:1", "peer-1", trust=0.5)
         bridge = FederationBridge(marketplace=market)
-        assert bridge.ingest(OP_RELEASE_SLOT, {
-            "slot_id": "task:1", "agent_id": "peer-1",
-        })
+        assert bridge.ingest(
+            OP_RELEASE_SLOT,
+            {
+                "slot_id": "task:1",
+                "agent_id": "peer-1",
+            },
+        )
         assert market.get_holder("task:1") is None
 
     def test_release_without_marketplace_returns_false(self):
         bridge = FederationBridge()
-        assert not bridge.ingest(OP_RELEASE_SLOT, {
-            "slot_id": "task:1", "agent_id": "peer-1",
-        })
+        assert not bridge.ingest(
+            OP_RELEASE_SLOT,
+            {
+                "slot_id": "task:1",
+                "agent_id": "peer-1",
+            },
+        )
 
     def test_release_missing_fields_rejected(self):
         market = Marketplace()
@@ -179,12 +219,19 @@ class TestProcessInbound:
     def test_reads_from_transport(self):
         reaper = HeartbeatReaper()
         market = Marketplace()
-        transport = FakeTransport(messages=[
-            {"operation": OP_HEARTBEAT, "payload": {"agent_id": "peer-1"}},
-            {"operation": OP_CLAIM_SLOT, "payload": {
-                "slot_id": "task:1", "agent_id": "peer-2", "trust": 0.7,
-            }},
-        ])
+        transport = FakeTransport(
+            messages=[
+                {"operation": OP_HEARTBEAT, "payload": {"agent_id": "peer-1"}},
+                {
+                    "operation": OP_CLAIM_SLOT,
+                    "payload": {
+                        "slot_id": "task:1",
+                        "agent_id": "peer-2",
+                        "trust": 0.7,
+                    },
+                },
+            ]
+        )
         bridge = FederationBridge(reaper=reaper, marketplace=market)
         count = bridge.process_inbound(transport)
         assert count == 2
@@ -207,9 +254,14 @@ class TestFlushOutbound:
         market = Marketplace()
         bridge = FederationBridge(marketplace=market, agent_id="steward-1")
         # Generate an outbound event via claim
-        bridge.ingest(OP_CLAIM_SLOT, {
-            "slot_id": "task:1", "agent_id": "peer-1", "trust": 0.5,
-        })
+        bridge.ingest(
+            OP_CLAIM_SLOT,
+            {
+                "slot_id": "task:1",
+                "agent_id": "peer-1",
+                "trust": 0.5,
+            },
+        )
         transport = FakeTransport()
         count = bridge.flush_outbound(transport)
         assert count == 1
@@ -249,9 +301,14 @@ class TestBridgeStats:
         bridge = FederationBridge(reaper=reaper, marketplace=market)
 
         bridge.ingest(OP_HEARTBEAT, {"agent_id": "p1"})
-        bridge.ingest(OP_CLAIM_SLOT, {
-            "slot_id": "t1", "agent_id": "p2", "trust": 0.5,
-        })
+        bridge.ingest(
+            OP_CLAIM_SLOT,
+            {
+                "slot_id": "t1",
+                "agent_id": "p2",
+                "trust": 0.5,
+            },
+        )
 
         s = bridge.stats()
         assert s["inbound_processed"] == 2
@@ -279,21 +336,35 @@ class TestEndToEnd:
         assert reaper.get_peer("peer-1") is not None
 
         # Peer-1 claims a slot
-        bridge.ingest(OP_CLAIM_SLOT, {
-            "slot_id": "pr:42", "agent_id": "peer-1", "trust": 0.6,
-        })
+        bridge.ingest(
+            OP_CLAIM_SLOT,
+            {
+                "slot_id": "pr:42",
+                "agent_id": "peer-1",
+                "trust": 0.6,
+            },
+        )
         assert market.get_holder("pr:42") == "peer-1"
 
         # Peer-2 contests with higher trust
-        bridge.ingest(OP_CLAIM_SLOT, {
-            "slot_id": "pr:42", "agent_id": "peer-2", "trust": 0.9,
-        })
+        bridge.ingest(
+            OP_CLAIM_SLOT,
+            {
+                "slot_id": "pr:42",
+                "agent_id": "peer-2",
+                "trust": 0.9,
+            },
+        )
         assert market.get_holder("pr:42") == "peer-2"
 
         # Peer-2 releases
-        bridge.ingest(OP_RELEASE_SLOT, {
-            "slot_id": "pr:42", "agent_id": "peer-2",
-        })
+        bridge.ingest(
+            OP_RELEASE_SLOT,
+            {
+                "slot_id": "pr:42",
+                "agent_id": "peer-2",
+            },
+        )
         assert market.get_holder("pr:42") is None
 
         # Stats reflect all operations
@@ -309,10 +380,13 @@ class TestDharmaHeartbeat:
 
     def test_emit_heartbeat_queues_to_outbox(self):
         bridge = FederationBridge(agent_id="steward-test")
-        bridge.emit(OP_HEARTBEAT, {
-            "agent_id": "steward-test",
-            "health": 0.85,
-        })
+        bridge.emit(
+            OP_HEARTBEAT,
+            {
+                "agent_id": "steward-test",
+                "health": 0.85,
+            },
+        )
         assert bridge.stats()["outbound_pending"] == 1
         # Verify payload
         event = bridge._outbound[0]

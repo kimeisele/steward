@@ -206,9 +206,7 @@ class TestCodeSense:
         """Classes with <3 methods are trivially cohesive."""
         with tempfile.TemporaryDirectory() as tmpdir:
             Path(tmpdir, "small.py").write_text(
-                "class Tiny:\n"
-                "    def a(self): self.x = 1\n"
-                "    def b(self): self.y = 2\n"
+                "class Tiny:\n    def a(self): self.x = 1\n    def b(self): self.y = 2\n"
             )
             sense = CodeSense(cwd=tmpdir)
             perception = sense.perceive()
@@ -546,17 +544,13 @@ class TestPerceptionDataContract:
         coordinator = SenseCoordinator(cwd=".")
         agg = coordinator.perceive_all()
         for sense, perception in agg.perceptions.items():
-            assert 0.0 <= perception.intensity <= 1.0, (
-                f"{sense}: intensity {perception.intensity} out of range"
-            )
+            assert 0.0 <= perception.intensity <= 1.0, f"{sense}: intensity {perception.intensity} out of range"
 
     def test_all_perceptions_have_valid_quality(self):
         coordinator = SenseCoordinator(cwd=".")
         agg = coordinator.perceive_all()
         for sense, perception in agg.perceptions.items():
-            assert perception.quality in ("sattva", "rajas", "tamas"), (
-                f"{sense}: invalid quality {perception.quality}"
-            )
+            assert perception.quality in ("sattva", "rajas", "tamas"), f"{sense}: invalid quality {perception.quality}"
 
     def test_all_perceptions_have_data_dict(self):
         coordinator = SenseCoordinator(cwd=".")

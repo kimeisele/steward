@@ -103,10 +103,19 @@ def _extract_public_surface(source: str) -> dict | None:
     }
 
     # Route-like decorator patterns (attribute names to match)
-    _ROUTE_DECORATORS = frozenset({
-        "route", "get", "post", "put", "delete", "patch",
-        "api_view", "action", "endpoint",
-    })
+    _ROUTE_DECORATORS = frozenset(
+        {
+            "route",
+            "get",
+            "post",
+            "put",
+            "delete",
+            "patch",
+            "api_view",
+            "action",
+            "endpoint",
+        }
+    )
 
     for node in ast.iter_child_nodes(tree):
         # Extract __all__ assignments
@@ -269,7 +278,9 @@ class CircuitBreaker:
             self.record_rollback()
             logger.warning(
                 "Fix rolled back: %s (failures %d → %d)",
-                file_path, baseline, post,
+                file_path,
+                baseline,
+                post,
             )
             return FixResult(
                 rolled_back=True,
@@ -304,6 +315,7 @@ class CircuitBreaker:
 
             # Parse "N failed" from pytest output
             import re
+
             match = re.search(r"(\d+) failed", result.stdout + result.stderr)
             if match:
                 return int(match.group(1))
@@ -380,7 +392,8 @@ class CircuitBreaker:
             self._suspended_until = time.monotonic() + SUSPEND_DURATION
             logger.warning(
                 "Circuit breaker SUSPENDED for %ds after %d consecutive rollbacks",
-                SUSPEND_DURATION, self._consecutive_rollbacks,
+                SUSPEND_DURATION,
+                self._consecutive_rollbacks,
             )
 
     def record_success(self) -> None:
@@ -406,9 +419,7 @@ class CircuitBreaker:
             return GateResult(passed=True, gate="lint")
 
         # Count violations on current (LLM-modified) files
-        post_count = self._run_tool_count(
-            ["ruff", "check", "--no-fix", "--quiet"] + py_files
-        )
+        post_count = self._run_tool_count(["ruff", "check", "--no-fix", "--quiet"] + py_files)
         if post_count is None:
             return GateResult(passed=True, gate="lint", detail="ruff not available")
         if post_count == 0:
@@ -521,8 +532,8 @@ class CircuitBreaker:
 
         from steward.senses.code_sense import _compute_lcom4, _compute_wmc
 
-        max_lcom4 = 4   # Structural threshold: disconnected method groups
-        max_wmc = 20     # Complexity threshold: branching density
+        max_lcom4 = 4  # Structural threshold: disconnected method groups
+        max_wmc = 20  # Complexity threshold: branching density
 
         py_files = [f for f in changed_files if f.endswith(".py") and not _is_test_file(f)]
         if not py_files:
@@ -546,9 +557,7 @@ class CircuitBreaker:
                 if lcom4 > max_lcom4:
                     wmc = _compute_wmc(node)
                     if wmc > max_wmc:
-                        violations.append(
-                            f"{node.name} in {filepath} (LCOM4={lcom4}, WMC={wmc})"
-                        )
+                        violations.append(f"{node.name} in {filepath} (LCOM4={lcom4}, WMC={wmc})")
 
         if violations:
             return GateResult(
@@ -571,10 +580,7 @@ class CircuitBreaker:
         """
         import ast
 
-        test_files = sorted(
-            f for f in changed_files
-            if f.endswith(".py") and _is_test_file(f)
-        )
+        test_files = sorted(f for f in changed_files if f.endswith(".py") and _is_test_file(f))
         if not test_files:
             return GateResult(passed=True, gate="test_integrity")
 
@@ -632,9 +638,7 @@ class CircuitBreaker:
             # Check 3: Trivial assertions (assert True, assert 1)
             if current_stats["trivial_asserts"] > head_stats["trivial_asserts"]:
                 new_trivial = current_stats["trivial_asserts"] - head_stats["trivial_asserts"]
-                problems.append(
-                    f"{filepath}: {new_trivial} trivial assertion(s) added (assert True/1)"
-                )
+                problems.append(f"{filepath}: {new_trivial} trivial assertion(s) added (assert True/1)")
 
         if problems:
             return GateResult(
@@ -656,10 +660,7 @@ class CircuitBreaker:
         """
         import ast
 
-        py_files = sorted(
-            f for f in changed_files
-            if f.endswith(".py") and not _is_test_file(f)
-        )
+        py_files = sorted(f for f in changed_files if f.endswith(".py") and not _is_test_file(f))
         if not py_files:
             return GateResult(passed=True, gate="api_surface")
 
@@ -689,8 +690,7 @@ class CircuitBreaker:
                 head_surface = _extract_public_surface(head_result.stdout)
                 if head_surface and head_surface["public_names"]:
                     problems.append(
-                        f"{filepath}: source file deleted "
-                        f"(had {len(head_surface['public_names'])} public names)"
+                        f"{filepath}: source file deleted (had {len(head_surface['public_names'])} public names)"
                     )
                 continue
 
@@ -706,24 +706,19 @@ class CircuitBreaker:
             if head_all is not None and current_all is not None:
                 removed_exports = head_all - current_all
                 if removed_exports:
-                    problems.append(
-                        f"{filepath}: __all__ exports removed: {', '.join(sorted(removed_exports))}"
-                    )
+                    problems.append(f"{filepath}: __all__ exports removed: {', '.join(sorted(removed_exports))}")
 
             # Check 2: Decorated endpoints removed
             removed_endpoints = head_surface["decorated_endpoints"] - current_surface["decorated_endpoints"]
             if removed_endpoints:
-                problems.append(
-                    f"{filepath}: decorated endpoints removed: {', '.join(sorted(removed_endpoints))}"
-                )
+                problems.append(f"{filepath}: decorated endpoints removed: {', '.join(sorted(removed_endpoints))}")
 
             # Check 3: Public functions/classes removed (only flag if significant)
             removed_public = head_surface["public_names"] - current_surface["public_names"]
             if len(removed_public) >= 2:
                 # Allow removing 1 public name (refactoring), flag 2+
                 problems.append(
-                    f"{filepath}: {len(removed_public)} public names removed: "
-                    f"{', '.join(sorted(removed_public)[:5])}"
+                    f"{filepath}: {len(removed_public)} public names removed: {', '.join(sorted(removed_public)[:5])}"
                 )
 
         if problems:
@@ -808,9 +803,7 @@ class CircuitBreaker:
         """
         return self._differential_check(
             py_files,
-            lambda files: self._run_tool_count(
-                ["ruff", "check", "--no-fix", "--quiet"] + files
-            ),
+            lambda files: self._run_tool_count(["ruff", "check", "--no-fix", "--quiet"] + files),
         )
 
     def _baseline_security_count(self, py_files: list[str]) -> int:

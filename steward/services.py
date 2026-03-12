@@ -444,6 +444,7 @@ def _check_tools_registered(registry: ToolRegistry) -> None:
 def _check_narasimha(narasimha: object) -> None:
     """Integrity check: Narasimha protocol is functional."""
     from vibe_core.protocols.mahajanas.nrisimha.types.narasimha import NarasimhaProtocol
+
     if not isinstance(narasimha, NarasimhaProtocol):
         raise RuntimeError("NarasimhaProtocol missing audit_agent()")
 
@@ -457,6 +458,7 @@ def _check_provider(provider: object) -> None:
 def _check_venu_divinity(venu: object) -> None:
     """Integrity check: VenuOrchestrator structural verification."""
     from vibe_core.mahamantra.substrate.vm.venu_orchestrator import VenuOrchestrator
+
     if not isinstance(venu, VenuOrchestrator) or not venu.verify_divinity():
         raise RuntimeError("VenuOrchestrator failed divinity verification")
 
@@ -579,6 +581,7 @@ class _LazyKnowledgeGraph:
 
     def __init__(self, workspace: object) -> None:
         from vibe_core.knowledge.graph import UnifiedKnowledgeGraph
+
         self._graph = UnifiedKnowledgeGraph()
         self._workspace = workspace
         self._scanned = False
@@ -590,6 +593,7 @@ class _LazyKnowledgeGraph:
         self._scanned = True
         try:
             from vibe_core.knowledge.code_scanner import CodeScanner
+
             scanner = CodeScanner(self._graph)
             stats = scanner.scan_directory(self._workspace)
             logger.info(

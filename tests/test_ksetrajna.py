@@ -144,16 +144,34 @@ class TestKsetraJna:
     def test_drift_different_snapshots(self):
         """Different observations produce non-zero drift."""
         snap_a = BubbleSnapshot(
-            timestamp=1.0, health=0.9, guna="sattva", phase="ORIENT",
-            round=1, error_ratio=0.0, files_read=0, files_written=0,
-            action="research", tier="FLASH", heartbeat_hz=0.5,
-            anomaly_count=0, last_pattern="",
+            timestamp=1.0,
+            health=0.9,
+            guna="sattva",
+            phase="ORIENT",
+            round=1,
+            error_ratio=0.0,
+            files_read=0,
+            files_written=0,
+            action="research",
+            tier="FLASH",
+            heartbeat_hz=0.5,
+            anomaly_count=0,
+            last_pattern="",
         )
         snap_b = BubbleSnapshot(
-            timestamp=2.0, health=0.3, guna="tamas", phase="EXECUTE",
-            round=5, error_ratio=0.5, files_read=3, files_written=1,
-            action="implement", tier="PRO", heartbeat_hz=2.0,
-            anomaly_count=3, last_pattern="consecutive_errors",
+            timestamp=2.0,
+            health=0.3,
+            guna="tamas",
+            phase="EXECUTE",
+            round=5,
+            error_ratio=0.5,
+            files_read=3,
+            files_written=1,
+            action="implement",
+            tier="PRO",
+            heartbeat_hz=2.0,
+            anomaly_count=3,
+            last_pattern="consecutive_errors",
         )
         d = _compute_drift(snap_a, snap_b)
         assert d > 0.5  # Major change
@@ -205,7 +223,13 @@ class TestKsetraJna:
 
         kj = KsetraJna(
             vedana_source=improving_vedana,
-            chitta_source=lambda: {"phase": "ORIENT", "rounds": 0, "error_ratio": 0.0, "prior_reads": 0, "tool_distribution": {}},
+            chitta_source=lambda: {
+                "phase": "ORIENT",
+                "rounds": 0,
+                "error_ratio": 0.0,
+                "prior_reads": 0,
+                "tool_distribution": {},
+            },
             cetana_source=lambda: {"frequency_hz": 0.5, "consecutive_anomalies": 0},
             buddhi_source=lambda: {"action": "research", "tier": "STANDARD"},
             gandha_source=lambda: "",
@@ -226,7 +250,13 @@ class TestKsetraJna:
 
         kj = KsetraJna(
             vedana_source=degrading_vedana,
-            chitta_source=lambda: {"phase": "ORIENT", "rounds": 0, "error_ratio": 0.0, "prior_reads": 0, "tool_distribution": {}},
+            chitta_source=lambda: {
+                "phase": "ORIENT",
+                "rounds": 0,
+                "error_ratio": 0.0,
+                "prior_reads": 0,
+                "tool_distribution": {},
+            },
             cetana_source=lambda: {"frequency_hz": 0.5, "consecutive_anomalies": 0},
             buddhi_source=lambda: {"action": "research", "tier": "STANDARD"},
             gandha_source=lambda: "",
@@ -303,10 +333,12 @@ class TestKsetraJnaIntegration:
     def test_tool_call_updates_observation(self):
         """KsetraJna captures state after tool calls."""
         tc = ToolUse(id="c1", name="bash", parameters={"command": "echo test"})
-        llm = FakeLLM([
-            FakeResponse(content="", tool_calls=[tc]),
-            FakeResponse(content="Done"),
-        ])
+        llm = FakeLLM(
+            [
+                FakeResponse(content="", tool_calls=[tc]),
+                FakeResponse(content="Done"),
+            ]
+        )
         agent = StewardAgent(provider=llm)
         agent.run_sync("Run something")
         snap = agent.ksetrajna.last

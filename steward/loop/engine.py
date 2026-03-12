@@ -119,6 +119,7 @@ TOOL_TIMEOUT_SECONDS = tool_dispatch.TOOL_TIMEOUT_SECONDS  # single source in to
 # LLM retry attempts on transient failure
 LLM_MAX_RETRIES = 1
 
+
 class AgentLoop:
     """Execute the agentic tool-use loop for a single turn.
 
@@ -284,7 +285,9 @@ class AgentLoop:
                     max_rounds = round_num + ANOMALY_REMAINING_ROUNDS
                     logger.warning(
                         "Cetana anomaly — capping to %d more rounds (was %d): %s",
-                        ANOMALY_REMAINING_ROUNDS, rounds_left, detail,
+                        ANOMALY_REMAINING_ROUNDS,
+                        rounds_left,
+                        detail,
                     )
                 guidance = f"[Cetana: health anomaly] {detail}. Finish immediately — {max_rounds - round_num} rounds remaining."
                 self._conversation.add(Message(role=MessageRole.USER, content=guidance))
@@ -343,9 +346,7 @@ class AgentLoop:
                     self._conversation.add(
                         Message(role=MessageRole.ASSISTANT, content=json_parser.extract_raw_content(response))
                     )
-                    self._conversation.add(
-                        Message(role=MessageRole.USER, content=f"[JSON error] {json_error}")
-                    )
+                    self._conversation.add(Message(role=MessageRole.USER, content=f"[JSON error] {json_error}"))
                     usage.json_retries += 1
                     continue  # Re-enter the loop — LLM gets another shot
 
@@ -392,7 +393,9 @@ class AgentLoop:
                 if was_truncated:
                     logger.info("Quality: response truncated at %d chars (seed %d)", MAX_RESPONSE_CHARS, cr.seed)
                 if usage.cbr_exceeded:
-                    logger.info("Quality: CBR exceeded %d/%d tokens (seed %d)", usage.cbr_consumed, usage.cbr_budget, cr.seed)
+                    logger.info(
+                        "Quality: CBR exceeded %d/%d tokens (seed %d)", usage.cbr_consumed, usage.cbr_budget, cr.seed
+                    )
 
                 # Brain-in-a-jar: check if streamed deltas are JSON (don't yield raw JSON)
                 if streamed_text_deltas:
@@ -685,7 +688,9 @@ class AgentLoop:
         if after < before:
             logger.warning(
                 "Context trimmed: %d → %d tokens (budget=%d)",
-                before, after, MAX_INPUT_TOKENS_PER_CALL,
+                before,
+                after,
+                MAX_INPUT_TOKENS_PER_CALL,
             )
 
     def _manage_context(self) -> None:
@@ -745,6 +750,7 @@ class AgentLoop:
         else:
             # Legacy mode: send full tool schemas (custom prompts, backward compat)
             from steward.services import tool_descriptions_for_llm
+
             all_tools = tool_descriptions_for_llm(self._registry)
             if all_tools:
                 kwargs["tools"] = all_tools

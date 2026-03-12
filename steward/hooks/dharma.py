@@ -73,8 +73,11 @@ class DharmaReaperHook(BasePhaseHook):
         for c in consequences:
             logger.warning(
                 "REAPER[%s]: %s → %s (trust %.2f→%.2f)",
-                c.agent_id, c.old_status, c.new_status,
-                c.old_trust, c.new_trust,
+                c.agent_id,
+                c.old_status,
+                c.new_status,
+                c.old_trust,
+                c.new_trust,
             )
 
 
@@ -124,11 +127,14 @@ class DharmaFederationHook(BasePhaseHook):
         from steward.federation import OP_HEARTBEAT
 
         v = ctx.vedana
-        federation.emit(OP_HEARTBEAT, {
-            "agent_id": federation.agent_id,
-            "health": v.health if v is not None else 0.0,
-            "timestamp": time.time(),
-        })
+        federation.emit(
+            OP_HEARTBEAT,
+            {
+                "agent_id": federation.agent_id,
+                "health": v.health if v is not None else 0.0,
+                "timestamp": time.time(),
+            },
+        )
         transport = ServiceRegistry.get(SVC_FEDERATION_TRANSPORT)
         if transport is not None:
             federation.process_inbound(transport)

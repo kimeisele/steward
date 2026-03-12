@@ -130,6 +130,7 @@ class TestDeterministicDispatch:
         reaper = ServiceRegistry.get(SVC_REAPER)
         # Manually inject a dead peer
         from steward.reaper import PeerRecord
+
         reaper._peers["dead-agent"] = PeerRecord(
             agent_id="dead-agent",
             last_seen=0,

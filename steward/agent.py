@@ -79,7 +79,6 @@ Software agent. Use tools to complete tasks. Read before edit. Test after change
 """
 
 
-
 def _load_project_instructions(cwd: str) -> str | None:
     """Load project-specific instructions from the working directory.
 
@@ -260,6 +259,7 @@ class StewardAgent(GADBase):
 
         # Phase dispatch table — O(1) routing, no if/elif chain
         from steward.cetana import Phase
+
         self._phase_dispatch = {
             Phase.GENESIS: self._phase_genesis,
             Phase.DHARMA: self._phase_dharma,
@@ -359,8 +359,7 @@ class StewardAgent(GADBase):
         (OS-level Event.wait). Caller must call close() after return.
         """
         logger.info(
-            "Daemon mode — boot once, Cetana drives autonomous work "
-            "(freq=%.1fHz)",
+            "Daemon mode — boot once, Cetana drives autonomous work (freq=%.1fHz)",
             self._cetana.frequency_hz,
         )
         try:
@@ -404,13 +403,8 @@ class StewardAgent(GADBase):
             effective_prompt = self._system_prompt
 
         # Update system message if conversation already has one (multi-run freshness)
-        if (
-            self._conversation.messages
-            and self._conversation.messages[0].role == MessageRole.SYSTEM
-        ):
-            self._conversation.messages[0] = Message(
-                role=MessageRole.SYSTEM, content=effective_prompt
-            )
+        if self._conversation.messages and self._conversation.messages[0].role == MessageRole.SYSTEM:
+            self._conversation.messages[0] = Message(role=MessageRole.SYSTEM, content=effective_prompt)
 
         loop = AgentLoop(
             provider=self._provider,
@@ -518,8 +512,7 @@ class StewardAgent(GADBase):
             return
         sys_msg = (
             self._conversation.messages[0]
-            if self._conversation.messages
-            and self._conversation.messages[0].role == MessageRole.SYSTEM
+            if self._conversation.messages and self._conversation.messages[0].role == MessageRole.SYSTEM
             else None
         )
         max_tok = self._conversation.max_tokens
@@ -559,19 +552,19 @@ class StewardAgent(GADBase):
             "providers": len(self._provider) if isinstance(self._provider, ChamberProvider) else 1,
             # ── Antahkarana (BG 13.6: inner instrument) ──
             "antahkarana": {
-                "manas": "steward.antahkarana.manas",       # perceive intent
-                "buddhi": "steward.buddhi",                  # discriminate
-                "ahankara": "steward.agent",                 # identity (Jiva)
-                "chitta": "steward.antahkarana.chitta",      # store impressions
-                "gandha": "steward.antahkarana.gandha",      # detect patterns (tanmatra #9)
+                "manas": "steward.antahkarana.manas",  # perceive intent
+                "buddhi": "steward.buddhi",  # discriminate
+                "ahankara": "steward.agent",  # identity (Jiva)
+                "chitta": "steward.antahkarana.chitta",  # store impressions
+                "gandha": "steward.antahkarana.gandha",  # detect patterns (tanmatra #9)
             },
             # ── Ksetra-jna (BG 13.1-2: knower of the field) ──
-            "ksetrajna": "steward.antahkarana.ksetrajna",    # meta-observer
+            "ksetrajna": "steward.antahkarana.ksetrajna",  # meta-observer
             # ── Ksetra properties (BG 13.6-7: field qualities) ──
             "kshetra_properties": {
-                "vedana": True,        # sukham/duhkham — health pulse
-                "cetana": True,        # life symptoms — heartbeat
-                "dhrti": True,         # conviction — narasimha + safety guard
+                "vedana": True,  # sukham/duhkham — health pulse
+                "cetana": True,  # life symptoms — heartbeat
+                "dhrti": True,  # conviction — narasimha + safety guard
                 "iccha_dvesha": True,  # desire/aversion — hebbian synaptic
             },
             # ── 5 Jnanendriyas (BG 13.6: knowledge senses) ──
@@ -584,11 +577,11 @@ class StewardAgent(GADBase):
             },
             # ── 5 Karmendriyas (BG 13.6: action organs) ──
             "karmendriyas": {
-                "vak": "AgentLoop._call_llm",        # speech → LLM prompts
-                "pani": "ToolRegistry.execute",       # hands → tool execution
-                "pada": "MahaAttention",              # feet → O(1) routing
-                "payu": "SamskaraContext.compact",     # elimination → context GC
-                "upastha": "boot",                     # creation → service genesis
+                "vak": "AgentLoop._call_llm",  # speech → LLM prompts
+                "pani": "ToolRegistry.execute",  # hands → tool execution
+                "pada": "MahaAttention",  # feet → O(1) routing
+                "payu": "SamskaraContext.compact",  # elimination → context GC
+                "upastha": "boot",  # creation → service genesis
             },
             "active_gaps": len(self._gaps),
             "jiva": self._get_persona(),
@@ -658,9 +651,7 @@ class StewardAgent(GADBase):
 
         # Context pressure
         ctx_used = (
-            self._conversation.total_tokens / self._conversation.max_tokens
-            if self._conversation.max_tokens
-            else 0.0
+            self._conversation.total_tokens / self._conversation.max_tokens if self._conversation.max_tokens else 0.0
         )
 
         # Synaptic weights — via public API (no private access)
@@ -746,6 +737,7 @@ class StewardAgent(GADBase):
         hooks = ServiceRegistry.get(SVC_PHASE_HOOKS)
         if hooks is not None:
             from steward.phase_hook import DHARMA
+
             hooks.dispatch(DHARMA, ctx)
         # Read back mutable output from hooks
         if ctx.health_anomaly:
@@ -759,11 +751,13 @@ class StewardAgent(GADBase):
         hooks = ServiceRegistry.get(SVC_PHASE_HOOKS)
         if hooks is not None:
             from steward.phase_hook import MOKSHA
+
             hooks.dispatch(MOKSHA, ctx)
 
     def _make_phase_context(self) -> object:
         """Build PhaseContext for hook dispatch."""
         from steward.phase_hook import PhaseContext
+
         return PhaseContext(
             cwd=self._cwd,
             vedana=self.vedana,

@@ -51,6 +51,7 @@ class Phase(enum.Enum):
     KARMA = 2  # Execute — work on highest-priority task
     MOKSHA = 3  # Reflect — persist state, log stats, learn
 
+
 logger = logging.getLogger("STEWARD.CETANA")
 
 # ── Frequency Constants (Hz) ────────────────────────────────────────

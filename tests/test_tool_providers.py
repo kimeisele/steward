@@ -78,7 +78,8 @@ class TestFileSystemToolProvider:
         tools_dir.mkdir(parents=True)
 
         # Write a minimal tool module matching Tool ABC interface
-        (tools_dir / "hello.py").write_text(textwrap.dedent("""\
+        (tools_dir / "hello.py").write_text(
+            textwrap.dedent("""\
             from vibe_core.tools.tool_protocol import Tool, ToolResult
 
             class HelloTool(Tool):
@@ -99,7 +100,8 @@ class TestFileSystemToolProvider:
 
                 def execute(self, parameters: dict) -> ToolResult:
                     return ToolResult(success=True, output="Hello!")
-        """))
+        """)
+        )
 
         provider = FileSystemToolProvider()
         tools = provider.provide(str(tmp_path))
@@ -149,6 +151,7 @@ class TestCollectTools:
 
         class BrokenProvider:
             name = "broken"
+
             def provide(self, cwd: str) -> list:
                 raise RuntimeError("boom")
 

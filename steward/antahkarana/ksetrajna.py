@@ -82,13 +82,7 @@ def _compute_drift(a: BubbleSnapshot, b: BubbleSnapshot) -> float:
     d_round = min(abs(a.round - b.round) / max(a.round, b.round, 1), 1.0)
     d_pattern = 0.0 if a.last_pattern == b.last_pattern else 1.0
 
-    return (
-        _W_HEALTH * d_health
-        + _W_PHASE * d_phase
-        + _W_ERROR * d_error
-        + _W_ROUND * d_round
-        + _W_PATTERN * d_pattern
-    )
+    return _W_HEALTH * d_health + _W_PHASE * d_phase + _W_ERROR * d_error + _W_ROUND * d_round + _W_PATTERN * d_pattern
 
 
 class KsetraJna:
@@ -140,11 +134,7 @@ class KsetraJna:
         pattern = self._gandha_source()
 
         tool_dist = chitta.get("tool_distribution")
-        files_written = (
-            int(tool_dist.get("write_file", 0))
-            if isinstance(tool_dist, dict)
-            else 0
-        )
+        files_written = int(tool_dist.get("write_file", 0)) if isinstance(tool_dist, dict) else 0
 
         snapshot = BubbleSnapshot(
             timestamp=time.time(),
@@ -251,11 +241,7 @@ class KsetraJna:
             return "no-observation"
         pattern = snap.last_pattern or "ok"
         stuck = " STUCK" if self.is_stuck() else ""
-        return (
-            f"{snap.guna} {snap.phase} r{snap.round} "
-            f"h={snap.health:.2f} hz={snap.heartbeat_hz:.1f} "
-            f"{pattern}{stuck}"
-        )
+        return f"{snap.guna} {snap.phase} r{snap.round} h={snap.health:.2f} hz={snap.heartbeat_hz:.1f} {pattern}{stuck}"
 
     def stats(self) -> dict[str, object]:
         """Observability dict for get_state()."""

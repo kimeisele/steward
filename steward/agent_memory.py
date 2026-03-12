@@ -148,7 +148,10 @@ def load_persona() -> dict[str, str] | None:
         }
         logger.info(
             "Jiva identity: %s | %s | %s | %s",
-            jiva["guna"], jiva["guardian"], jiva["quarter"], jiva["trinity"],
+            jiva["guna"],
+            jiva["guardian"],
+            jiva["quarter"],
+            jiva["trinity"],
         )
         return jiva
     except Exception as e:

@@ -169,10 +169,14 @@ class TestPersistence:
         data = {
             "version": 1,
             "claims": [
-                {"slot_id": "x", "agent_id": "a", "trust_at_claim": 0.5,
-                 "timestamp": 0.0, "ttl_s": 1.0},  # long expired
-                {"slot_id": "y", "agent_id": "b", "trust_at_claim": 0.5,
-                 "timestamp": time.time(), "ttl_s": 9999.0},
+                {
+                    "slot_id": "x",
+                    "agent_id": "a",
+                    "trust_at_claim": 0.5,
+                    "timestamp": 0.0,
+                    "ttl_s": 1.0,
+                },  # long expired
+                {"slot_id": "y", "agent_id": "b", "trust_at_claim": 0.5, "timestamp": time.time(), "ttl_s": 9999.0},
             ],
         }
         path.write_text(json.dumps(data))
@@ -221,8 +225,11 @@ class TestSlotClaimSerialization:
 
     def test_is_expired(self):
         claim = SlotClaim(
-            slot_id="x", agent_id="a",
-            trust_at_claim=0.5, timestamp=1000.0, ttl_s=100.0,
+            slot_id="x",
+            agent_id="a",
+            trust_at_claim=0.5,
+            timestamp=1000.0,
+            ttl_s=100.0,
         )
         assert not claim.is_expired(now=1050.0)
         assert claim.is_expired(now=1200.0)
@@ -231,16 +238,22 @@ class TestSlotClaimSerialization:
 class TestClaimOutcome:
     def test_granted_outcome(self):
         o = ClaimOutcome(
-            granted=True, slot_id="task:1",
-            agent_id="agent-a", holder="agent-a", reason="granted",
+            granted=True,
+            slot_id="task:1",
+            agent_id="agent-a",
+            holder="agent-a",
+            reason="granted",
         )
         assert o.granted
         assert o.agent_id == o.holder
 
     def test_denied_outcome(self):
         o = ClaimOutcome(
-            granted=False, slot_id="task:1",
-            agent_id="agent-b", holder="agent-a", reason="incumbent holds",
+            granted=False,
+            slot_id="task:1",
+            agent_id="agent-b",
+            holder="agent-a",
+            reason="incumbent holds",
         )
         assert not o.granted
         assert o.agent_id != o.holder

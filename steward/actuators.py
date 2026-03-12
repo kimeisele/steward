@@ -27,7 +27,11 @@ _PROTECTED = frozenset({"main", "master", "develop", "release"})
 
 def _git(args: list[str], cwd: str, timeout: int = 30) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["git", *args], capture_output=True, text=True, timeout=timeout, cwd=cwd,
+        ["git", *args],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        cwd=cwd,
     )
 
 
@@ -240,7 +244,8 @@ class GitHubActuator:
     def close_issue(self, issue_number: int) -> ActuatorResult:
         """Close a GitHub issue."""
         result = self._gh.call(
-            ["issue", "close", str(issue_number)], timeout=15,
+            ["issue", "close", str(issue_number)],
+            timeout=15,
         )
         if result is None:
             return ActuatorResult(success=False, error=f"gh issue close {issue_number} failed")
@@ -249,7 +254,8 @@ class GitHubActuator:
     def comment_on_issue(self, issue_number: int, body: str) -> ActuatorResult:
         """Add a comment to an issue or PR."""
         result = self._gh.call(
-            ["issue", "comment", str(issue_number), "--body", body], timeout=15,
+            ["issue", "comment", str(issue_number), "--body", body],
+            timeout=15,
         )
         if result is None:
             return ActuatorResult(success=False, error=f"gh issue comment {issue_number} failed")
@@ -258,7 +264,8 @@ class GitHubActuator:
     def comment_on_pr(self, pr_number: int, body: str) -> ActuatorResult:
         """Add a review comment to a PR."""
         result = self._gh.call(
-            ["pr", "comment", str(pr_number), "--body", body], timeout=15,
+            ["pr", "comment", str(pr_number), "--body", body],
+            timeout=15,
         )
         if result is None:
             return ActuatorResult(success=False, error=f"gh pr comment {pr_number} failed")
@@ -267,9 +274,7 @@ class GitHubActuator:
     def list_open_prs(self, limit: int = 20) -> list[dict]:
         """List open PRs. Returns list of dicts or empty on failure."""
         result = self._gh.call_json(
-            ["pr", "list", "--state=open",
-             "--json=number,title,headRefName,author,url",
-             f"--limit={limit}"],
+            ["pr", "list", "--state=open", "--json=number,title,headRefName,author,url", f"--limit={limit}"],
         )
         if result is None or not isinstance(result, list):
             return []
@@ -278,9 +283,7 @@ class GitHubActuator:
     def list_open_issues(self, limit: int = 20) -> list[dict]:
         """List open issues. Returns list of dicts or empty on failure."""
         result = self._gh.call_json(
-            ["issue", "list", "--state=open",
-             "--json=number,title,labels,url",
-             f"--limit={limit}"],
+            ["issue", "list", "--state=open", "--json=number,title,labels,url", f"--limit={limit}"],
         )
         if result is None or not isinstance(result, list):
             return []
@@ -289,8 +292,7 @@ class GitHubActuator:
     def get_pr(self, pr_number: int) -> dict | None:
         """Get PR details. Returns dict or None."""
         result = self._gh.call_json(
-            ["pr", "view", str(pr_number),
-             "--json=number,title,state,headRefName,body,url"],
+            ["pr", "view", str(pr_number), "--json=number,title,state,headRefName,body,url"],
         )
         if result is None or not isinstance(result, dict):
             return None

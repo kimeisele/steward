@@ -141,7 +141,9 @@ def test_invoke_semantic_http(mock_urlopen):
 
 @patch("steward.interfaces.agent_internet.urllib.request.urlopen")
 def test_fetch_repo_graph_snapshot(mock_urlopen):
-    mock_urlopen.return_value = _mock_response({"agent_web_repo_graph": {"kind": "agent_web_repo_graph_snapshot", "nodes": []}})
+    mock_urlopen.return_value = _mock_response(
+        {"agent_web_repo_graph": {"kind": "agent_web_repo_graph_snapshot", "nodes": []}}
+    )
     config = AgentInternetProxyConfig(base_url="https://agent.example", bearer_token="secret", timeout_s=5)
 
     payload = fetch_repo_graph_snapshot(config=config, root="/repo", node_type="agent", limit=3)
@@ -168,7 +170,9 @@ def test_fetch_repo_graph_neighbors_and_context(mock_urlopen):
 
 @patch("steward.interfaces.agent_internet.urllib.request.urlopen")
 def test_fetch_repo_graph_capabilities(mock_urlopen):
-    mock_urlopen.return_value = _mock_response({"agent_web_repo_graph_capabilities": {"capabilities": [{"capability_id": "repo_graph_snapshot"}]}})
+    mock_urlopen.return_value = _mock_response(
+        {"agent_web_repo_graph_capabilities": {"capabilities": [{"capability_id": "repo_graph_snapshot"}]}}
+    )
     config = AgentInternetProxyConfig(base_url="https://agent.example", bearer_token="secret", timeout_s=5)
 
     payload = fetch_repo_graph_capabilities(config=config)
@@ -181,7 +185,9 @@ def test_fetch_public_graph_and_search(mock_urlopen):
     mock_urlopen.side_effect = [
         _mock_response({"agent_web_graph": {"kind": "agent_web_public_graph", "nodes": []}}),
         _mock_response({"agent_web_index": {"kind": "agent_web_search_index", "records": []}}),
-        _mock_response({"agent_web_search": {"kind": "agent_web_search_results", "results": [{"title": "Marketplace"}]}}),
+        _mock_response(
+            {"agent_web_search": {"kind": "agent_web_search_results", "results": [{"title": "Marketplace"}]}}
+        ),
     ]
     config = AgentInternetProxyConfig(base_url="https://agent.example", bearer_token="secret", timeout_s=5)
 

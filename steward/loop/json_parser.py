@@ -28,7 +28,7 @@ def strip_fences(text: str) -> str:
     if cleaned.startswith("```"):
         first_nl = cleaned.find("\n")
         if first_nl != -1:
-            cleaned = cleaned[first_nl + 1:]
+            cleaned = cleaned[first_nl + 1 :]
         else:
             # No newline — ```json{...}``` on one line
             cleaned = cleaned[3:]
@@ -131,11 +131,13 @@ def parse_json_response(content: str) -> tuple[list[ToolUse], str]:
         params = data.get("params", data.get("parameters", {}))
         if isinstance(params, dict):
             params = clamp_params(params)
-        calls.append(ToolUse(
-            id="json_0",
-            name=str(data["tool"]),
-            parameters=params if isinstance(params, dict) else {},
-        ))
+        calls.append(
+            ToolUse(
+                id="json_0",
+                name=str(data["tool"]),
+                parameters=params if isinstance(params, dict) else {},
+            )
+        )
         return calls, ""
 
     # Multiple tool calls (parallel)
@@ -146,11 +148,13 @@ def parse_json_response(content: str) -> tuple[list[ToolUse], str]:
                 params = tc.get("params", tc.get("parameters", {}))
                 if isinstance(params, dict):
                     params = clamp_params(params)
-                calls.append(ToolUse(
-                    id=f"json_{i}",
-                    name=name,
-                    parameters=params if isinstance(params, dict) else {},
-                ))
+                calls.append(
+                    ToolUse(
+                        id=f"json_{i}",
+                        name=name,
+                        parameters=params if isinstance(params, dict) else {},
+                    )
+                )
         if calls:
             return calls, ""
 
@@ -206,7 +210,7 @@ def looks_like_failed_json(response: NormalizedResponse) -> str | None:
         json.loads(cleaned)
         return None  # Actually valid JSON (unknown structure)
     except (json.JSONDecodeError, TypeError) as e:
-        return f"Malformed JSON: {e}. Reply with valid JSON: {{\"tool\": ..., \"params\": ...}} or {{\"response\": \"...\"}}"
+        return f'Malformed JSON: {e}. Reply with valid JSON: {{"tool": ..., "params": ...}} or {{"response": "..."}}'
 
 
 def extract_tool_calls(response: NormalizedResponse) -> list[ToolUse]:

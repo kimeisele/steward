@@ -63,6 +63,7 @@ class TestAutonomousFlowE2E:
 
     def _make_agent(self, fake_llm):
         from steward.agent import StewardAgent
+
         return track_agent(StewardAgent(provider=fake_llm))
 
     def test_run_autonomous_no_tasks_returns_none(self, fake_llm):
@@ -236,6 +237,7 @@ class TestPhaseGenesis:
 
     def _make_agent(self, fake_llm):
         from steward.agent import StewardAgent
+
         return track_agent(StewardAgent(provider=fake_llm))
 
 
@@ -253,6 +255,7 @@ class TestDharmaPhase:
 
         # DHARMA checks vedana — in test env, health is high (no real errors)
         from steward.cetana import Phase
+
         agent._on_cetana_phase(Phase.DHARMA, None)
         # Healthy environment → no anomaly
         assert not agent.health_anomaly
@@ -373,6 +376,7 @@ class TestDaemonMode:
 
         # Let it run briefly
         import time
+
         time.sleep(0.1)
 
         # Stop and close
@@ -399,9 +403,7 @@ class TestDaemonMemoryManagement:
 
         # Stuff conversation with messages (simulates previous task)
         for i in range(10):
-            agent._conversation.add(
-                Message(role=MessageRole.USER, content=f"old message {i}" * 100)
-            )
+            agent._conversation.add(Message(role=MessageRole.USER, content=f"old message {i}" * 100))
         tokens_before = agent._conversation.total_tokens
         assert tokens_before > 500, "Setup: conversation should have accumulated tokens"
 
@@ -506,6 +508,7 @@ class TestHebbianAutonomousLearning:
 
     def _make_agent(self, fake_llm):
         from steward.agent import StewardAgent
+
         return track_agent(StewardAgent(provider=fake_llm))
 
     def test_hebbian_learn_success_reinforces(self, fake_llm):
@@ -636,6 +639,7 @@ class TestHebbianAutonomousLearning:
             # BUT: escalation file should exist
             escalation_file = agent._cwd + "/.steward/needs_attention.md"
             from pathlib import Path
+
             if Path(escalation_file).exists():
                 content = Path(escalation_file).read_text()
                 assert "CI_CHECK" in content
@@ -708,6 +712,7 @@ class TestProactiveDispatch:
 
     def _make_agent(self, fake_llm):
         from steward.agent import StewardAgent
+
         return track_agent(StewardAgent(provider=fake_llm))
 
     def test_dispatch_update_deps_runs_without_llm(self, fake_llm):
@@ -783,6 +788,7 @@ class TestCleanupBranch:
 
     def _make_agent(self, fake_llm):
         from steward.agent import StewardAgent
+
         return track_agent(StewardAgent(provider=fake_llm))
 
     def test_cleanup_branch_does_not_crash(self, fake_llm):
@@ -797,6 +803,7 @@ class TestGuardedPrFix:
 
     def _make_agent(self, fake_llm):
         from steward.agent import StewardAgent
+
         return track_agent(StewardAgent(provider=fake_llm))
 
     def test_suspended_breaker_returns_none(self, fake_llm):
@@ -815,18 +822,20 @@ class TestGuardedPrFix:
         # Verify we start on main or some known branch
         r = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            capture_output=True, text=True, cwd=agent._cwd,
+            capture_output=True,
+            text=True,
+            cwd=agent._cwd,
         )
         original_branch = r.stdout.strip()
 
-        asyncio.run(
-            agent._autonomy.pipeline.guarded_pr_fix("Update deps", intent_name="UPDATE_DEPS")
-        )
+        asyncio.run(agent._autonomy.pipeline.guarded_pr_fix("Update deps", intent_name="UPDATE_DEPS"))
 
         # Should have returned to original branch (main)
         r = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            capture_output=True, text=True, cwd=agent._cwd,
+            capture_output=True,
+            text=True,
+            cwd=agent._cwd,
         )
         current = r.stdout.strip()
         # Agent should not be stranded on a feature branch

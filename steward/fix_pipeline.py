@@ -117,7 +117,9 @@ class FixPipeline:
             return None
 
         context = problem_fingerprint(problem)
-        hebbian_trigger = f"auto:{intent_name}:{context}" if (intent_name and context) else f"auto:{intent_name or 'unknown'}"
+        hebbian_trigger = (
+            f"auto:{intent_name}:{context}" if (intent_name and context) else f"auto:{intent_name or 'unknown'}"
+        )
 
         # Claim marketplace slot to prevent concurrent work on same problem
         marketplace = ServiceRegistry.get(SVC_MARKETPLACE)
@@ -132,14 +134,17 @@ class FixPipeline:
 
         try:
             return await self._guarded_llm_fix_inner(
-                problem, hebbian_trigger,
+                problem,
+                hebbian_trigger,
             )
         finally:
             if claimed and marketplace is not None:
                 marketplace.release(slot_id, "steward")
 
     async def _guarded_llm_fix_inner(
-        self, problem: str, hebbian_trigger: str,
+        self,
+        problem: str,
+        hebbian_trigger: str,
     ) -> str | None:
         """Inner LLM fix pipeline — separated for slot guard cleanup."""
         # Step 1: Baseline tests
@@ -173,7 +178,8 @@ class FixPipeline:
             self.hebbian_learn(hebbian_trigger, success=False, failed_gates=failed_gates, changed_files=new_changes)
             logger.warning(
                 "Verification gates FAILED — rolled back %d files. Gates: %s",
-                len(rolled), details,
+                len(rolled),
+                details,
             )
             return None
 
@@ -193,7 +199,10 @@ class FixPipeline:
             self.hebbian_learn(hebbian_trigger, success=False, changed_files=new_changes)
             logger.warning(
                 "LLM fix rolled back (failures %d → %d), %d files: %s",
-                baseline, post, len(rolled), rolled,
+                baseline,
+                post,
+                len(rolled),
+                rolled,
             )
             return None
 
@@ -202,7 +211,10 @@ class FixPipeline:
         self.hebbian_learn(hebbian_trigger, success=True, gate_results=gate_results, changed_files=new_changes)
         logger.info(
             "LLM fix verified: %d gates passed, tests %d → %d, %d files changed",
-            len(gate_results), baseline, post, len(new_changes),
+            len(gate_results),
+            baseline,
+            post,
+            len(new_changes),
         )
         return result
 
@@ -227,9 +239,7 @@ class FixPipeline:
 
         context = problem_fingerprint(problem)
         hebbian_trigger = (
-            f"auto:{intent_name}:{context}"
-            if (intent_name and context)
-            else f"auto:{intent_name or 'unknown'}"
+            f"auto:{intent_name}:{context}" if (intent_name and context) else f"auto:{intent_name or 'unknown'}"
         )
 
         # Claim marketplace slot to prevent concurrent work on same problem
@@ -310,12 +320,12 @@ class FixPipeline:
                 if post is None or post > baseline:
                     self._breaker.rollback_files(new_changes)
                     self._breaker.record_rollback()
-                    self.hebbian_learn(
-                        hebbian_trigger, success=False, changed_files=new_changes
-                    )
+                    self.hebbian_learn(hebbian_trigger, success=False, changed_files=new_changes)
                     logger.warning(
                         "Proactive tests FAILED for %s (baseline=%s, post=%s)",
-                        intent_name, baseline, post,
+                        intent_name,
+                        baseline,
+                        post,
                     )
                     self.cleanup_branch(branch_name)
                     return None
@@ -358,7 +368,10 @@ class FixPipeline:
         try:
             subprocess.run(
                 ["git", "checkout", "main"],
-                capture_output=True, text=True, timeout=10, cwd=self._cwd,
+                capture_output=True,
+                text=True,
+                timeout=10,
+                cwd=self._cwd,
             )
         except Exception as e:
             logger.warning("Failed to switch to main: %s", e)
@@ -366,7 +379,10 @@ class FixPipeline:
         try:
             subprocess.run(
                 ["git", "branch", "-D", branch_name],
-                capture_output=True, text=True, timeout=10, cwd=self._cwd,
+                capture_output=True,
+                text=True,
+                timeout=10,
+                cwd=self._cwd,
             )
         except Exception as e:
             logger.debug("Branch cleanup failed for %s (non-fatal): %s", branch_name, e)
@@ -394,14 +410,21 @@ class FixPipeline:
                     return None
             else:
                 import subprocess
+
                 for f in changed_files:
                     subprocess.run(
                         ["git", "add", f],
-                        capture_output=True, text=True, timeout=10, cwd=self._cwd,
+                        capture_output=True,
+                        text=True,
+                        timeout=10,
+                        cwd=self._cwd,
                     )
                 r = subprocess.run(
                     ["git", "commit", "-m", commit_msg],
-                    capture_output=True, text=True, timeout=30, cwd=self._cwd,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    cwd=self._cwd,
                 )
                 if r.returncode != 0:
                     logger.warning("Git commit failed: %s", r.stderr.strip())
@@ -415,9 +438,13 @@ class FixPipeline:
                     return None
             else:
                 import subprocess
+
                 r = subprocess.run(
                     ["git", "push", "-u", "origin", branch_name],
-                    capture_output=True, text=True, timeout=60, cwd=self._cwd,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                    cwd=self._cwd,
                 )
                 if r.returncode != 0:
                     logger.warning("Git push failed: %s", r.stderr.strip())
@@ -450,12 +477,12 @@ class FixPipeline:
                 return pr_result.url if pr_result.success else None
             else:
                 from steward.senses.gh import get_gh_client
+
                 gh = get_gh_client()
                 if gh is None:
                     return None
                 return gh.call(
-                    ["pr", "create", "--title", pr_title, "--body", body,
-                     "--head", branch_name, "--base", "main"],
+                    ["pr", "create", "--title", pr_title, "--body", body, "--head", branch_name, "--base", "main"],
                     timeout=30,
                 )
 
@@ -526,7 +553,9 @@ class FixPipeline:
                 f.write(entry)
             logger.info(
                 "Escalated to human: %s (confidence=%.2f) → %s",
-                intent_name, confidence, escalation_file,
+                intent_name,
+                confidence,
+                escalation_file,
             )
         except OSError as e:
             logger.warning("Failed to write escalation file: %s", e)

@@ -70,14 +70,9 @@ class TestGainStaging:
 
     def test_monotonic_increase(self):
         """Higher task weight → higher or equal budget (monotonic)."""
-        budgets = [
-            process_cbr(context_pressure=0.0, task_weight=w / 10.0).budget
-            for w in range(11)
-        ]
+        budgets = [process_cbr(context_pressure=0.0, task_weight=w / 10.0).budget for w in range(11)]
         for i in range(1, len(budgets)):
-            assert budgets[i] >= budgets[i - 1], (
-                f"Budget decreased at weight {i/10}: {budgets[i]} < {budgets[i-1]}"
-            )
+            assert budgets[i] >= budgets[i - 1], f"Budget decreased at weight {i / 10}: {budgets[i]} < {budgets[i - 1]}"
 
 
 class TestCompressor:
@@ -98,10 +93,7 @@ class TestCompressor:
 
     def test_compression_is_graduated(self):
         """Compression is smooth, not a cliff (soft knee)."""
-        budgets = [
-            process_cbr(context_pressure=p / 10.0, task_weight=1.0).budget
-            for p in range(11)
-        ]
+        budgets = [process_cbr(context_pressure=p / 10.0, task_weight=1.0).budget for p in range(11)]
         # No single step should drop more than 50% of remaining range
         for i in range(1, len(budgets)):
             if budgets[i] < budgets[i - 1]:
@@ -109,7 +101,7 @@ class TestCompressor:
                 remaining = budgets[i - 1] - CBR_FLOOR
                 if remaining > 0:
                     assert drop <= remaining * 0.6, (
-                        f"Cliff detected at pressure {i/10}: dropped {drop} of {remaining}"
+                        f"Cliff detected at pressure {i / 10}: dropped {drop} of {remaining}"
                     )
 
     def test_never_below_floor(self):
@@ -136,7 +128,7 @@ class TestLimiter:
                     task_weight=w / 10.0,
                 )
                 assert out.budget <= CBR_CEILING, (
-                    f"Budget {out.budget} > ceiling {CBR_CEILING} at w={w/10} p={p/10}"
+                    f"Budget {out.budget} > ceiling {CBR_CEILING} at w={w / 10} p={p / 10}"
                 )
 
     def test_budget_never_below_floor(self):
@@ -147,9 +139,7 @@ class TestLimiter:
                     context_pressure=p / 10.0,
                     task_weight=w / 10.0,
                 )
-                assert out.budget >= CBR_FLOOR, (
-                    f"Budget {out.budget} < floor {CBR_FLOOR} at w={w/10} p={p/10}"
-                )
+                assert out.budget >= CBR_FLOOR, f"Budget {out.budget} < floor {CBR_FLOOR} at w={w / 10} p={p / 10}"
 
 
 class TestQuantization:
@@ -163,9 +153,7 @@ class TestQuantization:
                     context_pressure=p / 10.0,
                     task_weight=w / 10.0,
                 )
-                assert out.budget % CBR_TICK == 0, (
-                    f"Budget {out.budget} not aligned to tick {CBR_TICK}"
-                )
+                assert out.budget % CBR_TICK == 0, f"Budget {out.budget} not aligned to tick {CBR_TICK}"
 
 
 class TestCacheGate:
