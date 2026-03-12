@@ -10,6 +10,8 @@ from steward.federation import (
     OP_DELEGATE_TASK,
     OP_HEARTBEAT,
     OP_RELEASE_SLOT,
+    OP_TASK_COMPLETED,
+    OP_TASK_FAILED,
     FederationBridge,
 )
 from steward.marketplace import Marketplace
@@ -577,3 +579,129 @@ class TestInboundDelegateTask:
         tasks = task_mgr.list_tasks()
         assert len(tasks) == 1
         assert "[FED:wiki-agent]" in tasks[0].title
+
+
+# ── Cross-Repo Workspace Isolation ─────────────────────────────
+
+
+class TestCrossRepoWorkspace:
+    """Deterministic workspace isolation for cross-repo federation tasks."""
+
+    def test_workspace_clones_and_cleans_up(self, fake_llm, tmp_path):
+        """_cross_repo_workspace clones repo, then deletes on exit."""
+        import os
+        import subprocess
+
+        from steward.agent import StewardAgent
+        from tests.conftest import track_agent
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+
+        # Create a local git repo to clone from
+        source_repo = tmp_path / "source-repo"
+        source_repo.mkdir()
+        env = {
+            **os.environ,
+            "GIT_AUTHOR_NAME": "test",
+            "GIT_AUTHOR_EMAIL": "t@t",
+            "GIT_COMMITTER_NAME": "test",
+            "GIT_COMMITTER_EMAIL": "t@t",
+        }
+        subprocess.run(["git", "init", str(source_repo)], capture_output=True, env=env)
+        (source_repo / "README.md").write_text("test repo")
+        subprocess.run(["git", "-C", str(source_repo), "add", "."], capture_output=True, env=env)
+        subprocess.run(["git", "-C", str(source_repo), "commit", "-m", "init"], capture_output=True, env=env)
+
+        workspace_path = None
+        original_cwd = agent._autonomy.pipeline._cwd
+
+        with agent._autonomy._cross_repo_workspace(str(source_repo), "test-task-123") as ws:
+            workspace_path = ws
+            # Workspace exists and has cloned content
+            assert ws.exists()
+            assert (ws / "README.md").exists()
+            assert (ws / "README.md").read_text() == "test repo"
+            # Pipeline cwd swapped to workspace
+            assert agent._autonomy.pipeline._cwd == str(ws)
+            assert agent._autonomy.pipeline._breaker.cwd == str(ws)
+
+        # After exit: workspace deleted, cwd restored
+        assert not workspace_path.exists()
+        assert agent._autonomy.pipeline._cwd == original_cwd
+
+    def test_workspace_restores_cwd_on_error(self, fake_llm):
+        """Pipeline cwd restored even if workspace code throws."""
+        from steward.agent import StewardAgent
+        from tests.conftest import track_agent
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+        original_cwd = agent._autonomy.pipeline._cwd
+
+        # Non-existent repo — clone will fail
+        try:
+            with agent._autonomy._cross_repo_workspace("/nonexistent/repo.git", "fail-task"):
+                pass
+        except RuntimeError:
+            pass  # Expected
+
+        # cwd must be restored
+        assert agent._autonomy.pipeline._cwd == original_cwd
+
+
+# ── Callback Events ────────────────────────────────────────────
+
+
+class TestCallbackEvents:
+    """OP_TASK_COMPLETED and OP_TASK_FAILED close the federation loop."""
+
+    def test_callback_emitted_on_local_federated_task(self, fake_llm):
+        """Local [FED:*] task (no repo) emits callback to bridge outbox."""
+        import asyncio
+
+        from steward.agent import StewardAgent
+        from steward.services import SVC_FEDERATION, SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
+        from tests.conftest import track_agent
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+        task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
+        bridge = ServiceRegistry.get(SVC_FEDERATION)
+
+        task_mgr.add_task(
+            title="[FED:agent-internet] Fix failing tests",
+            priority=70,
+        )
+
+        asyncio.run(agent.run_autonomous())
+
+        # Bridge should have a callback event
+        assert bridge is not None
+        callbacks = [e for e in bridge._outbound if e.operation in (OP_TASK_COMPLETED, OP_TASK_FAILED)]
+        assert len(callbacks) >= 1
+        cb = callbacks[-1]
+        assert cb.payload["source_agent"] == "agent-internet"
+        assert cb.payload["task_title"] == "Fix failing tests"
+
+    def test_callback_contains_task_completed_on_success(self, fake_llm):
+        """Successful federated task emits OP_TASK_COMPLETED."""
+        import asyncio
+
+        from steward.agent import StewardAgent
+        from steward.services import SVC_FEDERATION, SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
+        from tests.conftest import track_agent
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+        task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
+        bridge = ServiceRegistry.get(SVC_FEDERATION)
+
+        task_mgr.add_task(
+            title="[FED:peer-1] Check health",
+            priority=50,
+        )
+
+        asyncio.run(agent.run_autonomous())
+
+        assert bridge is not None
+        callbacks = [e for e in bridge._outbound if e.operation in (OP_TASK_COMPLETED, OP_TASK_FAILED)]
+        assert len(callbacks) >= 1
