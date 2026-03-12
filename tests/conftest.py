@@ -205,23 +205,51 @@ def fake_llm_factory():
 # ═══════════════════════════════════════════════════════════════════════
 
 _active_agents: list = []
+_active_cetanas: list = []
 
 
 @pytest.fixture(autouse=True)
 def _cleanup_agents():
-    """Stop Cetana daemon threads after each test.
+    """Stop ALL Cetana daemon threads after each test.
 
-    Without this, 79 daemon threads accumulate during the test run,
+    Two-layer cleanup:
+    1. Tracked agents (via track_agent) — calls agent.close()
+    2. ALL Cetana instances (via monkey-patch) — stops any leaked threads
+
+    Without this, daemon threads accumulate during the test run,
     each polling vedana at 0.5Hz. Wastes CPU and causes flaky timing.
     """
     _active_agents.clear()
+    _active_cetanas.clear()
+
+    # Monkey-patch Cetana.start to auto-register for cleanup
+    from steward.cetana import Cetana
+
+    _original_start = Cetana.start
+
+    def _tracked_start(self, block=False):
+        _active_cetanas.append(self)
+        return _original_start(self, block=block)
+
+    Cetana.start = _tracked_start
     yield
+    Cetana.start = _original_start
+
+    # Layer 1: tracked agents
     for agent in _active_agents:
         try:
             agent.close()
         except Exception:
             pass
     _active_agents.clear()
+
+    # Layer 2: any leaked Cetana instances
+    for cetana in _active_cetanas:
+        try:
+            cetana.stop()
+        except Exception:
+            pass
+    _active_cetanas.clear()
 
 
 def track_agent(agent: object) -> object:
