@@ -515,6 +515,41 @@ class TestInboundDelegateTask:
             {"title": "Fix something", "source_agent": "peer"},
         )
 
+    def test_delegate_task_stores_repo_in_description(self, tmp_path):
+        """Repo URL from payload stored in task description for cross-repo dispatch."""
+        from steward.services import SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
+        from vibe_core.task_management.task_manager import TaskManager
+
+        task_mgr = TaskManager(project_root=tmp_path)
+        ServiceRegistry.register(SVC_TASK_MANAGER, task_mgr)
+
+        bridge = FederationBridge()
+        bridge.ingest(
+            OP_DELEGATE_TASK,
+            {
+                "title": "Fix tests",
+                "source_agent": "peer",
+                "repo": "https://github.com/user/repo",
+            },
+        )
+        tasks = task_mgr.list_tasks()
+        assert tasks[0].description == "repo:https://github.com/user/repo"
+
+    def test_delegate_task_no_repo_empty_description(self, tmp_path):
+        """Without repo, description is empty."""
+        from steward.services import SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
+        from vibe_core.task_management.task_manager import TaskManager
+
+        task_mgr = TaskManager(project_root=tmp_path)
+        ServiceRegistry.register(SVC_TASK_MANAGER, task_mgr)
+
+        bridge = FederationBridge()
+        bridge.ingest(OP_DELEGATE_TASK, {"title": "Fix tests", "source_agent": "peer"})
+        tasks = task_mgr.list_tasks()
+        assert tasks[0].description == ""
+
     def test_delegate_task_via_transport(self, tmp_path):
         """Delegate task arrives via transport.process_inbound()."""
         from steward.services import SVC_TASK_MANAGER
