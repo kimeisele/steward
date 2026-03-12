@@ -83,6 +83,8 @@ OP_RELEASE_SLOT = "release_slot"
 OP_EVICTION = "eviction"
 OP_CLAIM_OUTCOME = "claim_outcome"
 OP_DELEGATE_TASK = "delegate_task"
+OP_TASK_COMPLETED = "task_completed"
+OP_TASK_FAILED = "task_failed"
 
 
 @dataclass(frozen=True)

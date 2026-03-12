@@ -13,7 +13,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import shutil
+import subprocess
+import tempfile
 import time
+from contextlib import contextmanager
+from pathlib import Path
 from typing import TYPE_CHECKING, Awaitable, Callable
 
 from steward.fix_pipeline import FixPipeline, problem_fingerprint
@@ -149,31 +154,9 @@ class AutonomyEngine:
 
         intent = parse_intent_from_title(task.title)
 
-        # Federated tasks from peers: [FED:source] title → dispatch to LLM directly
+        # Federated tasks from peers: [FED:source] title → isolated execution + callback
         if intent is None and task.title.startswith("[FED:"):
-            logger.info("Federated task from peer: '%s'", task.title)
-            try:
-                # Strip the [FED:source] prefix to get the actual task description
-                bracket_end = task.title.find("]")
-                problem = task.title[bracket_end + 2 :] if bracket_end > 0 else task.title
-
-                # Extract repo URL from description if present (cross-repo task)
-                repo_url = ""
-                desc = getattr(task, "description", "") or ""
-                if desc.startswith("repo:"):
-                    repo_url = desc[5:].strip()
-
-                if repo_url:
-                    problem = f"{problem}\n\nTarget repository: {repo_url}"
-                    logger.info("Cross-repo task targeting: %s", repo_url)
-
-                result = await self.pipeline.guarded_llm_fix(problem, intent_name="DELEGATED_TASK")
-                task_mgr.update_task(task.id, status=TaskStatus.COMPLETED)
-                return result
-            except Exception as e:
-                logger.error("Federated task '%s' failed: %s", task.title, e)
-                task_mgr.update_task(task.id, status=TaskStatus.FAILED)
-                return None
+            return await self._execute_federated_task(task, task_mgr, TaskStatus)
 
         if intent is None:
             logger.warning("No typed intent in task '%s' — skipping", task.title)
@@ -223,6 +206,143 @@ class AutonomyEngine:
     def dispatch_intent(self, intent: object) -> str | None:
         """Dispatch a TaskIntent to its deterministic handler."""
         return self.handlers.dispatch(intent)
+
+    # ── Federated Task Execution ──────────────────────────────────────
+
+    async def _execute_federated_task(self, task: object, task_mgr: object, TaskStatus: object) -> str | None:
+        """Execute a [FED:source] task with workspace isolation + callback.
+
+        Deterministic workflow:
+        1. Parse source agent and repo URL from task
+        2. If repo URL: clone to isolated workspace, override pipeline cwd
+        3. Run guarded_pr_fix in the workspace (gates verify in workspace)
+        4. Emit OP_TASK_COMPLETED or OP_TASK_FAILED callback to federation
+        5. Clean up workspace
+        """
+        from steward.federation import OP_TASK_COMPLETED, OP_TASK_FAILED
+        from steward.services import SVC_FEDERATION
+
+        # Parse [FED:source] prefix
+        bracket_end = task.title.find("]")
+        source_agent = task.title[5:bracket_end] if bracket_end > 5 else "unknown"
+        problem = task.title[bracket_end + 2 :] if bracket_end > 0 else task.title
+
+        # Extract repo URL from description
+        repo_url = ""
+        desc = getattr(task, "description", "") or ""
+        if desc.startswith("repo:"):
+            repo_url = desc[5:].strip()
+
+        logger.info(
+            "Federated task from %s: '%s' (repo=%s)",
+            source_agent,
+            problem,
+            repo_url or "local",
+        )
+
+        result = None
+        success = False
+        pr_url = ""
+
+        try:
+            if repo_url:
+                # Cross-repo: isolated workspace
+                with self._cross_repo_workspace(repo_url, task.id) as workspace:
+                    logger.info("Cross-repo workspace: %s → %s", repo_url, workspace)
+                    result = await self.pipeline.guarded_pr_fix(
+                        problem,
+                        intent_name="DELEGATED_TASK",
+                    )
+            else:
+                # Local task delegation (no repo URL)
+                result = await self.pipeline.guarded_llm_fix(
+                    problem,
+                    intent_name="DELEGATED_TASK",
+                )
+
+            success = result is not None
+            if result and result.startswith("Created PR:"):
+                pr_url = result.split("Created PR:", 1)[1].strip()
+
+            task_mgr.update_task(task.id, status=TaskStatus.COMPLETED)
+
+        except Exception as e:
+            logger.error("Federated task '%s' failed: %s", task.title, e)
+            task_mgr.update_task(task.id, status=TaskStatus.FAILED)
+            result = None
+
+        # Emit callback to federation — close the loop
+        bridge = ServiceRegistry.get(SVC_FEDERATION)
+        if bridge is not None:
+            if success:
+                bridge.emit(
+                    OP_TASK_COMPLETED,
+                    {
+                        "task_title": problem,
+                        "source_agent": source_agent,
+                        "pr_url": pr_url,
+                    },
+                )
+            else:
+                bridge.emit(
+                    OP_TASK_FAILED,
+                    {
+                        "task_title": problem,
+                        "source_agent": source_agent,
+                        "error": "Pipeline failed or produced no changes",
+                    },
+                )
+
+        return result
+
+    @contextmanager
+    def _cross_repo_workspace(self, repo_url: str, task_id: str):
+        """Clone repo into isolated workspace, override pipeline cwd.
+
+        Context manager that:
+        1. Creates /tmp/steward-workspaces/<task_id>/
+        2. git clone --depth=1 <repo_url> into it
+        3. Temporarily swaps pipeline._cwd and pipeline._breaker.cwd
+        4. Restores originals + deletes workspace on exit
+
+        The pipeline, circuit breaker, and all subprocess commands
+        operate in the workspace — NOT the agent's own directory.
+        """
+        # Create parent dir, let git clone create the actual workspace
+        parent = Path(tempfile.mkdtemp(prefix="steward-ws-", dir="/tmp"))
+        workspace = parent / f"{task_id[:8]}"
+
+        # Save originals BEFORE any mutations
+        original_pipeline_cwd = self.pipeline._cwd
+        original_breaker_cwd = self.pipeline._breaker.cwd
+
+        try:
+            # Clone with shallow depth — minimize disk + network
+            r = subprocess.run(
+                ["git", "clone", "--depth=1", repo_url, str(workspace)],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            if r.returncode != 0:
+                raise RuntimeError(f"git clone failed: {r.stderr.strip()}")
+
+            logger.info("Cloned %s → %s", repo_url, workspace)
+
+            # Swap pipeline cwd to workspace
+            self.pipeline._cwd = str(workspace)
+            self.pipeline._breaker.cwd = str(workspace)
+
+            yield workspace
+
+        finally:
+            # Restore original cwd — always, even on exception
+            self.pipeline._cwd = original_pipeline_cwd
+            self.pipeline._breaker.cwd = original_breaker_cwd
+
+            # Deterministic cleanup — remove parent dir (contains workspace)
+            shutil.rmtree(parent, ignore_errors=True)
+            logger.info("Cleaned up workspace: %s", workspace)
 
     # ── Cetana Phase Handlers ──────────────────────────────────────────
 

@@ -146,8 +146,8 @@ class TestAutonomousFlowE2E:
         assert fake_llm.call_count == 0
 
     def test_run_autonomous_dispatches_federated_task(self, fake_llm):
-        """Task with [FED:source] prefix → dispatched to LLM fix pipeline."""
-        from steward.services import SVC_TASK_MANAGER
+        """Task with [FED:source] prefix → dispatched to LLM fix pipeline + callback."""
+        from steward.services import SVC_FEDERATION, SVC_TASK_MANAGER
         from vibe_core.di import ServiceRegistry
         from vibe_core.task_types import TaskStatus
 
@@ -166,6 +166,14 @@ class TestAutonomousFlowE2E:
         # Task should be completed
         completed = task_mgr.list_tasks(status=TaskStatus.COMPLETED)
         assert any("[FED:agent-internet]" in t.title for t in completed)
+
+        # Callback emitted to federation bridge
+        bridge = ServiceRegistry.get(SVC_FEDERATION)
+        if bridge is not None:
+            assert len(bridge._outbound) >= 1
+            callback = bridge._outbound[-1]
+            assert callback.operation in ("task_completed", "task_failed")
+            assert callback.payload["source_agent"] == "agent-internet"
 
     def test_task_marked_completed_after_dispatch(self, fake_llm):
         """Dispatched task gets marked as completed in TaskManager."""
