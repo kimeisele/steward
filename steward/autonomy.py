@@ -81,9 +81,11 @@ class AutonomyEngine:
         vedana_fn: Callable[[], object],
         git_actuator: object | None = None,
         github_actuator: object | None = None,
+        conversation_reset_fn: Callable[[], None] | None = None,
     ) -> None:
         self._synaptic = synaptic
         self._ledger = ledger
+        self._conversation_reset_fn = conversation_reset_fn
 
         # Composed modules — focused, testable, low LCOM4
         self.handlers = IntentHandlers(
@@ -122,7 +124,16 @@ class AutonomyEngine:
         Core dispatch logic — used by both run_autonomous() (one-shot)
         and phase_karma() (daemon). 0 LLM tokens for detection.
         LLM only wakes if a real problem needs fixing.
+
+        Resets conversation before each task to prevent state bloat.
+        Hebbian weights persist across tasks (real memory).
+        Conversation is ephemeral — each task gets a clean slate.
         """
+        # Reset conversation — prevent unbounded growth in daemon mode.
+        # Each task is independent. Learning persists via Hebbian weights.
+        if self._conversation_reset_fn is not None:
+            self._conversation_reset_fn()
+
         from vibe_core.task_types import TaskStatus
 
         task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)

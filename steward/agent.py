@@ -218,6 +218,7 @@ class StewardAgent(GADBase):
             vedana_fn=lambda: self.vedana,
             git_actuator=self._git_actuator,
             github_actuator=self._github_actuator,
+            conversation_reset_fn=self._reset_conversation,
         )
 
         # Gap tracker — self-awareness of capability gaps
@@ -505,6 +506,26 @@ class StewardAgent(GADBase):
         self._gaps = GapTracker()
         self._memory.clear_session("steward")
         logger.info("Conversation reset")
+
+    def _reset_conversation(self) -> None:
+        """Reset conversation between autonomous tasks — keep system prompt only.
+
+        Called before each KARMA dispatch. Each task is independent.
+        Learning persists via Hebbian weights (cross-session).
+        Conversation is ephemeral — prevents state bloat in daemon mode.
+        """
+        if self._conversation is None:
+            return
+        sys_msg = (
+            self._conversation.messages[0]
+            if self._conversation.messages
+            and self._conversation.messages[0].role == MessageRole.SYSTEM
+            else None
+        )
+        max_tok = self._conversation.max_tokens
+        self._conversation = Conversation(max_tokens=max_tok)
+        if sys_msg is not None:
+            self._conversation.messages.insert(0, sys_msg)
 
     # ── GAD-000 Protocol Implementation ──────────────────────────────
 
