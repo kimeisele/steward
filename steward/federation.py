@@ -284,10 +284,12 @@ class FederationBridge:
 
         source = payload.get("source_agent", "unknown")
         priority = payload.get("priority", 50)
+        repo = payload.get("repo", "")
 
         # Prefix with source for traceability
         full_title = f"[FED:{source}] {title}"
-        task_mgr.add_task(title=full_title, priority=priority)
+        description = f"repo:{repo}" if repo else ""
+        task_mgr.add_task(title=full_title, priority=priority, description=description)
         logger.info(
             "BRIDGE: delegated task from %s → '%s' (priority=%d)",
             source,

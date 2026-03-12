@@ -156,6 +156,17 @@ class AutonomyEngine:
                 # Strip the [FED:source] prefix to get the actual task description
                 bracket_end = task.title.find("]")
                 problem = task.title[bracket_end + 2 :] if bracket_end > 0 else task.title
+
+                # Extract repo URL from description if present (cross-repo task)
+                repo_url = ""
+                desc = getattr(task, "description", "") or ""
+                if desc.startswith("repo:"):
+                    repo_url = desc[5:].strip()
+
+                if repo_url:
+                    problem = f"{problem}\n\nTarget repository: {repo_url}"
+                    logger.info("Cross-repo task targeting: %s", repo_url)
+
                 result = await self.pipeline.guarded_llm_fix(problem, intent_name="DELEGATED_TASK")
                 task_mgr.update_task(task.id, status=TaskStatus.COMPLETED)
                 return result
