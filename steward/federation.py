@@ -185,6 +185,9 @@ class FederationBridge:
                     "operation": event.operation,
                     "payload": event.payload,
                     "timestamp": event.timestamp,
+                    "priority": 1,  # RAJAS (normal)
+                    "correlation_id": "",
+                    "ttl_s": 900.0,  # 15 min (FederationMessage default)
                 }
             )
 

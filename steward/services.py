@@ -342,11 +342,11 @@ def boot(
 
     fed_dir = os.environ.get("STEWARD_FEDERATION_DIR")
     if fed_dir:
-        from steward.federation_transport import FilesystemFederationTransport
+        from steward.federation_transport import create_transport
 
-        transport = FilesystemFederationTransport(fed_dir)
+        transport = create_transport(fed_dir)
         ServiceRegistry.register(SVC_FEDERATION_TRANSPORT, transport)
-        logger.info("Federation transport: filesystem → %s", fed_dir)
+        logger.info("Federation transport: %s → %s", type(transport).__name__, fed_dir)
 
     # 29. PhaseHookRegistry (composable MURALI phase dispatch)
     from steward.hooks import register_default_hooks

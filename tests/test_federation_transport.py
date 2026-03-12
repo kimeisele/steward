@@ -1,14 +1,25 @@
-"""Tests for FilesystemFederationTransport — shared directory transport."""
+"""Tests for federation transports — Nadi and filesystem.
+
+Validates:
+  - NadiFederationTransport wraps FederationNadi (steward-protocol canonical format)
+  - FilesystemFederationTransport (legacy shared-directory)
+  - create_transport() selects best available transport
+  - Both satisfy FederationTransport protocol (read_outbox, append_to_inbox)
+"""
 
 import json
 
 import pytest
 
-from steward.federation_transport import FilesystemFederationTransport
+from steward.federation_transport import (
+    FilesystemFederationTransport,
+    NadiFederationTransport,
+    create_transport,
+)
 
 
 class TestFilesystemTransport:
-    """Round-trip read/write via filesystem."""
+    """Round-trip read/write via filesystem (legacy)."""
 
     def test_append_to_inbox_creates_file(self, tmp_path):
         transport = FilesystemFederationTransport(str(tmp_path))
@@ -84,3 +95,112 @@ class TestFilesystemTransport:
         messages = transport.read_outbox()
         assert messages[0]["seq"] == 1
         assert messages[1]["seq"] == 2
+
+
+class TestNadiFederationTransport:
+    """NadiFederationTransport wraps FederationNadi from steward-protocol."""
+
+    def test_init_creates_nadi(self, tmp_path):
+        transport = NadiFederationTransport(str(tmp_path))
+        assert hasattr(transport, "_nadi")
+
+    def test_read_outbox_empty(self, tmp_path):
+        transport = NadiFederationTransport(str(tmp_path))
+        assert transport.read_outbox() == []
+
+    def test_append_to_inbox_and_verify_file(self, tmp_path):
+        transport = NadiFederationTransport(str(tmp_path))
+        count = transport.append_to_inbox(
+            [
+                {
+                    "source": "steward",
+                    "target": "agent-city",
+                    "operation": "heartbeat",
+                    "payload": {"health": 0.9},
+                }
+            ]
+        )
+        assert count == 1
+        # FederationNadi writes to nadi_inbox.json
+        inbox_path = tmp_path / "nadi_inbox.json"
+        assert inbox_path.exists()
+        data = json.loads(inbox_path.read_text())
+        assert isinstance(data, list)
+        assert len(data) == 1
+        assert data[0]["operation"] == "heartbeat"
+        assert data[0]["source"] == "steward"
+
+    def test_round_trip_via_nadi_files(self, tmp_path):
+        """Write to inbox, copy to outbox, read back."""
+        transport = NadiFederationTransport(str(tmp_path))
+
+        # Write outbound
+        transport.append_to_inbox(
+            [
+                {
+                    "source": "steward",
+                    "target": "agent-city",
+                    "operation": "delegate_task",
+                    "payload": {"title": "fix tests"},
+                }
+            ]
+        )
+
+        # Simulate the other agent putting messages in our outbox
+        outbox_path = tmp_path / "nadi_outbox.json"
+        outbox_path.write_text(
+            json.dumps(
+                [
+                    {
+                        "source": "agent-city",
+                        "target": "steward",
+                        "operation": "task_completed",
+                        "payload": {"task_title": "fix tests", "pr_url": "https://github.com/test/pr/1"},
+                    }
+                ]
+            )
+        )
+
+        messages = transport.read_outbox()
+        assert len(messages) == 1
+        assert messages[0]["operation"] == "task_completed"
+        assert messages[0]["payload"]["pr_url"] == "https://github.com/test/pr/1"
+
+    def test_append_handles_federation_message_fields(self, tmp_path):
+        """Full FederationMessage dict round-trips correctly."""
+        transport = NadiFederationTransport(str(tmp_path))
+        transport.append_to_inbox(
+            [
+                {
+                    "source": "steward",
+                    "target": "*",
+                    "operation": "heartbeat",
+                    "payload": {"agent_id": "steward", "health": 0.95},
+                    "priority": 1,
+                    "correlation_id": "abc123",
+                    "ttl_s": 900.0,
+                }
+            ]
+        )
+        inbox_path = tmp_path / "nadi_inbox.json"
+        data = json.loads(inbox_path.read_text())
+        msg = data[0]
+        assert msg["priority"] == 1
+        assert msg["correlation_id"] == "abc123"
+        assert msg["ttl_s"] == 900.0
+
+
+class TestCreateTransport:
+    """create_transport() selects the best available transport."""
+
+    def test_prefers_nadi_transport(self, tmp_path):
+        transport = create_transport(str(tmp_path))
+        assert isinstance(transport, NadiFederationTransport)
+
+    def test_both_satisfy_protocol(self, tmp_path):
+        """Both transports have read_outbox and append_to_inbox."""
+        nadi = NadiFederationTransport(str(tmp_path))
+        fs = FilesystemFederationTransport(str(tmp_path))
+        for t in [nadi, fs]:
+            assert callable(getattr(t, "read_outbox", None))
+            assert callable(getattr(t, "append_to_inbox", None))
