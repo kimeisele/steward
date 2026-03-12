@@ -15,17 +15,13 @@ import logging
 import os
 
 from steward.provider.adapters import (
-    AnthropicAdapter,
     GoogleAdapter,
     MistralAdapter,
 )
 from steward.provider.chamber import (
-    _ADDR_ANTHROPIC,
-    _ADDR_DEEPSEEK,
     _ADDR_GOOGLE,
     _ADDR_GROQ,
     _ADDR_MISTRAL,
-    _PRANA_CHEAP,
     _PRANA_FREE,
     ProviderChamber,
     ProviderPayload,
@@ -35,21 +31,50 @@ from steward.provider.chamber import (
 
 logger = logging.getLogger("STEWARD.PROVIDER")
 
+
+class _LazyAdapter:
+    """Defers provider construction to first invoke().
+
+    build_chamber() can take 9+ seconds because provider constructors
+    (GoogleProvider, OpenAI client) make network calls to validate keys.
+    Wrapping in _LazyAdapter makes build_chamber() instant — the real
+    provider only constructs on the first actual LLM call.
+    """
+
+    def __init__(self, factory, name: str, supports_streaming: bool = False) -> None:
+        self._factory = factory
+        self._name = name
+        self._delegate = None
+        self._supports_streaming = supports_streaming
+
+    def _ensure(self):
+        if self._delegate is None:
+            logger.info("Lazy init: %s (first call)", self._name)
+            self._delegate = self._factory()
+        return self._delegate
+
+    def invoke(self, **kwargs):
+        return self._ensure().invoke(**kwargs)
+
+
+class _LazyStreamingAdapter(_LazyAdapter):
+    """Lazy adapter that also supports streaming (MistralAdapter, etc.)."""
+
+    def invoke_stream(self, **kwargs):
+        return self._ensure().invoke_stream(**kwargs)
+
+
 __all__ = [
     "ProviderChamber",
     "ProviderPayload",
     "GoogleAdapter",
     "MistralAdapter",
-    "AnthropicAdapter",
     "build_chamber",
     "_normalize_usage",
     "_is_transient",
     "_PRANA_FREE",
-    "_PRANA_CHEAP",
     "_ADDR_GOOGLE",
     "_ADDR_MISTRAL",
-    "_ADDR_DEEPSEEK",
-    "_ADDR_ANTHROPIC",
     "_ADDR_GROQ",
 ]
 
@@ -67,125 +92,82 @@ def _is_valid_key(key: str) -> bool:
 def build_chamber() -> ProviderChamber:
     """Build ProviderChamber from available API keys.
 
-    Priority order (free first, cheapest last):
+    FREE TIER ONLY. Paid providers disabled until operator approval.
     1. Google Gemini (free tier)
-    2. Mistral (free experiment)
+    2. Mistral (free tier)
     3. Groq (free tier)
-    4. DeepSeek via OpenRouter (cheap paid)
-    5. Anthropic Claude (paid, highest capability)
+
+    Loads keys from .env file (python-dotenv) if present.
     """
+    # Load .env for local development (GitHub Secrets don't help locally)
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()  # Loads from .env in cwd or parent dirs
+    except ImportError:
+        pass  # dotenv optional — env vars from shell profile still work
+
     chamber = ProviderChamber()
 
     # Cell 1: Google Gemini (FREE)
     google_key = os.environ.get("GOOGLE_API_KEY")
     if google_key and _is_valid_key(google_key):
-        try:
+        def _make_google(key=google_key):
             from vibe_core.runtime.providers.google import GoogleProvider
+            return GoogleAdapter(GoogleProvider(api_key=key))
 
-            raw_provider = GoogleProvider(api_key=google_key)
-            adapter = GoogleAdapter(raw_provider)
-            chamber.add_provider(
-                name="google_flash",
-                provider=adapter,
-                model="gemini-2.5-flash",
-                source_address=_ADDR_GOOGLE,
-                prana=_PRANA_FREE,
-                daily_call_limit=1000,
-                cost_per_mtok=0.0,
-            )
-        except Exception as e:
-            logger.warning("Google provider failed: %s", e)
+        chamber.add_provider(
+            name="google_flash",
+            provider=_LazyAdapter(_make_google, "google_flash"),
+            model="gemini-2.5-flash",
+            source_address=_ADDR_GOOGLE,
+            prana=_PRANA_FREE,
+            daily_call_limit=1000,
+            cost_per_mtok=0.0,
+        )
 
     # Cell 2: Mistral (FREE experiment)
     mistral_key = os.environ.get("MISTRAL_API_KEY")
     if mistral_key and _is_valid_key(mistral_key):
-        try:
+        def _make_mistral(key=mistral_key):
             from openai import OpenAI
+            return MistralAdapter(OpenAI(api_key=key, base_url="https://api.mistral.ai/v1"))
 
-            client = OpenAI(api_key=mistral_key, base_url="https://api.mistral.ai/v1")
-            adapter = MistralAdapter(client)
-            chamber.add_provider(
-                name="mistral",
-                provider=adapter,
-                model="mistral-small-latest",
-                source_address=_ADDR_MISTRAL,
-                prana=_PRANA_FREE,
-                daily_call_limit=2880,
-                daily_token_limit=30_000_000,
-                cost_per_mtok=0.10,
-                supports_tools=True,
-            )
-        except ImportError:
-            logger.warning("openai package needed for Mistral")
-        except Exception as e:
-            logger.warning("Mistral provider failed: %s", e)
+        chamber.add_provider(
+            name="mistral",
+            provider=_LazyStreamingAdapter(_make_mistral, "mistral"),
+            model="mistral-small-latest",
+            source_address=_ADDR_MISTRAL,
+            prana=_PRANA_FREE,
+            daily_call_limit=2880,
+            daily_token_limit=30_000_000,
+            cost_per_mtok=0.10,
+            supports_tools=True,
+        )
 
     # Cell 3: Groq (FREE — llama-3.3-70b via OpenAI-compat API)
     groq_key = os.environ.get("GROQ_API_KEY")
     if groq_key and _is_valid_key(groq_key):
-        try:
+        def _make_groq(key=groq_key):
             from openai import OpenAI
+            return MistralAdapter(OpenAI(api_key=key, base_url="https://api.groq.com/openai/v1"))
 
-            client = OpenAI(api_key=groq_key, base_url="https://api.groq.com/openai/v1")
-            adapter = MistralAdapter(client)  # OpenAI-compat, same adapter
-            chamber.add_provider(
-                name="groq",
-                provider=adapter,
-                model="llama-3.3-70b-versatile",
-                source_address=_ADDR_GROQ,
-                prana=_PRANA_FREE,
-                daily_call_limit=1000,
-                daily_token_limit=100_000,
-                cost_per_mtok=0.0,
-                supports_tools=True,
-            )
-        except ImportError:
-            logger.warning("openai package needed for Groq")
-        except Exception as e:
-            logger.warning("Groq provider failed: %s", e)
+        chamber.add_provider(
+            name="groq",
+            provider=_LazyStreamingAdapter(_make_groq, "groq"),
+            model="llama-3.3-70b-versatile",
+            source_address=_ADDR_GROQ,
+            prana=_PRANA_FREE,
+            daily_call_limit=1000,
+            daily_token_limit=100_000,
+            cost_per_mtok=0.0,
+            supports_tools=True,
+        )
 
-    # Cell 4: DeepSeek via OpenRouter (cheap paid fallback)
-    openrouter_key = os.environ.get("OPENROUTER_API_KEY")
-    if openrouter_key and _is_valid_key(openrouter_key):
-        try:
-            from vibe_core.runtime.providers.openrouter import OpenRouterProvider
-
-            provider = OpenRouterProvider(api_key=openrouter_key)
-            chamber.add_provider(
-                name="deepseek",
-                provider=provider,
-                model="deepseek/deepseek-v3.2",
-                source_address=_ADDR_DEEPSEEK,
-                prana=_PRANA_CHEAP,
-                daily_call_limit=0,
-                cost_per_mtok=0.27,
-                supports_tools=True,
-            )
-        except Exception as e:
-            logger.warning("OpenRouter provider failed: %s", e)
-
-    # Cell 5: Anthropic Claude (paid, highest capability)
-    anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
-    if anthropic_key and _is_valid_key(anthropic_key):
-        try:
-            import anthropic
-
-            client = anthropic.Anthropic(api_key=anthropic_key)
-            adapter = AnthropicAdapter(client)
-            chamber.add_provider(
-                name="claude",
-                provider=adapter,
-                model="claude-sonnet-4-20250514",
-                source_address=_ADDR_ANTHROPIC,
-                prana=_PRANA_CHEAP,
-                daily_call_limit=0,
-                cost_per_mtok=3.0,
-                supports_tools=True,
-            )
-        except ImportError:
-            logger.warning("anthropic package needed for Claude")
-        except Exception as e:
-            logger.warning("Anthropic provider failed: %s", e)
+    # ── PAID PROVIDERS DISABLED ──
+    # DeepSeek (OpenRouter) and Anthropic (Claude) are PAID.
+    # Until token budgets, model behavior, and costs are 100% predictable
+    # and enterprise-safe, ONLY free-tier providers are allowed.
+    # Re-enable only after explicit operator approval.
 
     if len(chamber) == 0:
         logger.warning("No providers — LLM calls will fail")

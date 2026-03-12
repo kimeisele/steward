@@ -225,7 +225,9 @@ class StewardAgent(GADBase):
         agent_memory.load_gaps(self._memory, self._gaps)
 
         # Persona — persistent identity (from steward-protocol)
-        self._persona = agent_memory.load_persona()
+        # Lazy: mahamantra import takes ~4s. Only compute when discover() is called.
+        self._persona: dict[str, str] | None = None
+        self._persona_loaded = False
 
         # Build system prompt — minimal. LLM only needs: instruction + cwd.
         # Tool sigs injected by engine. Everything else is infrastructure.
@@ -241,8 +243,8 @@ class StewardAgent(GADBase):
             )
             self._system_prompt = self._base_system_prompt
 
-            # Senses still perceive (infrastructure use), just not in LLM prompt
-            self._senses.perceive_all()
+            # Senses perceive lazily — deferred to run_stream() / run_autonomous()
+            # Boot must be fast. Perception only when intent actually needs it.
 
         # Emit AGENT_STARTUP signal
         agent_bus.emit_startup(self._registry.list_tools(), self._cwd)
@@ -338,11 +340,32 @@ class StewardAgent(GADBase):
         return await self._autonomy.run_autonomous(idle_minutes=idle_minutes)
 
     def run_autonomous_sync(self, idle_minutes: int | None = None) -> str | None:
-        """Sync wrapper for run_autonomous."""
+        """Sync wrapper for run_autonomous (one-shot, legacy)."""
         if self._conversation is None:
             raise RuntimeError("Agent not initialized — no conversation")
         return asyncio.run(self.run_autonomous(idle_minutes=idle_minutes))
 
+    def run_daemon(self) -> None:
+        """Run as persistent daemon — boot once, Cetana drives all work.
+
+        Blocks until SIGTERM/SIGINT. The 4-phase heartbeat cycle:
+          GENESIS: discover/generate tasks from Sankalpa
+          DHARMA:  check health invariants, federation, reaper
+          KARMA:   execute next pending task (the actual work)
+          MOKSHA:  persist state, Hebbian learning
+
+        At SAMADHI (healthy), beats every 10s. Zero CPU between beats
+        (OS-level Event.wait). Caller must call close() after return.
+        """
+        logger.info(
+            "Daemon mode — boot once, Cetana drives autonomous work "
+            "(freq=%.1fHz)",
+            self._cetana.frequency_hz,
+        )
+        try:
+            self._cetana._stop_event.wait()  # Blocks until signal
+        except KeyboardInterrupt:
+            pass
 
     # ── Autonomy ──────────────────────────────────────────────────────
     # All autonomous methods (detection, fix pipelines, Hebbian learning,
@@ -547,7 +570,7 @@ class StewardAgent(GADBase):
                 "upastha": "boot",                     # creation → service genesis
             },
             "active_gaps": len(self._gaps),
-            "jiva": self._persona,
+            "jiva": self._get_persona(),
             "synaptic_weights": self._synaptic.weight_count,
             "protocol_services": {
                 "cache": ServiceRegistry.get(SVC_CACHE) is not None,
@@ -750,3 +773,10 @@ class StewardAgent(GADBase):
         agent_bus.emit_anomaly(beat.vedana.health, beat.vedana.guna, beat.beat_number)
 
     # ── Private Helpers ────────────────────────────────────────────────
+
+    def _get_persona(self) -> dict[str, str] | None:
+        """Lazy persona derivation — mahamantra import takes ~4s."""
+        if not self._persona_loaded:
+            self._persona = agent_memory.load_persona()
+            self._persona_loaded = True
+        return self._persona

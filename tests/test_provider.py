@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from steward.provider import _PRANA_CHEAP, _PRANA_FREE, ProviderChamber, _is_transient
+from steward.provider import _PRANA_FREE, ProviderChamber, _is_transient
+from steward.provider.chamber import _PRANA_CHEAP
 from vibe_core.mahamantra.protocols._seed import COSMIC_FRAME, MAHA_QUANTUM
 from vibe_core.protocols.feedback import InMemoryFeedback, SignalType
 from vibe_core.runtime.circuit_breaker import CircuitBreakerState

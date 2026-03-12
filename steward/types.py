@@ -246,7 +246,8 @@ class Conversation:
             other_msgs = [m for m in self.messages if m.role != MessageRole.SYSTEM]
 
             system_tokens = sum(m.estimated_tokens for m in system_msgs)
-            remaining_budget = budget - system_tokens
+            # Reserve ~20 tokens for compaction marker inserted after trimming
+            remaining_budget = budget - system_tokens - 20
 
             # Keep from the end (most recent) until budget exhausted
             kept_other: list[Message] = []
