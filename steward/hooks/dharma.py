@@ -14,6 +14,7 @@ from steward.phase_hook import DHARMA, BasePhaseHook, PhaseContext
 from steward.services import (
     SVC_FEDERATION,
     SVC_FEDERATION_TRANSPORT,
+    SVC_GIT_NADI_SYNC,
     SVC_MARKETPLACE,
     SVC_REAPER,
 )
@@ -135,6 +136,11 @@ class DharmaFederationHook(BasePhaseHook):
                 "timestamp": time.time(),
             },
         )
+        # Git pull before reading — fetch latest messages from remote
+        git_sync = ServiceRegistry.get(SVC_GIT_NADI_SYNC)
+        if git_sync is not None:
+            git_sync.pull()
+
         transport = ServiceRegistry.get(SVC_FEDERATION_TRANSPORT)
         if transport is not None:
             federation.process_inbound(transport)

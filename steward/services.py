@@ -129,6 +129,10 @@ class SVC_FEDERATION_TRANSPORT:
     """FederationTransport — pluggable transport for cross-agent messaging."""
 
 
+class SVC_GIT_NADI_SYNC:
+    """GitNadiSync — git pull/push for federation nadi files."""
+
+
 class SVC_REAPER:
     """HeartbeatReaper — network garbage collection for federation peers."""
 
@@ -347,6 +351,14 @@ def boot(
         transport = create_transport(fed_dir)
         ServiceRegistry.register(SVC_FEDERATION_TRANSPORT, transport)
         logger.info("Federation transport: %s → %s", type(transport).__name__, fed_dir)
+
+        # 28b. GitNadiSync (git network layer for federation — only if git checkout)
+        from steward.git_nadi_sync import GitNadiSync
+
+        git_sync = GitNadiSync(fed_dir)
+        if git_sync.is_git_repo:
+            ServiceRegistry.register(SVC_GIT_NADI_SYNC, git_sync)
+            logger.info("Git nadi sync: active (interval=%ds)", git_sync._sync_interval_s)
 
     # 29. PhaseHookRegistry (composable MURALI phase dispatch)
     from steward.hooks import register_default_hooks
