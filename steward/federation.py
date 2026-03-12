@@ -82,6 +82,7 @@ OP_CLAIM_SLOT = "claim_slot"
 OP_RELEASE_SLOT = "release_slot"
 OP_EVICTION = "eviction"
 OP_CLAIM_OUTCOME = "claim_outcome"
+OP_DELEGATE_TASK = "delegate_task"
 
 
 @dataclass(frozen=True)
@@ -129,6 +130,7 @@ class FederationBridge:
             OP_HEARTBEAT: self._handle_heartbeat,
             OP_CLAIM_SLOT: self._handle_claim,
             OP_RELEASE_SLOT: self._handle_release,
+            OP_DELEGATE_TASK: self._handle_delegate_task,
         }
 
     def ingest(self, operation: str, payload: dict) -> bool:
@@ -254,4 +256,42 @@ class FederationBridge:
         if not slot_id or not agent_id:
             return False
         self.marketplace.release(slot_id, agent_id)
+        return True
+
+    def _handle_delegate_task(self, payload: dict) -> bool:
+        """Inbound task delegation from a peer agent.
+
+        Pushes the task into the local TaskManager queue. KARMA phase
+        will pick it up and dispatch it like any other autonomous task.
+
+        Payload:
+            title: str — task title (should include [INTENT] prefix)
+            priority: int — 0-100
+            source_agent: str — who delegated
+            repo: str — target repo URL (optional, for cross-repo work)
+        """
+        from steward.services import SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
+
+        task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
+        if task_mgr is None:
+            logger.warning("BRIDGE: delegate_task but no TaskManager registered")
+            return False
+
+        title = payload.get("title")
+        if not title:
+            return False
+
+        source = payload.get("source_agent", "unknown")
+        priority = payload.get("priority", 50)
+
+        # Prefix with source for traceability
+        full_title = f"[FED:{source}] {title}"
+        task_mgr.add_task(title=full_title, priority=priority)
+        logger.info(
+            "BRIDGE: delegated task from %s → '%s' (priority=%d)",
+            source,
+            title,
+            priority,
+        )
         return True
