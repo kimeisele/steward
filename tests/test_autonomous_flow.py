@@ -145,6 +145,28 @@ class TestAutonomousFlowE2E:
         assert result is None
         assert fake_llm.call_count == 0
 
+    def test_run_autonomous_dispatches_federated_task(self, fake_llm):
+        """Task with [FED:source] prefix → dispatched to LLM fix pipeline."""
+        from steward.services import SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
+        from vibe_core.task_types import TaskStatus
+
+        agent = self._make_agent(fake_llm)
+        task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
+
+        task_mgr.add_task(
+            title="[FED:agent-internet] Fix failing test_api_routes",
+            priority=70,
+        )
+
+        result = asyncio.run(agent.run_autonomous())
+        # Federated tasks go to LLM (FakeLLM returns "ok")
+        assert fake_llm.call_count >= 1
+
+        # Task should be completed
+        completed = task_mgr.list_tasks(status=TaskStatus.COMPLETED)
+        assert any("[FED:agent-internet]" in t.title for t in completed)
+
     def test_task_marked_completed_after_dispatch(self, fake_llm):
         """Dispatched task gets marked as completed in TaskManager."""
         from steward.services import SVC_TASK_MANAGER

@@ -149,6 +149,21 @@ class AutonomyEngine:
 
         intent = parse_intent_from_title(task.title)
 
+        # Federated tasks from peers: [FED:source] title → dispatch to LLM directly
+        if intent is None and task.title.startswith("[FED:"):
+            logger.info("Federated task from peer: '%s'", task.title)
+            try:
+                # Strip the [FED:source] prefix to get the actual task description
+                bracket_end = task.title.find("]")
+                problem = task.title[bracket_end + 2 :] if bracket_end > 0 else task.title
+                result = await self.pipeline.guarded_llm_fix(problem, intent_name="DELEGATED_TASK")
+                task_mgr.update_task(task.id, status=TaskStatus.COMPLETED)
+                return result
+            except Exception as e:
+                logger.error("Federated task '%s' failed: %s", task.title, e)
+                task_mgr.update_task(task.id, status=TaskStatus.FAILED)
+                return None
+
         if intent is None:
             logger.warning("No typed intent in task '%s' — skipping", task.title)
             task_mgr.update_task(task.id, status=TaskStatus.COMPLETED)

@@ -7,6 +7,7 @@ import pytest
 from steward.federation import (
     OP_CLAIM_OUTCOME,
     OP_CLAIM_SLOT,
+    OP_DELEGATE_TASK,
     OP_HEARTBEAT,
     OP_RELEASE_SLOT,
     FederationBridge,
@@ -422,3 +423,122 @@ class TestMokshaFlush:
         bridge = FederationBridge()
         bridge.emit("test", {"x": 1})
         assert bridge.stats()["outbound_pending"] == 1
+
+
+# ── Inbound: Delegate Task ─────────────────────────────────────
+
+
+class TestInboundDelegateTask:
+    """OP_DELEGATE_TASK pushes tasks into local TaskManager queue."""
+
+    def test_delegate_task_pushes_to_task_manager(self, tmp_path):
+        """Delegated task appears in TaskManager with [FED:source] prefix."""
+        from steward.services import SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
+        from vibe_core.task_management.task_manager import TaskManager
+
+        task_mgr = TaskManager(project_root=tmp_path)
+        ServiceRegistry.register(SVC_TASK_MANAGER, task_mgr)
+
+        bridge = FederationBridge()
+        result = bridge.ingest(
+            OP_DELEGATE_TASK,
+            {
+                "title": "Fix failing tests in api.py",
+                "priority": 70,
+                "source_agent": "agent-internet",
+            },
+        )
+        assert result is True
+        tasks = task_mgr.list_tasks()
+        assert len(tasks) == 1
+        assert tasks[0].title == "[FED:agent-internet] Fix failing tests in api.py"
+
+    def test_delegate_task_default_source(self, tmp_path):
+        """Missing source_agent defaults to 'unknown'."""
+        from steward.services import SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
+        from vibe_core.task_management.task_manager import TaskManager
+
+        task_mgr = TaskManager(project_root=tmp_path)
+        ServiceRegistry.register(SVC_TASK_MANAGER, task_mgr)
+
+        bridge = FederationBridge()
+        bridge.ingest(OP_DELEGATE_TASK, {"title": "Do something"})
+        tasks = task_mgr.list_tasks()
+        assert tasks[0].title.startswith("[FED:unknown]")
+
+    def test_delegate_task_default_priority(self, tmp_path):
+        """Missing priority defaults to 50."""
+        from steward.services import SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
+        from vibe_core.task_management.task_manager import TaskManager
+
+        task_mgr = TaskManager(project_root=tmp_path)
+        ServiceRegistry.register(SVC_TASK_MANAGER, task_mgr)
+
+        bridge = FederationBridge()
+        bridge.ingest(OP_DELEGATE_TASK, {"title": "Task", "source_agent": "peer"})
+        tasks = task_mgr.list_tasks()
+        assert tasks[0].priority == 50
+
+    def test_delegate_task_missing_title_rejected(self, tmp_path):
+        """No title → rejected."""
+        from steward.services import SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
+        from vibe_core.task_management.task_manager import TaskManager
+
+        task_mgr = TaskManager(project_root=tmp_path)
+        ServiceRegistry.register(SVC_TASK_MANAGER, task_mgr)
+
+        bridge = FederationBridge()
+        assert not bridge.ingest(OP_DELEGATE_TASK, {"source_agent": "peer"})
+        assert len(task_mgr.list_tasks()) == 0
+
+    def test_delegate_task_empty_title_rejected(self, tmp_path):
+        """Empty title → rejected."""
+        from steward.services import SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
+        from vibe_core.task_management.task_manager import TaskManager
+
+        task_mgr = TaskManager(project_root=tmp_path)
+        ServiceRegistry.register(SVC_TASK_MANAGER, task_mgr)
+
+        bridge = FederationBridge()
+        assert not bridge.ingest(OP_DELEGATE_TASK, {"title": "", "source_agent": "peer"})
+
+    def test_delegate_task_no_task_manager_returns_false(self):
+        """Without TaskManager registered, delegate_task fails gracefully."""
+        bridge = FederationBridge()
+        assert not bridge.ingest(
+            OP_DELEGATE_TASK,
+            {"title": "Fix something", "source_agent": "peer"},
+        )
+
+    def test_delegate_task_via_transport(self, tmp_path):
+        """Delegate task arrives via transport.process_inbound()."""
+        from steward.services import SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
+        from vibe_core.task_management.task_manager import TaskManager
+
+        task_mgr = TaskManager(project_root=tmp_path)
+        ServiceRegistry.register(SVC_TASK_MANAGER, task_mgr)
+
+        transport = FakeTransport(
+            messages=[
+                {
+                    "operation": OP_DELEGATE_TASK,
+                    "payload": {
+                        "title": "Update wiki pages",
+                        "priority": 60,
+                        "source_agent": "wiki-agent",
+                    },
+                },
+            ]
+        )
+        bridge = FederationBridge()
+        count = bridge.process_inbound(transport)
+        assert count == 1
+        tasks = task_mgr.list_tasks()
+        assert len(tasks) == 1
+        assert "[FED:wiki-agent]" in tasks[0].title
