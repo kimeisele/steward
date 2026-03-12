@@ -104,35 +104,42 @@ class AutonomyEngine:
     # ── Public API ─────────────────────────────────────────────────────
 
     async def run_autonomous(self, idle_minutes: int | None = None) -> str | None:
-        """Pick the next task from TaskManager and execute it deterministically.
+        """One autonomous cycle: generate tasks + dispatch next.
 
-        Deterministic dispatch: reads intent_type from task metadata,
-        maps to TaskIntent enum, calls a Python method. 0 LLM tokens.
-        The LLM only wakes up if the method finds a real error to fix.
-
-        Returns the result text, or None if no tasks are pending.
+        For programmatic/legacy use. In daemon mode, GENESIS and KARMA
+        phases handle this continuously via Cetana heartbeat.
         """
-        from steward.intents import TaskIntent
+        self.phase_genesis(idle_override=idle_minutes)
+        return await self._dispatch_next_task()
+
+    def run_autonomous_sync(self, idle_minutes: int | None = None) -> str | None:
+        """Sync wrapper for run_autonomous."""
+        return asyncio.run(self.run_autonomous(idle_minutes=idle_minutes))
+
+    async def _dispatch_next_task(self) -> str | None:
+        """Pick the next pending task and execute it deterministically.
+
+        Core dispatch logic — used by both run_autonomous() (one-shot)
+        and phase_karma() (daemon). 0 LLM tokens for detection.
+        LLM only wakes if a real problem needs fixing.
+        """
         from vibe_core.task_types import TaskStatus
 
         task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
         if task_mgr is None:
             return None
 
-        # Generate tasks first — Sankalpa might not have fired yet
-        self.phase_genesis(idle_override=idle_minutes)
-
         task = task_mgr.get_next_task()
         if task is None:
             return None
 
-        logger.info("Autonomous: working on task '%s' (id=%s)", task.title, task.id)
+        logger.info("Dispatching task '%s' (id=%s)", task.title, task.id)
         task_mgr.update_task(task.id, status=TaskStatus.IN_PROGRESS)
 
         intent = parse_intent_from_title(task.title)
 
         if intent is None:
-            logger.warning("Autonomous: no typed intent in task '%s' — skipping", task.title)
+            logger.warning("No typed intent in task '%s' — skipping", task.title)
             task_mgr.update_task(task.id, status=TaskStatus.COMPLETED)
             return None
 
@@ -156,23 +163,19 @@ class AutonomyEngine:
                     return None
 
                 logger.info(
-                    "Autonomous: %s:%s found problem (confidence=%.2f), invoking LLM",
+                    "%s:%s found problem (confidence=%.2f), invoking LLM",
                     intent.name, context, auto_weight,
                 )
                 if intent.is_proactive:
                     return await self.pipeline.guarded_pr_fix(problem, intent_name=intent.name)
                 return await self.pipeline.guarded_llm_fix(problem, intent_name=intent.name)
 
-            logger.info("Autonomous: intent %s completed (no issues found)", intent.name)
+            logger.info("Intent %s completed (no issues found)", intent.name)
             return None
         except Exception as e:
-            logger.error("Autonomous: task '%s' failed: %s", task.title, e)
+            logger.error("Task '%s' failed: %s", task.title, e)
             task_mgr.update_task(task.id, status=TaskStatus.FAILED)
             return None
-
-    def run_autonomous_sync(self, idle_minutes: int | None = None) -> str | None:
-        """Sync wrapper for run_autonomous."""
-        return asyncio.run(self.run_autonomous(idle_minutes=idle_minutes))
 
     # ── Intent Dispatch (delegates to IntentHandlers) ──────────────────
 
@@ -234,15 +237,27 @@ class AutonomyEngine:
                 priority=priority,
             )
 
-    @staticmethod
-    def phase_karma() -> None:
-        """KARMA: Execute — log pending task count."""
+    def phase_karma(self) -> None:
+        """KARMA: Execute — dispatch next pending task.
+
+        Called by Cetana heartbeat every 4th beat. If no tasks pending,
+        returns immediately (0 overhead). If task exists, dispatches it
+        via asyncio.run() — blocks heartbeat until done (correct: agent
+        is working, not sleeping).
+        """
         task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
         if task_mgr is None:
             return
-        pending = task_mgr.list_tasks()
-        if pending:
-            logger.debug("KARMA: %d pending tasks", len(pending))
+        from vibe_core.task_types import TaskStatus
+
+        pending = task_mgr.list_tasks(status=TaskStatus.PENDING)
+        if not pending:
+            return  # No work — idle
+        logger.info("KARMA: %d pending task(s), dispatching next", len(pending))
+        try:
+            asyncio.run(self._dispatch_next_task())
+        except Exception as e:
+            logger.error("KARMA dispatch failed: %s", e)
 
     @staticmethod
     def phase_moksha() -> None:

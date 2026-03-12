@@ -279,21 +279,108 @@ class TestDharmaPhase:
 
 
 class TestKarmaPhase:
-    """KARMA phase observes pending tasks."""
+    """KARMA phase dispatches pending tasks (daemon mode workhorse)."""
 
-    def test_karma_logs_pending_tasks(self, fake_llm):
-        """KARMA runs without error when tasks exist."""
+    def test_karma_dispatches_task(self, fake_llm):
+        """KARMA picks up a typed task and dispatches it. 0 LLM tokens."""
         from steward.agent import StewardAgent
         from steward.services import SVC_TASK_MANAGER
         from vibe_core.di import ServiceRegistry
+        from vibe_core.task_types import TaskStatus
 
         agent = track_agent(StewardAgent(provider=fake_llm))
         task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
-        task_mgr.add_task(title="test task", priority=50)
+        task_mgr.add_task(title="[HEALTH_CHECK] Quick check", priority=50)
 
-        # Should not crash
         agent._autonomy.phase_karma()
-        assert fake_llm.call_count == 0  # Still 0 tokens
+
+        # Task dispatched and completed
+        completed = task_mgr.list_tasks(status=TaskStatus.COMPLETED)
+        assert len(completed) >= 1
+        assert fake_llm.call_count == 0  # Deterministic — 0 tokens
+
+    def test_karma_noop_when_no_tasks(self, fake_llm):
+        """KARMA returns immediately when no tasks pending."""
+        from steward.agent import StewardAgent
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+        # No tasks added — should be a no-op
+        agent._autonomy.phase_karma()
+        assert fake_llm.call_count == 0
+
+    def test_karma_handles_untyped_task(self, fake_llm):
+        """KARMA completes tasks without [INTENT] prefix as no-ops."""
+        from steward.agent import StewardAgent
+        from steward.services import SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
+        from vibe_core.task_types import TaskStatus
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+        task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
+        task_mgr.add_task(title="random task without intent", priority=50)
+
+        agent._autonomy.phase_karma()
+
+        completed = task_mgr.list_tasks(status=TaskStatus.COMPLETED)
+        assert len(completed) >= 1
+        assert fake_llm.call_count == 0
+
+
+class TestDaemonMode:
+    """Persistent daemon — boot once, Cetana drives work."""
+
+    def test_run_daemon_blocks_until_stop(self, fake_llm):
+        """run_daemon() blocks main thread until Cetana stop signal."""
+        import threading
+
+        from steward.agent import StewardAgent
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+
+        started = threading.Event()
+        exited = threading.Event()
+
+        def run():
+            started.set()
+            agent.run_daemon()
+            exited.set()
+
+        t = threading.Thread(target=run, daemon=True)
+        t.start()
+
+        # Daemon should be blocking
+        assert started.wait(timeout=2.0), "Daemon thread did not start"
+        assert not exited.is_set(), "Daemon exited prematurely"
+
+        # Send stop signal
+        agent._cetana._stop_event.set()
+        assert exited.wait(timeout=2.0), "Daemon did not exit after stop signal"
+
+    def test_daemon_graceful_shutdown(self, fake_llm):
+        """close() after run_daemon() saves state and stops Cetana."""
+        import threading
+
+        from steward.agent import StewardAgent
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+
+        def run():
+            agent.run_daemon()
+
+        t = threading.Thread(target=run, daemon=True)
+        t.start()
+
+        # Let it run briefly
+        import time
+        time.sleep(0.1)
+
+        # Stop and close
+        agent._cetana._stop_event.set()
+        t.join(timeout=2.0)
+        agent.close()
+
+        # Cetana should be stopped
+        assert not agent._cetana.is_alive
 
 
 class TestProblemFingerprint:
