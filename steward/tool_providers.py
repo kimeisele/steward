@@ -99,12 +99,14 @@ class FileSystemToolProvider:
                 if found:
                     logger.info(
                         "FileSystemToolProvider: loaded %d tool(s) from %s",
-                        len(found), py_file.name,
+                        len(found),
+                        py_file.name,
                     )
             except Exception as e:
                 logger.warning(
                     "FileSystemToolProvider: failed to load %s: %s",
-                    py_file.name, e,
+                    py_file.name,
+                    e,
                 )
         return tools
 

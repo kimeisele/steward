@@ -126,9 +126,7 @@ class PhaseHookRegistry:
     __slots__ = ("_hooks",)
 
     def __init__(self) -> None:
-        self._hooks: dict[str, list[PhaseHook]] = {
-            p: [] for p in ALL_PHASES
-        }
+        self._hooks: dict[str, list[PhaseHook]] = {p: [] for p in ALL_PHASES}
 
     def register(self, hook: PhaseHook) -> None:
         """Register a hook. Deduplicates by name within phase."""
@@ -147,7 +145,9 @@ class PhaseHookRegistry:
         hooks.sort(key=lambda h: h.priority)
         logger.debug(
             "Registered hook: %s (phase=%s, priority=%d)",
-            hook.name, phase, hook.priority,
+            hook.name,
+            phase,
+            hook.priority,
         )
 
     def unregister(self, phase: str, name: str) -> bool:

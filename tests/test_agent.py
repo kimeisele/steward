@@ -560,6 +560,7 @@ class TestHealthAnomalyEngineConstraint:
 
         class AnomalyGate:
             """Fake HealthGate that triggers anomaly on first check."""
+
             def __init__(self):
                 self._triggered = False
 
@@ -579,6 +580,7 @@ class TestHealthAnomalyEngineConstraint:
 
         # LLM that keeps requesting tool calls to consume rounds
         from steward.tools.bash import BashTool
+
         reg = ToolRegistry()
         reg.register(BashTool())
         tc = ToolUse(id="call_1", name="bash", parameters={"command": "echo hi"})
@@ -590,7 +592,7 @@ class TestHealthAnomalyEngineConstraint:
             FakeResponse(content="", tool_calls=[tc]),  # round 2 — should be capped here
             FakeResponse(content="", tool_calls=[tc]),  # round 3 — should NOT reach
             FakeResponse(content="", tool_calls=[tc]),  # round 4 — should NOT reach
-            FakeResponse(content="done"),                # final text
+            FakeResponse(content="done"),  # final text
         ]
         llm = FakeLLM(responses)
         conv = Conversation()
@@ -639,6 +641,7 @@ class TestHealthAnomalyEngineConstraint:
 
         class PermanentAnomalyGate:
             """Always reports anomaly — simulates persistent critical health."""
+
             @property
             def health_anomaly(self) -> bool:
                 return True
@@ -652,6 +655,7 @@ class TestHealthAnomalyEngineConstraint:
 
         # LLM that always wants more tool calls
         from steward.tools.bash import BashTool
+
         reg = ToolRegistry()
         reg.register(BashTool())
         tc = ToolUse(id="call_1", name="bash", parameters={"command": "echo hi"})
@@ -749,9 +753,7 @@ class TestToolTimeout:
             llm = FakeLLM(
                 [
                     FakeResponse(
-                        tool_calls=[
-                            ToolUse(id="c1", name="slow_tool", parameters={})
-                        ],
+                        tool_calls=[ToolUse(id="c1", name="slow_tool", parameters={})],
                     ),
                     FakeResponse(content="Timed out."),
                 ]

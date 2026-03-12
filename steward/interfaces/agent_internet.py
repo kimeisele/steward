@@ -71,7 +71,9 @@ def fetch_repo_graph_contracts(
 ) -> dict:
     query = _query(capability_id=capability_id, contract_id=contract_id, version=version)
     suffix = f"?{urllib.parse.urlencode(query)}" if query else ""
-    payload = _request_json(config or load_agent_internet_proxy_config(), f"/v1/lotus/agent-web-repo-graph-contracts{suffix}")
+    payload = _request_json(
+        config or load_agent_internet_proxy_config(), f"/v1/lotus/agent-web-repo-graph-contracts{suffix}"
+    )
     return dict(payload["agent_web_repo_graph_contracts"])
 
 
@@ -85,7 +87,9 @@ def fetch_repo_graph_snapshot(
     limit: int | None = None,
 ) -> dict:
     params = _query(root=root, node_type=node_type, domain=domain, query=query, limit=limit)
-    payload = _request_json(config or load_agent_internet_proxy_config(), f"/v1/lotus/agent-web-repo-graph?{urllib.parse.urlencode(params)}")
+    payload = _request_json(
+        config or load_agent_internet_proxy_config(), f"/v1/lotus/agent-web-repo-graph?{urllib.parse.urlencode(params)}"
+    )
     return dict(payload["agent_web_repo_graph"])
 
 
@@ -124,7 +128,9 @@ def fetch_public_graph(
     heartbeat_source: str | None = None,
 ) -> dict:
     params = _query(root=root, city_id=city_id, assistant_id=assistant_id, heartbeat_source=heartbeat_source)
-    payload = _request_json(config or load_agent_internet_proxy_config(), f"/v1/lotus/agent-web-graph?{urllib.parse.urlencode(params)}")
+    payload = _request_json(
+        config or load_agent_internet_proxy_config(), f"/v1/lotus/agent-web-graph?{urllib.parse.urlencode(params)}"
+    )
     return dict(payload["agent_web_graph"])
 
 
@@ -137,7 +143,9 @@ def fetch_search_index(
     heartbeat_source: str | None = None,
 ) -> dict:
     params = _query(root=root, city_id=city_id, assistant_id=assistant_id, heartbeat_source=heartbeat_source)
-    payload = _request_json(config or load_agent_internet_proxy_config(), f"/v1/lotus/agent-web-index?{urllib.parse.urlencode(params)}")
+    payload = _request_json(
+        config or load_agent_internet_proxy_config(), f"/v1/lotus/agent-web-index?{urllib.parse.urlencode(params)}"
+    )
     return dict(payload["agent_web_index"])
 
 
@@ -159,14 +167,18 @@ def search_index(
         assistant_id=assistant_id,
         heartbeat_source=heartbeat_source,
     )
-    payload = _request_json(config or load_agent_internet_proxy_config(), f"/v1/lotus/agent-web-search?{urllib.parse.urlencode(params)}")
+    payload = _request_json(
+        config or load_agent_internet_proxy_config(), f"/v1/lotus/agent-web-search?{urllib.parse.urlencode(params)}"
+    )
     return dict(payload["agent_web_search"])
 
 
 def fetch_federated_index(*, config: AgentInternetProxyConfig | None = None, index_path: str | None = None) -> dict:
     params = _query(index_path=index_path)
     suffix = f"?{urllib.parse.urlencode(params)}" if params else ""
-    payload = _request_json(config or load_agent_internet_proxy_config(), f"/v1/lotus/agent-web-federated-index{suffix}")
+    payload = _request_json(
+        config or load_agent_internet_proxy_config(), f"/v1/lotus/agent-web-federated-index{suffix}"
+    )
     return dict(payload["agent_web_federated_index"])
 
 
@@ -180,7 +192,10 @@ def search_federated_index(
     wordnet_path: str | None = None,
 ) -> dict:
     params = _query(q=query, limit=limit, index_path=index_path, overlay_path=overlay_path, wordnet_path=wordnet_path)
-    payload = _request_json(config or load_agent_internet_proxy_config(), f"/v1/lotus/agent-web-federated-search?{urllib.parse.urlencode(params)}")
+    payload = _request_json(
+        config or load_agent_internet_proxy_config(),
+        f"/v1/lotus/agent-web-federated-search?{urllib.parse.urlencode(params)}",
+    )
     return dict(payload["agent_web_federated_search"])
 
 

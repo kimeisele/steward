@@ -99,12 +99,14 @@ def _reset_singletons(monkeypatch, tmp_path):
     # Reset ServiceRegistry after every test
     try:
         from vibe_core.di import ServiceRegistry
+
         ServiceRegistry.reset_all()
     except ImportError:
         pass
 
     # Reset GhClient singleton (prevent test contamination)
     from steward.senses.gh import _reset_gh_client
+
     _reset_gh_client()
 
 
@@ -114,6 +116,7 @@ def tmp_dir() -> Generator[Path, None, None]:
     tmpdir = Path(tempfile.mkdtemp(prefix="steward_test_"))
     yield tmpdir
     import shutil
+
     shutil.rmtree(tmpdir, ignore_errors=True)
 
 

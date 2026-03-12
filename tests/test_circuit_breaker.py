@@ -22,9 +22,7 @@ def git_repo(tmp_path: Path) -> Path:
     subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=cwd, capture_output=True)
     subprocess.run(["git", "config", "user.name", "Test"], cwd=cwd, capture_output=True)
     (tmp_path / "code.py").write_text("x = 1\n")
-    (tmp_path / "test_code.py").write_text(
-        "def test_x():\n    from code import x\n    assert x == 1\n"
-    )
+    (tmp_path / "test_code.py").write_text("def test_x():\n    from code import x\n    assert x == 1\n")
     subprocess.run(["git", "add", "."], cwd=cwd, capture_output=True)
     subprocess.run(["git", "commit", "-m", "init"], cwd=cwd, capture_output=True)
     return tmp_path
@@ -60,6 +58,7 @@ class TestGuardedFix:
 
         # Baseline: 0 failures, Post: 1 failure
         call_count = [0]
+
         def mock_count(cmd):
             call_count[0] += 1
             return 0 if call_count[0] == 1 else 1
@@ -82,6 +81,7 @@ class TestGuardedFix:
 
         # Baseline: 2 failures, Post: 1 failure
         call_count = [0]
+
         def mock_count(cmd):
             call_count[0] += 1
             return 2 if call_count[0] == 1 else 1
@@ -113,6 +113,7 @@ class TestSuspension:
             Path(file_path).write_text("broken\n")
 
         call_count = [0]
+
         def mock_count(cmd):
             call_count[0] += 1
             return 0 if call_count[0] % 2 == 1 else 5  # always worse
@@ -134,6 +135,7 @@ class TestSuspension:
 
         # 2 rollbacks (not enough to suspend)
         call_count = [0]
+
         def mock_count(cmd):
             call_count[0] += 1
             return 0 if call_count[0] % 2 == 1 else 5
@@ -156,7 +158,8 @@ class TestCountFailures:
         """Correctly parses 'N failed' from pytest output."""
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = subprocess.CompletedProcess(
-                args=[], returncode=1,
+                args=[],
+                returncode=1,
                 stdout="3 failed, 10 passed",
                 stderr="",
             )
@@ -167,7 +170,8 @@ class TestCountFailures:
         """Returns 0 when all tests pass."""
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = subprocess.CompletedProcess(
-                args=[], returncode=0,
+                args=[],
+                returncode=0,
                 stdout="10 passed",
                 stderr="",
             )
@@ -268,6 +272,7 @@ class TestGuardedLLMFix:
     def _make_agent(self, fake_llm):
         from steward.agent import StewardAgent
         from tests.conftest import track_agent
+
         return track_agent(StewardAgent(provider=fake_llm))
 
     def test_breaker_exists_on_agent(self, fake_llm):
@@ -278,6 +283,7 @@ class TestGuardedLLMFix:
     def test_suspended_breaker_skips_fix(self, fake_llm):
         """When breaker is suspended, LLM is not called."""
         import asyncio
+
         agent = self._make_agent(fake_llm)
         for _ in range(MAX_CONSECUTIVE_ROLLBACKS):
             agent._breaker.record_rollback()
@@ -288,6 +294,7 @@ class TestGuardedLLMFix:
     def test_no_baseline_runs_unguarded(self, fake_llm):
         """When tests can't establish baseline, run LLM unguarded."""
         import asyncio
+
         agent = self._make_agent(fake_llm)
         with patch.object(agent._breaker, "count_failures", return_value=None):
             asyncio.run(agent._autonomy.pipeline.guarded_llm_fix("fix something"))
@@ -297,6 +304,7 @@ class TestGuardedLLMFix:
     def test_no_files_changed_records_success(self, fake_llm):
         """When LLM doesn't change files, record success."""
         import asyncio
+
         agent = self._make_agent(fake_llm)
         with patch.object(agent._breaker, "count_failures", return_value=0):
             with patch.object(agent._breaker, "changed_files", return_value=set()):
@@ -308,22 +316,34 @@ class TestGuardedLLMFix:
         import asyncio
 
         from steward.tools.circuit_breaker import GateResult
+
         agent = self._make_agent(fake_llm)
         call_count = [0]
+
         def mock_count(cmd="pytest -x -q"):
             call_count[0] += 1
             return 0 if call_count[0] == 1 else 3  # baseline=0, post=3
 
         # Gates must pass for tests to even run
-        all_pass = [GateResult(passed=True, gate="lint"), GateResult(passed=True, gate="security"), GateResult(passed=True, gate="blast_radius")]
+        all_pass = [
+            GateResult(passed=True, gate="lint"),
+            GateResult(passed=True, gate="security"),
+            GateResult(passed=True, gate="blast_radius"),
+        ]
 
         with patch.object(agent._breaker, "count_failures", side_effect=mock_count):
-            with patch.object(agent._breaker, "changed_files", side_effect=[
-                set(),  # before: clean
-                {"src/foo.py", "src/bar.py"},  # after: 2 files changed
-            ]):
+            with patch.object(
+                agent._breaker,
+                "changed_files",
+                side_effect=[
+                    set(),  # before: clean
+                    {"src/foo.py", "src/bar.py"},  # after: 2 files changed
+                ],
+            ):
                 with patch.object(agent._breaker, "run_gates", return_value=all_pass):
-                    with patch.object(agent._breaker, "rollback_files", return_value=["src/foo.py", "src/bar.py"]) as mock_rb:
+                    with patch.object(
+                        agent._breaker, "rollback_files", return_value=["src/foo.py", "src/bar.py"]
+                    ) as mock_rb:
                         result = asyncio.run(agent._autonomy.pipeline.guarded_llm_fix("fix the bug"))
         assert result is None  # Fix rejected
         mock_rb.assert_called_once_with({"src/foo.py", "src/bar.py"})
@@ -334,6 +354,7 @@ class TestGuardedLLMFix:
         import asyncio
 
         from steward.tools.circuit_breaker import GateResult
+
         agent = self._make_agent(fake_llm)
 
         # Gates: lint fails
@@ -343,15 +364,20 @@ class TestGuardedLLMFix:
             GateResult(passed=True, gate="blast_radius"),
         ]
         count_calls = [0]
+
         def mock_count(cmd="pytest -x -q"):
             count_calls[0] += 1
             return 0  # baseline always 0
 
         with patch.object(agent._breaker, "count_failures", side_effect=mock_count):
-            with patch.object(agent._breaker, "changed_files", side_effect=[
-                set(),
-                {"src/foo.py"},
-            ]):
+            with patch.object(
+                agent._breaker,
+                "changed_files",
+                side_effect=[
+                    set(),
+                    {"src/foo.py"},
+                ],
+            ):
                 with patch.object(agent._breaker, "run_gates", return_value=gate_results):
                     with patch.object(agent._breaker, "rollback_files", return_value=["src/foo.py"]):
                         result = asyncio.run(agent._autonomy.pipeline.guarded_llm_fix("fix the bug"))
@@ -380,14 +406,14 @@ class TestCheckLint:
         assert result.passed
         assert result.gate == "lint"
 
-    def test_syntax_error_fails(self, tmp_path):
+    def test_new_violation_fails(self, tmp_path):
         self._init_repo(tmp_path)
         f = tmp_path / "bad.py"
         f.write_text("x = 1\n")
         subprocess.run(["git", "add", "."], cwd=str(tmp_path), capture_output=True)
         subprocess.run(["git", "commit", "-m", "init"], cwd=str(tmp_path), capture_output=True)
-        # Now introduce a ruff error
-        f.write_text("x = 1\nif True\n")  # syntax error (missing colon)
+        # Introduce ruff violations (unused imports — always caught)
+        f.write_text("import os\nimport sys\nimport json\nx = 1\n")
         breaker = CircuitBreaker(cwd=str(tmp_path))
         result = breaker.check_lint({"bad.py"})
         assert not result.passed
@@ -529,17 +555,13 @@ class TestCheckTestIntegrity:
     def test_unchanged_tests_pass(self, tmp_path):
         """Tests with same structure before/after → pass."""
         self._init_repo(tmp_path)
-        test_code = (
-            "def test_add():\n    assert 1 + 1 == 2\n\n"
-            "def test_sub():\n    assert 3 - 1 == 2\n"
-        )
+        test_code = "def test_add():\n    assert 1 + 1 == 2\n\ndef test_sub():\n    assert 3 - 1 == 2\n"
         (tmp_path / "test_math.py").write_text(test_code)
         subprocess.run(["git", "add", "."], cwd=str(tmp_path), capture_output=True)
         subprocess.run(["git", "commit", "-m", "init"], cwd=str(tmp_path), capture_output=True)
         # Minor change that doesn't affect structure
         (tmp_path / "test_math.py").write_text(
-            "def test_add():\n    assert 1 + 1 == 2  # verified\n\n"
-            "def test_sub():\n    assert 3 - 1 == 2\n"
+            "def test_add():\n    assert 1 + 1 == 2  # verified\n\ndef test_sub():\n    assert 3 - 1 == 2\n"
         )
         breaker = CircuitBreaker(cwd=str(tmp_path))
         result = breaker.check_test_integrity({"test_math.py"})
@@ -549,15 +571,12 @@ class TestCheckTestIntegrity:
         """Removing a test function → FAIL."""
         self._init_repo(tmp_path)
         (tmp_path / "test_api.py").write_text(
-            "def test_create():\n    assert True\n\n"
-            "def test_delete():\n    assert True\n"
+            "def test_create():\n    assert True\n\ndef test_delete():\n    assert True\n"
         )
         subprocess.run(["git", "add", "."], cwd=str(tmp_path), capture_output=True)
         subprocess.run(["git", "commit", "-m", "init"], cwd=str(tmp_path), capture_output=True)
         # Remove one test function
-        (tmp_path / "test_api.py").write_text(
-            "def test_create():\n    assert True\n"
-        )
+        (tmp_path / "test_api.py").write_text("def test_create():\n    assert True\n")
         breaker = CircuitBreaker(cwd=str(tmp_path))
         result = breaker.check_test_integrity({"test_api.py"})
         assert not result.passed
@@ -566,15 +585,11 @@ class TestCheckTestIntegrity:
     def test_trivial_assert_true_fails(self, tmp_path):
         """Adding `assert True` where real assertions existed → FAIL."""
         self._init_repo(tmp_path)
-        (tmp_path / "test_calc.py").write_text(
-            "def test_divide():\n    assert 10 / 2 == 5\n    assert 6 / 3 == 2\n"
-        )
+        (tmp_path / "test_calc.py").write_text("def test_divide():\n    assert 10 / 2 == 5\n    assert 6 / 3 == 2\n")
         subprocess.run(["git", "add", "."], cwd=str(tmp_path), capture_output=True)
         subprocess.run(["git", "commit", "-m", "init"], cwd=str(tmp_path), capture_output=True)
         # Replace real assertions with trivial ones
-        (tmp_path / "test_calc.py").write_text(
-            "def test_divide():\n    assert True\n    assert True\n"
-        )
+        (tmp_path / "test_calc.py").write_text("def test_divide():\n    assert True\n    assert True\n")
         breaker = CircuitBreaker(cwd=str(tmp_path))
         result = breaker.check_test_integrity({"test_calc.py"})
         assert not result.passed
@@ -583,9 +598,7 @@ class TestCheckTestIntegrity:
     def test_adding_tests_passes(self, tmp_path):
         """Adding new test functions → pass (improvement)."""
         self._init_repo(tmp_path)
-        (tmp_path / "test_new.py").write_text(
-            "def test_one():\n    assert 1 == 1\n"
-        )
+        (tmp_path / "test_new.py").write_text("def test_one():\n    assert 1 == 1\n")
         subprocess.run(["git", "add", "."], cwd=str(tmp_path), capture_output=True)
         subprocess.run(["git", "commit", "-m", "init"], cwd=str(tmp_path), capture_output=True)
         # Add more tests
@@ -611,9 +624,7 @@ class TestCheckTestIntegrity:
         subprocess.run(["git", "add", "."], cwd=str(tmp_path), capture_output=True)
         subprocess.run(["git", "commit", "-m", "init"], cwd=str(tmp_path), capture_output=True)
         # New test file not in HEAD
-        (tmp_path / "test_brand_new.py").write_text(
-            "def test_hello():\n    assert True\n"
-        )
+        (tmp_path / "test_brand_new.py").write_text("def test_hello():\n    assert True\n")
         breaker = CircuitBreaker(cwd=str(tmp_path))
         result = breaker.check_test_integrity({"test_brand_new.py"})
         assert result.passed
@@ -621,9 +632,7 @@ class TestCheckTestIntegrity:
     def test_deleted_test_file_fails(self, tmp_path):
         """Deleting a test file entirely → FAIL."""
         self._init_repo(tmp_path)
-        (tmp_path / "test_core.py").write_text(
-            "def test_core():\n    assert 1 == 1\n"
-        )
+        (tmp_path / "test_core.py").write_text("def test_core():\n    assert 1 == 1\n")
         subprocess.run(["git", "add", "."], cwd=str(tmp_path), capture_output=True)
         subprocess.run(["git", "commit", "-m", "init"], cwd=str(tmp_path), capture_output=True)
         # Delete the test file
@@ -644,9 +653,7 @@ class TestCheckTestIntegrity:
         subprocess.run(["git", "add", "."], cwd=str(tmp_path), capture_output=True)
         subprocess.run(["git", "commit", "-m", "init"], cwd=str(tmp_path), capture_output=True)
         # Drop to 2 assertions (80% loss)
-        (tmp_path / "test_full.py").write_text(
-            "def test_a():\n    assert 1\n    assert 2\n"
-        )
+        (tmp_path / "test_full.py").write_text("def test_a():\n    assert 1\n    assert 2\n")
         breaker = CircuitBreaker(cwd=str(tmp_path))
         result = breaker.check_test_integrity({"test_full.py"})
         assert not result.passed
@@ -752,9 +759,7 @@ class TestCheckCohesion:
     def test_small_class_passes(self, tmp_path):
         """Classes with < 3 methods always pass (trivially cohesive)."""
         (tmp_path / "tiny.py").write_text(
-            "class Tiny:\n"
-            "    def a(self): return self.x\n"
-            "    def b(self): return self.y\n"
+            "class Tiny:\n    def a(self): return self.x\n    def b(self): return self.y\n"
         )
         breaker = CircuitBreaker(cwd=str(tmp_path))
         result = breaker.check_cohesion({"tiny.py"})
@@ -773,9 +778,7 @@ class TestCheckApiSurface:
         """No change to public surface → pass."""
         self._init_repo(tmp_path)
         (tmp_path / "api.py").write_text(
-            "__all__ = ['create_user', 'delete_user']\n\n"
-            "def create_user():\n    pass\n\n"
-            "def delete_user():\n    pass\n"
+            "__all__ = ['create_user', 'delete_user']\n\ndef create_user():\n    pass\n\ndef delete_user():\n    pass\n"
         )
         subprocess.run(["git", "add", "."], cwd=str(tmp_path), capture_output=True)
         subprocess.run(["git", "commit", "-m", "init"], cwd=str(tmp_path), capture_output=True)
@@ -793,17 +796,12 @@ class TestCheckApiSurface:
         """Removing an entry from __all__ → FAIL."""
         self._init_repo(tmp_path)
         (tmp_path / "api.py").write_text(
-            "__all__ = ['create_user', 'delete_user']\n\n"
-            "def create_user():\n    pass\n\n"
-            "def delete_user():\n    pass\n"
+            "__all__ = ['create_user', 'delete_user']\n\ndef create_user():\n    pass\n\ndef delete_user():\n    pass\n"
         )
         subprocess.run(["git", "add", "."], cwd=str(tmp_path), capture_output=True)
         subprocess.run(["git", "commit", "-m", "init"], cwd=str(tmp_path), capture_output=True)
         # Remove delete_user from __all__
-        (tmp_path / "api.py").write_text(
-            "__all__ = ['create_user']\n\n"
-            "def create_user():\n    pass\n"
-        )
+        (tmp_path / "api.py").write_text("__all__ = ['create_user']\n\ndef create_user():\n    pass\n")
         breaker = CircuitBreaker(cwd=str(tmp_path))
         result = breaker.check_api_surface({"api.py"})
         assert not result.passed
@@ -824,10 +822,7 @@ class TestCheckApiSurface:
         subprocess.run(["git", "commit", "-m", "init"], cwd=str(tmp_path), capture_output=True)
         # Remove the health endpoint
         (tmp_path / "views.py").write_text(
-            "from flask import Flask\n"
-            "app = Flask(__name__)\n\n"
-            "@app.route('/users')\n"
-            "def list_users():\n    return []\n"
+            "from flask import Flask\napp = Flask(__name__)\n\n@app.route('/users')\ndef list_users():\n    return []\n"
         )
         breaker = CircuitBreaker(cwd=str(tmp_path))
         result = breaker.check_api_surface({"views.py"})
@@ -838,16 +833,12 @@ class TestCheckApiSurface:
         """Removing 2+ public functions → FAIL."""
         self._init_repo(tmp_path)
         (tmp_path / "utils.py").write_text(
-            "def parse_json():\n    pass\n\n"
-            "def format_date():\n    pass\n\n"
-            "def validate_email():\n    pass\n"
+            "def parse_json():\n    pass\n\ndef format_date():\n    pass\n\ndef validate_email():\n    pass\n"
         )
         subprocess.run(["git", "add", "."], cwd=str(tmp_path), capture_output=True)
         subprocess.run(["git", "commit", "-m", "init"], cwd=str(tmp_path), capture_output=True)
         # Remove 2 public functions
-        (tmp_path / "utils.py").write_text(
-            "def parse_json():\n    pass\n"
-        )
+        (tmp_path / "utils.py").write_text("def parse_json():\n    pass\n")
         breaker = CircuitBreaker(cwd=str(tmp_path))
         result = breaker.check_api_surface({"utils.py"})
         assert not result.passed
@@ -856,16 +847,11 @@ class TestCheckApiSurface:
     def test_removing_single_public_function_passes(self, tmp_path):
         """Removing 1 public function → pass (normal refactoring)."""
         self._init_repo(tmp_path)
-        (tmp_path / "utils.py").write_text(
-            "def parse_json():\n    pass\n\n"
-            "def old_helper():\n    pass\n"
-        )
+        (tmp_path / "utils.py").write_text("def parse_json():\n    pass\n\ndef old_helper():\n    pass\n")
         subprocess.run(["git", "add", "."], cwd=str(tmp_path), capture_output=True)
         subprocess.run(["git", "commit", "-m", "init"], cwd=str(tmp_path), capture_output=True)
         # Remove 1 function — allowed (refactoring)
-        (tmp_path / "utils.py").write_text(
-            "def parse_json():\n    pass\n"
-        )
+        (tmp_path / "utils.py").write_text("def parse_json():\n    pass\n")
         breaker = CircuitBreaker(cwd=str(tmp_path))
         result = breaker.check_api_surface({"utils.py"})
         assert result.passed
@@ -873,15 +859,10 @@ class TestCheckApiSurface:
     def test_adding_public_functions_passes(self, tmp_path):
         """Adding new public API → pass (improvement)."""
         self._init_repo(tmp_path)
-        (tmp_path / "api.py").write_text(
-            "def get_users():\n    pass\n"
-        )
+        (tmp_path / "api.py").write_text("def get_users():\n    pass\n")
         subprocess.run(["git", "add", "."], cwd=str(tmp_path), capture_output=True)
         subprocess.run(["git", "commit", "-m", "init"], cwd=str(tmp_path), capture_output=True)
-        (tmp_path / "api.py").write_text(
-            "def get_users():\n    pass\n\n"
-            "def create_user():\n    pass\n"
-        )
+        (tmp_path / "api.py").write_text("def get_users():\n    pass\n\ndef create_user():\n    pass\n")
         breaker = CircuitBreaker(cwd=str(tmp_path))
         result = breaker.check_api_surface({"api.py"})
         assert result.passed
@@ -895,10 +876,7 @@ class TestCheckApiSurface:
     def test_deleted_source_file_with_public_api_fails(self, tmp_path):
         """Deleting a source file that had public API → FAIL."""
         self._init_repo(tmp_path)
-        (tmp_path / "module.py").write_text(
-            "__all__ = ['important_func']\n\n"
-            "def important_func():\n    return 42\n"
-        )
+        (tmp_path / "module.py").write_text("__all__ = ['important_func']\n\ndef important_func():\n    return 42\n")
         subprocess.run(["git", "add", "."], cwd=str(tmp_path), capture_output=True)
         subprocess.run(["git", "commit", "-m", "init"], cwd=str(tmp_path), capture_output=True)
         (tmp_path / "module.py").unlink()
@@ -913,9 +891,7 @@ class TestCheckApiSurface:
         (tmp_path / "dummy.txt").write_text("init\n")
         subprocess.run(["git", "add", "."], cwd=str(tmp_path), capture_output=True)
         subprocess.run(["git", "commit", "-m", "init"], cwd=str(tmp_path), capture_output=True)
-        (tmp_path / "new_module.py").write_text(
-            "def new_function():\n    pass\n"
-        )
+        (tmp_path / "new_module.py").write_text("def new_function():\n    pass\n")
         breaker = CircuitBreaker(cwd=str(tmp_path))
         result = breaker.check_api_surface({"new_module.py"})
         assert result.passed
@@ -924,16 +900,12 @@ class TestCheckApiSurface:
         """Removing private functions (_prefixed) → pass."""
         self._init_repo(tmp_path)
         (tmp_path / "internal.py").write_text(
-            "def _helper():\n    pass\n\n"
-            "def _internal():\n    pass\n\n"
-            "def public_api():\n    pass\n"
+            "def _helper():\n    pass\n\ndef _internal():\n    pass\n\ndef public_api():\n    pass\n"
         )
         subprocess.run(["git", "add", "."], cwd=str(tmp_path), capture_output=True)
         subprocess.run(["git", "commit", "-m", "init"], cwd=str(tmp_path), capture_output=True)
         # Remove private functions — that's fine
-        (tmp_path / "internal.py").write_text(
-            "def public_api():\n    pass\n"
-        )
+        (tmp_path / "internal.py").write_text("def public_api():\n    pass\n")
         breaker = CircuitBreaker(cwd=str(tmp_path))
         result = breaker.check_api_surface({"internal.py"})
         assert result.passed

@@ -141,7 +141,8 @@ class Marketplace:
             self._total_evictions += 1
             logger.info(
                 "MARKET: expired claim on '%s' by '%s' — evicting",
-                slot_id, existing.agent_id,
+                slot_id,
+                existing.agent_id,
             )
             return self._grant(slot_id, agent_id, trust, now, effective_ttl)
 
@@ -154,7 +155,11 @@ class Marketplace:
             self._total_evictions += 1
             logger.info(
                 "MARKET: '%s' (trust=%.2f) evicts '%s' (trust=%.2f) from '%s'",
-                agent_id, trust, loser, existing.trust_at_claim, slot_id,
+                agent_id,
+                trust,
+                loser,
+                existing.trust_at_claim,
+                slot_id,
             )
             self._grant(slot_id, agent_id, trust, now, effective_ttl)
             return ClaimOutcome(
@@ -207,10 +212,7 @@ class Marketplace:
     def purge_expired(self, now: float | None = None) -> int:
         """Remove all expired claims. Returns count purged."""
         now = now or time.time()
-        expired = [
-            sid for sid, claim in self._claims.items()
-            if claim.is_expired(now)
-        ]
+        expired = [sid for sid, claim in self._claims.items() if claim.is_expired(now)]
         for sid in expired:
             del self._claims[sid]
         if expired:
@@ -226,10 +228,7 @@ class Marketplace:
     def claims_by_agent(self, agent_id: str) -> list[SlotClaim]:
         """All active claims held by a specific agent."""
         now = time.time()
-        return [
-            c for c in self._claims.values()
-            if c.agent_id == agent_id and not c.is_expired(now)
-        ]
+        return [c for c in self._claims.values() if c.agent_id == agent_id and not c.is_expired(now)]
 
     def active_count(self) -> int:
         return len(self.list_claims())

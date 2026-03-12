@@ -168,14 +168,18 @@ class AutonomyEngine:
                 if auto_weight < 0.2:
                     logger.warning(
                         "Hebbian confidence too low (%.2f) for %s:%s — escalating",
-                        auto_weight, intent.name, context,
+                        auto_weight,
+                        intent.name,
+                        context,
                     )
                     self.pipeline.escalate_problem(problem, intent.name, auto_weight)
                     return None
 
                 logger.info(
                     "%s:%s found problem (confidence=%.2f), invoking LLM",
-                    intent.name, context, auto_weight,
+                    intent.name,
+                    context,
+                    auto_weight,
                 )
                 if intent.is_proactive:
                     return await self.pipeline.guarded_pr_fix(problem, intent_name=intent.name)
@@ -214,10 +218,7 @@ class AutonomyEngine:
         else:
             idle_minutes = 0
 
-        active = (
-            task_mgr.list_tasks(status=TaskStatus.PENDING)
-            + task_mgr.list_tasks(status=TaskStatus.IN_PROGRESS)
-        )
+        active = task_mgr.list_tasks(status=TaskStatus.PENDING) + task_mgr.list_tasks(status=TaskStatus.IN_PROGRESS)
         intents = sankalpa.think(
             idle_minutes=idle_minutes,
             pending_intents=len(active),
@@ -229,10 +230,7 @@ class AutonomyEngine:
                 logger.debug("GENESIS: unknown intent_type '%s' — skipping", intent.intent_type)
                 continue
 
-            if any(
-                t.title.startswith(f"[{typed.name}]")
-                for t in active
-            ):
+            if any(t.title.startswith(f"[{typed.name}]") for t in active):
                 continue
 
             _PRIORITY_MAP = {"critical": 90, "high": 70, "medium": 50, "low": 25}

@@ -42,43 +42,55 @@ def emit_startup(tools: list[str], cwd: str) -> None:
 
 def _signal_tool_call(event: AgentEvent, bus: object) -> None:
     from vibe_core.steward.bus import Signal, SignalType
-    bus.emit(Signal(
-        signal_type=SignalType.AGENT_STATUS_UPDATE,
-        source_agent="steward",
-        payload={"action": "tool_call", "tool": event.tool_use.name if event.tool_use else ""},
-    ))
+
+    bus.emit(
+        Signal(
+            signal_type=SignalType.AGENT_STATUS_UPDATE,
+            source_agent="steward",
+            payload={"action": "tool_call", "tool": event.tool_use.name if event.tool_use else ""},
+        )
+    )
 
 
 def _signal_tool_result(event: AgentEvent, bus: object) -> None:
     from vibe_core.steward.bus import Signal, SignalType
+
     success = isinstance(event.content, ToolResult) and event.content.success
-    bus.emit(Signal(
-        signal_type=SignalType.AGENT_STATUS_UPDATE,
-        source_agent="steward",
-        payload={"action": "tool_result", "success": success},
-    ))
+    bus.emit(
+        Signal(
+            signal_type=SignalType.AGENT_STATUS_UPDATE,
+            source_agent="steward",
+            payload={"action": "tool_result", "success": success},
+        )
+    )
 
 
 def _signal_error(event: AgentEvent, bus: object) -> None:
     from vibe_core.steward.bus import Signal, SignalType
-    bus.emit(Signal(
-        signal_type=SignalType.AGENT_ERROR,
-        source_agent="steward",
-        payload={"error": str(event.content)},
-    ))
+
+    bus.emit(
+        Signal(
+            signal_type=SignalType.AGENT_ERROR,
+            source_agent="steward",
+            payload={"error": str(event.content)},
+        )
+    )
 
 
 def _signal_done(event: AgentEvent, bus: object) -> None:
     from vibe_core.steward.bus import Signal, SignalType
+
     payload: dict[str, object] = {"action": "turn_complete"}
     if event.usage:
         payload["tokens"] = event.usage.total_tokens
         payload["tool_calls"] = event.usage.tool_calls
-    bus.emit(Signal(
-        signal_type=SignalType.AGENT_STATUS_UPDATE,
-        source_agent="steward",
-        payload=payload,
-    ))
+    bus.emit(
+        Signal(
+            signal_type=SignalType.AGENT_STATUS_UPDATE,
+            source_agent="steward",
+            payload=payload,
+        )
+    )
 
 
 _SIGNAL_DISPATCH: dict[EventType, object] = {
@@ -104,6 +116,7 @@ def emit_signal(event: AgentEvent) -> None:
 
 def _narada_tool_call(event: AgentEvent, ebus: object) -> None:
     from vibe_core.mahamantra.substrate.event_types import EventType as SubstrateEventType
+
     ebus.emit_sync(
         event_type=SubstrateEventType.ACTION,
         agent_id="steward",
@@ -113,6 +126,7 @@ def _narada_tool_call(event: AgentEvent, ebus: object) -> None:
 
 def _narada_tool_result(event: AgentEvent, ebus: object) -> None:
     from vibe_core.mahamantra.substrate.event_types import EventType as SubstrateEventType
+
     success = isinstance(event.content, ToolResult) and event.content.success
     ebus.emit_sync(
         event_type=SubstrateEventType.ACTION if success else SubstrateEventType.ERROR,
@@ -123,6 +137,7 @@ def _narada_tool_result(event: AgentEvent, ebus: object) -> None:
 
 def _narada_error(event: AgentEvent, ebus: object) -> None:
     from vibe_core.mahamantra.substrate.event_types import EventType as SubstrateEventType
+
     ebus.emit_sync(
         event_type=SubstrateEventType.ERROR,
         agent_id="steward",
@@ -132,6 +147,7 @@ def _narada_error(event: AgentEvent, ebus: object) -> None:
 
 def _narada_text(event: AgentEvent, ebus: object) -> None:
     from vibe_core.mahamantra.substrate.event_types import EventType as SubstrateEventType
+
     ebus.emit_sync(
         event_type=SubstrateEventType.THOUGHT,
         agent_id="steward",

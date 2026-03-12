@@ -211,9 +211,11 @@ def _run_autonomous(cwd: str | None = None) -> None:
         provider = None
 
     if provider is None:
+
         class _NoProvider:
             def invoke(self, **kwargs):
                 raise RuntimeError("No LLM provider configured — cannot execute LLM tasks")
+
             def invoke_stream(self, **kwargs):
                 raise RuntimeError("No LLM provider configured — cannot execute LLM tasks")
 

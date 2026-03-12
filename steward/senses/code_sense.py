@@ -70,7 +70,7 @@ def _compute_lcom4(class_node: ast.ClassDef) -> int:
     methods = list(method_attrs.keys())
     adj: dict[str, set[str]] = {m: set() for m in methods}
     for i, m1 in enumerate(methods):
-        for m2 in methods[i + 1:]:
+        for m2 in methods[i + 1 :]:
             if method_attrs[m1] & method_attrs[m2]:
                 adj[m1].add(m2)
                 adj[m2].add(m1)
@@ -205,12 +205,14 @@ class CodeSense:
                         lcom4 = _compute_lcom4(node)
                         if lcom4 > 1:
                             wmc = _compute_wmc(node)
-                            low_cohesion.append({
-                                "class": node.name,
-                                "file": rel_path,
-                                "lcom4": lcom4,
-                                "wmc": wmc,
-                            })
+                            low_cohesion.append(
+                                {
+                                    "class": node.name,
+                                    "file": rel_path,
+                                    "lcom4": lcom4,
+                                    "wmc": wmc,
+                                }
+                            )
                     elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
                         total_functions += 1
 
@@ -236,10 +238,16 @@ class CodeSense:
         if low_cohesion:
             intensity += min(0.2, len(low_cohesion) * 0.03)
 
-        file_count = len([f for f in py_files if not any(
-            p.startswith(".") or p == "__pycache__" or p in ("venv", ".venv")
-            for p in f.relative_to(self._cwd).parts
-        )])
+        file_count = len(
+            [
+                f
+                for f in py_files
+                if not any(
+                    p.startswith(".") or p == "__pycache__" or p in ("venv", ".venv")
+                    for p in f.relative_to(self._cwd).parts
+                )
+            ]
+        )
 
         return SensePerception(
             sense=Jnanendriya.CAKSU,
@@ -264,4 +272,3 @@ class CodeSense:
         if perception.quality == "tamas":
             return perception.intensity
         return perception.intensity * 0.2
-

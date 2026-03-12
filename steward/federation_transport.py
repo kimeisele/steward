@@ -68,10 +68,7 @@ class FilesystemFederationTransport:
         path = self._inbox / filename
 
         try:
-            serializable = [
-                m if isinstance(m, dict) else {"data": str(m)}
-                for m in messages
-            ]
+            serializable = [m if isinstance(m, dict) else {"data": str(m)} for m in messages]
             path.write_text(json.dumps(serializable, default=str))
             return len(serializable)
         except OSError as e:

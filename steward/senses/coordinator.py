@@ -129,10 +129,7 @@ class SenseCoordinator:
         pain = self._last_perception.total_pain
         if pain > 0.3:
             dominant = self._last_perception.dominant_sense
-            parts.append(
-                f"\nAttention: pain={pain:.1f}"
-                + (f", dominant={dominant.value}" if dominant else "")
-            )
+            parts.append(f"\nAttention: pain={pain:.1f}" + (f", dominant={dominant.value}" if dominant else ""))
 
         return "\n".join(parts)
 
@@ -150,13 +147,15 @@ class SenseCoordinator:
 
     # The 5 Jnanendriyas are Vedic Tattvas — architectural constants, not plugins.
     # BG 3.26.47-52: Sabda, Sparsa, Rupa, Rasa, Gandha — exactly 5, no more, no fewer.
-    _REQUIRED_SENSES = frozenset({
-        Jnanendriya.SROTRA,   # Ear (hears git)
-        Jnanendriya.TVAK,     # Skin (feels project structure)
-        Jnanendriya.CAKSU,    # Eye (sees code)
-        Jnanendriya.JIHVA,    # Tongue (tastes tests)
-        Jnanendriya.GHRANA,   # Nose (smells health)
-    })
+    _REQUIRED_SENSES = frozenset(
+        {
+            Jnanendriya.SROTRA,  # Ear (hears git)
+            Jnanendriya.TVAK,  # Skin (feels project structure)
+            Jnanendriya.CAKSU,  # Eye (sees code)
+            Jnanendriya.JIHVA,  # Tongue (tastes tests)
+            Jnanendriya.GHRANA,  # Nose (smells health)
+        }
+    )
 
     def _boot(self) -> None:
         """Boot all 5 senses — fails hard if any sense is missing."""
@@ -238,4 +237,3 @@ class SenseCoordinator:
             return f"Health: {file_count} source files, clean"
 
         return ""
-

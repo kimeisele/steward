@@ -48,7 +48,10 @@ class ReaperLike(Protocol):
     """Anything that accepts heartbeats and reaps dead peers."""
 
     def record_heartbeat(
-        self, agent_id: str, timestamp: float | None = None, source: str = "",
+        self,
+        agent_id: str,
+        timestamp: float | None = None,
+        source: str = "",
     ) -> None: ...
 
     def reap(self, now: float | None = None) -> list: ...
@@ -59,7 +62,10 @@ class MarketplaceLike(Protocol):
     """Anything that handles slot claims."""
 
     def claim(
-        self, slot_id: str, agent_id: str, trust: float = 0.0,
+        self,
+        slot_id: str,
+        agent_id: str,
+        trust: float = 0.0,
         ttl_s: float | None = None,
     ) -> object: ...
 
@@ -166,13 +172,15 @@ class FederationBridge:
 
         messages = []
         for event in self._outbound:
-            messages.append({
-                "source": self.agent_id,
-                "target": "*",  # broadcast
-                "operation": event.operation,
-                "payload": event.payload,
-                "timestamp": event.timestamp,
-            })
+            messages.append(
+                {
+                    "source": self.agent_id,
+                    "target": "*",  # broadcast
+                    "operation": event.operation,
+                    "payload": event.payload,
+                    "timestamp": event.timestamp,
+                }
+            )
 
         try:
             count = transport.append_to_inbox(messages)
@@ -186,12 +194,14 @@ class FederationBridge:
 
     def emit(self, operation: str, payload: dict) -> None:
         """Queue an outbound event for federation broadcast."""
-        self._outbound.append(BridgeEvent(
-            operation=operation,
-            agent_id=self.agent_id,
-            payload=payload,
-            timestamp=time.time(),
-        ))
+        self._outbound.append(
+            BridgeEvent(
+                operation=operation,
+                agent_id=self.agent_id,
+                payload=payload,
+                timestamp=time.time(),
+            )
+        )
 
     def stats(self) -> dict:
         return {
@@ -224,13 +234,16 @@ class FederationBridge:
         trust = payload.get("trust", 0.0)
         outcome = self.marketplace.claim(slot_id, agent_id, trust=trust)
         # Emit outcome for federation peers to observe
-        self.emit(OP_CLAIM_OUTCOME, {
-            "slot_id": slot_id,
-            "agent_id": agent_id,
-            "granted": getattr(outcome, "granted", False),
-            "holder": getattr(outcome, "holder", ""),
-            "reason": getattr(outcome, "reason", ""),
-        })
+        self.emit(
+            OP_CLAIM_OUTCOME,
+            {
+                "slot_id": slot_id,
+                "agent_id": agent_id,
+                "granted": getattr(outcome, "granted", False),
+                "holder": getattr(outcome, "holder", ""),
+                "reason": getattr(outcome, "reason", ""),
+            },
+        )
         return True
 
     def _handle_release(self, payload: dict) -> bool:

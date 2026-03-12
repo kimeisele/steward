@@ -78,11 +78,7 @@ class IntentHandlers:
         """Deterministic sense scan — 0 tokens."""
         aggregate = self._senses.perceive_all()
         if aggregate.total_pain > 0.7:
-            failing = [
-                f"{j.name}={p.intensity:.2f}"
-                for j, p in aggregate.perceptions.items()
-                if p.quality == "tamas"
-            ]
+            failing = [f"{j.name}={p.intensity:.2f}" for j, p in aggregate.perceptions.items() if p.quality == "tamas"]
             return f"Sense scan critical: total_pain={aggregate.total_pain:.2f}, failing={', '.join(failing)}. Investigate."
         return None
 
@@ -160,18 +156,13 @@ class IntentHandlers:
             bad_modules = [
                 entry
                 for entry in low_cohesion
-                if isinstance(entry, dict)
-                and isinstance(entry.get("lcom4"), (int, float))
-                and entry["lcom4"] > 4
+                if isinstance(entry, dict) and isinstance(entry.get("lcom4"), (int, float)) and entry["lcom4"] > 4
             ]
             if not bad_modules:
                 return None
 
             worst = sorted(bad_modules, key=lambda e: e["lcom4"], reverse=True)[:3]
-            details = ", ".join(
-                f"{e.get('class', '?')} in {e.get('file', '?')} (LCOM4={e['lcom4']})"
-                for e in worst
-            )
+            details = ", ".join(f"{e.get('class', '?')} in {e.get('file', '?')} (LCOM4={e['lcom4']})" for e in worst)
             return (
                 f"Low cohesion modules: {details}. "
                 f"These classes have disconnected responsibilities. "

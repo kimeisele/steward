@@ -31,7 +31,7 @@ from typing import Protocol, runtime_checkable
 # Tick = quantization granularity (64 tokens = finer than 256, preserves DSP precision).
 # Floor/ceiling are tick-derived multiples.
 CBR_TICK = 64
-CBR_FLOOR = CBR_TICK * 8   # 512 — minimum viable output (never starve)
+CBR_FLOOR = CBR_TICK * 8  # 512 — minimum viable output (never starve)
 CBR_CEILING = CBR_TICK * 16  # 1024 — maximum per LLM call
 CBR_SYSTEM_OVERHEAD = 100  # system prompt + tool sigs (constant)
 

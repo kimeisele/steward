@@ -86,14 +86,16 @@ class TestContextTrimming:
             conv.add(Message(role=MessageRole.USER, content="x" * 1000))
 
         before = conv.total_tokens
-        assert before > MAX_INPUT_TOKENS_PER_CALL, \
+        assert before > MAX_INPUT_TOKENS_PER_CALL, (
             f"Setup error: need > {MAX_INPUT_TOKENS_PER_CALL} tokens, got {before}"
+        )
 
         loop._enforce_input_budget()
 
         after = conv.total_tokens
-        assert after <= MAX_INPUT_TOKENS_PER_CALL, \
+        assert after <= MAX_INPUT_TOKENS_PER_CALL, (
             f"Context should be trimmed to <= {MAX_INPUT_TOKENS_PER_CALL}, got {after}"
+        )
 
     def test_trim_preserves_system_message(self):
         """System message is never evicted during trimming."""
@@ -174,40 +176,31 @@ class TestFreeTierOnly:
     def test_no_anthropic_in_chamber(self):
         """Anthropic is a PAID provider. Must not be in default chamber."""
         from steward.provider import build_chamber
+
         chamber = build_chamber()
         stats = chamber.stats()
-        provider_names = [
-            p["name"] for p in stats.get("providers", [])
-            if isinstance(p, dict)
-        ]
-        assert "claude" not in provider_names, \
-            "Anthropic is PAID — must not be in default chamber"
+        provider_names = [p["name"] for p in stats.get("providers", []) if isinstance(p, dict)]
+        assert "claude" not in provider_names, "Anthropic is PAID — must not be in default chamber"
 
     def test_no_deepseek_in_chamber(self):
         """DeepSeek/OpenRouter is PAID. Must not be in default chamber."""
         from steward.provider import build_chamber
+
         chamber = build_chamber()
         stats = chamber.stats()
-        provider_names = [
-            p["name"] for p in stats.get("providers", [])
-            if isinstance(p, dict)
-        ]
-        assert "deepseek" not in provider_names, \
-            "DeepSeek is PAID — must not be in default chamber"
+        provider_names = [p["name"] for p in stats.get("providers", []) if isinstance(p, dict)]
+        assert "deepseek" not in provider_names, "DeepSeek is PAID — must not be in default chamber"
 
     def test_only_free_tier_providers(self):
         """Chamber must contain ONLY: google_flash, mistral, groq."""
         from steward.provider import build_chamber
+
         chamber = build_chamber()
         stats = chamber.stats()
-        provider_names = {
-            p["name"] for p in stats.get("providers", [])
-            if isinstance(p, dict)
-        }
+        provider_names = {p["name"] for p in stats.get("providers", []) if isinstance(p, dict)}
         allowed = {"google_flash", "mistral", "groq"}
         unexpected = provider_names - allowed
-        assert not unexpected, \
-            f"Unexpected providers: {unexpected}. Only free tier allowed."
+        assert not unexpected, f"Unexpected providers: {unexpected}. Only free tier allowed."
 
     def test_anthropic_not_importable_from_provider_init(self):
         """AnthropicAdapter must NOT be importable from steward.provider."""
@@ -226,6 +219,7 @@ class TestDotenvLoading:
 
         # dotenv should load from explicit path
         from dotenv import load_dotenv
+
         load_dotenv(str(env_file))
 
         assert os.environ.get("TEST_STEWARD_KEY") == "test_value_123"

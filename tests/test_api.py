@@ -204,8 +204,13 @@ class TestAgentInternetProxyAPI:
         monkeypatch.setenv("STEWARD_AGENT_INTERNET_BASE_URL", "https://agent.example")
         monkeypatch.setenv("STEWARD_AGENT_INTERNET_TOKEN", "secret")
         monkeypatch.delenv("STEWARD_API_TOKEN", raising=False)
-        monkeypatch.setattr("steward.interfaces.agent_internet.fetch_public_graph", lambda **kwargs: {"kind": "agent_web_public_graph"})
-        monkeypatch.setattr("steward.interfaces.agent_internet.search_index", lambda **kwargs: {"kind": "agent_web_search_results", "results": [{"title": kwargs["query"]}]})
+        monkeypatch.setattr(
+            "steward.interfaces.agent_internet.fetch_public_graph", lambda **kwargs: {"kind": "agent_web_public_graph"}
+        )
+        monkeypatch.setattr(
+            "steward.interfaces.agent_internet.search_index",
+            lambda **kwargs: {"kind": "agent_web_search_results", "results": [{"title": kwargs["query"]}]},
+        )
 
         client = TestClient(create_app())
         public_graph = client.get("/agent-internet/public-graph?root=/repo")
@@ -224,7 +229,10 @@ class TestAgentInternetProxyAPI:
         monkeypatch.setenv("STEWARD_AGENT_INTERNET_BASE_URL", "https://agent.example")
         monkeypatch.setenv("STEWARD_AGENT_INTERNET_TOKEN", "secret")
         monkeypatch.delenv("STEWARD_API_TOKEN", raising=False)
-        monkeypatch.setattr("steward.interfaces.agent_internet.search_federated_index", lambda **kwargs: {"results": [{"source_city_id": "city-b"}]})
+        monkeypatch.setattr(
+            "steward.interfaces.agent_internet.search_federated_index",
+            lambda **kwargs: {"results": [{"source_city_id": "city-b"}]},
+        )
 
         client = TestClient(create_app())
         response = client.get("/agent-internet/federated-search?q=bazaar&limit=2")

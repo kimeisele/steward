@@ -102,6 +102,7 @@ def build_chamber() -> ProviderChamber:
     # Load .env for local development (GitHub Secrets don't help locally)
     try:
         from dotenv import load_dotenv
+
         load_dotenv()  # Loads from .env in cwd or parent dirs
     except ImportError:
         pass  # dotenv optional — env vars from shell profile still work
@@ -111,8 +112,10 @@ def build_chamber() -> ProviderChamber:
     # Cell 1: Google Gemini (FREE)
     google_key = os.environ.get("GOOGLE_API_KEY")
     if google_key and _is_valid_key(google_key):
+
         def _make_google(key=google_key):
             from vibe_core.runtime.providers.google import GoogleProvider
+
             return GoogleAdapter(GoogleProvider(api_key=key))
 
         chamber.add_provider(
@@ -128,8 +131,10 @@ def build_chamber() -> ProviderChamber:
     # Cell 2: Mistral (FREE experiment)
     mistral_key = os.environ.get("MISTRAL_API_KEY")
     if mistral_key and _is_valid_key(mistral_key):
+
         def _make_mistral(key=mistral_key):
             from openai import OpenAI
+
             return MistralAdapter(OpenAI(api_key=key, base_url="https://api.mistral.ai/v1"))
 
         chamber.add_provider(
@@ -147,8 +152,10 @@ def build_chamber() -> ProviderChamber:
     # Cell 3: Groq (FREE — llama-3.3-70b via OpenAI-compat API)
     groq_key = os.environ.get("GROQ_API_KEY")
     if groq_key and _is_valid_key(groq_key):
+
         def _make_groq(key=groq_key):
             from openai import OpenAI
+
             return MistralAdapter(OpenAI(api_key=key, base_url="https://api.groq.com/openai/v1"))
 
         chamber.add_provider(
