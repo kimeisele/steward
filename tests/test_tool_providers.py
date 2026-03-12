@@ -34,7 +34,7 @@ class TestBuiltinToolProvider:
     def test_provides_core_tools(self, tmp_path):
         provider = BuiltinToolProvider()
         tools = provider.provide(str(tmp_path))
-        assert len(tools) == 12
+        assert len(tools) == 13
 
     def test_tool_names(self, tmp_path):
         provider = BuiltinToolProvider()
@@ -48,6 +48,7 @@ class TestBuiltinToolProvider:
         assert "grep" in names
         assert "git" in names
         assert "query_codebase" in names
+        assert "delegate_to_peer" in names
 
     def test_implements_protocol(self):
         provider = BuiltinToolProvider()
@@ -156,7 +157,7 @@ class TestCollectTools:
                 raise RuntimeError("boom")
 
         tools = collect_tools([BrokenProvider(), BuiltinToolProvider()], str(tmp_path))
-        assert len(tools) == 12  # builtin still works
+        assert len(tools) == 13  # builtin still works
 
 
 class TestAgentToolProviders:
@@ -165,6 +166,7 @@ class TestAgentToolProviders:
     def test_discover_reports_providers(self):
         """discover() shows tool_providers in output."""
         import inspect
+
         from steward.agent import StewardAgent
 
         sig = inspect.signature(StewardAgent.__init__)

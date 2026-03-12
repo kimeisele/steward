@@ -152,54 +152,62 @@ class AutonomyEngine:
         logger.info("Dispatching task '%s' (id=%s)", task.title, task.id)
         task_mgr.update_task(task.id, status=TaskStatus.IN_PROGRESS)
 
-        intent = parse_intent_from_title(task.title)
+        # Set task context for delegate_to_peer tool (suspension tracking)
+        from steward.tools.delegate import set_current_task
 
-        # Federated tasks from peers: [FED:source] title → isolated execution + callback
-        if intent is None and task.title.startswith("[FED:"):
-            return await self._execute_federated_task(task, task_mgr, TaskStatus)
-
-        if intent is None:
-            logger.warning("No typed intent in task '%s' — skipping", task.title)
-            task_mgr.update_task(task.id, status=TaskStatus.COMPLETED)
-            return None
+        set_current_task(task.id, task.title)
 
         try:
-            problem = self.dispatch_intent(intent)
-            task_mgr.update_task(task.id, status=TaskStatus.COMPLETED)
+            intent = parse_intent_from_title(task.title)
 
-            self._ledger.record_autonomous(intent.name, problem is not None)
+            # Federated tasks from peers: [FED:source] title → isolated execution + callback
+            if intent is None and task.title.startswith("[FED:"):
+                return await self._execute_federated_task(task, task_mgr, TaskStatus)
 
-            if problem:
-                context = problem_fingerprint(problem)
-                granular_key = f"auto:{intent.name}:{context}" if context else f"auto:{intent.name}"
-                auto_weight = self._synaptic.get_weight(granular_key, "fix")
+            if intent is None:
+                logger.warning("No typed intent in task '%s' — skipping", task.title)
+                task_mgr.update_task(task.id, status=TaskStatus.COMPLETED)
+                return None
 
-                if auto_weight < 0.2:
-                    logger.warning(
-                        "Hebbian confidence too low (%.2f) for %s:%s — escalating",
-                        auto_weight,
+            try:
+                problem = self.dispatch_intent(intent)
+                task_mgr.update_task(task.id, status=TaskStatus.COMPLETED)
+
+                self._ledger.record_autonomous(intent.name, problem is not None)
+
+                if problem:
+                    context = problem_fingerprint(problem)
+                    granular_key = f"auto:{intent.name}:{context}" if context else f"auto:{intent.name}"
+                    auto_weight = self._synaptic.get_weight(granular_key, "fix")
+
+                    if auto_weight < 0.2:
+                        logger.warning(
+                            "Hebbian confidence too low (%.2f) for %s:%s — escalating",
+                            auto_weight,
+                            intent.name,
+                            context,
+                        )
+                        self.pipeline.escalate_problem(problem, intent.name, auto_weight)
+                        return None
+
+                    logger.info(
+                        "%s:%s found problem (confidence=%.2f), invoking LLM",
                         intent.name,
                         context,
+                        auto_weight,
                     )
-                    self.pipeline.escalate_problem(problem, intent.name, auto_weight)
-                    return None
+                    if intent.is_proactive:
+                        return await self.pipeline.guarded_pr_fix(problem, intent_name=intent.name)
+                    return await self.pipeline.guarded_llm_fix(problem, intent_name=intent.name)
 
-                logger.info(
-                    "%s:%s found problem (confidence=%.2f), invoking LLM",
-                    intent.name,
-                    context,
-                    auto_weight,
-                )
-                if intent.is_proactive:
-                    return await self.pipeline.guarded_pr_fix(problem, intent_name=intent.name)
-                return await self.pipeline.guarded_llm_fix(problem, intent_name=intent.name)
-
-            logger.info("Intent %s completed (no issues found)", intent.name)
-            return None
-        except Exception as e:
-            logger.error("Task '%s' failed: %s", task.title, e)
-            task_mgr.update_task(task.id, status=TaskStatus.FAILED)
-            return None
+                logger.info("Intent %s completed (no issues found)", intent.name)
+                return None
+            except Exception as e:
+                logger.error("Task '%s' failed: %s", task.title, e)
+                task_mgr.update_task(task.id, status=TaskStatus.FAILED)
+                return None
+        finally:
+            set_current_task(None)
 
     # ── Intent Dispatch (delegates to IntentHandlers) ──────────────────
 

@@ -133,6 +133,8 @@ class FederationBridge:
             OP_CLAIM_SLOT: self._handle_claim,
             OP_RELEASE_SLOT: self._handle_release,
             OP_DELEGATE_TASK: self._handle_delegate_task,
+            OP_TASK_COMPLETED: self._handle_task_callback,
+            OP_TASK_FAILED: self._handle_task_callback,
         }
 
     def ingest(self, operation: str, payload: dict) -> bool:
@@ -297,5 +299,67 @@ class FederationBridge:
             source,
             title,
             priority,
+        )
+        return True
+
+    def _handle_task_callback(self, payload: dict) -> bool:
+        """Inbound task completion/failure callback from a peer.
+
+        When we delegated a task to a peer, this is their response.
+        Wakes up BLOCKED tasks in TaskManager that match the callback.
+
+        Payload:
+            task_title: str — the original task title we delegated
+            source_agent: str — who completed it (should match target_agent)
+            pr_url: str — PR link if applicable (task_completed only)
+            error: str — error message (task_failed only)
+        """
+        from steward.services import SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
+
+        task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
+        if task_mgr is None:
+            return False
+
+        task_title = payload.get("task_title", "")
+        source_agent = payload.get("source_agent", "unknown")
+        pr_url = payload.get("pr_url", "")
+        error = payload.get("error", "")
+
+        if not task_title:
+            return False
+
+        from vibe_core.task_types import TaskStatus
+
+        # Find BLOCKED tasks that match this callback
+        blocked = task_mgr.list_tasks(status=TaskStatus.BLOCKED)
+        matched = None
+        for task in blocked:
+            desc = getattr(task, "description", "") or ""
+            # Match by delegated task title stored in description
+            if f"delegated:{task_title}" in desc:
+                matched = task
+                break
+
+        if matched is None:
+            logger.debug(
+                "BRIDGE: callback for '%s' from %s — no matching BLOCKED task",
+                task_title,
+                source_agent,
+            )
+            return False
+
+        # Resume the task: BLOCKED → PENDING with result context
+        result_context = f"peer_result:{pr_url}" if pr_url else f"peer_error:{error}" if error else "peer_result:done"
+        task_mgr.update_task(
+            matched.id,
+            status=TaskStatus.PENDING,
+            description=result_context,
+        )
+        logger.info(
+            "BRIDGE: callback from %s resumed task '%s' (result=%s)",
+            source_agent,
+            matched.title,
+            result_context[:80],
         )
         return True
