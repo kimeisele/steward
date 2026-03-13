@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from steward.loop.engine import AgentLoop
 from steward.tools.edit import EditTool
 from steward.tools.read_file import ReadFileTool
