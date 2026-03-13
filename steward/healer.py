@@ -22,9 +22,7 @@ import enum
 import json
 import logging
 import re
-import tokenize
 from dataclasses import dataclass
-from io import StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Awaitable, Callable
 
@@ -717,42 +715,67 @@ def _add_dependency_to_toml(text: str, package: str) -> str:
     return "".join(lines)
 
 
-def _parse_and_apply_patches(response: str, workspace: Path) -> list[str]:
-    """Parse LLM response for ```file:path ... ``` blocks and apply them.
+def _extract_ci_error_summary(finding: "Finding", workspace: Path) -> str:
+    """Deterministically extract a minimal error summary from CI logs.
 
-    Expected format:
-        ```file:src/app.py
-        ...corrected content...
-        ```
-
-    Safety: verifies .py files parse via ast before writing.
-    Only writes to files that already exist in workspace (no file creation).
+    Parses the CI log and returns ONLY the assertion/error line —
+    not the full log, not source files, not pip install output.
+    Typically ~30-50 tokens.
     """
-    changed: list[str] = []
-    # Match ```file:path\n...content...\n```
-    pattern = re.compile(r"```file:([\w/.-]+)\n(.*?)```", re.DOTALL)
+    import subprocess
 
-    for match in pattern.finditer(response):
-        file_path = match.group(1).strip()
-        content = match.group(2)
+    wf_match = re.search(r"workflow '([^']+)'", finding.detail)
+    if not wf_match:
+        return finding.detail
 
-        target = workspace / file_path
-        if not target.exists():
-            continue  # Don't create new files from LLM output
+    try:
+        r = subprocess.run(
+            ["gh", "run", "list", "--workflow", wf_match.group(1),
+             "--status", "failure", "--limit", "1", "--json", "databaseId"],
+            capture_output=True, text=True, timeout=15, cwd=str(workspace),
+        )
+        if r.returncode != 0:
+            return finding.detail
 
-        # Safety: verify .py files parse
-        if file_path.endswith(".py"):
-            try:
-                ast.parse(content, filename=file_path)
-            except SyntaxError:
-                logger.warning("LLM patch for %s has syntax error — skipping", file_path)
-                continue
+        runs = json.loads(r.stdout)
+        if not runs:
+            return finding.detail
 
-        target.write_text(content)
-        changed.append(file_path)
-        logger.info("Applied LLM patch to %s", file_path)
+        r2 = subprocess.run(
+            ["gh", "run", "view", str(runs[0]["databaseId"]), "--log-failed"],
+            capture_output=True, text=True, timeout=30, cwd=str(workspace),
+        )
+        if r2.returncode != 0:
+            return finding.detail
 
-    return changed
+        log = r2.stdout
+    except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+        return finding.detail
+
+    # Extract ONLY the error lines — not the full log
+    lines = log.splitlines()
+    error_lines: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        # Skip timestamp/CI metadata prefix
+        if "\t" in stripped:
+            stripped = stripped.split("\t", 2)[-1].strip()
+        # Capture assertion errors, failures, tracebacks
+        if any(kw in stripped.lower() for kw in (
+            "assert", "error", "failed", "traceback",
+            "raise", "exception",
+        )):
+            # Strip ANSI codes and CI noise
+            clean = re.sub(r"\x1b\[[0-9;]*m", "", stripped)
+            clean = re.sub(r"^##\[.*?\]\s*", "", clean)
+            if clean and len(clean) > 5:
+                error_lines.append(clean)
+
+    if not error_lines:
+        return finding.detail
+
+    # Return max 5 error lines — minimal context
+    return " | ".join(error_lines[:5])
 
 
 # ── PR Body Builder ─────────────────────────────────────────────────────
@@ -811,80 +834,40 @@ class RepoHealer:
     async def _llm_compound_fix(
         self, finding: "Finding", workspace: Path,
     ) -> list[str]:
-        """Phase B of COMPOUND: one gated LLM call with structured I/O.
+        """Phase B of COMPOUND: one LLM call via the agent's tool loop.
 
-        1. Gather context: CI log excerpt + relevant source files
-        2. Build structured prompt demanding ```file:path\\n...``` blocks
-        3. Parse response for file patches
-        4. Apply patches to workspace
-        5. Verify each patched file parses (for .py)
-        Returns list of changed file paths, empty if LLM couldn't fix.
+        The LLM uses the agent's existing tools (read, edit, bash) to
+        investigate and fix. No context dumping, no response parsing.
+        Changes land on disk through tool use. We detect them via git diff.
         """
         import subprocess
 
-        # Step 1: Gather CI log context
-        ci_log = ""
-        wf_match = re.search(r"workflow '([^']+)'", finding.detail)
-        if wf_match:
-            try:
-                r = subprocess.run(
-                    ["gh", "run", "list", "--workflow", wf_match.group(1),
-                     "--status", "failure", "--limit", "1", "--json", "databaseId"],
-                    capture_output=True, text=True, timeout=15, cwd=str(workspace),
-                )
-                if r.returncode == 0:
-                    runs = json.loads(r.stdout)
-                    if runs:
-                        r2 = subprocess.run(
-                            ["gh", "run", "view", str(runs[0]["databaseId"]), "--log-failed"],
-                            capture_output=True, text=True, timeout=30, cwd=str(workspace),
-                        )
-                        ci_log = r2.stdout[-3000:] if r2.returncode == 0 else ""
-            except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
-                pass
+        # Extract the error summary from the CI log deterministically
+        error_summary = _extract_ci_error_summary(finding, workspace)
 
-        # Step 2: Gather relevant source files from error trace
-        source_context = ""
-        file_matches = re.findall(r"([\w/.-]+\.py)", ci_log)
-        seen_files: set[str] = set()
-        for fpath in file_matches[:3]:  # Max 3 files for token budget
-            if fpath in seen_files:
-                continue
-            seen_files.add(fpath)
-            full = workspace / fpath
-            if full.exists():
-                try:
-                    content = full.read_text()[:2000]  # Max 2KB per file
-                    source_context += f"\n--- {fpath} ---\n{content}\n"
-                except OSError:
-                    pass
-
-        if not ci_log and not source_context:
-            return []  # No context → can't ask LLM anything useful
-
-        # Step 3: Structured prompt
-        prompt = (
-            "Fix this CI failure. Return ONLY code blocks in this exact format:\n"
-            "```file:path/to/file.py\n"
-            "...corrected file content...\n"
-            "```\n"
-            "ONE fix. No explanation. No markdown outside code blocks.\n\n"
-            f"CI LOG (last lines):\n{ci_log}\n\n"
-            f"SOURCE FILES:{source_context}\n"
+        # Minimal instruction — the agent has tools, it can read files itself
+        instruction = (
+            f"Fix CI failure in {workspace}. {error_summary}"
         )
 
         try:
-            response = await self._run_fn(prompt)
+            await self._run_fn(instruction)
         except Exception as e:
-            logger.warning("LLM compound call failed: %s", e)
+            logger.warning("LLM compound fix failed: %s", e)
             return []
 
-        if not response:
-            return []
+        # Detect what the LLM changed via git diff
+        try:
+            r = subprocess.run(
+                ["git", "diff", "--name-only"],
+                capture_output=True, text=True, timeout=10, cwd=str(workspace),
+            )
+            if r.returncode == 0 and r.stdout.strip():
+                return [f.strip() for f in r.stdout.strip().split("\n") if f.strip()]
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
 
-        # Step 4: Parse structured response for file patches
-        changed = _parse_and_apply_patches(response, workspace)
-        return changed
+        return []
 
     async def heal_repo(self, workspace: Path) -> HealResult:
         """Run full healing pipeline on an already-cloned repo.
