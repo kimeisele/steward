@@ -54,7 +54,7 @@ class PeerStatus(enum.Enum):
 # fingerprint → trust escalation. Change → trust reset.
 FINGERPRINT_STABLE_THRESHOLD: int = 5
 FINGERPRINT_TRUST_BONUS: float = 0.05  # per stable heartbeat above threshold
-FINGERPRINT_RESET_TRUST: float = 0.3   # trust after fingerprint change
+FINGERPRINT_RESET_TRUST: float = 0.3  # trust after fingerprint change
 
 
 @dataclass
