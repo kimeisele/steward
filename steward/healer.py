@@ -1,27 +1,30 @@
 """
 RepoHealer — Autonomous PR-based repair pipeline.
 
-Bridges DiagnosticSense findings to the FixPipeline:
-  Finding → FixStrategy → deterministic fix (0 tokens) or LLM fix → verify → PR
+Compound AI architecture: all fixes are deterministic (0 LLM tokens).
+The LLM is a semantic router in the control plane — it never touches code.
 
 State machine:
-  DIAGNOSE → TRIAGE → ISOLATE → FIX → VERIFY → PR
-      ↓                                         ↓
-    healthy                                   PR URL
-      ↓                                         ↓
-     skip                                    DISCARD (verify fail)
+  DIAGNOSE → CLASSIFY → FIX (deterministic) → VERIFY (Iron Gate) → PR
+      ↓                                                              ↓
+    healthy                                                       PR URL
+      ↓                                                              ↓
+     skip                                                    DISCARD (gate fail)
 
-One PR per repo. Batch all fixable findings. Deterministic first (0 tokens),
-LLM-assisted only for what code can't solve. 80% infrastructure, 20% LLM.
+Every FindingKind maps to either a deterministic fixer (pure Python, AST-level)
+or SKIP. There is no "send code to LLM" path.
 """
 
 from __future__ import annotations
 
+import ast
 import enum
 import json
 import logging
 import re
+import tokenize
 from dataclasses import dataclass
+from io import StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Awaitable, Callable
 
@@ -58,9 +61,9 @@ _STRATEGY: dict[FindingKind, FixStrategy] = {
     FindingKind.NO_CI: FixStrategy.DETERMINISTIC,
     FindingKind.NO_TESTS: FixStrategy.DETERMINISTIC,
     FindingKind.BROKEN_IMPORT: FixStrategy.DETERMINISTIC,
-    FindingKind.SYNTAX_ERROR: FixStrategy.LLM_ASSISTED,
-    FindingKind.CI_FAILING: FixStrategy.LLM_ASSISTED,
-    FindingKind.CIRCULAR_IMPORT: FixStrategy.LLM_ASSISTED,
+    FindingKind.SYNTAX_ERROR: FixStrategy.DETERMINISTIC,
+    FindingKind.CI_FAILING: FixStrategy.SKIP,  # needs CI-log-parser compound pipeline
+    FindingKind.CIRCULAR_IMPORT: FixStrategy.SKIP,  # no detector yet
     FindingKind.LARGE_FILE: FixStrategy.SKIP,
 }
 
@@ -303,6 +306,101 @@ def _fix_broken_import(finding: "Finding", workspace: Path) -> list[str]:
     return changed
 
 
+@_fixer(FindingKind.SYNTAX_ERROR)
+def _fix_syntax_error(finding: "Finding", workspace: Path) -> list[str]:
+    """Fix common syntax errors via AST error message + token-level patching.
+
+    Handles the most frequent deterministic patterns:
+    - Missing colon after def/class/if/for/while/else/elif/try/except/finally/with
+    - Unmatched brackets/parens
+    - IndentationError (unexpected indent / expected indented block)
+    - f-string backslash (Python <3.12)
+    """
+    if not finding.file:
+        return []
+
+    target = workspace / finding.file
+    if not target.exists():
+        return []
+
+    source = target.read_text()
+    lines = source.splitlines(keepends=True)
+    line_idx = finding.line - 1  # 0-based
+
+    if line_idx < 0 or line_idx >= len(lines):
+        return []
+
+    detail = finding.detail.lower()
+    fixed = False
+
+    # Pattern 1: Missing colon — "expected ':'"
+    if "expected ':'" in detail or "expected ':'":
+        line = lines[line_idx].rstrip("\n\r")
+        # Check if line ends a compound statement without colon
+        stripped = line.rstrip()
+        compound_re = re.compile(
+            r"^\s*(def\s+\w+.*\)|class\s+\w+.*|if\s+.+|elif\s+.+|else|for\s+.+|while\s+.+"
+            r"|try|except.*|finally|with\s+.+)\s*$"
+        )
+        if compound_re.match(stripped) and not stripped.endswith(":"):
+            lines[line_idx] = stripped + ":\n"
+            fixed = True
+
+    # Pattern 2: IndentationError — "expected an indented block"
+    if not fixed and "expected an indented block" in detail:
+        # Insert a `pass` statement after the compound statement
+        if line_idx + 1 <= len(lines):
+            # Determine indent from the previous line + 4 spaces
+            prev = lines[line_idx] if line_idx < len(lines) else ""
+            indent_match = re.match(r"(\s*)", prev)
+            indent = (indent_match.group(1) if indent_match else "") + "    "
+            lines.insert(line_idx + 1, f"{indent}pass\n")
+            fixed = True
+
+    # Pattern 3: Unexpected indent — line has more indent than context
+    if not fixed and "unexpected indent" in detail:
+        line = lines[line_idx]
+        # Dedent to match the previous non-empty line
+        prev_idx = line_idx - 1
+        while prev_idx >= 0 and not lines[prev_idx].strip():
+            prev_idx -= 1
+        if prev_idx >= 0:
+            prev_indent = len(lines[prev_idx]) - len(lines[prev_idx].lstrip())
+            curr_content = line.lstrip()
+            lines[line_idx] = " " * prev_indent + curr_content
+            fixed = True
+
+    # Pattern 4: Unmatched bracket/paren — try adding closing bracket
+    if not fixed and ("was never closed" in detail or "unmatched" in detail):
+        # Find which bracket is unmatched by tokenizing
+        bracket_map = {"(": ")", "[": "]", "{": "}"}
+        line = lines[line_idx].rstrip("\n\r")
+        stack: list[str] = []
+        for ch in line:
+            if ch in bracket_map:
+                stack.append(bracket_map[ch])
+            elif ch in bracket_map.values():
+                if stack and stack[-1] == ch:
+                    stack.pop()
+        if stack:
+            # Append the missing closing brackets at end of line
+            lines[line_idx] = line + "".join(reversed(stack)) + "\n"
+            fixed = True
+
+    if not fixed:
+        return []
+
+    # Verify the fix actually parses
+    new_source = "".join(lines)
+    try:
+        ast.parse(new_source, filename=finding.file)
+    except SyntaxError:
+        return []  # Our fix didn't work — don't write garbage
+
+    target.write_text(new_source)
+    return [finding.file]
+
+
 # ── Helper Functions ────────────────────────────────────────────────────
 
 
@@ -418,8 +516,8 @@ def _build_pr_body(
 class RepoHealer:
     """Stateless per-attempt repo healer.
 
-    Bridges DiagnosticSense findings to FixPipeline:
-    diagnose → classify → deterministic fix → LLM fix → verify → PR.
+    All fixes are deterministic (0 LLM tokens). The pipeline:
+    diagnose → classify → deterministic fix → verify (Iron Gate) → PR.
     """
 
     def __init__(
@@ -436,11 +534,10 @@ class RepoHealer:
         """Run full healing pipeline on an already-cloned repo.
 
         1. Diagnose (0 tokens)
-        2. Classify each finding: deterministic / llm / skip
+        2. Classify each finding: deterministic / skip
         3. Apply deterministic fixes (0 tokens)
-        4. Apply LLM-assisted fixes (targeted prompts)
-        5. Run circuit breaker gates on all changed files
-        6. Gate pass → create PR; gate fail → rollback + Hebbian failure
+        4. Run Iron Gate on all changed files
+        5. Gate pass → create PR; gate fail → rollback + Hebbian failure
         """
         repo_name = workspace.name
 
@@ -455,19 +552,14 @@ class RepoHealer:
             logger.info("Repo %s has no findings — nothing to heal", repo_name)
             return HealResult(repo=repo_name, findings_total=0)
 
-        # Step 2: Classify
+        # Step 2: Classify — deterministic or skip
         fixable = []
-        llm_fixable = []
         for finding in report.findings:
             strategy = classify(finding.kind)
             if strategy == FixStrategy.DETERMINISTIC:
                 fixable.append(finding)
-            elif strategy == FixStrategy.LLM_ASSISTED:
-                llm_fixable.append(finding)
-            # SKIP findings are ignored
 
-        total_fixable = len(fixable) + len(llm_fixable)
-        if total_fixable == 0:
+        if not fixable:
             logger.info("Repo %s: %d findings but none fixable", repo_name, len(report.findings))
             return HealResult(
                 repo=repo_name,
@@ -497,86 +589,66 @@ class RepoHealer:
                 logger.warning("Fixer %s failed: %s", finding.kind.value, e)
                 applied.append((finding, False))
 
-        # Step 4: Apply LLM-assisted fixes (targeted prompts)
-        for finding in llm_fixable:
-            try:
-                prompt = (
-                    f"Fix this issue in {workspace}:\n"
-                    f"File: {finding.file} (line {finding.line})\n"
-                    f"Problem: {finding.detail}\n"
-                    f"Hint: {finding.fix_hint}"
-                )
-                await self._run_fn(prompt)
-                applied.append((finding, True))
-                fixed_count += 1
-            except Exception as e:
-                logger.warning("LLM fix for %s failed: %s", finding.kind.value, e)
-                applied.append((finding, False))
-
-        if not all_changed and fixed_count == 0:
+        if not all_changed:
             return HealResult(
                 repo=repo_name,
                 findings_total=len(report.findings),
-                findings_fixable=total_fixable,
+                findings_fixable=len(fixable),
                 findings_fixed=0,
             )
 
-        # Step 5: Verify via circuit breaker gates
+        # Step 4: Verify via Iron Gate
         changed_set = set(all_changed)
         gate_passed = True
 
-        if changed_set and hasattr(self._pipeline, "_breaker"):
+        if hasattr(self._pipeline, "_breaker"):
             gate_results = self._pipeline._breaker.run_gates(changed_set)
             failed_gates = [g for g in gate_results if not g.passed]
 
             if failed_gates:
                 gate_passed = False
                 details = "; ".join(g.detail for g in failed_gates)
-                logger.warning("Healing gates FAILED for %s: %s", repo_name, details)
+                logger.warning("Iron Gate FAILED for %s: %s", repo_name, details)
 
-                # Rollback all changed files
                 self._pipeline._breaker.rollback_files(changed_set)
                 self._pipeline._breaker.record_rollback()
 
-                # Hebbian failure for each finding kind
-                for finding in fixable + llm_fixable:
+                for finding in fixable:
                     self._synaptic.update(f"heal:{finding.kind.value}:{repo_name}", "fix", success=False)
 
                 return HealResult(
                     repo=repo_name,
                     findings_total=len(report.findings),
-                    findings_fixable=total_fixable,
+                    findings_fixable=len(fixable),
                     findings_fixed=0,
                     error=f"Gate failure: {details}",
                 )
 
-        # Step 6: Gate passed — create PR
+        # Step 5: Gate passed — create PR
         pr_url = ""
-        if changed_set:
-            body = _build_pr_body(applied, gate_passed)
-            pr_url = self._pipeline._create_pr(
-                branch_name=f"steward/heal/{repo_name}",
-                intent_name="HEAL_REPO",
-                problem=f"Healing {repo_name}: {fixed_count} findings fixed",
-                changed_files=changed_set,
-            ) or ""
+        body = _build_pr_body(applied, gate_passed)
+        pr_url = self._pipeline._create_pr(
+            branch_name=f"steward/heal/{repo_name}",
+            intent_name="HEAL_REPO",
+            problem=f"Healing {repo_name}: {fixed_count} findings fixed",
+            changed_files=changed_set,
+        ) or ""
 
-        # Hebbian success for each fixed finding
-        for finding in fixable + llm_fixable:
+        for finding in fixable:
             self._synaptic.update(f"heal:{finding.kind.value}:{repo_name}", "fix", success=True)
 
         logger.info(
             "Healed %s: %d/%d findings fixed, PR=%s",
             repo_name,
             fixed_count,
-            total_fixable,
+            len(fixable),
             pr_url or "(none)",
         )
 
         return HealResult(
             repo=repo_name,
             findings_total=len(report.findings),
-            findings_fixable=total_fixable,
+            findings_fixable=len(fixable),
             findings_fixed=fixed_count,
             pr_url=pr_url,
         )

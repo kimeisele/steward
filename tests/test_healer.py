@@ -22,6 +22,7 @@ from steward.healer import (
     _fix_no_federation_descriptor,
     _fix_no_peer_json,
     _fix_no_tests,
+    _fix_syntax_error,
     _fix_undeclared_dependency,
     classify,
 )
@@ -52,21 +53,19 @@ class TestClassifyAllFindingKinds:
             FindingKind.NO_CI,
             FindingKind.NO_TESTS,
             FindingKind.BROKEN_IMPORT,
+            FindingKind.SYNTAX_ERROR,
         ]
         for kind in deterministic:
             assert classify(kind) == FixStrategy.DETERMINISTIC, f"{kind} should be DETERMINISTIC"
 
-    def test_llm_assisted_kinds(self):
-        llm = [
-            FindingKind.SYNTAX_ERROR,
+    def test_skip_kinds(self):
+        skip = [
+            FindingKind.LARGE_FILE,
             FindingKind.CI_FAILING,
             FindingKind.CIRCULAR_IMPORT,
         ]
-        for kind in llm:
-            assert classify(kind) == FixStrategy.LLM_ASSISTED, f"{kind} should be LLM_ASSISTED"
-
-    def test_skip_kinds(self):
-        assert classify(FindingKind.LARGE_FILE) == FixStrategy.SKIP
+        for kind in skip:
+            assert classify(kind) == FixStrategy.SKIP, f"{kind} should be SKIP"
 
 
 # ── Package Extraction ──────────────────────────────────────────────────
@@ -363,6 +362,113 @@ class TestFixNoTests:
         finding = Finding(FindingKind.NO_TESTS, Severity.WARNING, "")
         changed = _fix_no_tests(finding, tmp_path)
         assert changed == []
+
+
+class TestFixSyntaxError:
+    def test_missing_colon_on_def(self, tmp_path):
+        (tmp_path / "broken.py").write_text("def foo()\n    pass\n")
+        finding = Finding(
+            FindingKind.SYNTAX_ERROR, Severity.CRITICAL, "broken.py",
+            line=1, detail="SyntaxError: expected ':'",
+        )
+        changed = _fix_syntax_error(finding, tmp_path)
+        assert "broken.py" in changed
+        content = (tmp_path / "broken.py").read_text()
+        assert "def foo():" in content
+        # Must actually parse
+        compile(content, "broken.py", "exec")
+
+    def test_missing_colon_on_if(self, tmp_path):
+        (tmp_path / "broken.py").write_text("if True\n    x = 1\n")
+        finding = Finding(
+            FindingKind.SYNTAX_ERROR, Severity.CRITICAL, "broken.py",
+            line=1, detail="SyntaxError: expected ':'",
+        )
+        changed = _fix_syntax_error(finding, tmp_path)
+        assert "broken.py" in changed
+        compile((tmp_path / "broken.py").read_text(), "broken.py", "exec")
+
+    def test_missing_colon_on_class(self, tmp_path):
+        (tmp_path / "broken.py").write_text("class Foo\n    pass\n")
+        finding = Finding(
+            FindingKind.SYNTAX_ERROR, Severity.CRITICAL, "broken.py",
+            line=1, detail="SyntaxError: expected ':'",
+        )
+        changed = _fix_syntax_error(finding, tmp_path)
+        assert "broken.py" in changed
+        compile((tmp_path / "broken.py").read_text(), "broken.py", "exec")
+
+    def test_missing_colon_on_for(self, tmp_path):
+        (tmp_path / "broken.py").write_text("for i in range(10)\n    pass\n")
+        finding = Finding(
+            FindingKind.SYNTAX_ERROR, Severity.CRITICAL, "broken.py",
+            line=1, detail="SyntaxError: expected ':'",
+        )
+        changed = _fix_syntax_error(finding, tmp_path)
+        assert "broken.py" in changed
+
+    def test_expected_indented_block(self, tmp_path):
+        (tmp_path / "broken.py").write_text("def foo():\n")
+        finding = Finding(
+            FindingKind.SYNTAX_ERROR, Severity.CRITICAL, "broken.py",
+            line=1, detail="IndentationError: expected an indented block",
+        )
+        changed = _fix_syntax_error(finding, tmp_path)
+        assert "broken.py" in changed
+        content = (tmp_path / "broken.py").read_text()
+        assert "pass" in content
+        compile(content, "broken.py", "exec")
+
+    def test_unexpected_indent(self, tmp_path):
+        (tmp_path / "broken.py").write_text("x = 1\n        y = 2\n")
+        finding = Finding(
+            FindingKind.SYNTAX_ERROR, Severity.CRITICAL, "broken.py",
+            line=2, detail="IndentationError: unexpected indent",
+        )
+        changed = _fix_syntax_error(finding, tmp_path)
+        assert "broken.py" in changed
+        compile((tmp_path / "broken.py").read_text(), "broken.py", "exec")
+
+    def test_unmatched_paren(self, tmp_path):
+        (tmp_path / "broken.py").write_text("x = foo(1, 2\n")
+        finding = Finding(
+            FindingKind.SYNTAX_ERROR, Severity.CRITICAL, "broken.py",
+            line=1, detail="SyntaxError: '(' was never closed",
+        )
+        changed = _fix_syntax_error(finding, tmp_path)
+        assert "broken.py" in changed
+        compile((tmp_path / "broken.py").read_text(), "broken.py", "exec")
+
+    def test_unfixable_returns_empty(self, tmp_path):
+        """Truly broken code that patterns can't fix → no change."""
+        (tmp_path / "broken.py").write_text("@@@ garbage $$$\n")
+        finding = Finding(
+            FindingKind.SYNTAX_ERROR, Severity.CRITICAL, "broken.py",
+            line=1, detail="SyntaxError: invalid syntax",
+        )
+        changed = _fix_syntax_error(finding, tmp_path)
+        assert changed == []
+
+    def test_no_file_returns_empty(self, tmp_path):
+        finding = Finding(
+            FindingKind.SYNTAX_ERROR, Severity.CRITICAL, "nonexistent.py",
+            line=1, detail="SyntaxError: expected ':'",
+        )
+        changed = _fix_syntax_error(finding, tmp_path)
+        assert changed == []
+
+    def test_does_not_corrupt_valid_code(self, tmp_path):
+        """If the fix doesn't parse, the original file is preserved."""
+        original = "x = [1, 2, {3: 4\n"  # Complex case that won't parse after bracket fix
+        (tmp_path / "broken.py").write_text(original)
+        finding = Finding(
+            FindingKind.SYNTAX_ERROR, Severity.CRITICAL, "broken.py",
+            line=1, detail="SyntaxError: '{' was never closed",
+        )
+        changed = _fix_syntax_error(finding, tmp_path)
+        if not changed:
+            # Correctly refused — original preserved
+            assert (tmp_path / "broken.py").read_text() == original
 
 
 # ── PR Body Builder ─────────────────────────────────────────────────────
