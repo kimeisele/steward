@@ -37,6 +37,7 @@ class TaskIntent(enum.Enum):
     # Reactive — federation monitoring
     FEDERATION_HEALTH = "federation_health"
     CROSS_REPO_DIAGNOSTIC = "cross_repo_diagnostic"
+    HEAL_REPO = "heal_repo"
 
     # Proactive — improvements via feature branch + PR
     UPDATE_DEPS = "update_deps"
@@ -59,7 +60,7 @@ class TaskIntent(enum.Enum):
         return None
 
 
-_PROACTIVE_INTENTS = frozenset({TaskIntent.UPDATE_DEPS, TaskIntent.REMOVE_DEAD_CODE})
+_PROACTIVE_INTENTS = frozenset({TaskIntent.UPDATE_DEPS, TaskIntent.REMOVE_DEAD_CODE, TaskIntent.HEAL_REPO})
 
 
 # Metadata key used in TaskManager tasks to store the intent type

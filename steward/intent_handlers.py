@@ -52,6 +52,7 @@ class IntentHandlers:
             TaskIntent.CI_CHECK: self.execute_ci_check,
             TaskIntent.FEDERATION_HEALTH: self.execute_federation_health,
             TaskIntent.CROSS_REPO_DIAGNOSTIC: self.execute_cross_repo_diagnostic,
+            TaskIntent.HEAL_REPO: self.execute_heal_repo,
             TaskIntent.UPDATE_DEPS: self.execute_update_deps,
             TaskIntent.REMOVE_DEAD_CODE: self.execute_remove_dead_code,
         }
@@ -207,6 +208,21 @@ class IntentHandlers:
         if problems:
             return f"Federation degraded: {'; '.join(problems)}. Check transport connectivity."
         return None
+
+    def execute_heal_repo(self) -> str | None:
+        """Deterministic heal check — 0 tokens.
+
+        Detection only: returns problem string if degraded peers found.
+        Actual healing is dispatched by AutonomyEngine._execute_heal_repo().
+        """
+        reaper = ServiceRegistry.get(SVC_REAPER)
+        if reaper is None:
+            return None
+        degraded = reaper.suspect_peers() + reaper.dead_peers()
+        if not degraded:
+            return None
+        peer_ids = [p.agent_id for p in degraded[:5]]
+        return f"Degraded peers requiring healing: {', '.join(peer_ids)}"
 
     def execute_cross_repo_diagnostic(self) -> str | None:
         """Deterministic cross-repo diagnostic — 0 tokens.
