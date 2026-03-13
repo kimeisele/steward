@@ -18,6 +18,7 @@ from steward.healer import (
     _build_pr_body,
     _extract_package_from_finding,
     _fix_broken_import,
+    _fix_circular_import,
     _fix_no_ci,
     _fix_no_federation_descriptor,
     _fix_no_peer_json,
@@ -54,18 +55,18 @@ class TestClassifyAllFindingKinds:
             FindingKind.NO_TESTS,
             FindingKind.BROKEN_IMPORT,
             FindingKind.SYNTAX_ERROR,
+            FindingKind.CIRCULAR_IMPORT,
         ]
         for kind in deterministic:
             assert classify(kind) == FixStrategy.DETERMINISTIC, f"{kind} should be DETERMINISTIC"
 
+    def test_compound_kinds(self):
+        compound = [FindingKind.CI_FAILING]
+        for kind in compound:
+            assert classify(kind) == FixStrategy.COMPOUND, f"{kind} should be COMPOUND"
+
     def test_skip_kinds(self):
-        skip = [
-            FindingKind.LARGE_FILE,
-            FindingKind.CI_FAILING,
-            FindingKind.CIRCULAR_IMPORT,
-        ]
-        for kind in skip:
-            assert classify(kind) == FixStrategy.SKIP, f"{kind} should be SKIP"
+        assert classify(FindingKind.LARGE_FILE) == FixStrategy.SKIP
 
 
 # ── Package Extraction ──────────────────────────────────────────────────
@@ -469,6 +470,80 @@ class TestFixSyntaxError:
         if not changed:
             # Correctly refused — original preserved
             assert (tmp_path / "broken.py").read_text() == original
+
+
+class TestFixCircularImport:
+    def test_guards_circular_import(self, tmp_path):
+        """A→B→A cycle: B's import of A moves behind TYPE_CHECKING."""
+        pkg = tmp_path / "pkg"
+        pkg.mkdir()
+        (pkg / "__init__.py").write_text("")
+        (pkg / "a.py").write_text("from pkg.b import helper\n\ndef greet():\n    return 'hi'\n")
+        (pkg / "b.py").write_text("from pkg.a import greet\n\ndef helper():\n    return greet()\n")
+
+        finding = Finding(
+            FindingKind.CIRCULAR_IMPORT, Severity.WARNING, "pkg/b.py",
+            detail="Circular import: pkg/a.py → pkg/b.py → pkg/a.py",
+            fix_hint="Break cycle by moving imports in pkg/b.py behind TYPE_CHECKING guard",
+        )
+        changed = _fix_circular_import(finding, tmp_path)
+        assert "pkg/b.py" in changed
+
+        content = (tmp_path / "pkg" / "b.py").read_text()
+        assert "TYPE_CHECKING" in content
+        assert "from __future__ import annotations" in content
+        # Must still parse
+        compile(content, "b.py", "exec")
+
+    def test_skips_if_no_cycle_imports_found(self, tmp_path):
+        (tmp_path / "clean.py").write_text("x = 1\n")
+        finding = Finding(
+            FindingKind.CIRCULAR_IMPORT, Severity.WARNING, "clean.py",
+            detail="Circular import: a.py → b.py → a.py",
+        )
+        changed = _fix_circular_import(finding, tmp_path)
+        assert changed == []
+
+    def test_no_file_returns_empty(self, tmp_path):
+        finding = Finding(
+            FindingKind.CIRCULAR_IMPORT, Severity.WARNING, "missing.py",
+            detail="Circular import: a.py → missing.py → a.py",
+        )
+        changed = _fix_circular_import(finding, tmp_path)
+        assert changed == []
+
+
+class TestDetectCircularImports:
+    """Integration test: diagnostic_sense detects circular imports."""
+
+    def test_detects_cycle(self, tmp_path):
+        from steward.senses.diagnostic_sense import diagnose_repo
+
+        pkg = tmp_path / "pkg"
+        pkg.mkdir()
+        (pkg / "__init__.py").write_text("")
+        (pkg / "a.py").write_text("from pkg.b import helper\ndef greet(): pass\n")
+        (pkg / "b.py").write_text("from pkg.a import greet\ndef helper(): pass\n")
+        (tmp_path / "pyproject.toml").write_text("[project]\ndependencies = []\n")
+
+        report = diagnose_repo(str(tmp_path))
+        circular = [f for f in report.findings if f.kind == FindingKind.CIRCULAR_IMPORT]
+        assert len(circular) >= 1
+        assert "Circular import" in circular[0].detail
+
+    def test_no_cycle_when_clean(self, tmp_path):
+        from steward.senses.diagnostic_sense import diagnose_repo
+
+        pkg = tmp_path / "pkg"
+        pkg.mkdir()
+        (pkg / "__init__.py").write_text("")
+        (pkg / "a.py").write_text("x = 1\n")
+        (pkg / "b.py").write_text("from pkg.a import x\n")
+        (tmp_path / "pyproject.toml").write_text("[project]\ndependencies = []\n")
+
+        report = diagnose_repo(str(tmp_path))
+        circular = [f for f in report.findings if f.kind == FindingKind.CIRCULAR_IMPORT]
+        assert len(circular) == 0
 
 
 # ── PR Body Builder ─────────────────────────────────────────────────────
