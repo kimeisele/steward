@@ -612,24 +612,29 @@ def _analyze_ci(repo_path: Path) -> tuple[list[Finding], tuple[CIStatus, ...], s
         )
         if result.returncode == 0 and result.stdout.strip():
             runs = json.loads(result.stdout)
+            seen_workflows: set[str] = set()
             for run in runs:
+                wf_name = run.get("name", "")
                 ci_statuses.append(
                     CIStatus(
-                        workflow=run.get("name", ""),
+                        workflow=wf_name,
                         conclusion=run.get("conclusion", ""),
                         status=run.get("status", ""),
                     )
                 )
-                if run.get("conclusion") == "failure":
-                    findings.append(
-                        Finding(
-                            kind=FindingKind.CI_FAILING,
-                            severity=Severity.CRITICAL,
-                            file="",
-                            detail=f"CI workflow '{run.get('name', '?')}' is failing",
-                            fix_hint=f"Run 'gh run view' to see failure details, then fix the failing tests/lint",
+                # Only flag the MOST RECENT run of each workflow
+                if wf_name not in seen_workflows:
+                    seen_workflows.add(wf_name)
+                    if run.get("conclusion") == "failure":
+                        findings.append(
+                            Finding(
+                                kind=FindingKind.CI_FAILING,
+                                severity=Severity.CRITICAL,
+                                file="",
+                                detail=f"CI workflow '{wf_name}' is failing",
+                                fix_hint="Run 'gh run view' to see failure details, then fix the failing tests/lint",
+                            )
                         )
-                    )
     except (subprocess.TimeoutExpired, FileNotFoundError, json.JSONDecodeError) as e:
         ci_error = str(e)[:200]
 
