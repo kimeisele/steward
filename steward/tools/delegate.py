@@ -109,10 +109,12 @@ class DelegateToPeerTool(Tool):
 
         # Filter by capability if requested
         if capability:
-            # PeerRecord doesn't track capabilities yet — for now, just
-            # select by trust. When peer heartbeats include capabilities,
-            # this filter will activate.
-            logger.debug("Capability filter '%s' requested (not yet implemented in PeerRecord)", capability)
+            peers = [p for p in peers if capability in getattr(p, "capabilities", ())]
+            if not peers:
+                return ToolResult(
+                    success=False,
+                    error=f"No peers with capability '{capability}'",
+                )
 
         # Select highest-trust peer
         best = max(peers, key=lambda p: p.trust)

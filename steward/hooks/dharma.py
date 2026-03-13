@@ -121,6 +121,36 @@ class DharmaFederationHook(BasePhaseHook):
     def priority(self) -> int:
         return 50
 
+    _capabilities: tuple[str, ...] | None = None
+    _identity: object | None = None
+
+    def _get_capabilities(self) -> tuple[str, ...]:
+        """Load capabilities from peer.json once, cache for session."""
+        if self._capabilities is not None:
+            return self._capabilities
+        import json
+        from pathlib import Path
+
+        peer_path = Path("data/federation/peer.json")
+        if peer_path.exists():
+            try:
+                data = json.loads(peer_path.read_text())
+                self._capabilities = tuple(data.get("capabilities", []))
+            except (json.JSONDecodeError, OSError):
+                self._capabilities = ()
+        else:
+            self._capabilities = ()
+        return self._capabilities
+
+    def _get_identity(self) -> object:
+        """Load identity once, cache for session."""
+        if self._identity is not None:
+            return self._identity
+        from steward.identity import StewardIdentity
+
+        self._identity = StewardIdentity.from_environment()
+        return self._identity
+
     def execute(self, ctx: PhaseContext) -> None:
         federation = ServiceRegistry.get(SVC_FEDERATION)
         if federation is None:
@@ -128,12 +158,17 @@ class DharmaFederationHook(BasePhaseHook):
         from steward.federation import OP_HEARTBEAT
 
         v = ctx.vedana
+        identity = self._get_identity()
         federation.emit(
             OP_HEARTBEAT,
             {
                 "agent_id": federation.agent_id,
                 "health": v.health if v is not None else 0.0,
                 "timestamp": time.time(),
+                "capabilities": list(self._get_capabilities()),
+                "repo": identity.repo,
+                "version": identity.version,
+                "fingerprint": identity.fingerprint,
             },
         )
         # Git pull before reading — fetch latest messages from remote

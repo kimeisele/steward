@@ -51,6 +51,7 @@ class IntentHandlers:
             TaskIntent.SENSE_SCAN: self.execute_sense_scan,
             TaskIntent.CI_CHECK: self.execute_ci_check,
             TaskIntent.FEDERATION_HEALTH: self.execute_federation_health,
+            TaskIntent.CROSS_REPO_DIAGNOSTIC: self.execute_cross_repo_diagnostic,
             TaskIntent.UPDATE_DEPS: self.execute_update_deps,
             TaskIntent.REMOVE_DEAD_CODE: self.execute_remove_dead_code,
         }
@@ -175,7 +176,7 @@ class IntentHandlers:
     def execute_federation_health(self) -> str | None:
         """Deterministic federation health check — 0 tokens.
 
-        Monitors: dead peers, outbox backlog, transport errors.
+        Monitors: dead peers, outbox backlog, transport errors, capability coverage.
         """
         reaper = ServiceRegistry.get(SVC_REAPER)
         federation = ServiceRegistry.get(SVC_FEDERATION)
@@ -187,6 +188,15 @@ class IntentHandlers:
             if dead:
                 problems.append(f"{len(dead)} dead peer(s): {[p.agent_id for p in dead]}")
 
+            # Capability coverage: check critical capabilities have alive coverage
+            # Only relevant when peers exist — empty federation is not degraded
+            alive = reaper.alive_peers()
+            if alive:
+                critical_capabilities = ("code_analysis", "task_execution", "ci_automation")
+                for cap in critical_capabilities:
+                    if not any(cap in getattr(p, "capabilities", ()) for p in alive):
+                        problems.append(f"no alive peer with capability '{cap}'")
+
         if federation is not None:
             stats = federation.stats()
             if stats["outbound_pending"] > 10:
@@ -197,3 +207,27 @@ class IntentHandlers:
         if problems:
             return f"Federation degraded: {'; '.join(problems)}. Check transport connectivity."
         return None
+
+    def execute_cross_repo_diagnostic(self) -> str | None:
+        """Deterministic cross-repo diagnostic — 0 tokens.
+
+        Checks degraded peers (SUSPECT/DEAD) and runs diagnostic sense if available.
+        """
+        reaper = ServiceRegistry.get(SVC_REAPER)
+        if reaper is None:
+            return None
+
+        degraded = reaper.suspect_peers() + reaper.dead_peers()
+        if not degraded:
+            return None
+
+        # Report degraded peers for diagnostic follow-up
+        details = []
+        for peer in degraded[:5]:  # Limit to top 5
+            details.append(
+                f"{peer.agent_id} (status={peer.status.value}, trust={peer.trust:.2f})"
+            )
+        return (
+            f"Degraded peers requiring diagnostic: {', '.join(details)}. "
+            f"Run diagnostic sense on their repos to identify issues."
+        )

@@ -85,6 +85,11 @@ OP_CLAIM_OUTCOME = "claim_outcome"
 OP_DELEGATE_TASK = "delegate_task"
 OP_TASK_COMPLETED = "task_completed"
 OP_TASK_FAILED = "task_failed"
+OP_DIAGNOSTIC_REQUEST = "diagnostic_request"
+OP_DIAGNOSTIC_REPORT = "diagnostic_report"
+
+# Minimum trust level to accept inbound delegations
+DEFAULT_DELEGATION_TRUST_FLOOR: float = 0.3
 
 
 @dataclass(frozen=True)
@@ -120,11 +125,13 @@ class FederationBridge:
     reaper: ReaperLike | None = None
     marketplace: MarketplaceLike | None = None
     agent_id: str = "steward"  # our identity in federation messages
+    delegation_trust_floor: float = DEFAULT_DELEGATION_TRUST_FLOOR
 
     _outbound: list[BridgeEvent] = field(default_factory=list)
     _inbound_count: int = field(default=0, init=False)
     _outbound_count: int = field(default=0, init=False)
     _errors: int = field(default=0, init=False)
+    _delegations_rejected: int = field(default=0, init=False)
     _op_dispatch: dict = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -218,6 +225,7 @@ class FederationBridge:
             "outbound_published": self._outbound_count,
             "outbound_pending": len(self._outbound),
             "errors": self._errors,
+            "delegations_rejected": self._delegations_rejected,
         }
 
     # ── Private Handlers ──────────────────────────────────────────
@@ -230,7 +238,16 @@ class FederationBridge:
             return False
         ts = payload.get("timestamp")
         source = payload.get("source", "federation")
-        self.reaper.record_heartbeat(agent_id, timestamp=ts, source=source)
+        capabilities = payload.get("capabilities")
+        fingerprint = payload.get("fingerprint", "")
+        caps = tuple(capabilities) if isinstance(capabilities, list) else ()
+        self.reaper.record_heartbeat(
+            agent_id,
+            timestamp=ts,
+            source=source,
+            capabilities=caps,
+            fingerprint=fingerprint,
+        )
         return True
 
     def _handle_claim(self, payload: dict) -> bool:
@@ -268,6 +285,7 @@ class FederationBridge:
     def _handle_delegate_task(self, payload: dict) -> bool:
         """Inbound task delegation from a peer agent.
 
+        Trust-gated: rejects delegations from peers below trust floor.
         Pushes the task into the local TaskManager queue. KARMA phase
         will pick it up and dispatch it like any other autonomous task.
 
@@ -292,6 +310,20 @@ class FederationBridge:
         source = payload.get("source_agent", "unknown")
         priority = payload.get("priority", 50)
         repo = payload.get("repo", "")
+
+        # Trust gate: reject delegations from untrusted peers
+        if self.reaper is not None and source != "unknown":
+            peer = self.reaper.get_peer(source) if hasattr(self.reaper, "get_peer") else None
+            if peer is not None and peer.trust < self.delegation_trust_floor:
+                self._delegations_rejected += 1
+                logger.warning(
+                    "BRIDGE: delegation REJECTED from %s (trust=%.2f < floor=%.2f): '%s'",
+                    source,
+                    peer.trust,
+                    self.delegation_trust_floor,
+                    title,
+                )
+                return False
 
         # Prefix with source for traceability
         full_title = f"[FED:{source}] {title}"
