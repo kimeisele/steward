@@ -50,6 +50,13 @@ class PeerStatus(enum.Enum):
     EVICTED = "evicted"  # trust = 0, purged
 
 
+# Fingerprint stability threshold: N consecutive heartbeats with same
+# fingerprint → trust escalation. Change → trust reset.
+FINGERPRINT_STABLE_THRESHOLD: int = 5
+FINGERPRINT_TRUST_BONUS: float = 0.05  # per stable heartbeat above threshold
+FINGERPRINT_RESET_TRUST: float = 0.3   # trust after fingerprint change
+
+
 @dataclass
 class PeerRecord:
     """Tracked federation peer."""
@@ -61,6 +68,9 @@ class PeerRecord:
     heartbeat_count: int = 0
     first_seen: float = 0.0
     source: str = ""  # where heartbeats come from (e.g., "agent-internet", "nadi")
+    capabilities: tuple[str, ...] = ()  # union of all capabilities announced
+    fingerprint: str = ""  # identity fingerprint for fork detection
+    fingerprint_stable_count: int = 0  # consecutive heartbeats with same fingerprint
 
     def to_dict(self) -> dict:
         return {
@@ -71,10 +81,14 @@ class PeerRecord:
             "heartbeat_count": self.heartbeat_count,
             "first_seen": self.first_seen,
             "source": self.source,
+            "capabilities": list(self.capabilities),
+            "fingerprint": self.fingerprint,
+            "fingerprint_stable_count": self.fingerprint_stable_count,
         }
 
     @classmethod
     def from_dict(cls, data: dict) -> PeerRecord:
+        caps = data.get("capabilities", [])
         return cls(
             agent_id=data["agent_id"],
             last_seen=data.get("last_seen", 0.0),
@@ -83,6 +97,9 @@ class PeerRecord:
             heartbeat_count=data.get("heartbeat_count", 0),
             first_seen=data.get("first_seen", 0.0),
             source=data.get("source", ""),
+            capabilities=tuple(caps) if isinstance(caps, list) else (),
+            fingerprint=data.get("fingerprint", ""),
+            fingerprint_stable_count=data.get("fingerprint_stable_count", 0),
         )
 
 
@@ -161,14 +178,19 @@ class HeartbeatReaper:
         agent_id: str,
         timestamp: float | None = None,
         source: str = "",
+        capabilities: tuple[str, ...] | list[str] | None = None,
+        fingerprint: str = "",
     ) -> PeerRecord:
         """Record a heartbeat from a federation peer.
 
         Creates new peer record if first contact.
         Refreshes lease and restores to ALIVE if previously SUSPECT/DEAD.
         Trust is NOT restored on heartbeat — it must be earned back gradually.
+        Capabilities are merged (union) on each heartbeat.
+        Fingerprint change resets trust (fork/impersonation detection).
         """
         now = timestamp if timestamp is not None else time.time()
+        caps = tuple(capabilities) if capabilities else ()
 
         if agent_id in self._peers:
             peer = self._peers[agent_id]
@@ -176,6 +198,33 @@ class HeartbeatReaper:
             peer.heartbeat_count += 1
             if source:
                 peer.source = source
+
+            # Merge capabilities (union, not replace)
+            if caps:
+                existing = set(peer.capabilities)
+                existing.update(caps)
+                peer.capabilities = tuple(sorted(existing))
+
+            # Fingerprint tracking — fork detection
+            if fingerprint:
+                if peer.fingerprint and peer.fingerprint != fingerprint:
+                    # Fingerprint changed! Possible fork/impersonation
+                    old_trust = peer.trust
+                    peer.trust = FINGERPRINT_RESET_TRUST
+                    peer.fingerprint_stable_count = 0
+                    logger.warning(
+                        "REAPER: peer '%s' fingerprint CHANGED (trust %.2f→%.2f) — possible fork",
+                        agent_id,
+                        old_trust,
+                        peer.trust,
+                    )
+                else:
+                    peer.fingerprint_stable_count += 1
+                    # Trust escalation for stable fingerprint
+                    if peer.fingerprint_stable_count >= FINGERPRINT_STABLE_THRESHOLD:
+                        peer.trust = min(1.0, peer.trust + FINGERPRINT_TRUST_BONUS)
+                peer.fingerprint = fingerprint
+
             # Resurrect: SUSPECT/DEAD → ALIVE (but trust stays degraded)
             if peer.status in (PeerStatus.SUSPECT, PeerStatus.DEAD):
                 old = peer.status.value
@@ -197,6 +246,9 @@ class HeartbeatReaper:
                 heartbeat_count=1,
                 first_seen=now,
                 source=source,
+                capabilities=tuple(sorted(caps)) if caps else (),
+                fingerprint=fingerprint,
+                fingerprint_stable_count=1 if fingerprint else 0,
             )
             self._peers[agent_id] = peer
             logger.info("REAPER: new peer '%s' registered (trust=%.2f)", agent_id, INITIAL_TRUST)

@@ -1,0 +1,38 @@
+name: Publish Federation Authority Feed
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/authority/**'
+      - '.well-known/agent-federation.json'
+      - 'scripts/export_authority_feed.py'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Export authority feed
+        run: python scripts/export_authority_feed.py --output-dir .authority-feed-out --repo-id steward
+
+      - name: Publish to authority-feed branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan authority-feed-tmp
+          git rm -rf .
+          cp -r .authority-feed-out/* .
+          git add .
+          git commit -m "authority-feed: $(git rev-parse --short HEAD~0 2>/dev/null || echo 'initial')"
+          git branch -M authority-feed-tmp authority-feed
+          git push origin authority-feed --force

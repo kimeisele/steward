@@ -36,6 +36,7 @@ class TaskIntent(enum.Enum):
 
     # Reactive — federation monitoring
     FEDERATION_HEALTH = "federation_health"
+    CROSS_REPO_DIAGNOSTIC = "cross_repo_diagnostic"
 
     # Proactive — improvements via feature branch + PR
     UPDATE_DEPS = "update_deps"
