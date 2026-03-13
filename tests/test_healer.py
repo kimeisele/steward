@@ -13,9 +13,11 @@ from steward.healer import (
     FixStrategy,
     HealResult,
     RepoHealer,
+    _IMPORT_TO_PIP,
     _add_dependency_to_toml,
     _build_pr_body,
     _extract_package_from_finding,
+    _fix_broken_import,
     _fix_no_ci,
     _fix_no_federation_descriptor,
     _fix_no_peer_json,
@@ -49,13 +51,13 @@ class TestClassifyAllFindingKinds:
             FindingKind.NO_PEER_JSON,
             FindingKind.NO_CI,
             FindingKind.NO_TESTS,
+            FindingKind.BROKEN_IMPORT,
         ]
         for kind in deterministic:
             assert classify(kind) == FixStrategy.DETERMINISTIC, f"{kind} should be DETERMINISTIC"
 
     def test_llm_assisted_kinds(self):
         llm = [
-            FindingKind.BROKEN_IMPORT,
             FindingKind.SYNTAX_ERROR,
             FindingKind.CI_FAILING,
             FindingKind.CIRCULAR_IMPORT,
@@ -140,14 +142,51 @@ class TestFixUndeclaredDependency:
             FindingKind.UNDECLARED_DEPENDENCY,
             Severity.WARNING,
             "pyproject.toml",
-            detail="'pyyaml' is imported but not declared",
-            fix_hint="Add 'pyyaml' to [project.dependencies] in pyproject.toml",
+            detail="'requests' is imported but not declared",
+            fix_hint="Add 'requests' to [project.dependencies] in pyproject.toml",
+        )
+        changed = _fix_undeclared_dependency(finding, tmp_path)
+        assert "pyproject.toml" in changed
+
+        content = (tmp_path / "pyproject.toml").read_text()
+        assert '"requests"' in content
+
+    def test_import_to_pip_mapping(self, tmp_path):
+        """yaml import → pyyaml in pyproject.toml (not 'yaml')."""
+        (tmp_path / "pyproject.toml").write_text(
+            textwrap.dedent("""\
+            [project]
+            dependencies = [
+                "ecdsa>=0.18",
+            ]
+        """)
+        )
+        finding = Finding(
+            FindingKind.UNDECLARED_DEPENDENCY,
+            Severity.WARNING,
+            "pyproject.toml",
+            detail="'yaml' is imported but not declared",
+            fix_hint="Add 'yaml' to [project.dependencies] in pyproject.toml",
         )
         changed = _fix_undeclared_dependency(finding, tmp_path)
         assert "pyproject.toml" in changed
 
         content = (tmp_path / "pyproject.toml").read_text()
         assert '"pyyaml"' in content
+        assert '"yaml"' not in content  # Must NOT use import name
+
+    def test_pil_to_pillow_mapping(self, tmp_path):
+        (tmp_path / "pyproject.toml").write_text('[project]\ndependencies = []\n')
+        finding = Finding(
+            FindingKind.UNDECLARED_DEPENDENCY,
+            Severity.WARNING,
+            "pyproject.toml",
+            detail="'PIL' is imported but not declared",
+            fix_hint="Add 'PIL' to [project.dependencies]",
+        )
+        changed = _fix_undeclared_dependency(finding, tmp_path)
+        content = (tmp_path / "pyproject.toml").read_text()
+        assert '"pillow"' in content
 
     def test_no_pyproject_returns_empty(self, tmp_path):
         finding = Finding(
@@ -213,6 +252,67 @@ class TestFixNoPeerJson:
         assert changed == []
 
 
+class TestFixBrokenImport:
+    def test_creates_stub_module(self, tmp_path):
+        pkg = tmp_path / "src"
+        pkg.mkdir()
+        (pkg / "__init__.py").write_text("")
+
+        finding = Finding(
+            FindingKind.BROKEN_IMPORT,
+            Severity.CRITICAL,
+            "src/app.py",
+            line=4,
+            detail="from src.utils import ['helper'] — local module not found",
+            fix_hint="Module 'src.utils' does not exist",
+        )
+        changed = _fix_broken_import(finding, tmp_path)
+        assert "src/utils.py" in changed
+
+        content = (tmp_path / "src" / "utils.py").read_text()
+        assert "def helper" in content
+        assert "NotImplementedError" in content
+
+    def test_creates_nested_module_with_init(self, tmp_path):
+        finding = Finding(
+            FindingKind.BROKEN_IMPORT,
+            Severity.CRITICAL,
+            "main.py",
+            line=1,
+            detail="from pkg.sub.mod import ['func'] — local module not found",
+        )
+        changed = _fix_broken_import(finding, tmp_path)
+        assert "pkg/sub/mod.py" in changed
+        # __init__.py created for intermediate packages
+        assert (tmp_path / "pkg" / "__init__.py").exists()
+        assert (tmp_path / "pkg" / "sub" / "__init__.py").exists()
+
+    def test_skips_if_module_exists(self, tmp_path):
+        pkg = tmp_path / "src"
+        pkg.mkdir()
+        (pkg / "__init__.py").write_text("")
+        (pkg / "utils.py").write_text("x = 1\n")
+
+        finding = Finding(
+            FindingKind.BROKEN_IMPORT,
+            Severity.CRITICAL,
+            "app.py",
+            detail="from src.utils import ['helper'] — local module not found",
+        )
+        changed = _fix_broken_import(finding, tmp_path)
+        assert changed == []
+
+    def test_no_match_returns_empty(self):
+        finding = Finding(
+            FindingKind.BROKEN_IMPORT,
+            Severity.CRITICAL,
+            "x.py",
+            detail="some weird error with no from/import pattern",
+        )
+        changed = _fix_broken_import(finding, Path("/tmp"))
+        assert changed == []
+
+
 class TestFixNoCi:
     def test_creates_valid_workflow(self, tmp_path):
         finding = Finding(FindingKind.NO_CI, Severity.WARNING, ".github/workflows/")
@@ -221,8 +321,17 @@ class TestFixNoCi:
 
         ci_content = (tmp_path / ".github" / "workflows" / "ci.yml").read_text()
         assert "pytest" in ci_content
-        assert "ruff" in ci_content
         assert "actions/checkout" in ci_content
+
+    def test_ci_template_is_self_contained(self, tmp_path):
+        """CI template must not assume [dev] extras or external tools."""
+        finding = Finding(FindingKind.NO_CI, Severity.WARNING, "")
+        _fix_no_ci(finding, tmp_path)
+        ci_content = (tmp_path / ".github" / "workflows" / "ci.yml").read_text()
+        # Must NOT assume [dev] extras exist
+        assert "[dev]" not in ci_content
+        # Must install pytest explicitly
+        assert "pip install" in ci_content and "pytest" in ci_content
 
     def test_skips_if_exists(self, tmp_path):
         wf_dir = tmp_path / ".github" / "workflows"
