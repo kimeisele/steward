@@ -351,6 +351,9 @@ def _analyze_dependencies(repo_path: Path, imported: set[str]) -> tuple[list[Fin
     try:
         text = pyproject.read_text()
         declared = _parse_deps_from_toml(text)
+        # Also include optional-dependencies (dev, test, kernel, etc.)
+        optional = _parse_optional_deps_from_toml(text)
+        declared = declared + optional
     except Exception:
         pass
 
@@ -365,12 +368,19 @@ def _analyze_dependencies(repo_path: Path, imported: set[str]) -> tuple[list[Fin
         "pillow": "PIL",
         "scikit_learn": "sklearn",
         "python_dotenv": "dotenv",
+        "pygithub": "github",
+        "steward_protocol": ("steward", "vibe_core"),
     }
     declared_import_names = set()
     for d in declared_normalized:
         declared_import_names.add(d)
         if d in _KNOWN_MAPPINGS:
-            declared_import_names.add(_KNOWN_MAPPINGS[d].lower())
+            mapping = _KNOWN_MAPPINGS[d]
+            if isinstance(mapping, tuple):
+                for m in mapping:
+                    declared_import_names.add(m.lower())
+            else:
+                declared_import_names.add(mapping.lower())
 
     for imp in sorted(imported):
         if imp.lower() not in declared_import_names:
@@ -420,6 +430,60 @@ def _parse_deps_from_toml(text: str) -> list[str]:
                 if name:
                     deps.append(name)
                 in_deps = False
+            else:
+                name = _extract_package_name(stripped)
+                if name:
+                    deps.append(name)
+    return deps
+
+
+def _parse_optional_deps_from_toml(text: str) -> list[str]:
+    """Extract dependency names from [project.optional-dependencies] sections."""
+    deps: list[str] = []
+    in_optional = False
+    in_array = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        # Detect [project.optional-dependencies] section headers like: key = [...]
+        if in_optional and stripped.startswith("[") and not stripped.startswith('"'):
+            # New section header — stop parsing optional deps
+            in_optional = False
+            in_array = False
+            if stripped.startswith("[project.optional-dependencies]"):
+                in_optional = True
+            continue
+        if stripped == "[project.optional-dependencies]":
+            in_optional = True
+            continue
+        if not in_optional:
+            continue
+        # Inside optional-dependencies section
+        if "=" in stripped and not in_array:
+            # e.g. dev = ["pytest>=7.0", ...]
+            if "[" in stripped:
+                rest = stripped.split("[", 1)[1]
+                if "]" in rest:
+                    # Single line: dev = ["pytest>=7.0", "ruff"]
+                    items = rest.split("]")[0]
+                    for item in items.split(","):
+                        name = _extract_package_name(item)
+                        if name:
+                            deps.append(name)
+                else:
+                    # Multi-line start
+                    in_array = True
+                    # Parse items after [
+                    for item in rest.split(","):
+                        name = _extract_package_name(item)
+                        if name:
+                            deps.append(name)
+        elif in_array:
+            if "]" in stripped:
+                before = stripped.split("]")[0]
+                name = _extract_package_name(before)
+                if name:
+                    deps.append(name)
+                in_array = False
             else:
                 name = _extract_package_name(stripped)
                 if name:

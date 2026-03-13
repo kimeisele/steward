@@ -17,6 +17,7 @@ from steward.senses.diagnostic_sense import (
     _analyze_imports,
     _extract_package_name,
     _parse_deps_from_toml,
+    _parse_optional_deps_from_toml,
     diagnose_repo,
 )
 
@@ -230,6 +231,48 @@ class TestParseToml:
         assert _extract_package_name('"steward-protocol[city]"') == "steward-protocol"
         assert _extract_package_name('') == ""
         assert _extract_package_name('"pyyaml"') == "pyyaml"
+
+
+class TestParseOptionalDeps:
+    def test_parse_optional_deps(self):
+        text = textwrap.dedent("""\
+            [project]
+            dependencies = ["ecdsa>=0.18"]
+
+            [project.optional-dependencies]
+            kernel = ["steward-protocol[city]"]
+            dev = [
+                "pytest>=7.0",
+                "ruff>=0.1.0",
+            ]
+        """)
+        deps = _parse_optional_deps_from_toml(text)
+        assert "steward-protocol" in deps
+        assert "pytest" in deps
+        assert "ruff" in deps
+
+    def test_empty_optional_deps(self):
+        text = textwrap.dedent("""\
+            [project]
+            dependencies = ["ecdsa"]
+        """)
+        deps = _parse_optional_deps_from_toml(text)
+        assert deps == []
+
+    def test_optional_deps_not_flagged_as_undeclared(self, tmp_path):
+        """Optional deps should be treated as declared — no false positives."""
+        (tmp_path / "pyproject.toml").write_text(textwrap.dedent("""\
+            [project]
+            dependencies = ["ecdsa>=0.18"]
+
+            [project.optional-dependencies]
+            dev = ["pytest>=7.0"]
+            kernel = ["steward-protocol[city]"]
+        """))
+        findings, deps = _analyze_dependencies(tmp_path, {"ecdsa", "pytest", "steward", "vibe_core"})
+        undeclared = [f for f in findings if f.kind == FindingKind.UNDECLARED_DEPENDENCY]
+        # pytest is in dev, steward/vibe_core come from steward-protocol
+        assert len(undeclared) == 0, f"False positives: {[f.detail for f in undeclared]}"
 
 
 # ── Federation Analysis ──────────────────────────────────────────────
