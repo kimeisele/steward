@@ -224,9 +224,7 @@ class IntentHandlers:
         # Report degraded peers for diagnostic follow-up
         details = []
         for peer in degraded[:5]:  # Limit to top 5
-            details.append(
-                f"{peer.agent_id} (status={peer.status.value}, trust={peer.trust:.2f})"
-            )
+            details.append(f"{peer.agent_id} (status={peer.status.value}, trust={peer.trust:.2f})")
         return (
             f"Degraded peers requiring diagnostic: {', '.join(details)}. "
             f"Run diagnostic sense on their repos to identify issues."
