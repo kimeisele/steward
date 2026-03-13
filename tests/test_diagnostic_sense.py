@@ -67,9 +67,7 @@ class TestDiagnosticReport:
         report = DiagnosticReport(
             repo="test/repo",
             clone_ok=True,
-            findings=(
-                Finding(FindingKind.BROKEN_IMPORT, Severity.CRITICAL, "x.py", detail="broken"),
-            ),
+            findings=(Finding(FindingKind.BROKEN_IMPORT, Severity.CRITICAL, "x.py", detail="broken"),),
         )
         assert not report.is_healthy
         assert report.critical_count == 1
@@ -82,9 +80,7 @@ class TestDiagnosticReport:
         report = DiagnosticReport(
             repo="test/repo",
             clone_ok=True,
-            findings=(
-                Finding(FindingKind.NO_TESTS, Severity.WARNING, "", detail="no tests"),
-            ),
+            findings=(Finding(FindingKind.NO_TESTS, Severity.WARNING, "", detail="no tests"),),
         )
         assert report.is_healthy
         assert report.warning_count == 1
@@ -96,9 +92,7 @@ class TestDiagnosticReport:
             python_file_count=10,
             has_federation_descriptor=True,
             peer_capabilities=("code_analysis",),
-            findings=(
-                Finding(FindingKind.LARGE_FILE, Severity.INFO, "big.py"),
-            ),
+            findings=(Finding(FindingKind.LARGE_FILE, Severity.INFO, "big.py"),),
         )
         d = report.to_dict()
         assert d["repo"] == "test/repo"
@@ -185,25 +179,29 @@ class TestDependencyAnalysis:
         assert any(f.kind == FindingKind.MISSING_DEPENDENCY for f in findings)
 
     def test_undeclared_dependency(self, tmp_path):
-        (tmp_path / "pyproject.toml").write_text(textwrap.dedent("""\
+        (tmp_path / "pyproject.toml").write_text(
+            textwrap.dedent("""\
             [project]
             dependencies = [
                 "ecdsa>=0.18",
             ]
-        """))
+        """)
+        )
         findings, deps = _analyze_dependencies(tmp_path, {"ecdsa", "requests"})
         undeclared = [f for f in findings if f.kind == FindingKind.UNDECLARED_DEPENDENCY]
         assert len(undeclared) == 1
         assert "requests" in undeclared[0].detail
 
     def test_declared_deps_parsed(self, tmp_path):
-        (tmp_path / "pyproject.toml").write_text(textwrap.dedent("""\
+        (tmp_path / "pyproject.toml").write_text(
+            textwrap.dedent("""\
             [project]
             dependencies = [
                 "ecdsa>=0.18",
                 "pyyaml",
             ]
-        """))
+        """)
+        )
         _, deps = _analyze_dependencies(tmp_path, set())
         assert "ecdsa" in deps
         assert "pyyaml" in deps
@@ -242,7 +240,7 @@ class TestParseToml:
     def test_extract_package_name(self):
         assert _extract_package_name('"ecdsa>=0.18",') == "ecdsa"
         assert _extract_package_name('"steward-protocol[city]"') == "steward-protocol"
-        assert _extract_package_name('') == ""
+        assert _extract_package_name("") == ""
         assert _extract_package_name('"pyyaml"') == "pyyaml"
 
 
@@ -274,14 +272,16 @@ class TestParseOptionalDeps:
 
     def test_optional_deps_not_flagged_as_undeclared(self, tmp_path):
         """Optional deps should be treated as declared — no false positives."""
-        (tmp_path / "pyproject.toml").write_text(textwrap.dedent("""\
+        (tmp_path / "pyproject.toml").write_text(
+            textwrap.dedent("""\
             [project]
             dependencies = ["ecdsa>=0.18"]
 
             [project.optional-dependencies]
             dev = ["pytest>=7.0"]
             kernel = ["steward-protocol[city]"]
-        """))
+        """)
+        )
         findings, deps = _analyze_dependencies(tmp_path, {"ecdsa", "pytest", "steward", "vibe_core"})
         undeclared = [f for f in findings if f.kind == FindingKind.UNDECLARED_DEPENDENCY]
         # pytest is in dev, steward/vibe_core come from steward-protocol
@@ -300,10 +300,14 @@ class TestFederationAnalysis:
     def test_has_descriptor(self, tmp_path):
         well_known = tmp_path / ".well-known"
         well_known.mkdir()
-        (well_known / "agent-federation.json").write_text(json.dumps({
-            "kind": "agent_federation_descriptor",
-            "repo_id": "test",
-        }))
+        (well_known / "agent-federation.json").write_text(
+            json.dumps(
+                {
+                    "kind": "agent_federation_descriptor",
+                    "repo_id": "test",
+                }
+            )
+        )
         findings, has_desc, descriptor, _, _ = _analyze_federation(tmp_path)
         assert has_desc
         assert descriptor["repo_id"] == "test"
@@ -317,9 +321,13 @@ class TestFederationAnalysis:
     def test_has_peer_json_with_capabilities(self, tmp_path):
         fed = tmp_path / "data" / "federation"
         fed.mkdir(parents=True)
-        (fed / "peer.json").write_text(json.dumps({
-            "capabilities": ["code_analysis", "ci_automation"],
-        }))
+        (fed / "peer.json").write_text(
+            json.dumps(
+                {
+                    "capabilities": ["code_analysis", "ci_automation"],
+                }
+            )
+        )
         findings, _, _, has_peer, caps = _analyze_federation(tmp_path)
         assert has_peer
         assert "code_analysis" in caps
@@ -346,10 +354,12 @@ class TestDiagnoseRepo:
     def test_local_repo_findings(self, tmp_path):
         """Full diagnostic on a minimal repo with known issues."""
         (tmp_path / "main.py").write_text("from nonexistent_pkg import thing\n")
-        (tmp_path / "pyproject.toml").write_text(textwrap.dedent("""\
+        (tmp_path / "pyproject.toml").write_text(
+            textwrap.dedent("""\
             [project]
             dependencies = []
-        """))
+        """)
+        )
         report = diagnose_repo(str(tmp_path))
         assert report.clone_ok
         # Should find the broken import
@@ -380,6 +390,7 @@ class TestCIStatus:
 class TestCrossRepoDiagnosticIntent:
     def test_intent_exists(self):
         from steward.intents import TaskIntent
+
         assert TaskIntent.CROSS_REPO_DIAGNOSTIC.value == "cross_repo_diagnostic"
 
     def test_handler_returns_none_without_reaper(self):
@@ -387,7 +398,9 @@ class TestCrossRepoDiagnosticIntent:
 
         class FakeSenses:
             senses = {}
-            def perceive_all(self): pass
+
+            def perceive_all(self):
+                pass
 
         handlers = IntentHandlers(senses=FakeSenses(), vedana_fn=lambda: None, cwd="/tmp")
         result = handlers.execute_cross_repo_diagnostic()
@@ -405,7 +418,9 @@ class TestCrossRepoDiagnosticIntent:
 
         class FakeSenses:
             senses = {}
-            def perceive_all(self): pass
+
+            def perceive_all(self):
+                pass
 
         handlers = IntentHandlers(senses=FakeSenses(), vedana_fn=lambda: None, cwd="/tmp")
         result = handlers.execute_cross_repo_diagnostic()
@@ -424,7 +439,9 @@ class TestCrossRepoDiagnosticIntent:
 
         class FakeSenses:
             senses = {}
-            def perceive_all(self): pass
+
+            def perceive_all(self):
+                pass
 
         handlers = IntentHandlers(senses=FakeSenses(), vedana_fn=lambda: None, cwd="/tmp")
         result = handlers.execute_cross_repo_diagnostic()
