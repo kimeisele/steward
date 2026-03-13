@@ -133,9 +133,9 @@ class TestBoot:
         assert result is None
 
     def test_boot_wires_feedback_to_provider(self):
-        provider = MagicMock()
-        provider.invoke = MagicMock()
-        provider.set_feedback = MagicMock()
+        from steward.types import ChamberProvider
+
+        provider = MagicMock(spec=ChamberProvider)
         boot(tools=[_DummyTool()], provider=provider)
         provider.set_feedback.assert_called_once()
 
