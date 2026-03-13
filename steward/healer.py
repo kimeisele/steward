@@ -46,11 +46,17 @@ logger = logging.getLogger("STEWARD.HEALER")
 
 
 class FixStrategy(enum.Enum):
-    """How to fix a finding — deterministic (0 tokens) vs LLM-assisted."""
+    """How to fix a finding.
 
-    DETERMINISTIC = "deterministic"  # Pure Python, 0 tokens
-    LLM_ASSISTED = "llm_assisted"  # LLM executes specific fix_hint
-    SKIP = "skip"  # Info-level, not fixable
+    DETERMINISTIC: Pure Python, 0 tokens. Pattern-matchable.
+    COMPOUND: Deterministic pipeline first, gated LLM fallback if needed.
+              LLM is a tool — budget-controlled, Iron-Gated, Hebbian-learned.
+    SKIP: Info-level or no fixer available yet.
+    """
+
+    DETERMINISTIC = "deterministic"
+    COMPOUND = "compound"
+    SKIP = "skip"
 
 
 _STRATEGY: dict[FindingKind, FixStrategy] = {
@@ -62,8 +68,8 @@ _STRATEGY: dict[FindingKind, FixStrategy] = {
     FindingKind.NO_TESTS: FixStrategy.DETERMINISTIC,
     FindingKind.BROKEN_IMPORT: FixStrategy.DETERMINISTIC,
     FindingKind.SYNTAX_ERROR: FixStrategy.DETERMINISTIC,
-    FindingKind.CI_FAILING: FixStrategy.SKIP,  # needs CI-log-parser compound pipeline
-    FindingKind.CIRCULAR_IMPORT: FixStrategy.SKIP,  # no detector yet
+    FindingKind.CIRCULAR_IMPORT: FixStrategy.DETERMINISTIC,
+    FindingKind.CI_FAILING: FixStrategy.COMPOUND,
     FindingKind.LARGE_FILE: FixStrategy.SKIP,
 }
 
@@ -401,6 +407,239 @@ def _fix_syntax_error(finding: "Finding", workspace: Path) -> list[str]:
     return [finding.file]
 
 
+@_fixer(FindingKind.CIRCULAR_IMPORT)
+def _fix_circular_import(finding: "Finding", workspace: Path) -> list[str]:
+    """Break circular imports by moving them behind TYPE_CHECKING guard.
+
+    Pure graph-theory fix: if A imports B and B imports A, move B's
+    import of A behind `if TYPE_CHECKING:` and add the guard + __future__
+    annotations import if not present.
+    """
+    if not finding.file:
+        return []
+
+    target = workspace / finding.file
+    if not target.exists():
+        return []
+
+    source = target.read_text()
+    lines = source.splitlines(keepends=True)
+
+    # Parse the cycle from finding.detail
+    # Format: "Circular import: a.py → b.py → a.py"
+    cycle_match = re.search(r"Circular import:\s*(.+)", finding.detail)
+    if not cycle_match:
+        return []
+
+    # The file in the finding is the one we should fix (last in the cycle)
+    # We need to find which imports in THIS file point to other files in the cycle
+    cycle_files = [f.strip() for f in cycle_match.group(1).split("→")]
+
+    # Parse AST to find the offending import lines
+    try:
+        tree = ast.parse(source, filename=finding.file)
+    except SyntaxError:
+        return []
+
+    # Find imports that target cycle members
+    imports_to_guard: list[tuple[int, int]] = []  # (start_line, end_line) 1-based
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            # Check if this import targets a file in the cycle
+            mod_parts = node.module.split(".")
+            target_path = str(Path(*mod_parts).with_suffix(".py"))
+            target_init = str(Path(*mod_parts) / "__init__.py")
+            if target_path in cycle_files or target_init in cycle_files:
+                imports_to_guard.append((node.lineno, node.end_lineno or node.lineno))
+
+    if not imports_to_guard:
+        return []
+
+    # Check if TYPE_CHECKING already imported
+    has_type_checking = "TYPE_CHECKING" in source
+    has_future_annotations = "from __future__ import annotations" in source
+
+    # Build the guarded block
+    # Remove the offending import lines and collect them
+    guarded_lines: list[str] = []
+    lines_to_remove: set[int] = set()
+    for start, end in imports_to_guard:
+        for i in range(start - 1, end):  # 0-based
+            guarded_lines.append(lines[i])
+            lines_to_remove.add(i)
+
+    # Build new source
+    new_lines: list[str] = []
+    for i, line in enumerate(lines):
+        if i in lines_to_remove:
+            continue
+        new_lines.append(line)
+
+    # Find insertion point — after existing imports, before first non-import code
+    insert_idx = 0
+    for i, line in enumerate(new_lines):
+        stripped = line.strip()
+        if stripped.startswith(("import ", "from ")) or not stripped or stripped.startswith("#"):
+            insert_idx = i + 1
+        elif stripped.startswith("if TYPE_CHECKING"):
+            insert_idx = i  # Insert INTO existing TYPE_CHECKING block
+            break
+        else:
+            break
+
+    # Build guard block
+    guard_block: list[str] = []
+    if not has_future_annotations:
+        guard_block.append("from __future__ import annotations\n")
+    if not has_type_checking:
+        guard_block.append("\n")
+        guard_block.append("from typing import TYPE_CHECKING\n")
+    guard_block.append("\n")
+    guard_block.append("if TYPE_CHECKING:\n")
+    for gl in guarded_lines:
+        guard_block.append("    " + gl.lstrip())
+    guard_block.append("\n")
+
+    # Insert
+    for j, gb_line in enumerate(guard_block):
+        new_lines.insert(insert_idx + j, gb_line)
+
+    new_source = "".join(new_lines)
+
+    # Verify it parses
+    try:
+        ast.parse(new_source, filename=finding.file)
+    except SyntaxError:
+        return []
+
+    target.write_text(new_source)
+    return [finding.file]
+
+
+# ── Compound Fixers (deterministic pipeline + gated LLM fallback) ──────
+
+
+_COMPOUND_FIXERS: dict[FindingKind, Callable[["Finding", Path], list[str]]] = {}
+
+
+def _compound_fixer(kind: FindingKind):
+    """Register a compound fixer — deterministic extraction + optional LLM."""
+
+    def decorator(fn: Callable[["Finding", Path], list[str]]):
+        _COMPOUND_FIXERS[kind] = fn
+        return fn
+
+    return decorator
+
+
+@_compound_fixer(FindingKind.CI_FAILING)
+def _fix_ci_failing(finding: "Finding", workspace: Path) -> list[str]:
+    """Compound pipeline for CI failures.
+
+    Step 1: Parse CI log deterministically (gh run view --log-failed)
+    Step 2: Classify failure type (test, lint, build, import, etc.)
+    Step 3: Route to appropriate deterministic fixer if possible
+    Step 4: If no deterministic fixer matches → return empty (LLM fallback in heal_repo)
+
+    This is the deterministic HALF of the compound pipeline.
+    The LLM half runs in heal_repo only if this returns empty.
+    """
+    import subprocess
+
+    # Extract workflow name from finding detail
+    wf_match = re.search(r"workflow '([^']+)'", finding.detail)
+    wf_name = wf_match.group(1) if wf_match else ""
+
+    # Step 1: Try to get the CI failure log
+    log_output = ""
+    try:
+        r = subprocess.run(
+            ["gh", "run", "list", "--workflow", wf_name, "--status", "failure",
+             "--limit", "1", "--json", "databaseId"],
+            capture_output=True, text=True, timeout=15, cwd=str(workspace),
+        )
+        if r.returncode == 0:
+            import json as _json
+            runs = _json.loads(r.stdout)
+            if runs:
+                run_id = str(runs[0]["databaseId"])
+                r2 = subprocess.run(
+                    ["gh", "run", "view", run_id, "--log-failed"],
+                    capture_output=True, text=True, timeout=30, cwd=str(workspace),
+                )
+                if r2.returncode == 0:
+                    log_output = r2.stdout[-5000:]  # Last 5KB of log
+    except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+        pass
+
+    if not log_output:
+        return []  # Can't get logs — signal for LLM fallback
+
+    # Step 2: Classify failure type from log
+    log_lower = log_output.lower()
+    changed: list[str] = []
+
+    # Type A: Import error in CI → route to dependency fixer
+    import_match = re.search(r"modulenotfounderror: no module named '(\w+)'", log_lower)
+    if import_match:
+        pkg = import_match.group(1)
+        dep_finding = Finding(
+            FindingKind.UNDECLARED_DEPENDENCY,
+            Severity.CRITICAL,
+            "pyproject.toml",
+            detail=f"'{pkg}' is imported but not declared (from CI log)",
+            fix_hint=f"Add '{pkg}' to [project.dependencies]",
+        )
+        changed = _fix_undeclared_dependency(dep_finding, workspace)
+        if changed:
+            return changed
+
+    # Type B: Syntax error in CI → route to syntax fixer
+    syntax_match = re.search(r"syntaxerror:.*?file \"([^\"]+)\", line (\d+)", log_lower)
+    if syntax_match:
+        file_path = syntax_match.group(1)
+        line_no = int(syntax_match.group(2))
+        # Make path relative to workspace
+        try:
+            rel_path = str(Path(file_path).relative_to(workspace))
+        except ValueError:
+            rel_path = file_path
+        syntax_finding = Finding(
+            FindingKind.SYNTAX_ERROR,
+            Severity.CRITICAL,
+            rel_path,
+            line=line_no,
+            detail="SyntaxError: detected in CI log",
+        )
+        syn_fixer = _FIXERS.get(FindingKind.SYNTAX_ERROR)
+        if syn_fixer:
+            changed = syn_fixer(syntax_finding, workspace)
+            if changed:
+                return changed
+
+    # Type C: Lint failure → try ruff --fix
+    if "ruff" in log_lower and ("error" in log_lower or "violation" in log_lower):
+        try:
+            r = subprocess.run(
+                ["ruff", "check", "--fix", "."],
+                capture_output=True, text=True, timeout=30, cwd=str(workspace),
+            )
+            if r.returncode == 0:
+                # Check what ruff changed
+                r2 = subprocess.run(
+                    ["git", "diff", "--name-only"],
+                    capture_output=True, text=True, timeout=10, cwd=str(workspace),
+                )
+                if r2.stdout.strip():
+                    changed = [f.strip() for f in r2.stdout.strip().split("\n") if f.strip()]
+                    return changed
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+
+    # No deterministic fixer matched → return empty to signal LLM fallback
+    return []
+
+
 # ── Helper Functions ────────────────────────────────────────────────────
 
 
@@ -516,8 +755,9 @@ def _build_pr_body(
 class RepoHealer:
     """Stateless per-attempt repo healer.
 
-    All fixes are deterministic (0 LLM tokens). The pipeline:
-    diagnose → classify → deterministic fix → verify (Iron Gate) → PR.
+    Neuro-symbolic pipeline: deterministic fixers first, compound
+    (deterministic + gated LLM) for complex issues. The LLM is a tool
+    in the registry — budget-controlled, one-shot, Iron-Gated.
     """
 
     def __init__(
@@ -534,10 +774,11 @@ class RepoHealer:
         """Run full healing pipeline on an already-cloned repo.
 
         1. Diagnose (0 tokens)
-        2. Classify each finding: deterministic / skip
+        2. Classify: deterministic / compound / skip
         3. Apply deterministic fixes (0 tokens)
-        4. Run Iron Gate on all changed files
-        5. Gate pass → create PR; gate fail → rollback + Hebbian failure
+        4. Apply compound fixes (deterministic pipeline + gated LLM fallback)
+        5. Run Iron Gate on all changed files
+        6. Gate pass → create PR; gate fail → rollback + Hebbian failure
         """
         repo_name = workspace.name
 
@@ -552,14 +793,18 @@ class RepoHealer:
             logger.info("Repo %s has no findings — nothing to heal", repo_name)
             return HealResult(repo=repo_name, findings_total=0)
 
-        # Step 2: Classify — deterministic or skip
-        fixable = []
+        # Step 2: Classify
+        deterministic: list["Finding"] = []
+        compound: list["Finding"] = []
         for finding in report.findings:
             strategy = classify(finding.kind)
             if strategy == FixStrategy.DETERMINISTIC:
-                fixable.append(finding)
+                deterministic.append(finding)
+            elif strategy == FixStrategy.COMPOUND:
+                compound.append(finding)
 
-        if not fixable:
+        total_fixable = len(deterministic) + len(compound)
+        if total_fixable == 0:
             logger.info("Repo %s: %d findings but none fixable", repo_name, len(report.findings))
             return HealResult(
                 repo=repo_name,
@@ -572,7 +817,7 @@ class RepoHealer:
         applied: list[tuple["Finding", bool]] = []
         fixed_count = 0
 
-        for finding in fixable:
+        for finding in deterministic:
             fixer_fn = _FIXERS.get(finding.kind)
             if fixer_fn is None:
                 continue
@@ -589,19 +834,56 @@ class RepoHealer:
                 logger.warning("Fixer %s failed: %s", finding.kind.value, e)
                 applied.append((finding, False))
 
-        if not all_changed:
+        # Step 4: Apply compound fixes (deterministic pipeline + gated LLM)
+        for finding in compound:
+            compound_fn = _COMPOUND_FIXERS.get(finding.kind)
+            if compound_fn is None:
+                applied.append((finding, False))
+                continue
+            try:
+                # Phase A: deterministic extraction + classification
+                changed = compound_fn(finding, workspace)
+                if changed:
+                    all_changed.extend(changed)
+                    applied.append((finding, True))
+                    fixed_count += 1
+                    logger.info("Compound-fixed %s: %s (deterministic)", finding.kind.value, finding.detail)
+                    continue
+
+                # Phase B: deterministic failed → one gated LLM call
+                prompt = (
+                    f"Fix this CI failure. ONE targeted fix only.\n"
+                    f"Repo: {repo_name}\n"
+                    f"Finding: {finding.kind.value}\n"
+                    f"Detail: {finding.detail}\n"
+                    f"Hint: {finding.fix_hint}\n"
+                    f"Workspace: {workspace}\n"
+                    f"Return ONLY the fix — no explanation."
+                )
+                result = await self._run_fn(prompt)
+                if result:
+                    applied.append((finding, True))
+                    fixed_count += 1
+                    logger.info("Compound-fixed %s: %s (LLM fallback)", finding.kind.value, finding.detail)
+                else:
+                    applied.append((finding, False))
+            except Exception as e:
+                logger.warning("Compound fixer %s failed: %s", finding.kind.value, e)
+                applied.append((finding, False))
+
+        if not all_changed and fixed_count == 0:
             return HealResult(
                 repo=repo_name,
                 findings_total=len(report.findings),
-                findings_fixable=len(fixable),
+                findings_fixable=total_fixable,
                 findings_fixed=0,
             )
 
-        # Step 4: Verify via Iron Gate
+        # Step 5: Verify via Iron Gate
         changed_set = set(all_changed)
         gate_passed = True
 
-        if hasattr(self._pipeline, "_breaker"):
+        if changed_set and hasattr(self._pipeline, "_breaker"):
             gate_results = self._pipeline._breaker.run_gates(changed_set)
             failed_gates = [g for g in gate_results if not g.passed]
 
@@ -613,42 +895,43 @@ class RepoHealer:
                 self._pipeline._breaker.rollback_files(changed_set)
                 self._pipeline._breaker.record_rollback()
 
-                for finding in fixable:
+                for finding in deterministic + compound:
                     self._synaptic.update(f"heal:{finding.kind.value}:{repo_name}", "fix", success=False)
 
                 return HealResult(
                     repo=repo_name,
                     findings_total=len(report.findings),
-                    findings_fixable=len(fixable),
+                    findings_fixable=total_fixable,
                     findings_fixed=0,
                     error=f"Gate failure: {details}",
                 )
 
-        # Step 5: Gate passed — create PR
+        # Step 6: Gate passed — create PR
         pr_url = ""
-        body = _build_pr_body(applied, gate_passed)
-        pr_url = self._pipeline._create_pr(
-            branch_name=f"steward/heal/{repo_name}",
-            intent_name="HEAL_REPO",
-            problem=f"Healing {repo_name}: {fixed_count} findings fixed",
-            changed_files=changed_set,
-        ) or ""
+        if changed_set:
+            body = _build_pr_body(applied, gate_passed)
+            pr_url = self._pipeline._create_pr(
+                branch_name=f"steward/heal/{repo_name}",
+                intent_name="HEAL_REPO",
+                problem=f"Healing {repo_name}: {fixed_count} findings fixed",
+                changed_files=changed_set,
+            ) or ""
 
-        for finding in fixable:
+        for finding in deterministic + compound:
             self._synaptic.update(f"heal:{finding.kind.value}:{repo_name}", "fix", success=True)
 
         logger.info(
             "Healed %s: %d/%d findings fixed, PR=%s",
             repo_name,
             fixed_count,
-            len(fixable),
+            total_fixable,
             pr_url or "(none)",
         )
 
         return HealResult(
             repo=repo_name,
             findings_total=len(report.findings),
-            findings_fixable=len(fixable),
+            findings_fixable=total_fixable,
             findings_fixed=fixed_count,
             pr_url=pr_url,
         )

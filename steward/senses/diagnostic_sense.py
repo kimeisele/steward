@@ -344,6 +344,98 @@ def _check_local_import(
     )
 
 
+def _detect_circular_imports(repo_path: Path) -> list[Finding]:
+    """Build import graph from AST and detect cycles via DFS.
+
+    Only considers intra-repo (local package) imports — third-party
+    and stdlib are excluded. Reports the shortest cycle found per file.
+    """
+    import sys
+
+    stdlib_modules = getattr(sys, "stdlib_module_names", set())
+
+    # Discover local packages
+    local_packages: set[str] = set()
+    for init in repo_path.rglob("__init__.py"):
+        rel = init.parent.relative_to(repo_path)
+        parts = rel.parts
+        if _skip_path(parts):
+            continue
+        if parts:
+            local_packages.add(parts[0])
+
+    # Build adjacency list: file → set of local files it imports
+    graph: dict[str, set[str]] = {}
+    py_files = sorted(repo_path.rglob("*.py"))[:_MAX_FILES]
+
+    for f in py_files:
+        rel = f.relative_to(repo_path)
+        parts = rel.parts
+        if _skip_path(parts):
+            continue
+        rel_str = str(rel)
+        graph.setdefault(rel_str, set())
+
+        try:
+            source = f.read_text(encoding="utf-8", errors="replace")
+            tree = ast.parse(source, filename=rel_str)
+        except (SyntaxError, OSError, UnicodeDecodeError):
+            continue
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                top = node.module.split(".")[0]
+                if top not in local_packages:
+                    continue
+                # Resolve module path to file path
+                mod_parts = node.module.split(".")
+                target = repo_path / Path(*mod_parts)
+                if target.with_suffix(".py").exists():
+                    target_str = str(target.with_suffix(".py").relative_to(repo_path))
+                elif (target / "__init__.py").exists():
+                    target_str = str((target / "__init__.py").relative_to(repo_path))
+                else:
+                    continue
+                graph[rel_str].add(target_str)
+
+    # DFS cycle detection
+    findings: list[Finding] = []
+    reported_cycles: set[frozenset[str]] = set()
+
+    def _dfs(node: str, path: list[str], visited: set[str]) -> None:
+        if node in visited:
+            # Found cycle — extract it
+            if node in path:
+                cycle_start = path.index(node)
+                cycle = path[cycle_start:]
+                cycle_key = frozenset(cycle)
+                if cycle_key not in reported_cycles:
+                    reported_cycles.add(cycle_key)
+                    cycle_str = " → ".join(cycle + [node])
+                    findings.append(
+                        Finding(
+                            kind=FindingKind.CIRCULAR_IMPORT,
+                            severity=Severity.WARNING,
+                            file=node,
+                            detail=f"Circular import: {cycle_str}",
+                            fix_hint=f"Break cycle by moving imports in {node} behind TYPE_CHECKING guard",
+                        )
+                    )
+            return
+        visited.add(node)
+        path.append(node)
+        for neighbor in graph.get(node, set()):
+            _dfs(neighbor, path, visited)
+        path.pop()
+
+    visited: set[str] = set()
+    for node in graph:
+        if node not in visited:
+            _dfs(node, [], visited)
+
+    return findings
+
+
 def _analyze_dependencies(repo_path: Path, imported: set[str]) -> tuple[list[Finding], list[str]]:
     """Compare pyproject.toml declared deps vs actual imports."""
     findings: list[Finding] = []
@@ -710,8 +802,11 @@ def diagnose_repo(repo_url: str, *, timeout: int = 60) -> DiagnosticReport:
         # Layer 6: Test infrastructure
         test_findings = _analyze_test_infrastructure(repo_path, test_count)
 
+        # Layer 7: Circular import detection (import graph DFS)
+        circular_findings = _detect_circular_imports(repo_path)
+
         # Combine all findings, sort by severity
-        all_findings = import_findings + dep_findings + fed_findings + ci_findings + test_findings
+        all_findings = import_findings + dep_findings + fed_findings + ci_findings + test_findings + circular_findings
         severity_order = {Severity.CRITICAL: 0, Severity.WARNING: 1, Severity.INFO: 2}
         all_findings.sort(key=lambda f: severity_order.get(f.severity, 9))
 
