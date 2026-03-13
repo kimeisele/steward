@@ -1,0 +1,578 @@
+"""Tests for RepoHealer — autonomous PR-based repair pipeline."""
+
+from __future__ import annotations
+
+import json
+import textwrap
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from steward.healer import (
+    FixStrategy,
+    HealResult,
+    RepoHealer,
+    _add_dependency_to_toml,
+    _build_pr_body,
+    _extract_package_from_finding,
+    _fix_no_ci,
+    _fix_no_federation_descriptor,
+    _fix_no_peer_json,
+    _fix_no_tests,
+    _fix_undeclared_dependency,
+    classify,
+)
+from steward.senses.diagnostic_sense import (
+    Finding,
+    FindingKind,
+    Severity,
+)
+
+
+# ── Strategy Classification ─────────────────────────────────────────────
+
+
+class TestClassifyAllFindingKinds:
+    """Every FindingKind must be mapped to a strategy."""
+
+    def test_all_kinds_classified(self):
+        for kind in FindingKind:
+            strategy = classify(kind)
+            assert isinstance(strategy, FixStrategy), f"{kind} not classified"
+
+    def test_deterministic_kinds(self):
+        deterministic = [
+            FindingKind.UNDECLARED_DEPENDENCY,
+            FindingKind.MISSING_DEPENDENCY,
+            FindingKind.NO_FEDERATION_DESCRIPTOR,
+            FindingKind.NO_PEER_JSON,
+            FindingKind.NO_CI,
+            FindingKind.NO_TESTS,
+        ]
+        for kind in deterministic:
+            assert classify(kind) == FixStrategy.DETERMINISTIC, f"{kind} should be DETERMINISTIC"
+
+    def test_llm_assisted_kinds(self):
+        llm = [
+            FindingKind.BROKEN_IMPORT,
+            FindingKind.SYNTAX_ERROR,
+            FindingKind.CI_FAILING,
+            FindingKind.CIRCULAR_IMPORT,
+        ]
+        for kind in llm:
+            assert classify(kind) == FixStrategy.LLM_ASSISTED, f"{kind} should be LLM_ASSISTED"
+
+    def test_skip_kinds(self):
+        assert classify(FindingKind.LARGE_FILE) == FixStrategy.SKIP
+
+
+# ── Package Extraction ──────────────────────────────────────────────────
+
+
+class TestExtractPackage:
+    def test_quoted_in_fix_hint(self):
+        f = Finding(FindingKind.UNDECLARED_DEPENDENCY, Severity.WARNING, "pyproject.toml", fix_hint="Add 'pyyaml' to deps")
+        assert _extract_package_from_finding(f) == "pyyaml"
+
+    def test_pip_install_pattern(self):
+        f = Finding(FindingKind.MISSING_DEPENDENCY, Severity.CRITICAL, "x.py", fix_hint="pip install requests")
+        assert _extract_package_from_finding(f) == "requests"
+
+    def test_quoted_in_detail(self):
+        f = Finding(FindingKind.UNDECLARED_DEPENDENCY, Severity.WARNING, "", detail="'flask' is imported but not declared")
+        assert _extract_package_from_finding(f) == "flask"
+
+    def test_no_match_returns_empty(self):
+        f = Finding(FindingKind.LARGE_FILE, Severity.INFO, "big.py", detail="900 lines")
+        assert _extract_package_from_finding(f) == ""
+
+
+# ── TOML Dependency Insertion ───────────────────────────────────────────
+
+
+class TestAddDependencyToToml:
+    def test_insert_into_multiline_deps(self):
+        text = textwrap.dedent("""\
+            [project]
+            dependencies = [
+                "ecdsa>=0.18",
+            ]
+        """)
+        result = _add_dependency_to_toml(text, "pyyaml")
+        assert '"pyyaml"' in result
+        assert result.index('"pyyaml"') > result.index('"ecdsa')
+
+    def test_insert_into_empty_array(self):
+        text = textwrap.dedent("""\
+            [project]
+            dependencies = []
+        """)
+        result = _add_dependency_to_toml(text, "requests")
+        assert '"requests"' in result
+
+    def test_insert_into_single_line_array(self):
+        text = 'dependencies = ["foo"]\n'
+        result = _add_dependency_to_toml(text, "bar")
+        assert '"bar"' in result
+        assert '"foo"' in result
+
+    def test_no_deps_section_returns_unchanged(self):
+        text = "[project]\nname = 'test'\n"
+        result = _add_dependency_to_toml(text, "foo")
+        assert result == text
+
+
+# ── Deterministic Fixers ────────────────────────────────────────────────
+
+
+class TestFixUndeclaredDependency:
+    def test_adds_package_to_pyproject(self, tmp_path):
+        (tmp_path / "pyproject.toml").write_text(
+            textwrap.dedent("""\
+            [project]
+            dependencies = [
+                "ecdsa>=0.18",
+            ]
+        """)
+        )
+        finding = Finding(
+            FindingKind.UNDECLARED_DEPENDENCY,
+            Severity.WARNING,
+            "pyproject.toml",
+            detail="'pyyaml' is imported but not declared",
+            fix_hint="Add 'pyyaml' to [project.dependencies] in pyproject.toml",
+        )
+        changed = _fix_undeclared_dependency(finding, tmp_path)
+        assert "pyproject.toml" in changed
+
+        content = (tmp_path / "pyproject.toml").read_text()
+        assert '"pyyaml"' in content
+
+    def test_no_pyproject_returns_empty(self, tmp_path):
+        finding = Finding(
+            FindingKind.UNDECLARED_DEPENDENCY,
+            Severity.WARNING,
+            "",
+            fix_hint="Add 'foo' to deps",
+        )
+        assert _fix_undeclared_dependency(finding, tmp_path) == []
+
+
+class TestFixNoFederationDescriptor:
+    def test_creates_valid_json(self, tmp_path):
+        finding = Finding(
+            FindingKind.NO_FEDERATION_DESCRIPTOR,
+            Severity.WARNING,
+            ".well-known/agent-federation.json",
+        )
+        changed = _fix_no_federation_descriptor(finding, tmp_path)
+        assert ".well-known/agent-federation.json" in changed
+
+        descriptor = json.loads((tmp_path / ".well-known" / "agent-federation.json").read_text())
+        assert descriptor["kind"] == "agent_federation_descriptor"
+        assert descriptor["repo_id"] == tmp_path.name
+        assert descriptor["status"] == "active"
+
+    def test_skips_if_already_exists(self, tmp_path):
+        well_known = tmp_path / ".well-known"
+        well_known.mkdir()
+        (well_known / "agent-federation.json").write_text('{"existing": true}')
+
+        finding = Finding(FindingKind.NO_FEDERATION_DESCRIPTOR, Severity.WARNING, "")
+        changed = _fix_no_federation_descriptor(finding, tmp_path)
+        assert changed == []
+
+        # Original content preserved
+        data = json.loads((well_known / "agent-federation.json").read_text())
+        assert data == {"existing": True}
+
+
+class TestFixNoPeerJson:
+    def test_creates_valid_json(self, tmp_path):
+        finding = Finding(
+            FindingKind.NO_PEER_JSON,
+            Severity.WARNING,
+            "data/federation/peer.json",
+        )
+        changed = _fix_no_peer_json(finding, tmp_path)
+        assert "data/federation/peer.json" in changed
+
+        peer = json.loads((tmp_path / "data" / "federation" / "peer.json").read_text())
+        assert peer["agent_id"] == tmp_path.name
+        assert "capabilities" in peer
+        assert "version" in peer
+
+    def test_skips_if_exists(self, tmp_path):
+        fed_dir = tmp_path / "data" / "federation"
+        fed_dir.mkdir(parents=True)
+        (fed_dir / "peer.json").write_text('{"existing": true}')
+
+        finding = Finding(FindingKind.NO_PEER_JSON, Severity.WARNING, "")
+        changed = _fix_no_peer_json(finding, tmp_path)
+        assert changed == []
+
+
+class TestFixNoCi:
+    def test_creates_valid_workflow(self, tmp_path):
+        finding = Finding(FindingKind.NO_CI, Severity.WARNING, ".github/workflows/")
+        changed = _fix_no_ci(finding, tmp_path)
+        assert ".github/workflows/ci.yml" in changed
+
+        ci_content = (tmp_path / ".github" / "workflows" / "ci.yml").read_text()
+        assert "pytest" in ci_content
+        assert "ruff" in ci_content
+        assert "actions/checkout" in ci_content
+
+    def test_skips_if_exists(self, tmp_path):
+        wf_dir = tmp_path / ".github" / "workflows"
+        wf_dir.mkdir(parents=True)
+        (wf_dir / "ci.yml").write_text("existing: true\n")
+
+        finding = Finding(FindingKind.NO_CI, Severity.WARNING, "")
+        changed = _fix_no_ci(finding, tmp_path)
+        assert changed == []
+
+
+class TestFixNoTests:
+    def test_creates_scaffold(self, tmp_path):
+        finding = Finding(FindingKind.NO_TESTS, Severity.WARNING, "")
+        changed = _fix_no_tests(finding, tmp_path)
+        assert "tests/__init__.py" in changed
+        assert "tests/test_placeholder.py" in changed
+
+        assert (tmp_path / "tests" / "__init__.py").exists()
+        placeholder = (tmp_path / "tests" / "test_placeholder.py").read_text()
+        assert "def test_placeholder" in placeholder
+
+    def test_skips_existing_files(self, tmp_path):
+        tests_dir = tmp_path / "tests"
+        tests_dir.mkdir()
+        (tests_dir / "__init__.py").write_text("")
+        (tests_dir / "test_placeholder.py").write_text("def test_real(): pass\n")
+
+        finding = Finding(FindingKind.NO_TESTS, Severity.WARNING, "")
+        changed = _fix_no_tests(finding, tmp_path)
+        assert changed == []
+
+
+# ── PR Body Builder ─────────────────────────────────────────────────────
+
+
+class TestBuildPrBody:
+    def test_all_succeeded(self):
+        findings = [
+            (Finding(FindingKind.UNDECLARED_DEPENDENCY, Severity.WARNING, "pyproject.toml", detail="Added pyyaml"), True),
+            (Finding(FindingKind.NO_CI, Severity.WARNING, "", detail="Created ci.yml"), True),
+        ]
+        body = _build_pr_body(findings, gate_passed=True)
+        assert "[x] undeclared_dependency" in body
+        assert "[x] no_ci" in body
+        assert "Lint (ruff)" in body
+
+    def test_mixed_results(self):
+        findings = [
+            (Finding(FindingKind.NO_TESTS, Severity.WARNING, "", detail="Created scaffold"), True),
+            (Finding(FindingKind.BROKEN_IMPORT, Severity.CRITICAL, "api.py", detail="broken"), False),
+        ]
+        body = _build_pr_body(findings, gate_passed=True)
+        assert "[x] no_tests" in body
+        assert "[ ] broken_import" in body
+        assert "rolled back" in body
+
+
+# ── HealResult ──────────────────────────────────────────────────────────
+
+
+class TestHealResult:
+    def test_frozen(self):
+        r = HealResult(repo="test", findings_fixed=3)
+        with pytest.raises(AttributeError):
+            r.repo = "other"
+
+    def test_defaults(self):
+        r = HealResult(repo="test")
+        assert r.findings_total == 0
+        assert r.findings_fixed == 0
+        assert r.pr_url == ""
+        assert r.error == ""
+
+
+# ── RepoHealer Integration ─────────────────────────────────────────────
+
+
+def _make_healer(breaker=None, run_fn=None, create_pr_fn=None):
+    """Create a RepoHealer with mocked pipeline."""
+    pipeline = MagicMock()
+    pipeline._breaker = breaker or MagicMock()
+    pipeline._run_fn = run_fn or AsyncMock(return_value="fixed")
+    pipeline._create_pr = create_pr_fn or MagicMock(return_value="https://github.com/test/pulls/1")
+    synaptic = MagicMock()
+    synaptic.update = MagicMock(return_value=0.5)
+
+    healer = RepoHealer(
+        pipeline=pipeline,
+        run_fn=pipeline._run_fn,
+        synaptic=synaptic,
+    )
+    return healer, pipeline, synaptic
+
+
+class TestHealHealthyRepoSkips:
+    @pytest.mark.asyncio
+    async def test_healthy_repo_returns_early(self, tmp_path):
+        """Healthy repo → no work, no LLM calls."""
+        (tmp_path / "main.py").write_text("x = 1\n")
+        (tmp_path / "pyproject.toml").write_text('[project]\ndependencies = []\n')
+        # Add federation descriptor + peer.json + CI + tests to make it healthy
+        well_known = tmp_path / ".well-known"
+        well_known.mkdir()
+        (well_known / "agent-federation.json").write_text('{"kind": "test"}')
+        fed = tmp_path / "data" / "federation"
+        fed.mkdir(parents=True)
+        (fed / "peer.json").write_text('{"capabilities": []}')
+        wf = tmp_path / ".github" / "workflows"
+        wf.mkdir(parents=True)
+        (wf / "ci.yml").write_text("name: CI\n")
+        tests = tmp_path / "tests"
+        tests.mkdir()
+        (tests / "__init__.py").write_text("")
+        (tests / "test_x.py").write_text("def test_x(): pass\n")
+
+        healer, pipeline, synaptic = _make_healer()
+        result = await healer.heal_repo(tmp_path)
+
+        assert result.findings_fixed == 0
+        # No LLM calls
+        pipeline._run_fn.assert_not_awaited()
+        # No PR created
+        pipeline._create_pr.assert_not_called()
+
+
+class TestHealDeterministicOnly:
+    @pytest.mark.asyncio
+    async def test_deterministic_fixes_no_llm(self, tmp_path):
+        """Deterministic-only findings → 0 LLM calls."""
+        (tmp_path / "main.py").write_text("x = 1\n")
+        (tmp_path / "pyproject.toml").write_text(
+            textwrap.dedent("""\
+            [project]
+            dependencies = [
+                "ecdsa>=0.18",
+            ]
+        """)
+        )
+        # Add tests so NO_TESTS doesn't fire
+        tests = tmp_path / "tests"
+        tests.mkdir()
+        (tests / "__init__.py").write_text("")
+        (tests / "test_x.py").write_text("def test_x(): pass\n")
+
+        # Missing: federation descriptor, peer.json, CI
+        breaker = MagicMock()
+        gate_result = MagicMock()
+        gate_result.passed = True
+        breaker.run_gates.return_value = [gate_result]
+
+        healer, pipeline, synaptic = _make_healer(breaker=breaker)
+        result = await healer.heal_repo(tmp_path)
+
+        assert result.findings_fixed > 0
+        # No LLM calls (only deterministic fixes)
+        pipeline._run_fn.assert_not_awaited()
+        # Hebbian success recorded
+        assert synaptic.update.called
+
+
+class TestHealGateFailureRollback:
+    @pytest.mark.asyncio
+    async def test_gate_failure_triggers_rollback(self, tmp_path):
+        """Gate failure → all changes rolled back, Hebbian failure."""
+        (tmp_path / "main.py").write_text("x = 1\n")
+        (tmp_path / "pyproject.toml").write_text('[project]\ndependencies = []\n')
+        tests = tmp_path / "tests"
+        tests.mkdir()
+        (tests / "__init__.py").write_text("")
+        (tests / "test_x.py").write_text("def test_x(): pass\n")
+
+        breaker = MagicMock()
+        failed_gate = MagicMock()
+        failed_gate.passed = False
+        failed_gate.detail = "lint: 3 new violations"
+        breaker.run_gates.return_value = [failed_gate]
+
+        healer, pipeline, synaptic = _make_healer(breaker=breaker)
+        result = await healer.heal_repo(tmp_path)
+
+        assert result.findings_fixed == 0
+        assert "Gate failure" in result.error
+        breaker.rollback_files.assert_called_once()
+        breaker.record_rollback.assert_called_once()
+        # Hebbian failure recorded
+        failure_calls = [c for c in synaptic.update.call_args_list if c.kwargs.get("success") is False]
+        assert len(failure_calls) > 0
+
+
+class TestHealCreatesPr:
+    @pytest.mark.asyncio
+    async def test_pr_created_on_success(self, tmp_path):
+        """Successful healing → PR URL in result."""
+        (tmp_path / "main.py").write_text("x = 1\n")
+        (tmp_path / "pyproject.toml").write_text('[project]\ndependencies = []\n')
+        tests = tmp_path / "tests"
+        tests.mkdir()
+        (tests / "__init__.py").write_text("")
+        (tests / "test_x.py").write_text("def test_x(): pass\n")
+
+        breaker = MagicMock()
+        gate_result = MagicMock()
+        gate_result.passed = True
+        breaker.run_gates.return_value = [gate_result]
+
+        pr_url = "https://github.com/test/pulls/42"
+        healer, pipeline, synaptic = _make_healer(
+            breaker=breaker,
+            create_pr_fn=MagicMock(return_value=pr_url),
+        )
+        result = await healer.heal_repo(tmp_path)
+
+        assert result.pr_url == pr_url
+        assert result.findings_fixed > 0
+
+
+class TestHealMixedFindings:
+    @pytest.mark.asyncio
+    async def test_only_fixable_attempted(self, tmp_path):
+        """Mixed findings: deterministic + skip → only deterministic attempted."""
+        # Create a repo with a large file (SKIP) and missing federation (DETERMINISTIC)
+        (tmp_path / "big.py").write_text("x = 1\n" * 900)  # LARGE_FILE → SKIP
+        (tmp_path / "pyproject.toml").write_text('[project]\ndependencies = []\n')
+        tests = tmp_path / "tests"
+        tests.mkdir()
+        (tests / "__init__.py").write_text("")
+        (tests / "test_x.py").write_text("def test_x(): pass\n")
+
+        breaker = MagicMock()
+        gate_result = MagicMock()
+        gate_result.passed = True
+        breaker.run_gates.return_value = [gate_result]
+
+        healer, pipeline, synaptic = _make_healer(breaker=breaker)
+        result = await healer.heal_repo(tmp_path)
+
+        # LARGE_FILE is skipped, but federation + CI + peer.json are deterministic
+        assert result.findings_fixable > 0
+        assert result.findings_fixed > 0
+
+
+class TestHebbianLearning:
+    @pytest.mark.asyncio
+    async def test_success_records_positive_weight(self, tmp_path):
+        """Successful heal → Hebbian update with success=True."""
+        (tmp_path / "main.py").write_text("x = 1\n")
+        (tmp_path / "pyproject.toml").write_text('[project]\ndependencies = []\n')
+        tests = tmp_path / "tests"
+        tests.mkdir()
+        (tests / "__init__.py").write_text("")
+        (tests / "test_x.py").write_text("def test_x(): pass\n")
+
+        breaker = MagicMock()
+        gate_result = MagicMock()
+        gate_result.passed = True
+        breaker.run_gates.return_value = [gate_result]
+
+        healer, pipeline, synaptic = _make_healer(breaker=breaker)
+        await healer.heal_repo(tmp_path)
+
+        success_calls = [c for c in synaptic.update.call_args_list if c.kwargs.get("success") is True]
+        assert len(success_calls) > 0
+
+    @pytest.mark.asyncio
+    async def test_failure_records_negative_weight(self, tmp_path):
+        """Gate failure → Hebbian update with success=False."""
+        (tmp_path / "main.py").write_text("x = 1\n")
+        (tmp_path / "pyproject.toml").write_text('[project]\ndependencies = []\n')
+        tests = tmp_path / "tests"
+        tests.mkdir()
+        (tests / "__init__.py").write_text("")
+        (tests / "test_x.py").write_text("def test_x(): pass\n")
+
+        breaker = MagicMock()
+        failed_gate = MagicMock()
+        failed_gate.passed = False
+        failed_gate.detail = "test failure"
+        breaker.run_gates.return_value = [failed_gate]
+
+        healer, pipeline, synaptic = _make_healer(breaker=breaker)
+        await healer.heal_repo(tmp_path)
+
+        failure_calls = [c for c in synaptic.update.call_args_list if c.kwargs.get("success") is False]
+        assert len(failure_calls) > 0
+
+
+# ── Intent Integration ──────────────────────────────────────────────────
+
+
+class TestHealRepoIntent:
+    def test_intent_exists(self):
+        from steward.intents import TaskIntent
+
+        assert TaskIntent.HEAL_REPO.value == "heal_repo"
+
+    def test_intent_is_proactive(self):
+        from steward.intents import TaskIntent
+
+        assert TaskIntent.HEAL_REPO.is_proactive
+
+    def test_handler_returns_none_without_reaper(self):
+        from steward.intent_handlers import IntentHandlers
+
+        class FakeSenses:
+            senses = {}
+            def perceive_all(self):
+                pass
+
+        handlers = IntentHandlers(senses=FakeSenses(), vedana_fn=lambda: None, cwd="/tmp")
+        result = handlers.execute_heal_repo()
+        assert result is None
+
+    def test_handler_returns_none_when_no_degraded(self):
+        from steward.intent_handlers import IntentHandlers
+        from steward.reaper import HeartbeatReaper
+        from steward.services import SVC_REAPER
+        from vibe_core.di import ServiceRegistry
+
+        reaper = HeartbeatReaper()
+        reaper.record_heartbeat("healthy-peer", timestamp=1000.0)
+        ServiceRegistry.register(SVC_REAPER, reaper)
+
+        class FakeSenses:
+            senses = {}
+            def perceive_all(self):
+                pass
+
+        handlers = IntentHandlers(senses=FakeSenses(), vedana_fn=lambda: None, cwd="/tmp")
+        result = handlers.execute_heal_repo()
+        assert result is None
+
+    def test_handler_reports_degraded_peers(self):
+        from steward.intent_handlers import IntentHandlers
+        from steward.reaper import HeartbeatReaper
+        from steward.services import SVC_REAPER
+        from vibe_core.di import ServiceRegistry
+
+        reaper = HeartbeatReaper(lease_ttl_s=100)
+        reaper.record_heartbeat("sick-peer", timestamp=500.0)
+        reaper.reap(now=1000.0)
+        ServiceRegistry.register(SVC_REAPER, reaper)
+
+        class FakeSenses:
+            senses = {}
+            def perceive_all(self):
+                pass
+
+        handlers = IntentHandlers(senses=FakeSenses(), vedana_fn=lambda: None, cwd="/tmp")
+        result = handlers.execute_heal_repo()
+        assert result is not None
+        assert "sick-peer" in result
+        assert "healing" in result.lower()

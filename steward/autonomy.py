@@ -63,6 +63,23 @@ def parse_intent_from_title(title: str) -> object | None:
         return None
 
 
+def _resolve_peer_repo(agent_id: str) -> Path | None:
+    """Try to resolve a peer agent_id to a local repo path.
+
+    Checks common project locations. Returns None if not found.
+    """
+    home = Path.home()
+    candidates = [
+        home / "projects" / agent_id,
+        home / agent_id,
+        Path(agent_id),  # Might already be an absolute path
+    ]
+    for candidate in candidates:
+        if candidate.is_dir() and (candidate / ".git").is_dir():
+            return candidate
+    return None
+
+
 class AutonomyEngine:
     """Autonomous task detection, dispatch, and guarded fix pipeline.
 
@@ -159,6 +176,13 @@ class AutonomyEngine:
 
         try:
             intent = parse_intent_from_title(task.title)
+
+            # Heal repo: special dispatch — uses RepoHealer, not generic LLM fix
+            if intent is not None:
+                from steward.intents import TaskIntent
+
+                if intent == TaskIntent.HEAL_REPO:
+                    return await self._execute_heal_repo(task, task_mgr, TaskStatus)
 
             # Federated tasks from peers: [FED:source] title → isolated execution + callback
             if intent is None and task.title.startswith("[FED:"):
@@ -302,6 +326,65 @@ class AutonomyEngine:
                 )
 
         return result
+
+    async def _execute_heal_repo(self, task: object, task_mgr: object, TaskStatus: object) -> str | None:
+        """Execute HEAL_REPO: find degraded peers, heal their repos.
+
+        1. Get degraded peers from reaper
+        2. For each peer with a resolvable repo path: heal via RepoHealer
+        3. Aggregate results, record Hebbian learning
+        """
+        from steward.healer import RepoHealer
+        from steward.services import SVC_REAPER
+
+        reaper = ServiceRegistry.get(SVC_REAPER)
+        if reaper is None:
+            task_mgr.update_task(task.id, status=TaskStatus.COMPLETED)
+            return None
+
+        degraded = reaper.suspect_peers() + reaper.dead_peers()
+        if not degraded:
+            task_mgr.update_task(task.id, status=TaskStatus.COMPLETED)
+            return None
+
+        healer = RepoHealer(
+            pipeline=self.pipeline,
+            run_fn=self.pipeline._run_fn,
+            synaptic=self._synaptic,
+        )
+
+        results = []
+        for peer in degraded[:3]:
+            # Try to resolve peer agent_id to a local repo path
+            repo_path = _resolve_peer_repo(peer.agent_id)
+            if repo_path is None:
+                logger.debug("Cannot resolve repo for peer %s — skipping", peer.agent_id)
+                continue
+
+            try:
+                result = await healer.heal_repo(repo_path)
+                results.append(result)
+                logger.info(
+                    "Heal %s: %d/%d fixed, PR=%s",
+                    peer.agent_id,
+                    result.findings_fixed,
+                    result.findings_fixable,
+                    result.pr_url or "(none)",
+                )
+            except Exception as e:
+                logger.error("Heal failed for %s: %s", peer.agent_id, e)
+
+        task_mgr.update_task(task.id, status=TaskStatus.COMPLETED)
+        self._ledger.record_autonomous("HEAL_REPO", bool(results))
+
+        if results:
+            summary = "; ".join(
+                f"{r.repo}: {r.findings_fixed}/{r.findings_fixable} fixed"
+                + (f" PR: {r.pr_url}" if r.pr_url else "")
+                for r in results
+            )
+            return f"Healed repos: {summary}"
+        return None
 
     @contextmanager
     def _cross_repo_workspace(self, repo_url: str, task_id: str):
