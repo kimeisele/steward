@@ -25,6 +25,7 @@ from steward.healer import (
     _fix_no_tests,
     _fix_syntax_error,
     _fix_undeclared_dependency,
+    _parse_and_apply_patches,
     classify,
 )
 from steward.senses.diagnostic_sense import (
@@ -510,6 +511,51 @@ class TestFixCircularImport:
             detail="Circular import: a.py → missing.py → a.py",
         )
         changed = _fix_circular_import(finding, tmp_path)
+        assert changed == []
+
+
+class TestParseAndApplyPatches:
+    def test_applies_valid_patch(self, tmp_path):
+        (tmp_path / "app.py").write_text("x = 1\n")
+        response = '```file:app.py\nx = 2\ny = 3\n```'
+        changed = _parse_and_apply_patches(response, tmp_path)
+        assert "app.py" in changed
+        assert (tmp_path / "app.py").read_text() == "x = 2\ny = 3\n"
+
+    def test_rejects_unparseable_python(self, tmp_path):
+        (tmp_path / "broken.py").write_text("x = 1\n")
+        response = '```file:broken.py\ndef foo(\n```'  # Invalid syntax
+        changed = _parse_and_apply_patches(response, tmp_path)
+        assert changed == []
+        assert (tmp_path / "broken.py").read_text() == "x = 1\n"  # Unchanged
+
+    def test_skips_nonexistent_files(self, tmp_path):
+        response = '```file:missing.py\nx = 1\n```'
+        changed = _parse_and_apply_patches(response, tmp_path)
+        assert changed == []
+        assert not (tmp_path / "missing.py").exists()  # Not created
+
+    def test_multiple_patches(self, tmp_path):
+        (tmp_path / "a.py").write_text("old_a\n")
+        (tmp_path / "b.py").write_text("old_b\n")
+        response = '```file:a.py\nnew_a = 1\n```\n```file:b.py\nnew_b = 2\n```'
+        changed = _parse_and_apply_patches(response, tmp_path)
+        assert len(changed) == 2
+        assert "new_a" in (tmp_path / "a.py").read_text()
+        assert "new_b" in (tmp_path / "b.py").read_text()
+
+    def test_non_python_file_no_ast_check(self, tmp_path):
+        (tmp_path / "config.yml").write_text("old: true\n")
+        response = '```file:config.yml\nnew: true\nvalue: 42\n```'
+        changed = _parse_and_apply_patches(response, tmp_path)
+        assert "config.yml" in changed
+
+    def test_empty_response_returns_empty(self, tmp_path):
+        changed = _parse_and_apply_patches("", tmp_path)
+        assert changed == []
+
+    def test_no_code_blocks_returns_empty(self, tmp_path):
+        changed = _parse_and_apply_patches("I can't fix this sorry", tmp_path)
         assert changed == []
 
 

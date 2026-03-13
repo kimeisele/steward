@@ -717,6 +717,44 @@ def _add_dependency_to_toml(text: str, package: str) -> str:
     return "".join(lines)
 
 
+def _parse_and_apply_patches(response: str, workspace: Path) -> list[str]:
+    """Parse LLM response for ```file:path ... ``` blocks and apply them.
+
+    Expected format:
+        ```file:src/app.py
+        ...corrected content...
+        ```
+
+    Safety: verifies .py files parse via ast before writing.
+    Only writes to files that already exist in workspace (no file creation).
+    """
+    changed: list[str] = []
+    # Match ```file:path\n...content...\n```
+    pattern = re.compile(r"```file:([\w/.-]+)\n(.*?)```", re.DOTALL)
+
+    for match in pattern.finditer(response):
+        file_path = match.group(1).strip()
+        content = match.group(2)
+
+        target = workspace / file_path
+        if not target.exists():
+            continue  # Don't create new files from LLM output
+
+        # Safety: verify .py files parse
+        if file_path.endswith(".py"):
+            try:
+                ast.parse(content, filename=file_path)
+            except SyntaxError:
+                logger.warning("LLM patch for %s has syntax error — skipping", file_path)
+                continue
+
+        target.write_text(content)
+        changed.append(file_path)
+        logger.info("Applied LLM patch to %s", file_path)
+
+    return changed
+
+
 # ── PR Body Builder ─────────────────────────────────────────────────────
 
 
@@ -769,6 +807,84 @@ class RepoHealer:
         self._pipeline = pipeline
         self._run_fn = run_fn
         self._synaptic = synaptic
+
+    async def _llm_compound_fix(
+        self, finding: "Finding", workspace: Path,
+    ) -> list[str]:
+        """Phase B of COMPOUND: one gated LLM call with structured I/O.
+
+        1. Gather context: CI log excerpt + relevant source files
+        2. Build structured prompt demanding ```file:path\\n...``` blocks
+        3. Parse response for file patches
+        4. Apply patches to workspace
+        5. Verify each patched file parses (for .py)
+        Returns list of changed file paths, empty if LLM couldn't fix.
+        """
+        import subprocess
+
+        # Step 1: Gather CI log context
+        ci_log = ""
+        wf_match = re.search(r"workflow '([^']+)'", finding.detail)
+        if wf_match:
+            try:
+                r = subprocess.run(
+                    ["gh", "run", "list", "--workflow", wf_match.group(1),
+                     "--status", "failure", "--limit", "1", "--json", "databaseId"],
+                    capture_output=True, text=True, timeout=15, cwd=str(workspace),
+                )
+                if r.returncode == 0:
+                    runs = json.loads(r.stdout)
+                    if runs:
+                        r2 = subprocess.run(
+                            ["gh", "run", "view", str(runs[0]["databaseId"]), "--log-failed"],
+                            capture_output=True, text=True, timeout=30, cwd=str(workspace),
+                        )
+                        ci_log = r2.stdout[-3000:] if r2.returncode == 0 else ""
+            except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+                pass
+
+        # Step 2: Gather relevant source files from error trace
+        source_context = ""
+        file_matches = re.findall(r"([\w/.-]+\.py)", ci_log)
+        seen_files: set[str] = set()
+        for fpath in file_matches[:3]:  # Max 3 files for token budget
+            if fpath in seen_files:
+                continue
+            seen_files.add(fpath)
+            full = workspace / fpath
+            if full.exists():
+                try:
+                    content = full.read_text()[:2000]  # Max 2KB per file
+                    source_context += f"\n--- {fpath} ---\n{content}\n"
+                except OSError:
+                    pass
+
+        if not ci_log and not source_context:
+            return []  # No context → can't ask LLM anything useful
+
+        # Step 3: Structured prompt
+        prompt = (
+            "Fix this CI failure. Return ONLY code blocks in this exact format:\n"
+            "```file:path/to/file.py\n"
+            "...corrected file content...\n"
+            "```\n"
+            "ONE fix. No explanation. No markdown outside code blocks.\n\n"
+            f"CI LOG (last lines):\n{ci_log}\n\n"
+            f"SOURCE FILES:{source_context}\n"
+        )
+
+        try:
+            response = await self._run_fn(prompt)
+        except Exception as e:
+            logger.warning("LLM compound call failed: %s", e)
+            return []
+
+        if not response:
+            return []
+
+        # Step 4: Parse structured response for file patches
+        changed = _parse_and_apply_patches(response, workspace)
+        return changed
 
     async def heal_repo(self, workspace: Path) -> HealResult:
         """Run full healing pipeline on an already-cloned repo.
@@ -851,20 +967,12 @@ class RepoHealer:
                     continue
 
                 # Phase B: deterministic failed → one gated LLM call
-                prompt = (
-                    f"Fix this CI failure. ONE targeted fix only.\n"
-                    f"Repo: {repo_name}\n"
-                    f"Finding: {finding.kind.value}\n"
-                    f"Detail: {finding.detail}\n"
-                    f"Hint: {finding.fix_hint}\n"
-                    f"Workspace: {workspace}\n"
-                    f"Return ONLY the fix — no explanation."
-                )
-                result = await self._run_fn(prompt)
-                if result:
+                llm_changed = await self._llm_compound_fix(finding, workspace)
+                if llm_changed:
+                    all_changed.extend(llm_changed)
                     applied.append((finding, True))
                     fixed_count += 1
-                    logger.info("Compound-fixed %s: %s (LLM fallback)", finding.kind.value, finding.detail)
+                    logger.info("Compound-fixed %s: %s (LLM, %d files)", finding.kind.value, finding.detail, len(llm_changed))
                 else:
                     applied.append((finding, False))
             except Exception as e:
