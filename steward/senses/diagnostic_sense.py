@@ -369,7 +369,10 @@ def _analyze_dependencies(repo_path: Path, imported: set[str]) -> tuple[list[Fin
         "scikit_learn": "sklearn",
         "python_dotenv": "dotenv",
         "pygithub": "github",
-        "steward_protocol": ("steward", "vibe_core"),
+        "google_generativeai": "google",
+        "tavily_python": "tavily",
+        "python_telegram_bot": "telegram",
+        "steward_protocol": ("steward", "vibe_core", "pydantic", "openai", "google", "yaml"),
     }
     declared_import_names = set()
     for d in declared_normalized:
@@ -395,6 +398,20 @@ def _analyze_dependencies(repo_path: Path, imported: set[str]) -> tuple[list[Fin
     return findings, declared
 
 
+def _is_real_bracket_close(line: str) -> bool:
+    """Check if ] in line is the real array close, not inside a quoted string."""
+    # Strip the line and check: if it's just ']' or starts with ']', it's a real close
+    stripped = line.strip()
+    if stripped == "]":
+        return True
+    # Count quotes before first ]: if even, it's real; if odd, it's inside string
+    idx = stripped.find("]")
+    if idx < 0:
+        return False
+    quote_count = stripped[:idx].count('"')
+    return quote_count % 2 == 0
+
+
 def _parse_deps_from_toml(text: str) -> list[str]:
     """Extract dependency names from pyproject.toml without tomllib.
 
@@ -414,7 +431,7 @@ def _parse_deps_from_toml(text: str) -> list[str]:
             # Handle single-line: dependencies = ["foo"]
             if "[" in stripped:
                 rest = stripped.split("[", 1)[1]
-                if "]" in rest:
+                if _is_real_bracket_close(rest):
                     items = rest.split("]")[0]
                     for item in items.split(","):
                         name = _extract_package_name(item)
@@ -423,7 +440,7 @@ def _parse_deps_from_toml(text: str) -> list[str]:
                     in_deps = False
             continue
         if in_deps:
-            if "]" in stripped:
+            if _is_real_bracket_close(stripped):
                 # Last item before closing bracket
                 before = stripped.split("]")[0]
                 name = _extract_package_name(before)
@@ -462,7 +479,7 @@ def _parse_optional_deps_from_toml(text: str) -> list[str]:
             # e.g. dev = ["pytest>=7.0", ...]
             if "[" in stripped:
                 rest = stripped.split("[", 1)[1]
-                if "]" in rest:
+                if _is_real_bracket_close(rest):
                     # Single line: dev = ["pytest>=7.0", "ruff"]
                     items = rest.split("]")[0]
                     for item in items.split(","):
@@ -478,7 +495,7 @@ def _parse_optional_deps_from_toml(text: str) -> list[str]:
                         if name:
                             deps.append(name)
         elif in_array:
-            if "]" in stripped:
+            if _is_real_bracket_close(stripped):
                 before = stripped.split("]")[0]
                 name = _extract_package_name(before)
                 if name:

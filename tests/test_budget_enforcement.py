@@ -212,6 +212,10 @@ class TestFreeTierOnly:
 
 
 class TestDotenvLoading:
+    @pytest.mark.skipif(
+        not __import__("importlib").util.find_spec("dotenv"),
+        reason="python-dotenv not installed",
+    )
     def test_dotenv_loads_env_file(self, tmp_path):
         """build_chamber reads .env file for API keys."""
         env_file = tmp_path / ".env"

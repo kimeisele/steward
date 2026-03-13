@@ -226,6 +226,19 @@ class TestParseToml:
         deps = _parse_deps_from_toml(text)
         assert deps == ["foo", "bar"]
 
+    def test_parse_deps_with_extras_bracket(self):
+        """Bracket inside quoted package name must NOT terminate array."""
+        text = textwrap.dedent("""\
+            [project]
+            dependencies = [
+                "steward-protocol[providers]",
+                "rich>=13.0",
+            ]
+        """)
+        deps = _parse_deps_from_toml(text)
+        assert "steward-protocol" in deps
+        assert "rich" in deps
+
     def test_extract_package_name(self):
         assert _extract_package_name('"ecdsa>=0.18",') == "ecdsa"
         assert _extract_package_name('"steward-protocol[city]"') == "steward-protocol"
