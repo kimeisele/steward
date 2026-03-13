@@ -36,13 +36,15 @@ _MAX_FILES = 500
 
 class Severity(enum.Enum):
     """Finding severity — drives priority of fix."""
-    CRITICAL = "critical"   # Blocks execution (broken imports, missing deps)
-    WARNING = "warning"     # Degraded (no CI, no tests, no federation)
-    INFO = "info"           # Observable (large files, low cohesion)
+
+    CRITICAL = "critical"  # Blocks execution (broken imports, missing deps)
+    WARNING = "warning"  # Degraded (no CI, no tests, no federation)
+    INFO = "info"  # Observable (large files, low cohesion)
 
 
 class FindingKind(enum.Enum):
     """What category of problem was found."""
+
     BROKEN_IMPORT = "broken_import"
     MISSING_DEPENDENCY = "missing_dependency"
     UNDECLARED_DEPENDENCY = "undeclared_dependency"
@@ -63,11 +65,12 @@ class Finding:
     Each finding is self-contained: a cheap LLM or pure Python can
     execute fix_hint without understanding the broader codebase.
     """
+
     kind: FindingKind
     severity: Severity
-    file: str           # relative path (or "" for repo-level)
-    line: int = 0       # 0 = file-level
-    detail: str = ""    # human-readable explanation
+    file: str  # relative path (or "" for repo-level)
+    line: int = 0  # 0 = file-level
+    detail: str = ""  # human-readable explanation
     fix_hint: str = ""  # atomic fix instruction (machine-executable)
 
     def to_dict(self) -> dict:
@@ -84,9 +87,10 @@ class Finding:
 @dataclass(frozen=True)
 class CIStatus:
     """CI workflow status from gh run list."""
+
     workflow: str
     conclusion: str  # success, failure, cancelled, ""
-    status: str      # completed, in_progress, queued
+    status: str  # completed, in_progress, queued
 
 
 @dataclass(frozen=True)
@@ -146,8 +150,7 @@ class DiagnosticReport:
             "has_peer_json": self.has_peer_json,
             "peer_capabilities": list(self.peer_capabilities),
             "ci_statuses": [
-                {"workflow": ci.workflow, "conclusion": ci.conclusion, "status": ci.status}
-                for ci in self.ci_statuses
+                {"workflow": ci.workflow, "conclusion": ci.conclusion, "status": ci.status} for ci in self.ci_statuses
             ],
             "ci_error": self.ci_error,
             "errors": list(self.errors),
@@ -159,19 +162,18 @@ class DiagnosticReport:
 
 def _skip_path(parts: tuple[str, ...]) -> bool:
     """Skip hidden dirs, caches, venvs."""
-    return any(
-        p.startswith(".") or p == "__pycache__" or p in ("venv", ".venv", "node_modules", ".tox")
-        for p in parts
-    )
+    return any(p.startswith(".") or p == "__pycache__" or p in ("venv", ".venv", "node_modules", ".tox") for p in parts)
 
 
-def _analyze_imports(repo_path: Path) -> tuple[
-    list[Finding],   # findings
-    set[str],        # all third-party top-level modules imported
-    int,             # python file count
-    int,             # test file count
-    int,             # total lines
-    list[str],       # packages
+def _analyze_imports(
+    repo_path: Path,
+) -> tuple[
+    list[Finding],  # findings
+    set[str],  # all third-party top-level modules imported
+    int,  # python file count
+    int,  # test file count
+    int,  # total lines
+    list[str],  # packages
 ]:
     """AST-level import analysis. Detects broken imports, syntax errors.
 
@@ -182,6 +184,7 @@ def _analyze_imports(repo_path: Path) -> tuple[
       - Installed site-packages
     """
     import sys
+
     stdlib_modules = getattr(sys, "stdlib_module_names", set())
 
     findings: list[Finding] = []
@@ -221,14 +224,16 @@ def _analyze_imports(repo_path: Path) -> tuple[
             total_lines += source.count("\n") + 1
             tree = ast.parse(source, filename=rel_str)
         except SyntaxError as e:
-            findings.append(Finding(
-                kind=FindingKind.SYNTAX_ERROR,
-                severity=Severity.CRITICAL,
-                file=rel_str,
-                line=getattr(e, "lineno", 0) or 0,
-                detail=f"SyntaxError: {e.msg}" if hasattr(e, "msg") else str(e),
-                fix_hint=f"Fix syntax error in {rel_str}",
-            ))
+            findings.append(
+                Finding(
+                    kind=FindingKind.SYNTAX_ERROR,
+                    severity=Severity.CRITICAL,
+                    file=rel_str,
+                    line=getattr(e, "lineno", 0) or 0,
+                    detail=f"SyntaxError: {e.msg}" if hasattr(e, "msg") else str(e),
+                    fix_hint=f"Fix syntax error in {rel_str}",
+                )
+            )
             continue
         except (OSError, UnicodeDecodeError):
             continue
@@ -262,23 +267,27 @@ def _analyze_imports(repo_path: Path) -> tuple[
                     try:
                         __import__(top)
                         # Top-level exists but submodule doesn't — specific name missing
-                        findings.append(Finding(
-                            kind=FindingKind.BROKEN_IMPORT,
-                            severity=Severity.CRITICAL,
-                            file=rel_str,
-                            line=node.lineno,
-                            detail=f"from {node.module} import {names} — submodule not found",
-                            fix_hint=f"Check if '{node.module}' was renamed or moved in latest version of '{top}'",
-                        ))
+                        findings.append(
+                            Finding(
+                                kind=FindingKind.BROKEN_IMPORT,
+                                severity=Severity.CRITICAL,
+                                file=rel_str,
+                                line=node.lineno,
+                                detail=f"from {node.module} import {names} — submodule not found",
+                                fix_hint=f"Check if '{node.module}' was renamed or moved in latest version of '{top}'",
+                            )
+                        )
                     except ImportError:
-                        findings.append(Finding(
-                            kind=FindingKind.MISSING_DEPENDENCY,
-                            severity=Severity.CRITICAL,
-                            file=rel_str,
-                            line=node.lineno,
-                            detail=f"from {node.module} import {names} — package '{top}' not installed",
-                            fix_hint=f"pip install {top}",
-                        ))
+                        findings.append(
+                            Finding(
+                                kind=FindingKind.MISSING_DEPENDENCY,
+                                severity=Severity.CRITICAL,
+                                file=rel_str,
+                                line=node.lineno,
+                                detail=f"from {node.module} import {names} — package '{top}' not installed",
+                                fix_hint=f"pip install {top}",
+                            )
+                        )
                 except Exception:
                     pass  # Some packages fail on import for other reasons
 
@@ -292,13 +301,15 @@ def _analyze_imports(repo_path: Path) -> tuple[
         # Large file check
         line_count = source.count("\n") + 1
         if line_count > 800:
-            findings.append(Finding(
-                kind=FindingKind.LARGE_FILE,
-                severity=Severity.INFO,
-                file=rel_str,
-                detail=f"{line_count} lines — consider splitting",
-                fix_hint=f"Split {rel_str} into focused modules (LCOM4 analysis recommended)",
-            ))
+            findings.append(
+                Finding(
+                    kind=FindingKind.LARGE_FILE,
+                    severity=Severity.INFO,
+                    file=rel_str,
+                    detail=f"{line_count} lines — consider splitting",
+                    fix_hint=f"Split {rel_str} into focused modules (LCOM4 analysis recommended)",
+                )
+            )
 
     return findings, third_party, py_file_count, test_file_count, total_lines, packages[:50]
 
@@ -321,14 +332,16 @@ def _check_local_import(
         return  # Package exists
 
     # The import target doesn't exist as a file — broken internal reference
-    findings.append(Finding(
-        kind=FindingKind.BROKEN_IMPORT,
-        severity=Severity.CRITICAL,
-        file=from_file,
-        line=lineno,
-        detail=f"from {module} import {names} — local module not found",
-        fix_hint=f"Module '{module}' does not exist at {possible}.py or {possible}/__init__.py",
-    ))
+    findings.append(
+        Finding(
+            kind=FindingKind.BROKEN_IMPORT,
+            severity=Severity.CRITICAL,
+            file=from_file,
+            line=lineno,
+            detail=f"from {module} import {names} — local module not found",
+            fix_hint=f"Module '{module}' does not exist at {possible}.py or {possible}/__init__.py",
+        )
+    )
 
 
 def _analyze_dependencies(repo_path: Path, imported: set[str]) -> tuple[list[Finding], list[str]]:
@@ -337,13 +350,15 @@ def _analyze_dependencies(repo_path: Path, imported: set[str]) -> tuple[list[Fin
 
     pyproject = repo_path / "pyproject.toml"
     if not pyproject.exists():
-        findings.append(Finding(
-            kind=FindingKind.MISSING_DEPENDENCY,
-            severity=Severity.WARNING,
-            file="",
-            detail="No pyproject.toml found",
-            fix_hint="Create pyproject.toml with project dependencies",
-        ))
+        findings.append(
+            Finding(
+                kind=FindingKind.MISSING_DEPENDENCY,
+                severity=Severity.WARNING,
+                file="",
+                detail="No pyproject.toml found",
+                fix_hint="Create pyproject.toml with project dependencies",
+            )
+        )
         return findings, []
 
     # Parse dependencies from pyproject.toml (basic TOML parsing without tomllib)
@@ -387,13 +402,15 @@ def _analyze_dependencies(repo_path: Path, imported: set[str]) -> tuple[list[Fin
 
     for imp in sorted(imported):
         if imp.lower() not in declared_import_names:
-            findings.append(Finding(
-                kind=FindingKind.UNDECLARED_DEPENDENCY,
-                severity=Severity.WARNING,
-                file="pyproject.toml",
-                detail=f"'{imp}' is imported but not declared in dependencies",
-                fix_hint=f"Add '{imp}' to [project.dependencies] in pyproject.toml",
-            ))
+            findings.append(
+                Finding(
+                    kind=FindingKind.UNDECLARED_DEPENDENCY,
+                    severity=Severity.WARNING,
+                    file="pyproject.toml",
+                    detail=f"'{imp}' is imported but not declared in dependencies",
+                    fix_hint=f"Add '{imp}' to [project.dependencies] in pyproject.toml",
+                )
+            )
 
     return findings, declared
 
@@ -532,13 +549,15 @@ def _analyze_federation(repo_path: Path) -> tuple[list[Finding], bool, dict, boo
         except (json.JSONDecodeError, OSError):
             pass
     else:
-        findings.append(Finding(
-            kind=FindingKind.NO_FEDERATION_DESCRIPTOR,
-            severity=Severity.WARNING,
-            file=".well-known/agent-federation.json",
-            detail="No federation descriptor — repo is invisible to the network",
-            fix_hint="Create .well-known/agent-federation.json with kind, version, repo_id, status fields",
-        ))
+        findings.append(
+            Finding(
+                kind=FindingKind.NO_FEDERATION_DESCRIPTOR,
+                severity=Severity.WARNING,
+                file=".well-known/agent-federation.json",
+                detail="No federation descriptor — repo is invisible to the network",
+                fix_hint="Create .well-known/agent-federation.json with kind, version, repo_id, status fields",
+            )
+        )
 
     peer_path = repo_path / "data" / "federation" / "peer.json"
     has_peer = peer_path.exists()
@@ -550,13 +569,15 @@ def _analyze_federation(repo_path: Path) -> tuple[list[Finding], bool, dict, boo
         except (json.JSONDecodeError, OSError):
             pass
     else:
-        findings.append(Finding(
-            kind=FindingKind.NO_PEER_JSON,
-            severity=Severity.WARNING,
-            file="data/federation/peer.json",
-            detail="No peer.json — capabilities unknown to federation",
-            fix_hint="Create data/federation/peer.json with identity, capabilities, endpoint fields",
-        ))
+        findings.append(
+            Finding(
+                kind=FindingKind.NO_PEER_JSON,
+                severity=Severity.WARNING,
+                file="data/federation/peer.json",
+                detail="No peer.json — capabilities unknown to federation",
+                fix_hint="Create data/federation/peer.json with identity, capabilities, endpoint fields",
+            )
+        )
 
     return findings, has_descriptor, descriptor, has_peer, peer_caps
 
@@ -570,13 +591,15 @@ def _analyze_ci(repo_path: Path) -> tuple[list[Finding], tuple[CIStatus, ...], s
     # Check for workflow files
     workflows_dir = repo_path / ".github" / "workflows"
     if not workflows_dir.exists() or not any(workflows_dir.glob("*.yml")):
-        findings.append(Finding(
-            kind=FindingKind.NO_CI,
-            severity=Severity.WARNING,
-            file=".github/workflows/",
-            detail="No GitHub Actions workflows found",
-            fix_hint="Add .github/workflows/ci.yml with pytest and lint steps",
-        ))
+        findings.append(
+            Finding(
+                kind=FindingKind.NO_CI,
+                severity=Severity.WARNING,
+                file=".github/workflows/",
+                detail="No GitHub Actions workflows found",
+                fix_hint="Add .github/workflows/ci.yml with pytest and lint steps",
+            )
+        )
 
     # Try gh run list (may fail without network/auth — that's fine)
     try:
@@ -590,19 +613,23 @@ def _analyze_ci(repo_path: Path) -> tuple[list[Finding], tuple[CIStatus, ...], s
         if result.returncode == 0 and result.stdout.strip():
             runs = json.loads(result.stdout)
             for run in runs:
-                ci_statuses.append(CIStatus(
-                    workflow=run.get("name", ""),
-                    conclusion=run.get("conclusion", ""),
-                    status=run.get("status", ""),
-                ))
+                ci_statuses.append(
+                    CIStatus(
+                        workflow=run.get("name", ""),
+                        conclusion=run.get("conclusion", ""),
+                        status=run.get("status", ""),
+                    )
+                )
                 if run.get("conclusion") == "failure":
-                    findings.append(Finding(
-                        kind=FindingKind.CI_FAILING,
-                        severity=Severity.CRITICAL,
-                        file="",
-                        detail=f"CI workflow '{run.get('name', '?')}' is failing",
-                        fix_hint=f"Run 'gh run view' to see failure details, then fix the failing tests/lint",
-                    ))
+                    findings.append(
+                        Finding(
+                            kind=FindingKind.CI_FAILING,
+                            severity=Severity.CRITICAL,
+                            file="",
+                            detail=f"CI workflow '{run.get('name', '?')}' is failing",
+                            fix_hint=f"Run 'gh run view' to see failure details, then fix the failing tests/lint",
+                        )
+                    )
     except (subprocess.TimeoutExpired, FileNotFoundError, json.JSONDecodeError) as e:
         ci_error = str(e)[:200]
 
@@ -614,13 +641,15 @@ def _analyze_test_infrastructure(repo_path: Path, test_file_count: int) -> list[
     findings: list[Finding] = []
 
     if test_file_count == 0:
-        findings.append(Finding(
-            kind=FindingKind.NO_TESTS,
-            severity=Severity.WARNING,
-            file="",
-            detail="No test files found",
-            fix_hint="Create tests/ directory with test_*.py files",
-        ))
+        findings.append(
+            Finding(
+                kind=FindingKind.NO_TESTS,
+                severity=Severity.WARNING,
+                file="",
+                detail="No test files found",
+                fix_hint="Create tests/ directory with test_*.py files",
+            )
+        )
 
     return findings
 
