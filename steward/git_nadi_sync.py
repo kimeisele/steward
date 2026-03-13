@@ -102,11 +102,11 @@ class GitNadiSync:
             self._last_push = time.monotonic()
             return True
 
-        # Stage nadi files
+        # Stage federation files (nadi messages, peer descriptor, reports)
         try:
-            self._run_git("add", "nadi_inbox.json", "nadi_outbox.json")
+            self._run_git("add", "nadi_inbox.json", "nadi_outbox.json", "peer.json")
+            self._run_git("add", "reports/")
         except subprocess.CalledProcessError:
-            # Files might not exist yet — stage everything
             self._run_git("add", "-A")
 
         # Check if staging produced anything

@@ -1,16 +1,20 @@
 """
-Federation Transport — Adapts steward-protocol's FederationNadi for the bridge.
+Federation Transport — File I/O for steward's own data/federation/ directory.
 
-Two transport implementations:
-  - NadiFederationTransport: Uses FederationNadi from steward-protocol
-    (nadi_outbox.json / nadi_inbox.json). Compatible with agent-city and
-    agent-internet's filesystem federation. Works over git (push/pull = network).
-  - FilesystemFederationTransport: Legacy shared-directory transport for
-    backwards compatibility with STEWARD_FEDERATION_DIR.
+Steward's federation dir follows the same layout as agent-city:
+    data/federation/
+    ├── nadi_outbox.json   ← steward WRITES (outbound, for others to read)
+    ├── nadi_inbox.json    ← steward READS (inbound, from others)
+    ├── peer.json          ← self-description
+    ├── reports/           ← heartbeat reports
+    └── directives/        ← commands from federation
 
-Configure via:
-  STEWARD_FEDERATION_DIR → NadiFederationTransport (preferred)
-  Falls back to FilesystemFederationTransport if FederationNadi unavailable.
+IMPORTANT: This is SELF-HOSTED semantics. Steward reads its own inbox,
+writes its own outbox. This matches agent-city's FederationNadi pattern.
+
+steward-protocol's FederationNadi has REVERSED semantics (designed for
+cross-agent access: read THEIR outbox, write THEIR inbox). Don't use it
+for self-hosted federation — the file paths would be swapped.
 """
 
 from __future__ import annotations
@@ -22,51 +26,89 @@ from pathlib import Path
 
 logger = logging.getLogger("STEWARD.FEDERATION.TRANSPORT")
 
+NADI_BUFFER_SIZE = 144  # Max messages per file (matches steward-protocol)
+
 
 class NadiFederationTransport:
-    """Adapts steward-protocol's FederationNadi to the FederationTransport protocol.
+    """Self-hosted federation transport for steward's own data/federation/.
 
-    FederationNadi (steward-protocol) uses nadi_outbox.json / nadi_inbox.json —
-    the canonical cross-repo format shared by agent-city and agent-internet.
+    Reads from OUR inbox (nadi_inbox.json) — messages FROM other agents.
+    Writes to OUR outbox (nadi_outbox.json) — messages FROM us TO others.
 
-    This adapter satisfies the FederationTransport protocol:
-        read_outbox() -> list[dict]
-        append_to_inbox(messages) -> int
+    Matches agent-city's own FederationNadi semantics. Agent-internet
+    reads our outbox and delivers to our inbox via its relay pump.
+
+    Satisfies the FederationTransport protocol:
+        read_outbox() -> list[dict]   (reads our inbox)
+        append_to_inbox(messages)     (writes our outbox)
     """
 
     def __init__(self, federation_dir: str) -> None:
-        from vibe_core.mahamantra.federation import FederationNadi
-
-        self._nadi = FederationNadi(federation_dir=federation_dir)
+        self._dir = Path(federation_dir)
+        self._inbox = self._dir / "nadi_inbox.json"
+        self._outbox = self._dir / "nadi_outbox.json"
+        self._seen: set[tuple] = set()
 
     def read_outbox(self) -> list[dict]:
-        """Read messages from nadi_outbox.json (other agents' messages TO us).
+        """Read inbound messages from our inbox (nadi_inbox.json).
 
-        Returns list of dicts with {source, target, operation, payload, ...}.
-        FederationNadi handles TTL expiry and deduplication.
+        Called by FederationBridge.process_inbound() during DHARMA phase.
+        Deduplicates by (source, timestamp) to prevent reprocessing.
         """
-        messages = self._nadi.receive()
-        return [msg.to_dict() for msg in messages]
+        if not self._inbox.exists():
+            return []
+        try:
+            data = json.loads(self._inbox.read_text())
+            if not isinstance(data, list):
+                return []
+            messages = []
+            for item in data:
+                if not isinstance(item, dict):
+                    continue
+                key = (item.get("source", ""), item.get("timestamp", 0))
+                if key in self._seen:
+                    continue
+                self._seen.add(key)
+                messages.append(item)
+            return messages
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning("Failed to read inbox: %s", e)
+            return []
 
     def append_to_inbox(self, messages: list[object]) -> int:
-        """Write messages to nadi_inbox.json (our messages FOR other agents).
+        """Write outbound messages to our outbox (nadi_outbox.json).
 
-        Accepts dicts or FederationMessage-like objects. Converts to
-        FederationMessage format for cross-repo compatibility.
+        Called by FederationBridge.flush_outbound() during MOKSHA phase.
+        Atomic write (tmp → rename). Capped at NADI_BUFFER_SIZE.
         """
-        from vibe_core.mahamantra.federation import FederationMessage
+        if not messages:
+            return 0
+        try:
+            existing: list[dict] = []
+            if self._outbox.exists():
+                try:
+                    raw = json.loads(self._outbox.read_text())
+                    if isinstance(raw, list):
+                        existing = raw
+                except json.JSONDecodeError:
+                    pass
 
-        count = 0
-        for msg in messages:
-            if isinstance(msg, dict):
-                fm = FederationMessage.from_dict(msg)
-            elif hasattr(msg, "to_dict"):
-                fm = FederationMessage.from_dict(msg.to_dict())
-            else:
-                continue
-            if self._nadi.send_message(fm):
-                count += 1
-        return count
+            for msg in messages:
+                if isinstance(msg, dict):
+                    existing.append(msg)
+                elif hasattr(msg, "to_dict"):
+                    existing.append(msg.to_dict())
+
+            if len(existing) > NADI_BUFFER_SIZE:
+                existing = existing[-NADI_BUFFER_SIZE:]
+
+            tmp = self._outbox.with_suffix(".json.tmp")
+            tmp.write_text(json.dumps(existing, indent=2))
+            tmp.replace(self._outbox)
+            return len(messages)
+        except OSError as e:
+            logger.warning("Failed to write outbox: %s", e)
+            return 0
 
 
 class FilesystemFederationTransport:
@@ -127,13 +169,14 @@ class FilesystemFederationTransport:
 
 
 def create_transport(federation_dir: str) -> object:
-    """Create the best available transport for the given federation directory.
+    """Create federation transport for the given directory.
 
-    Tries NadiFederationTransport first (steward-protocol's canonical format).
-    Falls back to FilesystemFederationTransport if FederationNadi unavailable.
+    Uses NadiFederationTransport (self-hosted, correct inbox/outbox semantics).
+    Falls back to FilesystemFederationTransport for legacy outbox/inbox subdirs.
     """
-    try:
+    fed_path = Path(federation_dir)
+    # Self-hosted nadi format: nadi_inbox.json + nadi_outbox.json in dir root
+    if (fed_path / "nadi_inbox.json").exists() or (fed_path / "nadi_outbox.json").exists():
         return NadiFederationTransport(federation_dir)
-    except (ImportError, Exception) as e:
-        logger.info("NadiFederationTransport unavailable (%s), using filesystem fallback", e)
-        return FilesystemFederationTransport(federation_dir)
+    # Legacy format: outbox/ and inbox/ subdirectories
+    return FilesystemFederationTransport(federation_dir)
