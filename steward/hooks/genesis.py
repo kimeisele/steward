@@ -53,8 +53,8 @@ def _get_federation_owner() -> str:
             if "/" in repo:
                 _CACHED_OWNER = repo.split("/")[0]
                 return _CACHED_OWNER
-        except (json.JSONDecodeError, OSError):
-            pass
+        except (json.JSONDecodeError, OSError) as e:
+            logger.debug("peer.json parse failed: %s", e)
 
     # Fallback: try .well-known descriptor
     descriptor_path = Path(".well-known/agent-federation.json")
@@ -63,8 +63,8 @@ def _get_federation_owner() -> str:
             data = json.loads(descriptor_path.read_text())
             # repo_id doesn't have owner, but we can try gh api
             pass
-        except (json.JSONDecodeError, OSError):
-            pass
+        except (json.JSONDecodeError, OSError) as e:
+            logger.debug("descriptor parse failed: %s", e)
 
     _CACHED_OWNER = ""
     return _CACHED_OWNER
@@ -301,8 +301,8 @@ def _discover_from_org_repos(
                             "owner_boundary": descriptor.get("owner_boundary", ""),
                         }
                         continue
-            except (json.JSONDecodeError, Exception):
-                pass
+            except (json.JSONDecodeError, Exception) as e:
+                logger.debug("Descriptor parse failed for %s: %s", name, e)
 
         # No descriptor — only register if authoritative sources say it's a member
         if name in federation_members:

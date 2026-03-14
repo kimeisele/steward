@@ -112,8 +112,8 @@ def parse_json_response(content: str) -> tuple[list[ToolUse], str]:
             try:
                 data = json.loads(extracted)
                 logger.info("JSON recovered from mixed content (extraction fallback)")
-            except (json.JSONDecodeError, TypeError):
-                pass
+            except (json.JSONDecodeError, TypeError) as e:
+                logger.debug("JSON extraction fallback also failed: %s", e)
 
     if data is None:
         # Log when content LOOKS like JSON but failed to parse — tool calls may be lost

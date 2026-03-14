@@ -281,8 +281,8 @@ class Marketplace:
                 if not claim.is_expired(now):
                     self._claims[claim.slot_id] = claim
                     loaded += 1
-            except (KeyError, TypeError, ValueError):
-                pass
+            except (KeyError, TypeError, ValueError) as e:
+                logger.debug("Skipped corrupt marketplace claim: %s", e)
         return loaded
 
     # ── Private ──────────────────────────────────────────────────────
