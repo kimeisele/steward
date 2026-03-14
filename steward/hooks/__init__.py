@@ -44,7 +44,10 @@ def register_default_hooks(registry: PhaseHookRegistry) -> None:
     registry.register(DharmaFederationHook())
     registry.register(DharmaImmuneHook())
 
-    # MOKSHA hooks (priority order: synapse → persistence → federation)
+    from steward.hooks.moksha_health import MokshaHealthReportHook
+
+    # MOKSHA hooks (priority order: synapse → health_report → persistence → federation)
     registry.register(MokshaSynapseHook())
+    registry.register(MokshaHealthReportHook())
     registry.register(MokshaPersistenceHook())
     registry.register(MokshaFederationHook())
