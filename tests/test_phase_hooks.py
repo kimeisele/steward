@@ -378,7 +378,7 @@ class TestDefaultHookRegistration:
         hooks = ServiceRegistry.get(SVC_PHASE_HOOKS)
         assert hooks is not None
         assert hooks.hook_count(DHARMA) == 5  # health, reaper, marketplace, federation, immune
-        assert hooks.hook_count(MOKSHA) == 3  # synapse, persistence, federation
+        assert hooks.hook_count(MOKSHA) == 4  # synapse, health_report, persistence, federation
 
     def test_dharma_dispatch_through_agent(self, fake_llm):
         """Agent._phase_dharma() dispatches through PhaseHookRegistry."""
