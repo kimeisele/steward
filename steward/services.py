@@ -141,6 +141,14 @@ class SVC_PHASE_HOOKS:
     """PhaseHookRegistry — composable phase dispatch for MURALI."""
 
 
+class SVC_IMMUNE:
+    """StewardImmune — unified self-healing system.
+
+    diagnose() → heal() → verify → Hebbian learn.
+    CytokineBreaker prevents autoimmune cascades.
+    """
+
+
 class SVC_NORTH_STAR:
     """North Star — infrastructure-level goal seed (not LLM prompt).
 
@@ -367,6 +375,15 @@ def boot(
     phase_hooks = PhaseHookRegistry()
     register_default_hooks(phase_hooks)
     ServiceRegistry.register(SVC_PHASE_HOOKS, phase_hooks)
+
+    # 30. StewardImmune (unified self-healing)
+    from steward.immune import StewardImmune
+
+    immune = StewardImmune(
+        _synaptic=synapse_store,
+        _cwd=cwd,
+    )
+    ServiceRegistry.register(SVC_IMMUNE, immune)
 
     # 24. IntegrityChecker — boot-time validation (catch lazy-load failures early)
     from vibe_core.protocols.integrity import IntegrityChecker, IssueSeverity
