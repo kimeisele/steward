@@ -496,8 +496,8 @@ def _analyze_dependencies(repo_path: Path, imported: set[str]) -> tuple[list[Fin
         # Also include optional-dependencies (dev, test, kernel, etc.)
         optional = _parse_optional_deps_from_toml(text)
         declared = declared + optional
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Failed to parse dependencies from pyproject.toml: %s", e)
 
     # Normalize: pip package names use - but import names use _
     declared_normalized = {d.lower().replace("-", "_").split("[")[0] for d in declared}

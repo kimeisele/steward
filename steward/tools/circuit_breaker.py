@@ -867,8 +867,8 @@ class CircuitBreaker:
             for f, content in saved.items():
                 try:
                     (cwd_path / f).write_bytes(content)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("Snapshot restore failed for %s: %s", f, e)
 
     def stats(self) -> dict:
         """Diagnostics."""

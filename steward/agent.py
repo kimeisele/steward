@@ -707,8 +707,8 @@ class StewardAgent(GADBase):
         if synapse_store is not None:
             try:
                 synapse_store.save()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Synapse save failed during shutdown: %s", e)
         self._cetana.stop()
 
     def _on_cetana_phase(self, phase: object, beat: object) -> None:
