@@ -64,34 +64,20 @@ jobs:
         run: |
           CYCLES=${{ github.event.inputs.cycles || '4' }}
           python -c "
-          import asyncio
+          import logging
+          logging.basicConfig(level=logging.INFO, format='%(name)s %(levelname)s %(message)s')
+
           from steward.provider import build_chamber
           from steward.agent import StewardAgent
 
           chamber = build_chamber()
           agent = StewardAgent(provider=chamber)
 
-          # Run full MURALI cycles — not just autonomous dispatch
           for i in range($CYCLES):
-              print(f'--- Cycle {i+1}/{$CYCLES} ---')
-
-              # GENESIS: discover peers + generate tasks
               agent._phase_genesis()
-
-              # DHARMA: health check, reap dead peers, federation sync
               agent._phase_dharma()
-
-              # KARMA: dispatch and execute pending tasks
-              result = agent.run_autonomous_sync(idle_minutes=15)
-              if result:
-                  print(f'  KARMA: {result}')
-              else:
-                  print(f'  KARMA: no action needed')
-
-              # MOKSHA: persist state, flush federation
+              agent.run_autonomous_sync(idle_minutes=15)
               agent._phase_moksha()
-
-          print(f'Heartbeat complete: {$CYCLES} MURALI cycles')
           "
 
       - name: Commit federation state

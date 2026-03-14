@@ -1,0 +1,33 @@
+{
+  "campaigns": [
+    {
+      "id": "federation-stewardship",
+      "title": "Federation Stewardship",
+      "north_star": "execute tasks with minimal tokens by making the architecture itself intelligent",
+      "heartbeat_interval": 4,
+      "max_active_missions": 2,
+      "success_signals": [
+        {
+          "kind": "federation_healthy",
+          "target": true,
+          "description": "all discovered peers should be ALIVE or healing"
+        },
+        {
+          "kind": "immune_clean",
+          "target": true,
+          "description": "self-diagnostics should find 0 test failures"
+        },
+        {
+          "kind": "ci_green",
+          "target": true,
+          "description": "CI should pass on all federation repos"
+        },
+        {
+          "kind": "active_missions_at_most",
+          "target": 3,
+          "description": "bounded execution — no thrashing"
+        }
+      ]
+    }
+  ]
+}
