@@ -41,6 +41,7 @@ class BuiltinToolProvider:
         from steward.tools.bash import BashTool
         from steward.tools.delegate import DelegateToPeerTool
         from steward.tools.edit import EditTool
+        from steward.tools.explore import ExploreTool
         from steward.tools.git import GitTool
         from steward.tools.glob import GlobTool
         from steward.tools.grep import GrepTool
@@ -58,6 +59,7 @@ class BuiltinToolProvider:
             GlobTool(cwd=cwd),
             EditTool(),
             GrepTool(cwd=cwd),
+            ExploreTool(cwd=cwd),
             GitTool(cwd=cwd, gh_client=get_gh_client()),
             HttpTool(),
             WebSearchTool(),
