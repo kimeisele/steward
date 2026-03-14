@@ -66,7 +66,8 @@ def parse_intent_from_title(title: str) -> object | None:
 def _resolve_peer_repo(agent_id: str) -> Path | None:
     """Try to resolve a peer agent_id to a local repo path.
 
-    Checks common project locations. Returns None if not found.
+    Checks common project locations. Returns None if not found locally.
+    For remote peers, use _resolve_peer_git_url() + _cross_repo_workspace().
     """
     home = Path.home()
     candidates = [
@@ -77,6 +78,23 @@ def _resolve_peer_repo(agent_id: str) -> Path | None:
     for candidate in candidates:
         if candidate.is_dir() and (candidate / ".git").is_dir():
             return candidate
+    return None
+
+
+def _resolve_peer_git_url(agent_id: str, reaper: object) -> str | None:
+    """Derive a cloneable Git URL for a federation peer.
+
+    Uses the PeerRecord's fingerprint (set to 'owner/repo' by GenesisDiscoveryHook)
+    to construct the GitHub clone URL.
+    """
+    peer = reaper.get_peer(agent_id) if hasattr(reaper, "get_peer") else None
+    if peer is None:
+        return None
+
+    fingerprint = peer.fingerprint  # e.g. "kimeisele/steward-test"
+    if "/" in fingerprint:
+        return f"https://github.com/{fingerprint}.git"
+
     return None
 
 
@@ -355,24 +373,35 @@ class AutonomyEngine:
 
         results = []
         for peer in degraded[:3]:
-            # Try to resolve peer agent_id to a local repo path
+            # Try local first, then remote clone
             repo_path = _resolve_peer_repo(peer.agent_id)
-            if repo_path is None:
-                logger.debug("Cannot resolve repo for peer %s — skipping", peer.agent_id)
-                continue
 
-            try:
-                result = await healer.heal_repo(repo_path)
-                results.append(result)
-                logger.info(
-                    "Heal %s: %d/%d fixed, PR=%s",
-                    peer.agent_id,
-                    result.findings_fixed,
-                    result.findings_fixable,
-                    result.pr_url or "(none)",
-                )
-            except Exception as e:
-                logger.error("Heal failed for %s: %s", peer.agent_id, e)
+            if repo_path is not None:
+                # Local path — heal directly
+                try:
+                    result = await healer.heal_repo(repo_path)
+                    results.append(result)
+                    logger.info("Heal %s (local): %d/%d fixed, PR=%s",
+                                peer.agent_id, result.findings_fixed,
+                                result.findings_fixable, result.pr_url or "(none)")
+                except Exception as e:
+                    logger.error("Heal failed for %s: %s", peer.agent_id, e)
+            else:
+                # Remote peer — clone into sandbox via federation URL
+                git_url = _resolve_peer_git_url(peer.agent_id, reaper)
+                if git_url is None:
+                    logger.debug("Cannot resolve repo for peer %s — skipping", peer.agent_id)
+                    continue
+
+                try:
+                    with self._cross_repo_workspace(git_url, peer.agent_id) as workspace:
+                        result = await healer.heal_repo(workspace)
+                        results.append(result)
+                        logger.info("Heal %s (remote): %d/%d fixed, PR=%s",
+                                    peer.agent_id, result.findings_fixed,
+                                    result.findings_fixable, result.pr_url or "(none)")
+                except Exception as e:
+                    logger.error("Heal failed for %s (remote): %s", peer.agent_id, e)
 
         task_mgr.update_task(task.id, status=TaskStatus.COMPLETED)
         self._ledger.record_autonomous("HEAL_REPO", bool(results))
