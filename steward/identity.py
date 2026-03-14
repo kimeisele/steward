@@ -48,6 +48,21 @@ class StewardIdentity:
         )
 
 
+    @staticmethod
+    def compute_fingerprint(agent_id: str, repo: str, seed: str) -> str:
+        """Deterministic SHA-256 fingerprint."""
+        raw = f"{agent_id}:{repo}:{seed}"
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+    def to_dict(self) -> dict:
+        return {
+            "agent_id": self.agent_id,
+            "repo": self.repo,
+            "version": self.version,
+            "fingerprint": self.fingerprint,
+        }
+
+
 def _load_repo_from_peer_json() -> str:
     """Load repo identity from the nadi peer descriptor."""
     from pathlib import Path
@@ -62,17 +77,3 @@ def _load_repo_from_peer_json() -> str:
         return data.get("identity", {}).get("repo", "")
     except (json.JSONDecodeError, OSError):
         return ""
-
-    @staticmethod
-    def compute_fingerprint(agent_id: str, repo: str, seed: str) -> str:
-        """Deterministic SHA-256 fingerprint."""
-        raw = f"{agent_id}:{repo}:{seed}"
-        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
-
-    def to_dict(self) -> dict:
-        return {
-            "agent_id": self.agent_id,
-            "repo": self.repo,
-            "version": self.version,
-            "fingerprint": self.fingerprint,
-        }
