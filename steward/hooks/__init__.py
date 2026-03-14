@@ -13,6 +13,7 @@ from steward.hooks.dharma import (
     DharmaMarketplaceHook,
     DharmaReaperHook,
 )
+from steward.hooks.genesis import GenesisDiscoveryHook
 from steward.hooks.moksha import (
     MokshaFederationHook,
     MokshaPersistenceHook,
@@ -23,6 +24,9 @@ from steward.phase_hook import PhaseHookRegistry
 
 def register_default_hooks(registry: PhaseHookRegistry) -> None:
     """Register all built-in steward hooks."""
+    # GENESIS hooks (discovery)
+    registry.register(GenesisDiscoveryHook())
+
     # DHARMA hooks (priority order: health → reaper → marketplace → federation)
     registry.register(DharmaHealthHook())
     registry.register(DharmaReaperHook())
