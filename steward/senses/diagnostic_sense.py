@@ -382,8 +382,43 @@ def _detect_circular_imports(repo_path: Path) -> list[Finding]:
         except (SyntaxError, OSError, UnicodeDecodeError):
             continue
 
+        # Collect imports that are inside TYPE_CHECKING guards (skip those)
+        type_checking_ranges: list[tuple[int, int]] = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.If):
+                # Detect `if TYPE_CHECKING:` pattern
+                test = node.test
+                if isinstance(test, ast.Name) and test.id == "TYPE_CHECKING":
+                    end_line = max(
+                        (getattr(n, "end_lineno", 0) or getattr(n, "lineno", 0))
+                        for n in ast.walk(node)
+                    )
+                    type_checking_ranges.append((node.lineno, end_line))
+                elif isinstance(test, ast.Attribute) and getattr(test, "attr", "") == "TYPE_CHECKING":
+                    end_line = max(
+                        (getattr(n, "end_lineno", 0) or getattr(n, "lineno", 0))
+                        for n in ast.walk(node)
+                    )
+                    type_checking_ranges.append((node.lineno, end_line))
+
+        # Also collect function/method bodies (deferred imports don't cause cycles)
+        deferred_ranges: list[tuple[int, int]] = []
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                end_line = max(
+                    (getattr(n, "end_lineno", 0) or getattr(n, "lineno", 0))
+                    for n in ast.walk(node)
+                )
+                deferred_ranges.append((node.lineno, end_line))
+
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                # Skip imports inside TYPE_CHECKING blocks
+                if any(start <= node.lineno <= end for start, end in type_checking_ranges):
+                    continue
+                # Skip imports inside function bodies (deferred — don't cause load-time cycles)
+                if any(start <= node.lineno <= end for start, end in deferred_ranges):
+                    continue
                 top = node.module.split(".")[0]
                 if top not in local_packages:
                     continue
