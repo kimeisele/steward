@@ -474,6 +474,9 @@ class FixPipeline:
                     head=branch_name,
                     base="main",
                 )
+                if pr_result.success:
+                    # Close the Kirtan: auto-merge when CI passes
+                    self._github.enable_auto_merge(pr_result.url)
                 return pr_result.url if pr_result.success else None
             else:
                 from steward.senses.gh import get_gh_client
@@ -481,10 +484,14 @@ class FixPipeline:
                 gh = get_gh_client()
                 if gh is None:
                     return None
-                return gh.call(
+                pr_url = gh.call(
                     ["pr", "create", "--title", pr_title, "--body", body, "--head", branch_name, "--base", "main"],
                     timeout=30,
                 )
+                if pr_url:
+                    # Close the Kirtan: auto-merge when CI passes
+                    gh.call(["pr", "merge", "--auto", "--merge", pr_url.strip()], timeout=15)
+                return pr_url
 
         except Exception as e:
             logger.warning("PR creation failed: %s", e)
