@@ -35,11 +35,14 @@ def register_default_hooks(registry: PhaseHookRegistry) -> None:
     # GENESIS hooks (discovery)
     registry.register(GenesisDiscoveryHook())
 
-    # DHARMA hooks (priority order: health → reaper → marketplace → federation)
+    from steward.hooks.dharma_immune import DharmaImmuneHook
+
+    # DHARMA hooks (priority order: health → reaper → marketplace → federation → immune)
     registry.register(DharmaHealthHook())
     registry.register(DharmaReaperHook())
     registry.register(DharmaMarketplaceHook())
     registry.register(DharmaFederationHook())
+    registry.register(DharmaImmuneHook())
 
     # MOKSHA hooks (priority order: synapse → persistence → federation)
     registry.register(MokshaSynapseHook())
