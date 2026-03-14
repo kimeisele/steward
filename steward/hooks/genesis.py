@@ -100,9 +100,15 @@ class GenesisDiscoveryHook(BasePhaseHook):
             if repo_id not in discovered:
                 discovered[repo_id] = info
 
-        # Register all discovered peers in the reaper
+        # Register only NEW peers — never refresh existing heartbeats.
+        # Existing peers must send their OWN heartbeats via federation.
+        # If we refresh timestamps here, the reaper can never detect
+        # dead peers and the healer will never trigger.
         new_count = 0
         for repo_id, info in discovered.items():
+            if repo_id in self._known_repos:
+                continue  # Already known — don't touch its heartbeat
+
             caps = tuple(info.get("capabilities", []))
             fingerprint = info.get("repo", repo_id)
             reaper.record_heartbeat(
@@ -112,9 +118,8 @@ class GenesisDiscoveryHook(BasePhaseHook):
                 capabilities=caps,
                 fingerprint=fingerprint,
             )
-            if repo_id not in self._known_repos:
-                new_count += 1
-                self._known_repos.add(repo_id)
+            new_count += 1
+            self._known_repos.add(repo_id)
 
         if new_count:
             logger.info("GENESIS: discovered %d new peers (%d total)", new_count, len(discovered))

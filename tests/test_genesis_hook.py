@@ -97,8 +97,32 @@ class TestGenesisDiscoveryHook:
 
             hook.execute(ctx)
 
-        # Only one registration (deduplicated)
+        # Only one registration (deduplicated across sources)
         assert reaper.record_heartbeat.call_count == 1
+
+    def test_never_refreshes_existing_peer_heartbeat(self):
+        """Critical: discovery must NOT refresh heartbeats for known peers.
+        Otherwise the reaper can never detect dead peers."""
+        reaper = MagicMock()
+        ServiceRegistry.register(SVC_REAPER, reaper)
+
+        hook = GenesisDiscoveryHook()
+        ctx = PhaseContext(cwd="/tmp")
+
+        with patch("steward.hooks.genesis._discover_from_world_registry") as mock_world, \
+             patch("steward.hooks.genesis._discover_from_github_topics", return_value={}), \
+             patch("steward.hooks.genesis._discover_from_org_repos", return_value={}):
+            mock_world.return_value = {"peer-x": {"repo": "kimeisele/peer-x"}}
+
+            # First scan — registers peer
+            hook.execute(ctx)
+            assert reaper.record_heartbeat.call_count == 1
+
+            # Second scan — same peer, must NOT refresh heartbeat
+            hook._last_scan = 0  # Reset interval for re-run
+            ctx2 = PhaseContext(cwd="/tmp")
+            hook.execute(ctx2)
+            assert reaper.record_heartbeat.call_count == 1  # Still 1, not 2
 
     def test_execute_skips_without_reaper(self):
         ServiceRegistry.register(SVC_REAPER, None)

@@ -21,7 +21,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 from vibe_core.knowledge.code_scanner import CodeScanner
 from vibe_core.knowledge.graph import UnifiedKnowledgeGraph
