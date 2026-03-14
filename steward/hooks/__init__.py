@@ -3,27 +3,35 @@ Steward Phase Hooks — Composable capabilities for MURALI phase dispatch.
 
 Each hook is a focused piece of phase logic. Registration happens at boot.
 Adding new capabilities = adding a hook here, not editing agent.py.
+
+Imports are deferred to register_default_hooks() to break the
+services.py ↔ hooks ↔ services.py circular import chain.
 """
 
 from __future__ import annotations
 
-from steward.hooks.dharma import (
-    DharmaFederationHook,
-    DharmaHealthHook,
-    DharmaMarketplaceHook,
-    DharmaReaperHook,
-)
-from steward.hooks.genesis import GenesisDiscoveryHook
-from steward.hooks.moksha import (
-    MokshaFederationHook,
-    MokshaPersistenceHook,
-    MokshaSynapseHook,
-)
 from steward.phase_hook import PhaseHookRegistry
 
 
 def register_default_hooks(registry: PhaseHookRegistry) -> None:
-    """Register all built-in steward hooks."""
+    """Register all built-in steward hooks.
+
+    Imports are inside the function body to break circular imports:
+    services.py → hooks/__init__.py → hooks/dharma.py → services.py
+    """
+    from steward.hooks.dharma import (
+        DharmaFederationHook,
+        DharmaHealthHook,
+        DharmaMarketplaceHook,
+        DharmaReaperHook,
+    )
+    from steward.hooks.genesis import GenesisDiscoveryHook
+    from steward.hooks.moksha import (
+        MokshaFederationHook,
+        MokshaPersistenceHook,
+        MokshaSynapseHook,
+    )
+
     # GENESIS hooks (discovery)
     registry.register(GenesisDiscoveryHook())
 
