@@ -212,11 +212,15 @@ def _discover_from_github_topics() -> dict[str, dict]:
 
 
 def _discover_from_org_repos() -> dict[str, dict]:
-    """Scan org repos for .well-known/agent-federation.json descriptors."""
+    """Scan org repos — discover federation members AND repos that should be.
+
+    Repos WITH .well-known/agent-federation.json → registered with capabilities.
+    Repos WITHOUT descriptor but with federation-indicating names (agent-*,
+    steward-*) → registered WITHOUT capabilities so the healer can fix them.
+    """
     peers: dict[str, dict] = {}
 
-    # List all repos in the org
-    raw = _gh(["repo", "list", "kimeisele", "--json", "name", "--limit", "100"])
+    raw = _gh(["repo", "list", "kimeisele", "--json", "name,description", "--limit", "100"])
     if not raw:
         return peers
 
@@ -225,9 +229,13 @@ def _discover_from_org_repos() -> dict[str, dict]:
     except (json.JSONDecodeError, TypeError):
         return peers
 
+    # Names that indicate federation membership (even without descriptor)
+    _FEDERATION_PREFIXES = ("steward", "agent-", "vibe-core")
+    _SKIP = {"steward"}  # Self — don't heal yourself
+
     for repo in repos:
         name = repo.get("name", "")
-        if not name or name == "steward":  # Skip self
+        if not name or name in _SKIP:
             continue
 
         # Check for federation descriptor
@@ -235,23 +243,35 @@ def _discover_from_org_repos() -> dict[str, dict]:
             "api", f"repos/kimeisele/{name}/contents/.well-known/agent-federation.json",
             "--jq", ".content",
         ])
-        if not descriptor_raw:
-            continue
 
-        try:
-            import base64
-            descriptor = json.loads(base64.b64decode(descriptor_raw.strip()))
-            if descriptor.get("status") == "active":
-                caps = descriptor.get("capabilities", [])
-                if isinstance(caps, list):
-                    peers[name] = {
-                        "repo": f"kimeisele/{name}",
-                        "capabilities": caps,
-                        "source": "federation_descriptor",
-                        "owner_boundary": descriptor.get("owner_boundary", ""),
-                    }
-        except (json.JSONDecodeError, Exception):
-            continue
+        if descriptor_raw:
+            try:
+                import base64
+                descriptor = json.loads(base64.b64decode(descriptor_raw.strip()))
+                if descriptor.get("status") == "active":
+                    caps = descriptor.get("capabilities", [])
+                    if isinstance(caps, list):
+                        peers[name] = {
+                            "repo": f"kimeisele/{name}",
+                            "capabilities": caps,
+                            "source": "federation_descriptor",
+                            "owner_boundary": descriptor.get("owner_boundary", ""),
+                        }
+                        continue
+            except (json.JSONDecodeError, Exception):
+                pass
 
-    logger.debug("Org scan: %d federation repos", len(peers))
+        # No descriptor — check if this repo SHOULD be a federation member
+        if any(name.startswith(prefix) for prefix in _FEDERATION_PREFIXES):
+            desc = repo.get("description", "") or ""
+            if "backup" not in desc.lower():  # Skip backups
+                peers[name] = {
+                    "repo": f"kimeisele/{name}",
+                    "capabilities": [],
+                    "source": "org_scan_unregistered",
+                }
+
+    logger.debug("Org scan: %d repos (%d need onboarding)",
+                 len(peers),
+                 sum(1 for p in peers.values() if p.get("source") == "org_scan_unregistered"))
     return peers
