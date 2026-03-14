@@ -567,8 +567,8 @@ def _fix_ci_failing(finding: "Finding", workspace: Path) -> list[str]:
                 )
                 if r2.returncode == 0:
                     log_output = r2.stdout[-5000:]  # Last 5KB of log
-    except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
-        pass
+    except (subprocess.TimeoutExpired, FileNotFoundError, Exception) as e:
+        logger.warning("CI log fetch failed: %s", e)
 
     if not log_output:
         return []  # Can't get logs — signal for LLM fallback

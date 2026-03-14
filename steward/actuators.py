@@ -164,8 +164,8 @@ class GitActuator:
         """Return to base branch and delete feature branch."""
         try:
             _git(["checkout", return_to], self._cwd)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Branch cleanup: checkout %s failed: %s", return_to, e)
         try:
             r = _git(["branch", "-D", branch_name], self._cwd)
             if r.returncode != 0:
