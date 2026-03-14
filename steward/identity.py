@@ -29,9 +29,15 @@ class StewardIdentity:
     def from_environment(
         cls,
         agent_id: str = "steward",
-        repo: str = "kimeisele/steward",
+        repo: str = "",
     ) -> StewardIdentity:
-        """Build identity from environment. Fingerprint uses STEWARD_IDENTITY_SEED."""
+        """Build identity from environment.
+
+        Repo is resolved from data/federation/peer.json (nadi protocol).
+        Fingerprint uses STEWARD_IDENTITY_SEED env var.
+        """
+        if not repo:
+            repo = _load_repo_from_peer_json() or "steward"
         seed = os.environ.get("STEWARD_IDENTITY_SEED", "")
         fingerprint = cls.compute_fingerprint(agent_id, repo, seed)
         return cls(
@@ -40,6 +46,22 @@ class StewardIdentity:
             version=__version__,
             fingerprint=fingerprint,
         )
+
+
+def _load_repo_from_peer_json() -> str:
+    """Load repo identity from the nadi peer descriptor."""
+    from pathlib import Path
+
+    peer_path = Path("data/federation/peer.json")
+    if not peer_path.exists():
+        return ""
+    try:
+        import json
+
+        data = json.loads(peer_path.read_text())
+        return data.get("identity", {}).get("repo", "")
+    except (json.JSONDecodeError, OSError):
+        return ""
 
     @staticmethod
     def compute_fingerprint(agent_id: str, repo: str, seed: str) -> str:
