@@ -1,0 +1,100 @@
+name: Steward Heartbeat
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'  # Every 15 minutes
+  workflow_dispatch:
+    inputs:
+      cycles:
+        description: 'Number of MURALI cycles'
+        required: false
+        default: '4'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+# Single-writer — only one heartbeat at a time
+concurrency:
+  group: steward-heartbeat
+  cancel-in-progress: false
+
+jobs:
+  heartbeat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout steward
+        uses: actions/checkout@v4
+
+      - name: Checkout steward-protocol
+        uses: actions/checkout@v4
+        with:
+          repository: kimeisele/steward-protocol
+          path: steward-protocol
+          token: ${{ secrets.FEDERATION_PAT }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -e steward-protocol
+          pip install -e .
+
+      - name: Restore state
+        uses: actions/cache@v4
+        with:
+          path: |
+            .steward/
+            data/federation/
+          key: steward-state-${{ github.run_id }}
+          restore-keys: |
+            steward-state-
+
+      - name: Run autonomous cycle
+        env:
+          GH_TOKEN: ${{ secrets.FEDERATION_PAT }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          CYCLES=${{ github.event.inputs.cycles || '4' }}
+          python -c "
+          from steward.provider import build_chamber
+          from steward.agent import StewardAgent
+
+          chamber = build_chamber()
+          agent = StewardAgent(provider=chamber)
+          agent.boot()
+
+          # Run N autonomous MURALI cycles
+          for i in range($CYCLES):
+              result = agent._autonomy.run_autonomous_sync(idle_minutes=15)
+              if result:
+                  print(f'Cycle {i+1}: {result}')
+              else:
+                  print(f'Cycle {i+1}: idle')
+          "
+
+      - name: Commit federation state
+        if: always()
+        run: |
+          git config user.name "steward-bot"
+          git config user.email "bot@steward"
+          git add .steward/ data/federation/ || true
+          git diff --cached --quiet || \
+            git commit -m "chore: heartbeat #${{ github.run_number }} state sync"
+          git push || true
+
+      - name: Save state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .steward/
+            data/federation/
+          key: steward-state-${{ github.run_id }}
