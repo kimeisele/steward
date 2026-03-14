@@ -7,7 +7,7 @@ scan federation registry → discover peers → register heartbeats in reaper.
 Discovery sources (in priority order):
 1. agent-world registry (world_registry.yaml) — authoritative
 2. GitHub topic scan (agent-federation-node) — open discovery
-3. GitHub org scan (kimeisele/*/.well-known/) — fallback
+3. GitHub org scan (owner from peer.json) — fallback
 
 All sources converge to reaper.record_heartbeat() — the reaper is
 source-agnostic. Discovery is deterministic (0 LLM tokens).
@@ -30,6 +30,44 @@ logger = logging.getLogger("STEWARD.HOOKS.GENESIS")
 # Rate limit: minimum seconds between discovery scans
 _MIN_SCAN_INTERVAL_S = 600.0  # 10 minutes
 _GH_TIMEOUT = 15  # seconds per gh CLI call
+
+# Cached federation identity (loaded from peer.json once)
+_CACHED_OWNER: str | None = None
+
+
+def _get_federation_owner() -> str:
+    """Get the GitHub owner from the nadi peer descriptor (peer.json).
+
+    This is the federation-protocol-compliant way to know who we are.
+    No hardcoded strings — the peer.json IS the identity.
+    """
+    global _CACHED_OWNER
+    if _CACHED_OWNER is not None:
+        return _CACHED_OWNER
+
+    peer_path = Path("data/federation/peer.json")
+    if peer_path.exists():
+        try:
+            data = json.loads(peer_path.read_text())
+            repo = data.get("identity", {}).get("repo", "")
+            if "/" in repo:
+                _CACHED_OWNER = repo.split("/")[0]
+                return _CACHED_OWNER
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    # Fallback: try .well-known descriptor
+    descriptor_path = Path(".well-known/agent-federation.json")
+    if descriptor_path.exists():
+        try:
+            data = json.loads(descriptor_path.read_text())
+            # repo_id doesn't have owner, but we can try gh api
+            pass
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    _CACHED_OWNER = ""
+    return _CACHED_OWNER
 
 
 def _gh(args: list[str], cwd: str | None = None) -> str | None:
@@ -139,7 +177,8 @@ def _discover_from_world_registry() -> dict[str, dict]:
     peers: dict[str, dict] = {}
 
     # Fetch world_registry.yaml from agent-world repo
-    raw = _gh(["api", "repos/kimeisele/agent-world/contents/config/world_registry.yaml",
+    owner = _get_federation_owner()
+    raw = _gh(["api", f"repos/{owner}/agent-world/contents/config/world_registry.yaml",
                "--jq", ".content"])
     if not raw:
         return peers
@@ -192,7 +231,7 @@ def _discover_from_github_topics() -> dict[str, dict]:
     peers: dict[str, dict] = {}
 
     raw = _gh(["search", "repos", "--topic", "agent-federation-node",
-               "--owner", "kimeisele", "--json", "name,description"])
+               "--owner", f"{_get_federation_owner()}", "--json", "name,description"])
     if not raw:
         return peers
 
@@ -205,7 +244,7 @@ def _discover_from_github_topics() -> dict[str, dict]:
         name = repo.get("name", "")
         if name:
             peers[name] = {
-                "repo": f"kimeisele/{name}",
+                "repo": f"{_get_federation_owner()}/{name}",
                 "capabilities": [],
                 "source": "github_topic",
             }
@@ -226,7 +265,7 @@ def _discover_from_org_repos(
     peers: dict[str, dict] = {}
     federation_members = federation_members or set()
 
-    raw = _gh(["repo", "list", "kimeisele", "--json", "name", "--limit", "100"])
+    raw = _gh(["repo", "list", f"{_get_federation_owner()}", "--json", "name", "--limit", "100"])
     if not raw:
         return peers
 
@@ -244,7 +283,7 @@ def _discover_from_org_repos(
 
         # Check for federation descriptor
         descriptor_raw = _gh([
-            "api", f"repos/kimeisele/{name}/contents/.well-known/agent-federation.json",
+            "api", f"repos/{_get_federation_owner()}/{name}/contents/.well-known/agent-federation.json",
             "--jq", ".content",
         ])
 
@@ -256,7 +295,7 @@ def _discover_from_org_repos(
                     caps = descriptor.get("capabilities", [])
                     if isinstance(caps, list):
                         peers[name] = {
-                            "repo": f"kimeisele/{name}",
+                            "repo": f"{_get_federation_owner()}/{name}",
                             "capabilities": caps,
                             "source": "federation_descriptor",
                             "owner_boundary": descriptor.get("owner_boundary", ""),
@@ -268,7 +307,7 @@ def _discover_from_org_repos(
         # No descriptor — only register if authoritative sources say it's a member
         if name in federation_members:
             peers[name] = {
-                "repo": f"kimeisele/{name}",
+                "repo": f"{_get_federation_owner()}/{name}",
                 "capabilities": [],
                 "source": "org_scan_unregistered",
             }
