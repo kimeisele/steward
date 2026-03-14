@@ -673,8 +673,8 @@ def _analyze_federation(repo_path: Path) -> tuple[list[Finding], bool, dict, boo
     if has_descriptor:
         try:
             descriptor = json.loads(descriptor_path.read_text())
-        except (json.JSONDecodeError, OSError):
-            pass
+        except (json.JSONDecodeError, OSError) as e:
+            logger.debug("Federation descriptor parse failed: %s", e)
     else:
         findings.append(
             Finding(
@@ -693,8 +693,8 @@ def _analyze_federation(repo_path: Path) -> tuple[list[Finding], bool, dict, boo
         try:
             peer_data = json.loads(peer_path.read_text())
             peer_caps = tuple(peer_data.get("capabilities", []))
-        except (json.JSONDecodeError, OSError):
-            pass
+        except (json.JSONDecodeError, OSError) as e:
+            logger.debug("peer.json parse failed: %s", e)
     else:
         findings.append(
             Finding(

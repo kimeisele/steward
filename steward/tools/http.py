@@ -50,7 +50,7 @@ def _is_private_ip(hostname: str) -> bool:
                 if ip in network:
                     return True
     except (socket.gaierror, ValueError):
-        pass
+        pass  # DNS resolution failed — not a private IP, allow request
     return False
 
 
@@ -193,7 +193,7 @@ class HttpTool(Tool):
             try:
                 error_body = e.read(_MAX_RESPONSE_BYTES).decode("utf-8", errors="replace")
             except Exception:
-                pass
+                pass  # Error body unreadable — HTTP error itself is already captured
             return ToolResult(
                 success=False,
                 output=error_body if error_body else None,

@@ -90,8 +90,8 @@ class NadiFederationTransport:
                     raw = json.loads(self._outbox.read_text())
                     if isinstance(raw, list):
                         existing = raw
-                except json.JSONDecodeError:
-                    pass
+                except json.JSONDecodeError as e:
+                    logger.warning("Nadi outbox corrupt, starting fresh: %s", e)
 
             for msg in messages:
                 if isinstance(msg, dict):
