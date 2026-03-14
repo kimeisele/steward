@@ -727,6 +727,14 @@ class StewardAgent(GADBase):
             logger.debug("Cetana phase %s error (non-fatal): %s", phase.name, e)
 
     def _phase_genesis(self) -> None:
+        """GENESIS: dispatch discovery hooks, then generate tasks via Sankalpa."""
+        ctx = self._make_phase_context()
+        hooks = ServiceRegistry.get(SVC_PHASE_HOOKS)
+        if hooks is not None:
+            from steward.phase_hook import GENESIS
+
+            hooks.dispatch(GENESIS, ctx)
+        # After discovery hooks run, generate tasks from Sankalpa
         self._autonomy.phase_genesis(
             last_interaction=self._last_user_interaction,
         )
