@@ -148,12 +148,13 @@ class StewardImmune:
             from vibe_core.mahamantra.dharma.kumaras.engine import ShuddhiEngine
 
             self._engine = ShuddhiEngine()
-            self._available = True
             remedies = self._engine.list_remedies()
-            logger.info("StewardImmune initialized (%d remedies)", len(remedies))
+            logger.info("StewardImmune initialized with ShuddhiEngine (%d remedies)", len(remedies))
         except Exception as e:
-            logger.info("ShuddhiEngine unavailable (%s) — using AST-level fixers", e)
-            self._available = False
+            logger.info("ShuddhiEngine unavailable (%s) — AST-level fixers active", e)
+
+        # Always available — AST fixers work without ShuddhiEngine
+        self._available = True
 
     @property
     def available(self) -> bool:
