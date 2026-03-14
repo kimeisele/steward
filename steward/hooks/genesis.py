@@ -94,8 +94,11 @@ class GenesisDiscoveryHook(BasePhaseHook):
             if repo_id not in discovered:
                 discovered[repo_id] = info
 
-        # Source 3: GitHub org repos with federation descriptors
-        org_peers = _discover_from_org_repos()
+        # Source 3: GitHub org repos — only check repos already known
+        # from authoritative sources (world registry, topics).
+        # No hardcoded prefix heuristics — the registry IS the truth.
+        known_names = set(discovered.keys())
+        org_peers = _discover_from_org_repos(federation_members=known_names)
         for repo_id, info in org_peers.items():
             if repo_id not in discovered:
                 discovered[repo_id] = info
@@ -211,16 +214,19 @@ def _discover_from_github_topics() -> dict[str, dict]:
     return peers
 
 
-def _discover_from_org_repos() -> dict[str, dict]:
-    """Scan org repos — discover federation members AND repos that should be.
+def _discover_from_org_repos(
+    federation_members: set[str] | None = None,
+) -> dict[str, dict]:
+    """Scan org repos for federation descriptors.
 
-    Repos WITH .well-known/agent-federation.json → registered with capabilities.
-    Repos WITHOUT descriptor but with federation-indicating names (agent-*,
-    steward-*) → registered WITHOUT capabilities so the healer can fix them.
+    If federation_members is provided, also checks those specific repos
+    even if they lack descriptors (so the healer can onboard them).
+    No hardcoded prefix heuristics — the registry is the source of truth.
     """
     peers: dict[str, dict] = {}
+    federation_members = federation_members or set()
 
-    raw = _gh(["repo", "list", "kimeisele", "--json", "name,description", "--limit", "100"])
+    raw = _gh(["repo", "list", "kimeisele", "--json", "name", "--limit", "100"])
     if not raw:
         return peers
 
@@ -229,9 +235,7 @@ def _discover_from_org_repos() -> dict[str, dict]:
     except (json.JSONDecodeError, TypeError):
         return peers
 
-    # Names that indicate federation membership (even without descriptor)
-    _FEDERATION_PREFIXES = ("steward", "agent-", "vibe-core")
-    _SKIP = {"steward"}  # Self — don't heal yourself
+    _SKIP = {"steward"}  # Self
 
     for repo in repos:
         name = repo.get("name", "")
@@ -261,17 +265,13 @@ def _discover_from_org_repos() -> dict[str, dict]:
             except (json.JSONDecodeError, Exception):
                 pass
 
-        # No descriptor — check if this repo SHOULD be a federation member
-        if any(name.startswith(prefix) for prefix in _FEDERATION_PREFIXES):
-            desc = repo.get("description", "") or ""
-            if "backup" not in desc.lower():  # Skip backups
-                peers[name] = {
-                    "repo": f"kimeisele/{name}",
-                    "capabilities": [],
-                    "source": "org_scan_unregistered",
-                }
+        # No descriptor — only register if authoritative sources say it's a member
+        if name in federation_members:
+            peers[name] = {
+                "repo": f"kimeisele/{name}",
+                "capabilities": [],
+                "source": "org_scan_unregistered",
+            }
 
-    logger.debug("Org scan: %d repos (%d need onboarding)",
-                 len(peers),
-                 sum(1 for p in peers.values() if p.get("source") == "org_scan_unregistered"))
+    logger.debug("Org scan: %d repos", len(peers))
     return peers
