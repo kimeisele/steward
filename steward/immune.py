@@ -310,6 +310,7 @@ class StewardImmune:
             sys.executable, "-m", "pytest",
             str(test_dir), "-q",
             "--json-report", f"--json-report-file={report_path}",
+            "--json-report-omit", "collectors", "log", "streams",
             "--timeout=10",
         ]
 
@@ -420,6 +421,7 @@ class StewardImmune:
             sys.executable, "-m", "pytest",
             str(repo_root / "tests"), "-q",
             "--json-report", f"--json-report-file={report_path}",
+            "--json-report-omit", "collectors", "log", "streams",
             "--tb=no", "--timeout=10",
         ]
 
