@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
-from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
+
+from tests.fakes import FakeResponse
 
 from steward.services import SVC_PROVIDER, SVC_TOOL_REGISTRY
 from steward.tools.sub_agent import SUB_AGENT_TIMEOUT, SubAgentTool
@@ -15,24 +15,7 @@ from vibe_core.di import ServiceRegistry
 from vibe_core.tools.tool_protocol import Tool, ToolResult
 from vibe_core.tools.tool_registry import ToolRegistry
 
-# ── Fake Providers ───────────────────────────────────────────────────
-
-
-@dataclass
-class FakeUsage:
-    input_tokens: int = 10
-    output_tokens: int = 5
-
-
-@dataclass
-class FakeResponse:
-    content: str = "sub-agent result"
-    tool_calls: list | None = None
-    usage: FakeUsage | None = None
-
-    def __post_init__(self) -> None:
-        if self.usage is None:
-            self.usage = FakeUsage()
+# ── Test-specific Providers ──────────────────────────────────────────
 
 
 class FakeProvider:

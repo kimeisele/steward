@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import tempfile
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import pytest
+
+from tests.fakes import FakeLLM, FakeResponse
 
 from steward.loop.engine import AgentLoop
 from steward.tools.edit import EditTool
@@ -18,28 +18,6 @@ from steward.types import Conversation, EventType, ToolUse
 from vibe_core.runtime.tool_safety_guard import ToolSafetyGuard
 from vibe_core.tools.tool_protocol import Tool, ToolResult
 from vibe_core.tools.tool_registry import ToolRegistry
-
-# ── Fake LLM ─────────────────────────────────────────────────────────
-
-
-@dataclass
-class FakeResponse:
-    content: str = ""
-    tool_calls: list[object] | None = None
-    usage: object | None = None
-
-
-class FakeLLM:
-    def __init__(self, responses: list[FakeResponse]) -> None:
-        self._responses = list(responses)
-        self._i = 0
-
-    def invoke(self, **kwargs: object) -> FakeResponse:
-        if self._i < len(self._responses):
-            r = self._responses[self._i]
-            self._i += 1
-            return r
-        return FakeResponse(content="done")
 
 
 def _run(loop: AgentLoop, msg: str) -> tuple[str, list[object]]:

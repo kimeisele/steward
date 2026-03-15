@@ -59,8 +59,8 @@ def _format(ctx: dict, arch: dict, cwd: str = ".") -> str:
 
             s = MahaCompression().compress(ns)
             seed_line = f"Seed `{s.seed}` · position {s.position} · {s.compression_ratio:.0f}x compression"
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("MahaCompression unavailable for seed line: %s", e)
 
     parts.append(f"# {name}")
     parts.append(f"**{ns}**" if ns else "")

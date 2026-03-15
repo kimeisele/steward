@@ -3,32 +3,16 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
 from typing import Any
+
+from tests.fakes import FakeResponse
 
 from steward.loop.engine import AgentLoop
 from steward.summarizer import Summarizer, should_summarize
 from steward.types import Conversation, Message, ToolUse
 from vibe_core.tools.tool_registry import ToolRegistry
 
-# ── Fake LLM for summarization ──────────────────────────────────────
-
-
-@dataclass
-class FakeUsage:
-    input_tokens: int = 10
-    output_tokens: int = 20
-
-
-@dataclass
-class FakeResponse:
-    content: str = ""
-    tool_calls: list[Any] | None = None
-    usage: FakeUsage | None = None
-
-    def __post_init__(self) -> None:
-        if self.usage is None:
-            self.usage = FakeUsage()
+# ── Specialized LLM for summarization tests ──────────────────────────
 
 
 class FakeSummarizerLLM:

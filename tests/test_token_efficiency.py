@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-from dataclasses import dataclass
 from typing import Any
 
 import pytest
@@ -41,38 +40,15 @@ from steward.types import (
     EventType,
     Message,
     MessageRole,
+    NormalizedResponse,
     ToolUse,
 )
 
 # ── Test Infrastructure ─────────────────────────────────────────────
 
-
-@dataclass
-class FakeUsage:
-    input_tokens: int = 10
-    output_tokens: int = 5
-
-
-@dataclass
-class TextResponse:
-    content: str
-    tool_calls: list | None = None
-    usage: FakeUsage | None = None
-
-    def __post_init__(self) -> None:
-        if self.usage is None:
-            self.usage = FakeUsage()
-
-
-@dataclass
-class ToolCallResponse:
-    content: str = ""
-    tool_calls: list | None = None
-    usage: FakeUsage | None = None
-
-    def __post_init__(self) -> None:
-        if self.usage is None:
-            self.usage = FakeUsage()
+# Aliases for readability in test scripts
+TextResponse = NormalizedResponse
+ToolCallResponse = NormalizedResponse
 
 
 class ScriptedLLM:

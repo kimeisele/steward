@@ -107,19 +107,11 @@ def _load_project_instructions(cwd: str) -> str | None:
     return None
 
 
-def _build_system_prompt(
-    base: str,
-    cwd: str,
-    tool_names: list[str],
-    dynamic_context: dict[str, str] | None = None,
-    project_instructions: str | None = None,
-    session_history: str | None = None,
-) -> str:
+def _build_system_prompt(base: str, cwd: str) -> str:
     """Build minimal system prompt. Every token counts.
 
     Only includes: base instruction + cwd.
     Tool signatures injected by engine (brain-in-a-jar).
-    Everything else is deterministic infrastructure — LLM doesn't need it.
     """
     return f"{base.rstrip()}\ncwd: {cwd}"
 
@@ -242,7 +234,6 @@ class StewardAgent(GADBase):
             self._base_system_prompt = _build_system_prompt(
                 _BASE_SYSTEM_PROMPT,
                 self._cwd,
-                self._registry.list_tools(),
             )
             self._system_prompt = self._base_system_prompt
 
@@ -290,6 +281,9 @@ class StewardAgent(GADBase):
             },
             gandha_source=lambda: self._buddhi.last_pattern,
         )
+
+        # Wire ThinkTool to Antahkarana (neuro-symbolic bridge)
+        self._wire_think_tool()
 
         logger.info(
             "StewardAgent initialized (cwd=%s, tools=%s)",
@@ -409,8 +403,8 @@ class StewardAgent(GADBase):
                     dyn_parts = [f"{k}: {v}" for k, v in resolved.items() if v]
                     if dyn_parts:
                         context_parts.append("\n[Dynamic Context]\n" + "\n".join(dyn_parts) + "\n")
-                except Exception:
-                    pass  # Non-fatal — senses already cover basics
+                except Exception as e:
+                    logger.debug("Dynamic context resolution failed (non-fatal): %s", e)
             effective_prompt = "".join(context_parts)
         else:
             effective_prompt = self._system_prompt
@@ -714,6 +708,24 @@ class StewardAgent(GADBase):
         with self._health_lock:
             self._health_anomaly_flag = False
             self._health_anomaly_detail_str = ""
+
+    def _wire_think_tool(self) -> None:
+        """Connect ThinkTool to Antahkarana components (neuro-symbolic bridge)."""
+        from steward.tools.think import ThinkTool
+
+        for tool_name in self._registry.list_tools():
+            tool = self._registry.get(tool_name)
+            if isinstance(tool, ThinkTool):
+                tool._chitta = self._buddhi._chitta
+                tool._vedana_source = lambda: self.vedana
+                tool._ksetrajna = self._ksetrajna
+                try:
+                    from vibe_core.mahamantra.substrate.manas.buddhi import MahaBuddhi
+                    tool._maha_buddhi = MahaBuddhi()
+                except ImportError:
+                    pass
+                logger.debug("ThinkTool wired to Antahkarana")
+                return
 
     def close(self) -> None:
         """Graceful shutdown — persist state and stop heartbeat."""

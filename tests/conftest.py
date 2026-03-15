@@ -121,66 +121,10 @@ def tmp_dir() -> Generator[Path, None, None]:
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# FAKE LLM — shared across all test files
+# FAKE LLM — canonical implementations in tests/fakes.py
 # ═══════════════════════════════════════════════════════════════════════
 
-from steward.types import LLMUsage, NormalizedResponse, StreamDelta
-
-# Backward-compatible aliases — 14+ test files use these names
-FakeUsage = LLMUsage
-FakeResponse = NormalizedResponse
-
-
-class FakeLLM:
-    """Deterministic fake LLM for tests. Never calls real APIs.
-
-    Battle-hardened: supports invoke, invoke_stream, call tracking,
-    reset, and all edge cases the engine might hit.
-
-    Usage:
-        llm = FakeLLM([NormalizedResponse(content="ok")])
-        resp = llm.invoke(messages=[...])
-        assert resp.content == "ok"
-    """
-
-    def __init__(self, responses: list[NormalizedResponse] | None = None) -> None:
-        self._responses = list(responses) if responses is not None else [NormalizedResponse(content="ok")]
-        self._call_count = 0
-        self.calls: list[dict[str, object]] = []
-
-    @property
-    def call_count(self) -> int:
-        return len(self.calls)
-
-    @property
-    def last_call(self) -> dict[str, object] | None:
-        return self.calls[-1] if self.calls else None
-
-    def invoke(self, **kwargs: Any) -> NormalizedResponse:
-        self.calls.append(kwargs)
-        if self._call_count < len(self._responses):
-            resp = self._responses[self._call_count]
-            self._call_count += 1
-            return resp
-        return NormalizedResponse(content="[no more responses]")
-
-    def invoke_stream(self, **kwargs: Any) -> list[StreamDelta]:
-        """Streaming interface — yields text_delta events then done.
-
-        Compatible with engine._call_llm_streaming() expectations:
-        each delta has .type ("text_delta" or "done") and .text or .response.
-        """
-        resp = self.invoke(**kwargs)
-        events: list[StreamDelta] = []
-        if resp.content:
-            events.append(StreamDelta(type="text_delta", text=resp.content))
-        events.append(StreamDelta(type="done", response=resp))
-        return events
-
-    def reset(self) -> None:
-        """Reset call history and restart response sequence."""
-        self._call_count = 0
-        self.calls.clear()
+from tests.fakes import FakeLLM, FakeResponse, FakeUsage  # noqa: F401 — re-exported for fixtures
 
 
 @pytest.fixture
