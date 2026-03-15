@@ -1,7 +1,5 @@
 """Tests for briefing — cockpit display from living system state."""
 
-import json
-from pathlib import Path
 
 from steward.briefing import generate_briefing
 

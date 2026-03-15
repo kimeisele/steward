@@ -11,7 +11,6 @@ Verifies:
 from __future__ import annotations
 
 import os
-from unittest.mock import patch
 
 import pytest
 
@@ -56,7 +55,6 @@ class TestContextTrimming:
     def _make_loop(self) -> AgentLoop:
         """Create a minimal AgentLoop for testing."""
         from steward.buddhi import Buddhi
-        from vibe_core.mahamantra.adapters.attention import MahaAttention
         from vibe_core.tools.tool_registry import ToolRegistry
 
         class FakeProvider:

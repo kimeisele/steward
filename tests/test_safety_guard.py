@@ -8,15 +8,13 @@ from pathlib import Path
 
 import pytest
 
-from tests.fakes import FakeLLM, FakeResponse
-
 from steward.loop.engine import AgentLoop
 from steward.tools.edit import EditTool
 from steward.tools.read_file import ReadFileTool
 from steward.tools.write_file import WriteFileTool
 from steward.types import Conversation, EventType, ToolUse
+from tests.fakes import FakeLLM, FakeResponse
 from vibe_core.runtime.tool_safety_guard import ToolSafetyGuard
-from vibe_core.tools.tool_protocol import Tool, ToolResult
 from vibe_core.tools.tool_registry import ToolRegistry
 
 

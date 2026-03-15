@@ -33,7 +33,7 @@ from typing import AsyncIterator
 from steward.antahkarana.gandha import VerdictAction
 from steward.antahkarana.ksetrajna import KsetraJna
 from steward.buddhi import Buddhi, BuddhiDirective
-from steward.cbr import CBR_CEILING, CBR_SYSTEM_OVERHEAD
+from steward.cbr import CBR_CEILING
 from steward.context import ERROR_MARKER, SamskaraContext
 from steward.loop import json_parser, tool_dispatch
 from steward.protocols import HealthGate
@@ -55,7 +55,6 @@ from steward.types import (
 from vibe_core.mahamantra.adapters.attention import MahaAttention
 from vibe_core.mahamantra.adapters.compression import MahaCompression
 from vibe_core.mahamantra.substrate.cell_system.antaranga import (
-    FLAG_ACTIVE,
     GENESIS_PRANA_U32,
     INTEGRITY_FULL,
     AntarangaRegistry,

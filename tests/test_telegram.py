@@ -11,10 +11,7 @@ from __future__ import annotations
 import asyncio
 import sys
 from dataclasses import dataclass
-from types import ModuleType
 from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
 
 # ── Mock infrastructure ──────────────────────────────────────────
 # We need to mock steward.agent and friends before importing

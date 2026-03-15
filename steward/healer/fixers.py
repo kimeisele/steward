@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 from steward.healer.helpers import _add_dependency_to_toml, _extract_package_from_finding
 from steward.healer.types import _fixer
-from steward.senses.diagnostic_sense import FindingKind, Severity
+from steward.senses.diagnostic_sense import FindingKind
 
 if TYPE_CHECKING:
     from steward.senses.diagnostic_sense import Finding

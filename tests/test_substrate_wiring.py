@@ -14,9 +14,7 @@ Wiring contract:
   - Every LLM call → compress → cache → learn (Hebbian muscle)
 """
 
-import asyncio
 
-import pytest
 
 from steward.services import boot
 from vibe_core.di import ServiceRegistry
@@ -147,7 +145,7 @@ class TestToolOutputCompression:
         from unittest.mock import MagicMock
 
         from steward.loop.engine import AgentLoop
-        from steward.types import Conversation, Message, MessageRole, ToolUse
+        from steward.types import Conversation, Message, MessageRole
 
         # Create engine with fake provider
         provider = MagicMock()
