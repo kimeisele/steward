@@ -105,7 +105,8 @@ def collect_architecture_metadata() -> dict[str, object]:
         from steward.services import NORTH_STAR_TEXT
 
         arch["north_star"] = NORTH_STAR_TEXT
-    except Exception:
+    except Exception as e:
+        logger.debug("Failed to load north_star: %s", e)
         arch["north_star"] = None
 
     # ── SVC_ service docstrings (what each service IS) ───────────────
@@ -119,7 +120,8 @@ def collect_architecture_metadata() -> dict[str, object]:
                 if isinstance(cls, type) and cls.__doc__:
                     services[name] = cls.__doc__.strip()
         arch["services"] = services
-    except Exception:
+    except Exception as e:
+        logger.debug("Failed to collect SVC_ docstrings: %s", e)
         arch["services"] = {}
 
     # ── Kshetra (25-tattva mapping from living code) ─────────────────
@@ -127,7 +129,8 @@ def collect_architecture_metadata() -> dict[str, object]:
         from steward.kshetra import enumerate_kshetra
 
         arch["kshetra"] = enumerate_kshetra()
-    except Exception:
+    except Exception as e:
+        logger.debug("Failed to enumerate kshetra: %s", e)
         arch["kshetra"] = []
 
     # ── Phase constants (MURALI cycle) ───────────────────────────────
@@ -140,7 +143,8 @@ def collect_architecture_metadata() -> dict[str, object]:
             KARMA: "Execute — work on highest-priority task",
             MOKSHA: "Reflect — persist state, log stats, learn",
         }
-    except Exception:
+    except Exception as e:
+        logger.debug("Failed to load phase constants: %s", e)
         arch["phases"] = {}
 
     # ── Registered hooks (what behavior is wired into each phase) ────
@@ -153,7 +157,8 @@ def collect_architecture_metadata() -> dict[str, object]:
             arch["hooks"] = hook_registry.stats()
         else:
             arch["hooks"] = {}
-    except Exception:
+    except Exception as e:
+        logger.debug("Failed to read hook registry: %s", e)
         arch["hooks"] = {}
 
     # ── Registered tools (what steward can DO) ───────────────────────
@@ -168,7 +173,8 @@ def collect_architecture_metadata() -> dict[str, object]:
             ]
         else:
             arch["tools"] = []
-    except Exception:
+    except Exception as e:
+        logger.debug("Failed to read tool registry: %s", e)
         arch["tools"] = []
 
     return arch
@@ -451,16 +457,17 @@ def _read_github_issues(cwd: str) -> list[dict]:
     return []
 
 
-def _get_cetana() -> object:
-    """Get Cetana instance from the running agent (if any)."""
-    try:
-        from steward.agent import StewardAgent
+def _get_cetana() -> object | None:
+    """Get Cetana instance from ServiceRegistry if available.
 
-        # Cetana is a daemon thread on the agent — no SVC_ constant for it.
-        # We check if there's a running agent with a cetana attribute.
-        # This is best-effort; in CLI mode there's no agent.
-        return None  # Will be wired when hook has access to agent
-    except Exception:
+    Returns None when no agent is running (CLI mode, tests, hooks).
+    TODO: Wire via SVC_CETANA constant once Cetana is registered as a service.
+    """
+    try:
+        from vibe_core.di import ServiceRegistry
+
+        return ServiceRegistry.get("cetana")
+    except (ImportError, KeyError):
         return None
 
 
@@ -477,7 +484,8 @@ def _load_gaps_from_disk(cwd: str) -> object:
             if isinstance(gaps_data, list):
                 tracker.load_from_dict(gaps_data)
         return tracker
-    except Exception:
+    except Exception as e:
+        logger.debug("Failed to load gaps from disk: %s", e)
         return None
 
 
@@ -492,12 +500,15 @@ def _read_hash(path: Path) -> str:
 def _atomic_write(path: Path, content: str) -> None:
     """Write content atomically via tempfile + rename."""
     fd, tmp_path = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
+    closed = False
     try:
         os.write(fd, content.encode("utf-8"))
         os.close(fd)
+        closed = True
         os.replace(tmp_path, str(path))
     except Exception:
-        os.close(fd) if not os.get_inheritable(fd) else None
+        if not closed:
+            os.close(fd)
         try:
             os.unlink(tmp_path)
         except OSError:

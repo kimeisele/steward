@@ -5,7 +5,7 @@ If this fake is wrong, every test that uses it is suspect.
 Only tests that verify BEHAVIOR live here — not field defaults.
 """
 
-from tests.conftest import FakeLLM, FakeResponse, FakeUsage
+from tests.fakes import FakeLLM, FakeResponse, FakeStreamingLLM, FakeUsage
 
 
 class TestFakeResponseContract:
@@ -103,7 +103,7 @@ class TestFakeLLMStreaming:
 
     def test_stream_yields_text_deltas_then_done(self):
         """invoke_stream yields text_delta events, then done with response."""
-        llm = FakeLLM([FakeResponse(content="hello world")])
+        llm = FakeStreamingLLM([FakeResponse(content="hello world")])
         events = list(llm.invoke_stream(messages=[]))
         types = [e.type for e in events]
         assert "text_delta" in types
@@ -114,14 +114,14 @@ class TestFakeLLMStreaming:
 
     def test_stream_tracks_calls(self):
         """invoke_stream records kwargs like invoke."""
-        llm = FakeLLM()
+        llm = FakeStreamingLLM()
         list(llm.invoke_stream(messages=[], max_tokens=768))
         assert llm.call_count == 1
         assert llm.last_call["max_tokens"] == 768
 
     def test_stream_json_intact(self):
         """JSON content streams as a single delta (not split mid-JSON)."""
-        llm = FakeLLM([FakeResponse(content='{"response": "done"}')])
+        llm = FakeStreamingLLM([FakeResponse(content='{"response": "done"}')])
         events = list(llm.invoke_stream(messages=[]))
         deltas = [e for e in events if e.type == "text_delta"]
         assembled = "".join(e.text for e in deltas)

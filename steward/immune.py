@@ -141,9 +141,17 @@ class StewardImmune:
             return
 
         try:
+            from pathlib import Path
+
             from vibe_core.mahamantra.dharma.kumaras.engine import ShuddhiEngine
 
             self._engine = ShuddhiEngine()
+
+            # Register steward-owned precision remedies
+            steward_remedies = Path(__file__).parent / "remedies"
+            if steward_remedies.is_dir():
+                self._engine.add_remedy_path(steward_remedies)
+
             remedies = self._engine.list_remedies()
             logger.info("StewardImmune initialized with ShuddhiEngine (%d remedies)", len(remedies))
         except Exception as e:

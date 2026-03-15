@@ -109,7 +109,8 @@ def _gh(args: list[str], cwd: str | None = None) -> str | None:
     quota = _get_gh_quota()
     try:
         quota.check_before_request(estimated_tokens=1, operation=f"gh:{cache_key[:40]}")
-    except Exception:
+    except Exception as e:
+        logger.debug("gh quota check failed, using stale cache: %s", e)
         stale = _GH_CACHE.get(cache_key)
         return stale[1] if stale else None
 

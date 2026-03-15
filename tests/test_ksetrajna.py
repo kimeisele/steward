@@ -2,45 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any
+from tests.fakes import FakeLLM, FakeResponse
 
 from steward.agent import StewardAgent
 from steward.antahkarana.ksetrajna import BubbleSnapshot, KsetraJna, _compute_drift
 from steward.antahkarana.vedana import VedanaSignal, measure_vedana
 from steward.types import ToolUse
-
-# ── Fake LLM ─────────────────────────────────────────────────────────
-
-
-@dataclass
-class FakeUsage:
-    input_tokens: int = 10
-    output_tokens: int = 20
-
-
-@dataclass
-class FakeResponse:
-    content: str = ""
-    tool_calls: list[Any] | None = None
-    usage: FakeUsage | None = None
-
-    def __post_init__(self) -> None:
-        if self.usage is None:
-            self.usage = FakeUsage()
-
-
-class FakeLLM:
-    def __init__(self, responses: list[FakeResponse]) -> None:
-        self._responses = list(responses)
-        self._i = 0
-
-    def invoke(self, **kwargs: object) -> FakeResponse:
-        if self._i < len(self._responses):
-            r = self._responses[self._i]
-            self._i += 1
-            return r
-        return FakeResponse(content="[done]")
 
 
 # ── Helpers ──────────────────────────────────────────────────────────

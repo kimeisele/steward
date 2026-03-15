@@ -38,9 +38,15 @@ class NadiFederationTransport:
     Matches agent-city's own FederationNadi semantics. Agent-internet
     reads our outbox and delivers to our inbox via its relay pump.
 
-    Satisfies the FederationTransport protocol:
-        read_outbox() -> list[dict]   (reads our inbox)
-        append_to_inbox(messages)     (writes our outbox)
+    NOTE ON METHOD NAMES: read_outbox() and append_to_inbox() match the
+    FederationTransport protocol defined in steward-protocol. The protocol
+    uses CROSS-AGENT semantics (read THEIR outbox, write THEIR inbox).
+    For self-hosted transport, the directions are flipped:
+        read_outbox()      → reads OUR inbox  (nadi_inbox.json)
+        append_to_inbox()  → writes OUR outbox (nadi_outbox.json)
+
+    This is correct — the protocol consumer doesn't know (or care) whether
+    it's talking to a self-hosted or cross-agent transport.
     """
 
     def __init__(self, federation_dir: str) -> None:
@@ -50,8 +56,10 @@ class NadiFederationTransport:
         self._seen: set[tuple] = set()
 
     def read_outbox(self) -> list[dict]:
-        """Read inbound messages from our inbox (nadi_inbox.json).
+        """FederationTransport protocol: read_outbox().
 
+        Self-hosted semantics: reads OUR inbox (nadi_inbox.json) because
+        from the protocol consumer's perspective, our inbox IS their outbox.
         Called by FederationBridge.process_inbound() during DHARMA phase.
         Deduplicates by (source, timestamp) to prevent reprocessing.
         """
@@ -80,8 +88,10 @@ class NadiFederationTransport:
             return []
 
     def append_to_inbox(self, messages: list[object]) -> int:
-        """Write outbound messages to our outbox (nadi_outbox.json).
+        """FederationTransport protocol: append_to_inbox().
 
+        Self-hosted semantics: writes OUR outbox (nadi_outbox.json) because
+        from the protocol consumer's perspective, our outbox IS their inbox.
         Called by FederationBridge.flush_outbound() during MOKSHA phase.
         Atomic write (tmp → rename). Capped at NADI_BUFFER_SIZE.
         """

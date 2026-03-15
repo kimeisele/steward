@@ -30,12 +30,6 @@ def _compound_fixer(kind: FindingKind):
 
     return decorator
 
-    def decorator(fn: Callable[["Finding", Path], list[str]]):
-        _COMPOUND_FIXERS[kind] = fn
-        return fn
-
-    return decorator
-
 
 @_compound_fixer(FindingKind.CI_FAILING)
 def _fix_ci_failing(finding: "Finding", workspace: Path) -> list[str]:

@@ -98,20 +98,15 @@ class TestBuildSystemPromptMinimal:
         prompt = _build_system_prompt(
             base="You are Steward.",
             cwd="/tmp/project",
-            tool_names=["bash", "read_file"],
-            project_instructions="Always run tests\nUse python 3.11",
         )
         assert "You are Steward." in prompt
         assert "cwd: /tmp/project" in prompt
-        # Extra context NOT included — minimal prompt, every token counts
-        assert "Always run tests" not in prompt
 
     def test_no_extra_sections(self) -> None:
         """No tool list, no instructions, no environment in prompt."""
         prompt = _build_system_prompt(
             base="You are Steward.",
             cwd="/tmp/project",
-            tool_names=["bash"],
         )
         assert "Project Instructions:" not in prompt
         assert "Available tools:" not in prompt

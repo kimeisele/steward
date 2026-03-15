@@ -20,7 +20,9 @@ from steward.autonomy import parse_intent_from_title as _parse_intent_from_title
 from steward.fix_pipeline import problem_fingerprint as _problem_fingerprint
 from steward.intents import TaskIntent
 from steward.types import MessageRole
-from tests.conftest import FakeLLM, NormalizedResponse, track_agent
+from steward.types import NormalizedResponse
+from tests.conftest import track_agent
+from tests.fakes import FakeLLM
 
 
 class TestParseIntentFromTitle:

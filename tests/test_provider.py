@@ -2,32 +2,16 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from tests.fakes import FakeResponse
 
 from steward.provider import _PRANA_FREE, ProviderChamber, _is_transient
 from steward.provider.chamber import _PRANA_CHEAP
+from steward.types import LLMUsage
 from vibe_core.mahamantra.protocols._seed import COSMIC_FRAME, MAHA_QUANTUM
 from vibe_core.protocols.feedback import InMemoryFeedback, SignalType
 from vibe_core.runtime.circuit_breaker import CircuitBreakerState
 
-# ── Fake Providers ───────────────────────────────────────────────────
-
-
-@dataclass
-class FakeUsage:
-    input_tokens: int = 100
-    output_tokens: int = 50
-
-
-@dataclass
-class FakeResponse:
-    content: str = "response"
-    tool_calls: list | None = None
-    usage: FakeUsage | None = None
-
-    def __post_init__(self) -> None:
-        if self.usage is None:
-            self.usage = FakeUsage()
+# ── Test-specific Providers ──────────────────────────────────────────
 
 
 class FakeProvider:
@@ -39,7 +23,7 @@ class FakeProvider:
 
     def invoke(self, **kwargs: object) -> FakeResponse:
         self.call_count += 1
-        return FakeResponse(content=f"{self.name} response")
+        return FakeResponse(content=f"{self.name} response", usage=LLMUsage(input_tokens=100, output_tokens=50))
 
 
 class FailingProvider:
