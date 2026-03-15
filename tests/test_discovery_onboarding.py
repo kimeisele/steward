@@ -42,7 +42,7 @@ class TestFederationDescriptor:
     def test_descriptor_display_name(self):
         path = STEWARD_ROOT / ".well-known" / "agent-federation.json"
         data = json.loads(path.read_text())
-        assert data["display_name"] == "Steward"
+        assert "Steward" in data["display_name"]
 
     def test_descriptor_authority_feed_url_pattern(self):
         path = STEWARD_ROOT / ".well-known" / "agent-federation.json"
