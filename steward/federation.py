@@ -87,6 +87,7 @@ OP_TASK_COMPLETED = "task_completed"
 OP_TASK_FAILED = "task_failed"
 OP_DIAGNOSTIC_REQUEST = "diagnostic_request"
 OP_DIAGNOSTIC_REPORT = "diagnostic_report"
+OP_MERGE_OCCURRED = "merge_occurred"
 
 # Minimum trust level to accept inbound delegations
 DEFAULT_DELEGATION_TRUST_FLOOR: float = 0.3
