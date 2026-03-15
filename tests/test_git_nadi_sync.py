@@ -52,6 +52,7 @@ def _clone_to(remote: Path, dest: Path) -> Path:
     )
     _git(dest, "config", "user.email", "test@test.com")
     _git(dest, "config", "user.name", "test")
+    _git(dest, "config", "commit.gpgsign", "false")
     return dest
 
 

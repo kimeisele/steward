@@ -608,6 +608,7 @@ class TestCrossRepoWorkspace:
             "GIT_COMMITTER_EMAIL": "t@t",
         }
         subprocess.run(["git", "init", str(source_repo)], capture_output=True, env=env)
+        subprocess.run(["git", "-C", str(source_repo), "config", "commit.gpgsign", "false"], capture_output=True, env=env)
         (source_repo / "README.md").write_text("test repo")
         subprocess.run(["git", "-C", str(source_repo), "add", "."], capture_output=True, env=env)
         subprocess.run(["git", "-C", str(source_repo), "commit", "-m", "init"], capture_output=True, env=env)

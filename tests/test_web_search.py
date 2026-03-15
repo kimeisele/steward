@@ -3,9 +3,16 @@
 from __future__ import annotations
 
 import os
+import sys
+import types
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+# Ensure tavily is importable even if not installed (tests mock it anyway)
+if "tavily" not in sys.modules:
+    sys.modules["tavily"] = types.ModuleType("tavily")
+    sys.modules["tavily"].TavilyClient = MagicMock
 
 from steward.tools.web_search import WebSearchTool
 

@@ -21,6 +21,7 @@ def git_repo(tmp_path: Path) -> Path:
     subprocess.run(["git", "init"], cwd=cwd, capture_output=True)
     subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=cwd, capture_output=True)
     subprocess.run(["git", "config", "user.name", "Test"], cwd=cwd, capture_output=True)
+    subprocess.run(["git", "config", "commit.gpgsign", "false"], cwd=cwd, capture_output=True)
     (tmp_path / "code.py").write_text("x = 1\n")
     (tmp_path / "test_code.py").write_text("def test_x():\n    from code import x\n    assert x == 1\n")
     subprocess.run(["git", "add", "."], cwd=cwd, capture_output=True)
@@ -394,6 +395,7 @@ class TestCheckLint:
         subprocess.run(["git", "init"], cwd=str(path), capture_output=True)
         subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=str(path), capture_output=True)
         subprocess.run(["git", "config", "user.name", "Test"], cwd=str(path), capture_output=True)
+        subprocess.run(["git", "config", "commit.gpgsign", "false"], cwd=str(path), capture_output=True)
 
     def test_clean_code_passes(self, tmp_path):
         self._init_repo(tmp_path)
@@ -454,6 +456,7 @@ class TestCheckSecurity:
         subprocess.run(["git", "init"], cwd=str(path), capture_output=True)
         subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=str(path), capture_output=True)
         subprocess.run(["git", "config", "user.name", "Test"], cwd=str(path), capture_output=True)
+        subprocess.run(["git", "config", "commit.gpgsign", "false"], cwd=str(path), capture_output=True)
 
     def test_safe_code_passes(self, tmp_path):
         self._init_repo(tmp_path)
@@ -498,6 +501,7 @@ class TestCheckBlastRadius:
         subprocess.run(["git", "init"], cwd=str(path), capture_output=True)
         subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=str(path), capture_output=True)
         subprocess.run(["git", "config", "user.name", "Test"], cwd=str(path), capture_output=True)
+        subprocess.run(["git", "config", "commit.gpgsign", "false"], cwd=str(path), capture_output=True)
 
     def test_small_change_passes(self, tmp_path):
         self._init_repo(tmp_path)
@@ -551,6 +555,7 @@ class TestCheckTestIntegrity:
         subprocess.run(["git", "init"], cwd=str(path), capture_output=True)
         subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=str(path), capture_output=True)
         subprocess.run(["git", "config", "user.name", "Test"], cwd=str(path), capture_output=True)
+        subprocess.run(["git", "config", "commit.gpgsign", "false"], cwd=str(path), capture_output=True)
 
     def test_unchanged_tests_pass(self, tmp_path):
         """Tests with same structure before/after → pass."""
@@ -773,6 +778,7 @@ class TestCheckApiSurface:
         subprocess.run(["git", "init"], cwd=str(path), capture_output=True)
         subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=str(path), capture_output=True)
         subprocess.run(["git", "config", "user.name", "Test"], cwd=str(path), capture_output=True)
+        subprocess.run(["git", "config", "commit.gpgsign", "false"], cwd=str(path), capture_output=True)
 
     def test_unchanged_api_passes(self, tmp_path):
         """No change to public surface → pass."""
