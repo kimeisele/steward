@@ -110,8 +110,14 @@ class GenesisDiscoveryHook(BasePhaseHook):
         return 20  # After any future context-validation hooks
 
     def should_run(self, ctx: PhaseContext) -> bool:
-        # Don't run in test environments (no real GitHub API access)
-        if "pytest" in __import__("sys").modules:
+        import os
+        import shutil
+
+        # Skip if gh CLI not available (CI without GitHub token, tests, etc.)
+        if shutil.which("gh") is None:
+            return False
+        # Skip if explicitly disabled
+        if os.environ.get("STEWARD_DISABLE_DISCOVERY"):
             return False
         return (time.time() - self._last_scan) >= _MIN_SCAN_INTERVAL_S
 
