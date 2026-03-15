@@ -33,6 +33,7 @@ class TaskIntent(enum.Enum):
     HEALTH_CHECK = "health_check"
     SENSE_SCAN = "sense_scan"
     CI_CHECK = "ci_check"
+    POST_MERGE = "post_merge"
 
     # Reactive — federation monitoring
     FEDERATION_HEALTH = "federation_health"
