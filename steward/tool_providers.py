@@ -49,6 +49,7 @@ class BuiltinToolProvider:
         from steward.tools.knowledge import KnowledgeGraphTool
         from steward.tools.read_file import ReadFileTool
         from steward.tools.sub_agent import SubAgentTool
+        from steward.tools.synthesize_briefing import SynthesizeBriefingTool
         from steward.tools.web_search import WebSearchTool
         from steward.tools.write_file import WriteFileTool
 
@@ -67,6 +68,7 @@ class BuiltinToolProvider:
             SubAgentTool(cwd=cwd),
             KnowledgeGraphTool(),
             DelegateToPeerTool(),
+            SynthesizeBriefingTool(cwd=cwd),
         ]
 
 
