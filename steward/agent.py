@@ -86,6 +86,11 @@ def _load_project_instructions(cwd: str) -> str | None:
     1. .steward/instructions.md
     2. CLAUDE.md
 
+    If neither exists, uses Sruti to synthesize instructions from
+    codebase perception. Sruti listens (reads existing + perceives codebase)
+    before speaking (writing). This is the Iron Dome principle elevated
+    from safety gate to creative act.
+
     Returns the file contents or None.
     """
     candidates = [
@@ -101,6 +106,19 @@ def _load_project_instructions(cwd: str) -> str | None:
                     return content
             except OSError as e:
                 logger.warning("Failed to read %s: %s", path, e)
+
+    # No static instructions found — Sruti synthesizes from perception
+    try:
+        from steward.sruti import Sruti
+
+        sruti = Sruti(cwd=cwd)
+        content = sruti.synthesize()
+        if content and content.strip():
+            logger.info("Sruti synthesized project instructions from codebase perception")
+            return content
+    except Exception as e:
+        logger.debug("Sruti synthesis skipped: %s", e)
+
     return None
 
 

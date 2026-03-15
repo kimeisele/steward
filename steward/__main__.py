@@ -304,8 +304,24 @@ def main() -> None:
         action="store_true",
         help="Output dynamic context briefing (senses + gaps + sessions) to stdout. No LLM needed.",
     )
+    parser.add_argument(
+        "--sruti",
+        action="store_true",
+        help="Synthesize project instructions (listen first, speak second). Writes to .steward/instructions.md.",
+    )
 
     args = parser.parse_args()
+
+    # Sruti mode — listen-first instruction synthesis, no LLM needed
+    if args.sruti:
+        from steward.sruti import Sruti
+
+        sruti = Sruti(cwd=args.cwd)
+        path = sruti.write()
+        _console.print(f"[tool.ok]Sruti[/] wrote instructions to [heading]{path}[/]")
+        # Also print to stdout so user can see what was generated
+        print(path.read_text())
+        return
 
     # Briefing mode — dynamic context dump, no LLM needed
     if args.briefing:
