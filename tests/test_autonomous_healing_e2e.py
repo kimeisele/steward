@@ -37,7 +37,7 @@ class TestPeerRepoResolution:
         from unittest.mock import patch
 
         with patch("steward.autonomy.Path.home", return_value=tmp_path):
-            result = _resolve_peer_repo("test-peer")
+            _resolve_peer_repo("test-peer")
         # Won't find it since we look in ~/projects/ not tmp_path directly
         # but the function checks multiple candidates
 
@@ -111,7 +111,7 @@ class TestAutonomousHealingLoop:
         reaper.record_heartbeat("steward-test", timestamp=1000.0, source="genesis_discovery")
 
         # Time passes: t=1000 + 15 (>10 TTL)
-        consequences = reaper.reap(now=1015.0)
+        reaper.reap(now=1015.0)
 
         # Peer should be SUSPECT
         suspects = reaper.suspect_peers()

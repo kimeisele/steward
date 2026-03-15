@@ -13,6 +13,7 @@ import time
 from steward.phase_hook import DHARMA, BasePhaseHook, PhaseContext
 from steward.services import (
     SVC_FEDERATION,
+    SVC_FEDERATION_RELAY,
     SVC_FEDERATION_TRANSPORT,
     SVC_GIT_NADI_SYNC,
     SVC_MARKETPLACE,
@@ -171,6 +172,13 @@ class DharmaFederationHook(BasePhaseHook):
                 "fingerprint": identity.fingerprint,
             },
         )
+        # Pull messages from hub via GitHub API relay (cross-repo delivery)
+        relay = ServiceRegistry.get(SVC_FEDERATION_RELAY)
+        if relay is not None:
+            pulled = relay.pull_from_hub()
+            if pulled:
+                logger.info("FEDERATION: relay pulled %d messages from hub", pulled)
+
         # Git pull before reading — fetch latest messages from remote
         git_sync = ServiceRegistry.get(SVC_GIT_NADI_SYNC)
         if git_sync is not None:

@@ -70,10 +70,9 @@ class TestSignalBusWiring:
 class TestAgentSignalEmission:
     def test_startup_signal_emitted(self):
         """Agent emits AGENT_STARTUP signal when created."""
-        received: list[Signal] = []
         # Create agent — boot() creates the bus, then startup signal is emitted
         llm = _FakeLLM([])
-        agent = StewardAgent(provider=llm)
+        StewardAgent(provider=llm)
 
         # Subscribe AFTER agent creation to test startup was emitted
         # We need to check the bus history instead

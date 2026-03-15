@@ -21,7 +21,6 @@ from steward.senses.diagnostic_sense import (
     diagnose_repo,
 )
 
-
 # ── Finding ──────────────────────────────────────────────────────────
 
 

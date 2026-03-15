@@ -82,7 +82,7 @@ class TestExtractStructure:
         # Should contain "Files read:" with at most 10 paths
         assert "Files read:" in result
         # Count commas — 9 commas = 10 items
-        files_line = [l for l in result.split("\n") if "Files read" in l][0]
+        files_line = [line for line in result.split("\n") if "Files read" in line][0]
         assert files_line.count(",") <= 9
 
 

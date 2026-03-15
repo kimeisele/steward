@@ -44,7 +44,6 @@ from steward.types import (
     ToolUse,
 )
 
-
 # ── Test Infrastructure ─────────────────────────────────────────────
 
 
@@ -445,7 +444,6 @@ class TestJsonMode:
         result = AgentLoop._extract_json_object('prefix {"tool": "edit", "params": {"path": "/x", "old": "{"}} suffix')
         assert result is not None
         # Should be parseable JSON
-        import json
 
         parsed = json.loads(result)
         assert parsed["tool"] == "edit"

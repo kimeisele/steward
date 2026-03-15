@@ -50,8 +50,9 @@ class TestKnowledgeGraphTool:
 
     def test_tool_in_builtin_provider(self):
         """KnowledgeGraphTool is included in BuiltinToolProvider."""
-        from steward.tool_providers import BuiltinToolProvider
         import tempfile
+
+        from steward.tool_providers import BuiltinToolProvider
 
         provider = BuiltinToolProvider()
         tools = provider.provide(tempfile.mkdtemp())

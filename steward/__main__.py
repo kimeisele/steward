@@ -310,6 +310,7 @@ def main() -> None:
     # Briefing mode — show committed CLAUDE.md if fresh, regenerate if stale
     if args.briefing:
         import time
+        from pathlib import Path
 
         cwd = args.cwd or "."
         committed = Path(cwd) / "CLAUDE.md"

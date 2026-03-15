@@ -10,8 +10,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Awaitable, Callable
 
 from steward.healer.compound import _COMPOUND_FIXERS
-from steward.healer.helpers import _build_pr_body, _extract_ci_error_summary
-from steward.healer.types import FixStrategy, HealResult, _FIXERS, classify
+from steward.healer.helpers import _extract_ci_error_summary
+from steward.healer.types import _FIXERS, FixStrategy, HealResult, classify
 from steward.senses.diagnostic_sense import diagnose_repo
 
 if TYPE_CHECKING:
@@ -53,7 +53,6 @@ class RepoHealer:
         investigate and fix. No context dumping, no response parsing.
         Changes land on disk through tool use. We detect them via git diff.
         """
-        import subprocess
 
         # Extract the error summary from the CI log deterministically
         error_summary = _extract_ci_error_summary(finding, workspace)
@@ -188,14 +187,12 @@ class RepoHealer:
 
         # Step 5: Verify via Iron Gate
         changed_set = set(all_changed)
-        gate_passed = True
 
         if changed_set and hasattr(self._pipeline, "_breaker"):
             gate_results = self._pipeline._breaker.run_gates(changed_set)
             failed_gates = [g for g in gate_results if not g.passed]
 
             if failed_gates:
-                gate_passed = False
                 details = "; ".join(g.detail for g in failed_gates)
                 logger.warning("Iron Gate FAILED for %s: %s", repo_name, details)
 
@@ -216,7 +213,6 @@ class RepoHealer:
         # Step 6: Gate passed — create PR
         pr_url = ""
         if changed_set:
-            body = _build_pr_body(applied, gate_passed)
             pr_url = (
                 self._pipeline._create_pr(
                     branch_name=f"steward/heal/{repo_name}",

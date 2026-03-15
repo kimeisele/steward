@@ -16,7 +16,6 @@ import pytest
 from steward.agent import StewardAgent
 from steward.types import AgentEvent, EventType, LLMUsage, Message, NormalizedResponse, StreamDelta, ToolUse
 
-
 # ── Scripted LLM that returns tool calls then text ──────────────────
 
 

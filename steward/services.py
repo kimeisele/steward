@@ -133,6 +133,10 @@ class SVC_GIT_NADI_SYNC:
     """GitNadiSync — git pull/push for federation nadi files."""
 
 
+class SVC_FEDERATION_RELAY:
+    """GitHubFederationRelay — GitHub API bridge to hub repo."""
+
+
 class SVC_REAPER:
     """HeartbeatReaper — network garbage collection for federation peers."""
 
@@ -374,6 +378,24 @@ def boot(
             ServiceRegistry.register(SVC_GIT_NADI_SYNC, git_sync)
             logger.info("Git nadi sync: active (interval=%ds)", git_sync._sync_interval_s)
 
+        # 28c. GitHubFederationRelay (GitHub API bridge to hub — cross-repo delivery)
+        from steward.federation_relay import GitHubFederationRelay
+
+        relay = GitHubFederationRelay(
+            agent_id="steward",
+            local_outbox=Path(fed_dir) / "nadi_outbox.json",
+            local_inbox=Path(fed_dir) / "nadi_inbox.json",
+        )
+        if relay.available:
+            ServiceRegistry.register(SVC_FEDERATION_RELAY, relay)
+            logger.info("Federation relay: active (hub=%s)", relay._hub_repo)
+
+    # 31. NagaDiamondProtocol (TDD enforcement: RED/GREEN gates)
+    from vibe_core.naga.diamond import NagaDiamondProtocol
+
+    diamond = NagaDiamondProtocol(workspace=cwd_path)
+    ServiceRegistry.register(SVC_DIAMOND, diamond)
+
     # 29. PhaseHookRegistry (composable MURALI phase dispatch)
     from steward.hooks import register_default_hooks
     from steward.phase_hook import PhaseHookRegistry
@@ -418,7 +440,11 @@ def boot(
         lambda: _check_service_wired(SVC_CACHE, "EphemeralStorage"),
         IssueSeverity.HIGH,
     )
-    # vajra_diamond_wired — DEFERRED (Diamond not booted)
+    checker.register_checker(
+        "vajra_diamond_wired",
+        lambda: _check_service_wired(SVC_DIAMOND, "NagaDiamondProtocol"),
+        IssueSeverity.HIGH,
+    )
     checker.register_checker(
         "vajra_attention_wired",
         lambda: _check_service_wired(SVC_ATTENTION, "MahaAttention"),

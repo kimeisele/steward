@@ -12,13 +12,13 @@ import time
 
 from steward.antahkarana.vedana import VedanaSignal, measure_vedana
 from steward.cetana import (
+    _ANOMALY_THRESHOLD,
     GAJENDRA,
-    SAMADHI,
     SADHANA,
+    SAMADHI,
     Cetana,
     CetanaBeat,
     Phase,
-    _ANOMALY_THRESHOLD,
 )
 
 
