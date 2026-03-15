@@ -167,7 +167,9 @@ class StewardImmune:
         confidence = 0.5
 
         if rule_id and self._synaptic is not None:
-            confidence = self._synaptic.get_weight(f"immune:{rule_id}", "heal")
+            weight = self._synaptic.get_weight(f"immune:{rule_id}", "heal")
+            if isinstance(weight, (int, float)):
+                confidence = float(weight)
 
         healable = (
             rule_id is not None
