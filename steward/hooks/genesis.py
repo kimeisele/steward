@@ -177,13 +177,12 @@ class GenesisDiscoveryHook(BasePhaseHook):
             logger.info("GENESIS: %d policy violations detected", len(violations))
 
         self._last_scan = time.time()
-        ctx.operations.append(
-            f"genesis_discovery:peers={len(discovered)},new={new_count},violations={len(violations)}"
-        )
+        ctx.operations.append(f"genesis_discovery:peers={len(discovered)},new={new_count},violations={len(violations)}")
 
 
 def _check_policy_compliance(
-    discovered: dict[str, dict], reaper: object,
+    discovered: dict[str, dict],
+    reaper: object,
 ) -> list[str]:
     """Check discovered peers against world policies. Apply trust penalties.
 
@@ -198,8 +197,7 @@ def _check_policy_compliance(
     owner = _get_federation_owner()
 
     # Load policies from agent-world
-    raw = _gh(["api", f"repos/{owner}/agent-world/contents/config/world_policies.yaml",
-               "--jq", ".content"])
+    raw = _gh(["api", f"repos/{owner}/agent-world/contents/config/world_policies.yaml", "--jq", ".content"])
     if not raw:
         return violations
 
@@ -236,20 +234,19 @@ def _check_policy_compliance(
                     old_trust = peer.trust
                     peer.trust = max(0.0, peer.trust - penalty)
                     violations.append(f"{repo_id}: no descriptor (trust {old_trust:.2f} → {peer.trust:.2f})")
-                    logger.warning("Policy %s: %s lacks federation descriptor (trust -%.1f)",
-                                   policy_id, repo_id, penalty)
+                    logger.warning(
+                        "Policy %s: %s lacks federation descriptor (trust -%.1f)", policy_id, repo_id, penalty
+                    )
 
             elif policy_id == "federation_ci_required":
                 # Check if repo has CI on pull_request
-                ci_raw = _gh(["api", f"repos/{repo_full}/contents/.github/workflows",
-                              "--jq", ".[].name"])
+                ci_raw = _gh(["api", f"repos/{repo_full}/contents/.github/workflows", "--jq", ".[].name"])
                 has_ci = ci_raw is not None and ci_raw.strip()
                 if not has_ci:
                     old_trust = peer.trust
                     peer.trust = max(0.0, peer.trust - penalty)
                     violations.append(f"{repo_id}: no CI workflows (trust {old_trust:.2f} → {peer.trust:.2f})")
-                    logger.warning("Policy %s: %s has no CI (trust -%.1f)",
-                                   policy_id, repo_id, penalty)
+                    logger.warning("Policy %s: %s has no CI (trust -%.1f)", policy_id, repo_id, penalty)
 
     return violations
 
@@ -267,8 +264,7 @@ def _discover_from_world_registry() -> dict[str, dict]:
     peers: dict[str, dict] = {}
 
     owner = _get_federation_owner()
-    raw = _gh(["api", f"repos/{owner}/agent-world/contents/config/world_registry.yaml",
-               "--jq", ".content"])
+    raw = _gh(["api", f"repos/{owner}/agent-world/contents/config/world_registry.yaml", "--jq", ".content"])
     if not raw:
         return peers
 
@@ -302,10 +298,12 @@ def _discover_from_world_registry() -> dict[str, dict]:
                 "source": "world_registry_agent",
             }
 
-    logger.debug("World registry: %d nodes (%d cities, %d agents)",
-                 len(peers),
-                 len(data.get("cities") or []),
-                 len(data.get("agents") or []))
+    logger.debug(
+        "World registry: %d nodes (%d cities, %d agents)",
+        len(peers),
+        len(data.get("cities") or []),
+        len(data.get("agents") or []),
+    )
     return peers
 
 
@@ -313,8 +311,18 @@ def _discover_from_github_topics() -> dict[str, dict]:
     """Find repos with topic 'agent-federation-node' via GitHub search."""
     peers: dict[str, dict] = {}
 
-    raw = _gh(["search", "repos", "--topic", "agent-federation-node",
-               "--owner", f"{_get_federation_owner()}", "--json", "name,description"])
+    raw = _gh(
+        [
+            "search",
+            "repos",
+            "--topic",
+            "agent-federation-node",
+            "--owner",
+            f"{_get_federation_owner()}",
+            "--json",
+            "name,description",
+        ]
+    )
     if not raw:
         return peers
 
@@ -365,14 +373,19 @@ def _discover_from_org_repos(
             continue
 
         # Check for federation descriptor
-        descriptor_raw = _gh([
-            "api", f"repos/{_get_federation_owner()}/{name}/contents/.well-known/agent-federation.json",
-            "--jq", ".content",
-        ])
+        descriptor_raw = _gh(
+            [
+                "api",
+                f"repos/{_get_federation_owner()}/{name}/contents/.well-known/agent-federation.json",
+                "--jq",
+                ".content",
+            ]
+        )
 
         if descriptor_raw:
             try:
                 import base64
+
                 descriptor = json.loads(base64.b64decode(descriptor_raw.strip()))
                 if descriptor.get("status") == "active":
                     caps = descriptor.get("capabilities", [])

@@ -30,9 +30,7 @@ class TestExploreCapability:
         pkg = tmp_path / "mylib"
         pkg.mkdir()
         (pkg / "__init__.py").write_text("")
-        (pkg / "core.py").write_text(
-            "class Engine:\n    def run(self):\n        pass\n\ndef helper():\n    pass\n"
-        )
+        (pkg / "core.py").write_text("class Engine:\n    def run(self):\n        pass\n\ndef helper():\n    pass\n")
         (pkg / "utils.py").write_text(
             "from mylib.core import Engine\n\ndef format_output(data):\n    return str(data)\n"
         )
@@ -98,8 +96,7 @@ class TestExploreCapability:
 class TestExplorePipeline:
     def test_scans_ast(self, tmp_path):
         (tmp_path / "app.py").write_text(
-            "class Server:\n    def start(self):\n        pass\n\n"
-            "class Client:\n    def connect(self):\n        pass\n"
+            "class Server:\n    def start(self):\n        pass\n\nclass Client:\n    def connect(self):\n        pass\n"
         )
 
         explore_map = _explore(tmp_path, "")

@@ -381,9 +381,13 @@ class AutonomyEngine:
                 try:
                     result = await healer.heal_repo(repo_path)
                     results.append(result)
-                    logger.info("Heal %s (local): %d/%d fixed, PR=%s",
-                                peer.agent_id, result.findings_fixed,
-                                result.findings_fixable, result.pr_url or "(none)")
+                    logger.info(
+                        "Heal %s (local): %d/%d fixed, PR=%s",
+                        peer.agent_id,
+                        result.findings_fixed,
+                        result.findings_fixable,
+                        result.pr_url or "(none)",
+                    )
                 except Exception as e:
                     logger.error("Heal failed for %s: %s", peer.agent_id, e)
             else:
@@ -397,9 +401,13 @@ class AutonomyEngine:
                     with self._cross_repo_workspace(git_url, peer.agent_id) as workspace:
                         result = await healer.heal_repo(workspace)
                         results.append(result)
-                        logger.info("Heal %s (remote): %d/%d fixed, PR=%s",
-                                    peer.agent_id, result.findings_fixed,
-                                    result.findings_fixable, result.pr_url or "(none)")
+                        logger.info(
+                            "Heal %s (remote): %d/%d fixed, PR=%s",
+                            peer.agent_id,
+                            result.findings_fixed,
+                            result.findings_fixable,
+                            result.pr_url or "(none)",
+                        )
                 except Exception as e:
                     logger.error("Heal failed for %s (remote): %s", peer.agent_id, e)
 
@@ -408,8 +416,7 @@ class AutonomyEngine:
 
         if results:
             summary = "; ".join(
-                f"{r.repo}: {r.findings_fixed}/{r.findings_fixable} fixed"
-                + (f" PR: {r.pr_url}" if r.pr_url else "")
+                f"{r.repo}: {r.findings_fixed}/{r.findings_fixable} fixed" + (f" PR: {r.pr_url}" if r.pr_url else "")
                 for r in results
             )
             return f"Healed repos: {summary}"

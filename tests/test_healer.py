@@ -75,7 +75,9 @@ class TestClassifyAllFindingKinds:
 
 class TestExtractPackage:
     def test_quoted_in_fix_hint(self):
-        f = Finding(FindingKind.UNDECLARED_DEPENDENCY, Severity.WARNING, "pyproject.toml", fix_hint="Add 'pyyaml' to deps")
+        f = Finding(
+            FindingKind.UNDECLARED_DEPENDENCY, Severity.WARNING, "pyproject.toml", fix_hint="Add 'pyyaml' to deps"
+        )
         assert _extract_package_from_finding(f) == "pyyaml"
 
     def test_pip_install_pattern(self):
@@ -83,7 +85,9 @@ class TestExtractPackage:
         assert _extract_package_from_finding(f) == "requests"
 
     def test_quoted_in_detail(self):
-        f = Finding(FindingKind.UNDECLARED_DEPENDENCY, Severity.WARNING, "", detail="'flask' is imported but not declared")
+        f = Finding(
+            FindingKind.UNDECLARED_DEPENDENCY, Severity.WARNING, "", detail="'flask' is imported but not declared"
+        )
         assert _extract_package_from_finding(f) == "flask"
 
     def test_no_match_returns_empty(self):
@@ -177,7 +181,7 @@ class TestFixUndeclaredDependency:
         assert '"yaml"' not in content  # Must NOT use import name
 
     def test_pil_to_pillow_mapping(self, tmp_path):
-        (tmp_path / "pyproject.toml").write_text('[project]\ndependencies = []\n')
+        (tmp_path / "pyproject.toml").write_text("[project]\ndependencies = []\n")
         finding = Finding(
             FindingKind.UNDECLARED_DEPENDENCY,
             Severity.WARNING,
@@ -370,8 +374,11 @@ class TestFixSyntaxError:
     def test_missing_colon_on_def(self, tmp_path):
         (tmp_path / "broken.py").write_text("def foo()\n    pass\n")
         finding = Finding(
-            FindingKind.SYNTAX_ERROR, Severity.CRITICAL, "broken.py",
-            line=1, detail="SyntaxError: expected ':'",
+            FindingKind.SYNTAX_ERROR,
+            Severity.CRITICAL,
+            "broken.py",
+            line=1,
+            detail="SyntaxError: expected ':'",
         )
         changed = _fix_syntax_error(finding, tmp_path)
         assert "broken.py" in changed
@@ -383,8 +390,11 @@ class TestFixSyntaxError:
     def test_missing_colon_on_if(self, tmp_path):
         (tmp_path / "broken.py").write_text("if True\n    x = 1\n")
         finding = Finding(
-            FindingKind.SYNTAX_ERROR, Severity.CRITICAL, "broken.py",
-            line=1, detail="SyntaxError: expected ':'",
+            FindingKind.SYNTAX_ERROR,
+            Severity.CRITICAL,
+            "broken.py",
+            line=1,
+            detail="SyntaxError: expected ':'",
         )
         changed = _fix_syntax_error(finding, tmp_path)
         assert "broken.py" in changed
@@ -393,8 +403,11 @@ class TestFixSyntaxError:
     def test_missing_colon_on_class(self, tmp_path):
         (tmp_path / "broken.py").write_text("class Foo\n    pass\n")
         finding = Finding(
-            FindingKind.SYNTAX_ERROR, Severity.CRITICAL, "broken.py",
-            line=1, detail="SyntaxError: expected ':'",
+            FindingKind.SYNTAX_ERROR,
+            Severity.CRITICAL,
+            "broken.py",
+            line=1,
+            detail="SyntaxError: expected ':'",
         )
         changed = _fix_syntax_error(finding, tmp_path)
         assert "broken.py" in changed
@@ -403,8 +416,11 @@ class TestFixSyntaxError:
     def test_missing_colon_on_for(self, tmp_path):
         (tmp_path / "broken.py").write_text("for i in range(10)\n    pass\n")
         finding = Finding(
-            FindingKind.SYNTAX_ERROR, Severity.CRITICAL, "broken.py",
-            line=1, detail="SyntaxError: expected ':'",
+            FindingKind.SYNTAX_ERROR,
+            Severity.CRITICAL,
+            "broken.py",
+            line=1,
+            detail="SyntaxError: expected ':'",
         )
         changed = _fix_syntax_error(finding, tmp_path)
         assert "broken.py" in changed
@@ -412,8 +428,11 @@ class TestFixSyntaxError:
     def test_expected_indented_block(self, tmp_path):
         (tmp_path / "broken.py").write_text("def foo():\n")
         finding = Finding(
-            FindingKind.SYNTAX_ERROR, Severity.CRITICAL, "broken.py",
-            line=1, detail="IndentationError: expected an indented block",
+            FindingKind.SYNTAX_ERROR,
+            Severity.CRITICAL,
+            "broken.py",
+            line=1,
+            detail="IndentationError: expected an indented block",
         )
         changed = _fix_syntax_error(finding, tmp_path)
         assert "broken.py" in changed
@@ -424,8 +443,11 @@ class TestFixSyntaxError:
     def test_unexpected_indent(self, tmp_path):
         (tmp_path / "broken.py").write_text("x = 1\n        y = 2\n")
         finding = Finding(
-            FindingKind.SYNTAX_ERROR, Severity.CRITICAL, "broken.py",
-            line=2, detail="IndentationError: unexpected indent",
+            FindingKind.SYNTAX_ERROR,
+            Severity.CRITICAL,
+            "broken.py",
+            line=2,
+            detail="IndentationError: unexpected indent",
         )
         changed = _fix_syntax_error(finding, tmp_path)
         assert "broken.py" in changed
@@ -434,8 +456,11 @@ class TestFixSyntaxError:
     def test_unmatched_paren(self, tmp_path):
         (tmp_path / "broken.py").write_text("x = foo(1, 2\n")
         finding = Finding(
-            FindingKind.SYNTAX_ERROR, Severity.CRITICAL, "broken.py",
-            line=1, detail="SyntaxError: '(' was never closed",
+            FindingKind.SYNTAX_ERROR,
+            Severity.CRITICAL,
+            "broken.py",
+            line=1,
+            detail="SyntaxError: '(' was never closed",
         )
         changed = _fix_syntax_error(finding, tmp_path)
         assert "broken.py" in changed
@@ -445,16 +470,22 @@ class TestFixSyntaxError:
         """Truly broken code that patterns can't fix → no change."""
         (tmp_path / "broken.py").write_text("@@@ garbage $$$\n")
         finding = Finding(
-            FindingKind.SYNTAX_ERROR, Severity.CRITICAL, "broken.py",
-            line=1, detail="SyntaxError: invalid syntax",
+            FindingKind.SYNTAX_ERROR,
+            Severity.CRITICAL,
+            "broken.py",
+            line=1,
+            detail="SyntaxError: invalid syntax",
         )
         changed = _fix_syntax_error(finding, tmp_path)
         assert changed == []
 
     def test_no_file_returns_empty(self, tmp_path):
         finding = Finding(
-            FindingKind.SYNTAX_ERROR, Severity.CRITICAL, "nonexistent.py",
-            line=1, detail="SyntaxError: expected ':'",
+            FindingKind.SYNTAX_ERROR,
+            Severity.CRITICAL,
+            "nonexistent.py",
+            line=1,
+            detail="SyntaxError: expected ':'",
         )
         changed = _fix_syntax_error(finding, tmp_path)
         assert changed == []
@@ -464,8 +495,11 @@ class TestFixSyntaxError:
         original = "x = [1, 2, {3: 4\n"  # Complex case that won't parse after bracket fix
         (tmp_path / "broken.py").write_text(original)
         finding = Finding(
-            FindingKind.SYNTAX_ERROR, Severity.CRITICAL, "broken.py",
-            line=1, detail="SyntaxError: '{' was never closed",
+            FindingKind.SYNTAX_ERROR,
+            Severity.CRITICAL,
+            "broken.py",
+            line=1,
+            detail="SyntaxError: '{' was never closed",
         )
         changed = _fix_syntax_error(finding, tmp_path)
         if not changed:
@@ -483,7 +517,9 @@ class TestFixCircularImport:
         (pkg / "b.py").write_text("from pkg.a import greet\n\ndef helper():\n    return greet()\n")
 
         finding = Finding(
-            FindingKind.CIRCULAR_IMPORT, Severity.WARNING, "pkg/b.py",
+            FindingKind.CIRCULAR_IMPORT,
+            Severity.WARNING,
+            "pkg/b.py",
             detail="Circular import: pkg/a.py → pkg/b.py → pkg/a.py",
             fix_hint="Break cycle by moving imports in pkg/b.py behind TYPE_CHECKING guard",
         )
@@ -499,7 +535,9 @@ class TestFixCircularImport:
     def test_skips_if_no_cycle_imports_found(self, tmp_path):
         (tmp_path / "clean.py").write_text("x = 1\n")
         finding = Finding(
-            FindingKind.CIRCULAR_IMPORT, Severity.WARNING, "clean.py",
+            FindingKind.CIRCULAR_IMPORT,
+            Severity.WARNING,
+            "clean.py",
             detail="Circular import: a.py → b.py → a.py",
         )
         changed = _fix_circular_import(finding, tmp_path)
@@ -507,7 +545,9 @@ class TestFixCircularImport:
 
     def test_no_file_returns_empty(self, tmp_path):
         finding = Finding(
-            FindingKind.CIRCULAR_IMPORT, Severity.WARNING, "missing.py",
+            FindingKind.CIRCULAR_IMPORT,
+            Severity.WARNING,
+            "missing.py",
             detail="Circular import: a.py → missing.py → a.py",
         )
         changed = _fix_circular_import(finding, tmp_path)
@@ -517,7 +557,9 @@ class TestFixCircularImport:
 class TestExtractCiErrorSummary:
     def test_returns_finding_detail_when_no_workflow(self):
         finding = Finding(
-            FindingKind.CI_FAILING, Severity.CRITICAL, "",
+            FindingKind.CI_FAILING,
+            Severity.CRITICAL,
+            "",
             detail="Something failed",
         )
         result = _extract_ci_error_summary(finding, Path("/tmp"))
@@ -526,7 +568,9 @@ class TestExtractCiErrorSummary:
     def test_extracts_error_lines_only(self):
         """Error summary should be compact, not the full CI log."""
         finding = Finding(
-            FindingKind.CI_FAILING, Severity.CRITICAL, "",
+            FindingKind.CI_FAILING,
+            Severity.CRITICAL,
+            "",
             detail="CI workflow 'CI' is failing",
         )
         # Can't test with real gh CLI here, but verify it falls back gracefully
@@ -574,7 +618,10 @@ class TestDetectCircularImports:
 class TestBuildPrBody:
     def test_all_succeeded(self):
         findings = [
-            (Finding(FindingKind.UNDECLARED_DEPENDENCY, Severity.WARNING, "pyproject.toml", detail="Added pyyaml"), True),
+            (
+                Finding(FindingKind.UNDECLARED_DEPENDENCY, Severity.WARNING, "pyproject.toml", detail="Added pyyaml"),
+                True,
+            ),
             (Finding(FindingKind.NO_CI, Severity.WARNING, "", detail="Created ci.yml"), True),
         ]
         body = _build_pr_body(findings, gate_passed=True)
@@ -635,7 +682,7 @@ class TestHealHealthyRepoSkips:
     async def test_healthy_repo_returns_early(self, tmp_path):
         """Healthy repo → no work, no LLM calls."""
         (tmp_path / "main.py").write_text("x = 1\n")
-        (tmp_path / "pyproject.toml").write_text('[project]\ndependencies = []\n')
+        (tmp_path / "pyproject.toml").write_text("[project]\ndependencies = []\n")
         # Add federation descriptor + peer.json + CI + tests to make it healthy
         well_known = tmp_path / ".well-known"
         well_known.mkdir()
@@ -701,7 +748,7 @@ class TestHealGateFailureRollback:
     async def test_gate_failure_triggers_rollback(self, tmp_path):
         """Gate failure → all changes rolled back, Hebbian failure."""
         (tmp_path / "main.py").write_text("x = 1\n")
-        (tmp_path / "pyproject.toml").write_text('[project]\ndependencies = []\n')
+        (tmp_path / "pyproject.toml").write_text("[project]\ndependencies = []\n")
         tests = tmp_path / "tests"
         tests.mkdir()
         (tests / "__init__.py").write_text("")
@@ -730,7 +777,7 @@ class TestHealCreatesPr:
     async def test_pr_created_on_success(self, tmp_path):
         """Successful healing → PR URL in result."""
         (tmp_path / "main.py").write_text("x = 1\n")
-        (tmp_path / "pyproject.toml").write_text('[project]\ndependencies = []\n')
+        (tmp_path / "pyproject.toml").write_text("[project]\ndependencies = []\n")
         tests = tmp_path / "tests"
         tests.mkdir()
         (tests / "__init__.py").write_text("")
@@ -758,7 +805,7 @@ class TestHealMixedFindings:
         """Mixed findings: deterministic + skip → only deterministic attempted."""
         # Create a repo with a large file (SKIP) and missing federation (DETERMINISTIC)
         (tmp_path / "big.py").write_text("x = 1\n" * 900)  # LARGE_FILE → SKIP
-        (tmp_path / "pyproject.toml").write_text('[project]\ndependencies = []\n')
+        (tmp_path / "pyproject.toml").write_text("[project]\ndependencies = []\n")
         tests = tmp_path / "tests"
         tests.mkdir()
         (tests / "__init__.py").write_text("")
@@ -782,7 +829,7 @@ class TestHebbianLearning:
     async def test_success_records_positive_weight(self, tmp_path):
         """Successful heal → Hebbian update with success=True."""
         (tmp_path / "main.py").write_text("x = 1\n")
-        (tmp_path / "pyproject.toml").write_text('[project]\ndependencies = []\n')
+        (tmp_path / "pyproject.toml").write_text("[project]\ndependencies = []\n")
         tests = tmp_path / "tests"
         tests.mkdir()
         (tests / "__init__.py").write_text("")
@@ -803,7 +850,7 @@ class TestHebbianLearning:
     async def test_failure_records_negative_weight(self, tmp_path):
         """Gate failure → Hebbian update with success=False."""
         (tmp_path / "main.py").write_text("x = 1\n")
-        (tmp_path / "pyproject.toml").write_text('[project]\ndependencies = []\n')
+        (tmp_path / "pyproject.toml").write_text("[project]\ndependencies = []\n")
         tests = tmp_path / "tests"
         tests.mkdir()
         (tests / "__init__.py").write_text("")
@@ -841,6 +888,7 @@ class TestHealRepoIntent:
 
         class FakeSenses:
             senses = {}
+
             def perceive_all(self):
                 pass
 
@@ -860,6 +908,7 @@ class TestHealRepoIntent:
 
         class FakeSenses:
             senses = {}
+
             def perceive_all(self):
                 pass
 
@@ -880,6 +929,7 @@ class TestHealRepoIntent:
 
         class FakeSenses:
             senses = {}
+
             def perceive_all(self):
                 pass
 

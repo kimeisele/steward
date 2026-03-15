@@ -70,10 +70,7 @@ class ExploreMap:
         for e in self.entries[:30]:  # Cap at 30 entries
             rels = f" → {','.join(e.relations[:5])}" if e.relations else ""
             methods = f" [{','.join(e.methods[:5])}]" if e.methods else ""
-            lines.append(
-                f"  {e.guna[0].upper()} {e.node_type:8s} {e.name}"
-                f" ({e.file}:{e.line}){methods}{rels}"
-            )
+            lines.append(f"  {e.guna[0].upper()} {e.node_type:8s} {e.name} ({e.file}:{e.line}){methods}{rels}")
         return "\n".join(lines)
 
 
@@ -231,16 +228,18 @@ def _explore(target: Path, focus: str) -> ExploreMap:
                     if child and child.node_type == NodeType.FUNCTION:
                         methods.append(child.name)
 
-        entries.append(ExploreEntry(
-            name=node.name,
-            node_type=node.type.value if hasattr(node.type, "value") else str(node.type),
-            file=file_path,
-            line=line,
-            seed=seed,
-            guna=guna,
-            relations=tuple(relations[:10]),
-            methods=tuple(methods[:15]),
-        ))
+        entries.append(
+            ExploreEntry(
+                name=node.name,
+                node_type=node.type.value if hasattr(node.type, "value") else str(node.type),
+                file=file_path,
+                line=line,
+                seed=seed,
+                guna=guna,
+                relations=tuple(relations[:10]),
+                methods=tuple(methods[:15]),
+            )
+        )
 
     # Sort: tamas first (problems), then rajas (active), then sattva (clean)
     guna_order = {"tamas": 0, "rajas": 1, "sattva": 2}
