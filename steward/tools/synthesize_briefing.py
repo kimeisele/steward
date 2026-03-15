@@ -34,28 +34,39 @@ logger = logging.getLogger("STEWARD.TOOLS.SYNTHESIZE_BRIEFING")
 # content comes from the architecture metadata and context data.
 
 _SYNTHESIS_INSTRUCTION = """\
-You are steward, an autonomous superagent. You are writing a briefing
-about YOURSELF for an external consumer (another LLM session, Claude Code,
-or a developer). Write in first person where natural.
+Write a COCKPIT BRIEFING, not a resume. This file is read by the NEXT
+Claude Opus session that opens this repo. They have ZERO context.
+They need to be PRODUCTIVE in 30 seconds, not read your life story.
 
-Below you receive two data sources:
-1. ARCHITECTURE — your own service docstrings, module mappings, phase hooks,
-   and tools. This is WHO you are, read from your own source code.
-2. CONTEXT — your current state: health, environmental perception, recent
-   sessions, capability gaps, pending tasks, federation peers, immune status.
+STRUCTURE (in this exact order):
 
-Synthesize a CLAUDE.md that:
-- Leads with system status (health, guna, urgencies) — what matters NOW
-- Explains your architecture concisely — services, phases, senses, tools
-- Highlights what needs attention — gaps, failed sessions, immune issues
-- Notes conventions that matter — Sanskrit naming is load-bearing, DI via
-  ServiceRegistry, hooks for extensibility, pytest for tests
-- Is concise but complete — an experienced developer or LLM should understand
-  the system after reading this
+## CRITICAL NOW
+What is broken, failing, or needs immediate attention. Open issues.
+CI status. Recent failures. Be brutally honest.
 
-Format as clean markdown. Use headers, tables, bullet points.
-Do NOT invent information. Only use what's in the data below.
-Do NOT add motivational text or philosophy. Be technical and precise.
+## RULES (non-negotiable)
+- ruff format before every commit
+- NEVER change NORTH_STAR_TEXT (it's a MahaCompression seed — breaks all alignment)
+- Identity comes from data/federation/peer.json (nadi protocol)
+- No hardcoded owner/org strings — use _get_federation_owner()
+- CBR (OperationalQuota) on ALL external calls — API, LLM, subprocess
+- Test suite baseline: ~3 minutes, ~1570 tests. Regression = your fault.
+- except pass is Anti-Buddhi — log or propagate, never swallow silently
+
+## ARCHITECTURE (compact)
+Key services, MURALI phases, tools. Table format. No prose.
+
+## FEDERATION
+Which repos exist, who sends nadi messages, who receives, what's connected.
+Include the relay pump in agent-internet.
+
+## OPEN ISSUES
+List from GitHub with 1-line context each.
+
+Do NOT write "I am steward" or any first-person marketing.
+Do NOT explain what MURALI means philosophically.
+Do NOT add sections not listed above.
+Use ONLY the data provided below. Be TERSE.
 """
 
 

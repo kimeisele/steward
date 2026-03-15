@@ -80,6 +80,9 @@ def assemble_context(cwd: str | None = None) -> dict[str, object]:
     # ── Cetana (heartbeat state) ─────────────────────────────────────
     ctx["cetana"] = _read_cetana()
 
+    # ── GitHub Issues (open work tracked) ──────────────────────────
+    ctx["issues"] = _read_github_issues(cwd)
+
     return ctx
 
 
@@ -437,6 +440,25 @@ def _read_cetana() -> dict[str, object]:
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
+
+
+def _read_github_issues(cwd: str) -> list[dict]:
+    """Read open GitHub issues via gh CLI (CBR-budgeted)."""
+    import subprocess
+
+    try:
+        r = subprocess.run(
+            ["gh", "issue", "list", "--state", "open", "--json", "number,title", "--limit", "20"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            cwd=cwd,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            return json.loads(r.stdout)
+    except (subprocess.TimeoutExpired, FileNotFoundError, json.JSONDecodeError):
+        pass
+    return []
 
 
 def _get_cetana() -> object:
