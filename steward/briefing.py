@@ -1,102 +1,137 @@
 """
-Briefing — dynamic context generation for external consumers (e.g. Claude Code).
+Briefing — format context_bridge data as markdown for CLAUDE.md.
 
-Boots senses, gaps, and session ledger without the full agent stack.
-Outputs structured markdown that any LLM consumer can use as a bootstrap.
+This is a PURE FORMATTER. All data comes from:
+- context_bridge.assemble_context() (senses, health, federation, immune, issues)
+- context_bridge.collect_architecture_metadata() (services, hooks, kshetra)
 
-Usage:
-    from steward.briefing import generate_briefing
-    print(generate_briefing("/path/to/project"))
-
-Or via CLI:
-    python -m steward --briefing
+Zero hardcoded content. If the system changes, the briefing changes.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
-
-from steward.gaps import GapTracker
-from steward.senses.coordinator import SenseCoordinator
-from steward.session_ledger import SessionLedger
 
 logger = logging.getLogger("STEWARD.BRIEFING")
 
 
-def _load_gaps_from_disk(cwd: str) -> GapTracker:
-    """Load gap tracker from .steward/memory.json without booting full memory service."""
-    tracker = GapTracker()
-    memory_file = Path(cwd) / ".steward" / "memory.json"
-    if memory_file.is_file():
-        try:
-            data = json.loads(memory_file.read_text(encoding="utf-8"))
-            # PersistentMemory stores under steward session
-            gaps_data = data.get("steward", {}).get("gap_tracker", {}).get("value")
-            if isinstance(gaps_data, list):
-                tracker.load_from_dict(gaps_data)
-        except (json.JSONDecodeError, OSError) as e:
-            logger.warning("Could not load gaps: %s", e)
-    return tracker
-
-
 def generate_briefing(cwd: str | None = None) -> str:
-    """Generate a dynamic context briefing from steward's system state.
+    """Generate CLAUDE.md content from living system state.
 
-    Boots SenseCoordinator, GapTracker, and SessionLedger independently
-    (no LLM provider needed — pure deterministic perception).
-
-    Returns structured markdown suitable for injection into any LLM context.
+    Pure formatter — delegates ALL data collection to context_bridge.
     """
     cwd = cwd or str(Path.cwd())
+
+    from steward.context_bridge import assemble_context, collect_architecture_metadata
+
+    ctx = assemble_context(cwd)
+    arch = collect_architecture_metadata()
+
+    return _format(ctx, arch)
+
+
+def _format(ctx: dict, arch: dict) -> str:
+    """Format context + architecture as cockpit markdown."""
     parts: list[str] = []
 
-    parts.append("# Steward Briefing")
-    parts.append(f"Project: {Path(cwd).name}")
-    parts.append(f"Path: {cwd}")
+    # Header
+    project = ctx.get("project", {})
+    parts.append(f"# Steward — {project.get('name', '?')}")
 
-    # 1. Environmental perception (5 senses — deterministic, zero LLM)
-    try:
-        senses = SenseCoordinator(cwd=cwd)
-        senses.perceive_all(force=True)
-        sense_context = senses.format_for_prompt()
-        if sense_context:
-            parts.append(sense_context)
-    except Exception as e:
-        logger.warning("Senses failed: %s", e)
+    # Senses
+    senses = ctx.get("senses", {})
+    prompt = senses.get("prompt_summary", "")
+    if prompt:
+        parts.append(f"\n## Status\n{prompt}")
 
-    # 2. Capability gaps (what steward couldn't do)
-    try:
-        gaps = _load_gaps_from_disk(cwd)
-        gap_context = gaps.format_for_prompt()
-        if gap_context:
-            parts.append(gap_context)
-    except Exception as e:
-        logger.warning("Gap loading failed: %s", e)
+    # Health
+    health = ctx.get("health", {})
+    if health:
+        parts.append(f"\nHealth: {health.get('value', '?')} ({health.get('guna', '?')})")
 
-    # 3. Session history (what steward did recently)
-    try:
-        ledger = SessionLedger(cwd=cwd)
-        ledger_context = ledger.prompt_context()
-        if ledger_context:
-            parts.append(f"\n## Recent Sessions\n{ledger_context}")
-    except Exception as e:
-        logger.warning("Session ledger failed: %s", e)
+    # Federation
+    fed = ctx.get("federation", {})
+    peers = fed.get("peers", [])
+    if peers:
+        parts.append("\n## Federation")
+        parts.append("| Peer | Status | Trust |")
+        parts.append("|------|--------|-------|")
+        for p in peers:
+            parts.append(f"| {p.get('agent_id', '?')} | {p.get('status', '?')} | {p.get('trust', '?')} |")
+    else:
+        total = fed.get("total_peers", 0)
+        reaps = fed.get("total_reaps", 0)
+        parts.append(f"\n## Federation\nPeers: {total}, Reaps: {reaps}")
 
-    # 4. Project instructions (if any)
-    instructions_paths = [
-        Path(cwd) / ".steward" / "instructions.md",
-        Path(cwd) / "CLAUDE.md",
-    ]
-    for path in instructions_paths:
-        if path.is_file():
-            try:
-                content = path.read_text(encoding="utf-8").strip()
-                if content:
-                    parts.append(f"\n## Project Instructions\n{content}")
-                    break
-            except OSError:
-                pass
+    # Immune
+    immune = ctx.get("immune", {})
+    if immune:
+        parts.append(
+            f"\nImmune: {immune.get('heals_attempted', 0)} attempts, "
+            f"{immune.get('heals_succeeded', 0)} succeeded, "
+            f"breaker={'TRIPPED' if immune.get('breaker', {}).get('tripped') else 'OK'}"
+        )
+
+    # Issues
+    issues = ctx.get("issues", [])
+    if issues:
+        parts.append("\n## Open Issues")
+        for i in issues:
+            parts.append(f"- #{i.get('number', '?')}: {i.get('title', '?')}")
+
+    # Sessions
+    sessions = ctx.get("sessions", {})
+    recent = sessions.get("recent", [])
+    if recent:
+        parts.append("\n## Recent Sessions")
+        for s in recent[-3:]:
+            parts.append(f"- [{s.get('outcome', '?')}] {s.get('task', '?')[:80]}")
+
+    # Architecture (from living code)
+    parts.append("\n## Architecture")
+
+    ns = arch.get("north_star")
+    if ns:
+        parts.append(f"North Star: {ns}")
+
+    services = arch.get("services", {})
+    if services:
+        parts.append(f"\n### Services ({len(services)})")
+        parts.append("| Service | Description |")
+        parts.append("|---------|-------------|")
+        for name, doc in sorted(services.items()):
+            parts.append(f"| `{name}` | {doc[:80]} |")
+
+    phases = arch.get("phases", {})
+    hooks = arch.get("hooks", {})
+    if phases:
+        parts.append("\n### MURALI Phases")
+        for phase, desc in phases.items():
+            hook_list = hooks.get(phase, [])
+            hook_names = ", ".join(h["name"] for h in hook_list) if hook_list else "—"
+            parts.append(f"- **{phase}**: {desc} → [{hook_names}]")
+
+    tools = arch.get("tools", [])
+    if tools:
+        parts.append(f"\n### Tools ({len(tools)})")
+        for t in tools:
+            parts.append(f"- `{t['name']}`: {t.get('description', '')[:60]}")
+
+    kshetra = arch.get("kshetra", [])
+    if kshetra:
+        parts.append(f"\n### Kshetra ({len(kshetra)} tattvas)")
+        parts.append("| # | Element | Category | Role |")
+        parts.append("|---|---------|----------|------|")
+        for k in kshetra:
+            parts.append(f"| {k['number']} | {k['element']} | {k['category']} | {k['role'][:50]} |")
+
+    # Gaps
+    gaps = ctx.get("gaps", {})
+    active_gaps = gaps.get("active", [])
+    if active_gaps:
+        parts.append("\n## Gaps")
+        for g in active_gaps[:5]:
+            parts.append(f"- [{g.get('category', '?')}] {g.get('description', '?')}")
 
     return "\n".join(parts)
