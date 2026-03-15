@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 
 from steward.phase_hook import DHARMA, BasePhaseHook, PhaseContext
-from steward.services import SVC_IMMUNE
+from steward.services import SVC_IMMUNE, SVC_OUROBOROS
 from vibe_core.di import ServiceRegistry
 
 logger = logging.getLogger("STEWARD.HOOKS.DHARMA_IMMUNE")
@@ -53,6 +53,23 @@ class DharmaImmuneHook(BasePhaseHook):
         return self._cycle_count % self._RUN_EVERY_N_CYCLES == 0
 
     def execute(self, ctx: PhaseContext) -> None:
+        # Ouroboros: ingest violations from reports/CI before immune scan
+        ouroboros = ServiceRegistry.get(SVC_OUROBOROS)
+        if ouroboros is not None:
+            try:
+                ingestion = ouroboros.ingest_all_sources()
+                if ingestion.violations_found > 0:
+                    logger.info(
+                        "Ouroboros: ingested %d violations from %d sources",
+                        ingestion.violations_found,
+                        ingestion.sources_parsed,
+                    )
+                    ctx.operations.append(
+                        f"ouroboros:violations={ingestion.violations_found}"
+                    )
+            except Exception as e:
+                logger.debug("Ouroboros ingestion failed (non-fatal): %s", e)
+
         immune = ServiceRegistry.get(SVC_IMMUNE)
         if immune is None:
             return

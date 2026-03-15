@@ -327,8 +327,11 @@ def boot(
     knowledge_graph = _LazyKnowledgeGraph(cwd_path)
     ServiceRegistry.register(SVC_KNOWLEDGE_GRAPH, knowledge_graph)
 
-    # 23. Ouroboros — DEFERRED (registered but not consumed by agent loop)
-    # Code lives in vibe_core.ouroboros.loop_orchestrator
+    # 23. Ouroboros (self-healing pipeline: detect → ingest → heal)
+    from vibe_core.ouroboros.loop_orchestrator import OuroborosLoopOrchestrator
+
+    ouroboros = OuroborosLoopOrchestrator(workspace=str(cwd_path))
+    ServiceRegistry.register(SVC_OUROBOROS, ouroboros)
 
     # 25. HeartbeatReaper (federation peer liveness + trust degradation)
     from steward.reaper import HeartbeatReaper
@@ -446,7 +449,11 @@ def boot(
         lambda: _check_service_wired(SVC_KNOWLEDGE_GRAPH, "UnifiedKnowledgeGraph"),
         IssueSeverity.HIGH,
     )
-    # vajra_ouroboros_wired — DEFERRED (Ouroboros not booted)
+    checker.register_checker(
+        "vajra_ouroboros_wired",
+        lambda: _check_service_wired(SVC_OUROBOROS, "OuroborosLoopOrchestrator"),
+        IssueSeverity.HIGH,
+    )
 
     ServiceRegistry.register(SVC_INTEGRITY, checker)
 

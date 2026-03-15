@@ -55,6 +55,7 @@ from steward.types import (
 from vibe_core.mahamantra.adapters.attention import MahaAttention
 from vibe_core.mahamantra.adapters.compression import MahaCompression
 from vibe_core.mahamantra.substrate.encoding.maha_llm_kernel import MahaLLMKernel
+from vibe_core.mahamantra.substrate.mantra.siksastakam import SiksastakamSynth
 from vibe_core.mahamantra.substrate.cell_system.antaranga import (
     FLAG_ACTIVE,
     GENESIS_PRANA_U32,
@@ -159,6 +160,7 @@ class AgentLoop:
         north_star: int | None = None,
         feedback: object | None = None,
         maha_llm: MahaLLMKernel | None = None,
+        siksastakam: SiksastakamSynth | None = None,
     ) -> None:
         self._provider = provider
         self._registry = registry
@@ -181,6 +183,7 @@ class AgentLoop:
         self._north_star = north_star
         self._feedback = feedback
         self._maha_llm = maha_llm
+        self._siksastakam = siksastakam
 
         # Ensure system prompt is first message
         if system_prompt and (not conversation.messages or conversation.messages[0].role != MessageRole.SYSTEM):
@@ -235,19 +238,22 @@ class AgentLoop:
             venu_diw = self._venu.step()
             logger.debug("Venu DIW: %d (position=%d)", venu_diw, (venu_diw & 0x3F))
 
-        # SikSasTakam: map Venu position to 7-beat cycle
-        # Beat 1 (CLEANSE_HEART_MIRROR) → proactive cache invalidation
-        # Beat 3 (SPREAD_MOONLIGHT) → graceful degradation awareness
-        if venu_diw and self._cache:
+        # SikSasTakam: 7-beat lifecycle via registered service
+        if venu_diw and self._siksastakam:
             position = venu_diw & 0x3F  # 6-bit position (0-63)
             beat = (position % 7) + 1  # 1-7 cycle
-            if beat == 1:  # CLEANSE_HEART_MIRROR — cache invalidation
+            siks_out = self._siksastakam.synthesize(beat, cr.seed)
+            if beat == 1 and self._cache:  # CLEANSE_HEART_MIRROR
                 evicted = self._cache.cleanup()
                 if evicted:
                     logger.info(
-                        "SikSasTakam Beat 1 (CLEANSE_HEART_MIRROR): purged %d stale entries",
-                        evicted,
+                        "SikSasTakam %s: purged %d stale entries",
+                        siks_out.effect_name, evicted,
                     )
+            logger.debug(
+                "SikSasTakam beat=%d effect=%s guna=%s",
+                beat, siks_out.effect_name, siks_out.guna,
+            )
 
         # North Star alignment check — is this task aligned with agent purpose?
         north_star = self._north_star
@@ -320,7 +326,7 @@ class AgentLoop:
                 if self._conversation.max_tokens
                 else 0.0
             )
-            directive = self._buddhi.pre_flight(user_message, round_num, context_pct, seed=cr.seed)
+            directive = self._buddhi.pre_flight(user_message, round_num, context_pct, seed=cr.seed, l0_guardian=l0_guardian)
             if round_num == 0:
                 usage.buddhi_action = directive.action.value
                 usage.buddhi_guna = directive.guna.value
