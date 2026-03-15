@@ -41,6 +41,12 @@ class TestTaskIntentEnum:
     def test_remove_dead_code_maps(self):
         assert TaskIntent.from_intent_type("remove_dead_code") == TaskIntent.REMOVE_DEAD_CODE
 
+    def test_post_merge_maps(self):
+        assert TaskIntent.from_intent_type("post_merge") == TaskIntent.POST_MERGE
+
+    def test_post_merge_is_reactive(self):
+        assert not TaskIntent.POST_MERGE.is_proactive
+
     def test_proactive_intents_are_proactive(self):
         assert TaskIntent.UPDATE_DEPS.is_proactive
         assert TaskIntent.REMOVE_DEAD_CODE.is_proactive
@@ -55,6 +61,7 @@ class TestTaskIntentEnum:
         assert not TaskIntent.HEALTH_CHECK.is_proactive
         assert not TaskIntent.SENSE_SCAN.is_proactive
         assert not TaskIntent.CI_CHECK.is_proactive
+        assert not TaskIntent.POST_MERGE.is_proactive
         assert not TaskIntent.FEDERATION_HEALTH.is_proactive
 
     def test_all_intents_have_handlers(self):
@@ -68,6 +75,7 @@ class TestTaskIntentEnum:
         assert "health_check" in values
         assert "sense_scan" in values
         assert "ci_check" in values
+        assert "post_merge" in values
         assert "update_deps" in values
         assert "remove_dead_code" in values
         assert "federation_health" in values
@@ -105,6 +113,79 @@ class TestDeterministicDispatch:
         agent = track_agent(StewardAgent(provider=fake_llm))
         result = agent._autonomy.handlers.execute_ci_check()
         assert result is None
+        assert fake_llm.call_count == 0
+
+    def test_dispatch_post_merge(self, fake_llm):
+        """Post-merge handler runs without LLM calls."""
+        from unittest.mock import MagicMock, patch
+
+        from steward.agent import StewardAgent
+        from tests.conftest import track_agent
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+        # Mock subprocess calls (ruff + pytest) to avoid real execution
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ""
+        with patch("subprocess.run", return_value=mock_result):
+            result = agent._autonomy.handlers.execute_post_merge()
+        # Clean codebase → no problems → None
+        assert result is None
+        assert fake_llm.call_count == 0
+
+    def test_dispatch_post_merge_detects_lint_failure(self, fake_llm):
+        """Post-merge handler detects lint violations."""
+        from unittest.mock import MagicMock, patch
+
+        from steward.agent import StewardAgent
+        from tests.conftest import track_agent
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+
+        def mock_subprocess(cmd, **kwargs):
+            r = MagicMock()
+            if "ruff" in cmd:
+                r.returncode = 1
+                r.stdout = "steward/foo.py:10:1: F401 unused import\n"
+            else:
+                r.returncode = 0
+                r.stdout = ""
+            return r
+
+        with patch("subprocess.run", side_effect=mock_subprocess):
+            result = agent._autonomy.handlers.execute_post_merge()
+        assert result is not None
+        assert "ruff" in result
+        assert "lint violation" in result
+        assert fake_llm.call_count == 0
+
+    def test_dispatch_post_merge_detects_test_failure(self, fake_llm):
+        """Post-merge handler detects test failures."""
+        from unittest.mock import MagicMock, patch
+
+        from steward.agent import StewardAgent
+        from tests.conftest import track_agent
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+
+        def mock_subprocess(cmd, **kwargs):
+            r = MagicMock()
+            if "ruff" in cmd:
+                r.returncode = 0
+                r.stdout = ""
+            elif "pytest" in cmd:
+                r.returncode = 1
+                r.stdout = "3 failed, 50 passed\n"
+            else:
+                r.returncode = 0
+                r.stdout = ""
+            return r
+
+        with patch("subprocess.run", side_effect=mock_subprocess):
+            result = agent._autonomy.handlers.execute_post_merge()
+        assert result is not None
+        assert "tests" in result
+        assert "failed" in result
         assert fake_llm.call_count == 0
 
     def test_dispatch_federation_health_healthy(self, fake_llm):
