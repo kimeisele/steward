@@ -202,6 +202,7 @@ class StewardImmune:
 
             if success:
                 self._heals_succeeded += 1
+                self._invalidate_cache(diagnosis.file_path)
 
             self._learn(diagnosis.rule_id, success)
 
@@ -428,6 +429,20 @@ class StewardImmune:
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
             logger.error("Immune: rollback FAILED for %s: %s", file_path, e)
             return False
+
+    @staticmethod
+    def _invalidate_cache(file_path: Path | None) -> None:
+        """Siksastakam Beat 1: CLEANSE_HEART_MIRROR — cache invalidation after heal."""
+        try:
+            from steward.services import SVC_CACHE
+            from vibe_core.di import ServiceRegistry
+
+            cache = ServiceRegistry.get(SVC_CACHE)
+            if cache is not None and hasattr(cache, "clear"):
+                cache.clear()
+                logger.info("Immune: cache cleared after healing %s (Siksastakam Beat 1)", file_path)
+        except Exception as e:
+            logger.debug("Cache invalidation skipped: %s", e)
 
 
 # ── Pattern Matching ─────────────────────────────────────────────────
