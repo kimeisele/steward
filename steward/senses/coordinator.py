@@ -28,7 +28,6 @@ from steward.senses.testing_sense import TestingSense
 from vibe_core.mahamantra.protocols._sense import (
     AggregatePerception,
     Jnanendriya,
-    ManasProtocol,
     SensePerception,
     SenseProtocol,
 )

@@ -7,12 +7,10 @@ Uses polling with timeout instead of fixed sleep() delays
 to avoid flaky failures in CI environments.
 """
 
-import threading
 import time
 
 from steward.antahkarana.vedana import VedanaSignal, measure_vedana
 from steward.cetana import (
-    _ANOMALY_THRESHOLD,
     GAJENDRA,
     SADHANA,
     SAMADHI,

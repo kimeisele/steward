@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
-
 from steward.services import (
     SVC_ATTENTION,
     SVC_CACHE,

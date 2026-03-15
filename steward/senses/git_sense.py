@@ -25,7 +25,6 @@ from typing import TYPE_CHECKING
 from vibe_core.mahamantra.protocols._sense import (
     Jnanendriya,
     SensePerception,
-    SenseProtocol,
     Tanmatra,
 )
 

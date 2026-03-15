@@ -6,8 +6,6 @@ import json
 import time
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from steward.hooks.genesis import (
     GenesisDiscoveryHook,
     _discover_from_github_topics,

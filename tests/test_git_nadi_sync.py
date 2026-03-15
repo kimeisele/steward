@@ -14,8 +14,6 @@ import json
 import subprocess
 from pathlib import Path
 
-import pytest
-
 from steward.git_nadi_sync import GitNadiSync
 
 

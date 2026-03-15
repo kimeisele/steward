@@ -2,16 +2,14 @@
 
 from __future__ import annotations
 
-import asyncio
-
-from tests.fakes import FakeLLM, FakeResponse
+from typing import Any
 
 from steward.agent import StewardAgent
 from steward.services import SVC_EVENT_BUS, boot
 from steward.types import ToolUse
+from tests.fakes import FakeLLM, FakeResponse
 from vibe_core.di import ServiceRegistry
 from vibe_core.mahamantra.substrate.services.event_bus import EventBus
-
 
 # ── Tests ────────────────────────────────────────────────────────────
 

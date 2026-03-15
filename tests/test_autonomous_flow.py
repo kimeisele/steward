@@ -14,15 +14,11 @@ the agent cannot run autonomously.
 
 import asyncio
 
-import pytest
-
 from steward.autonomy import parse_intent_from_title as _parse_intent_from_title
 from steward.fix_pipeline import problem_fingerprint as _problem_fingerprint
 from steward.intents import TaskIntent
 from steward.types import MessageRole
-from steward.types import NormalizedResponse
 from tests.conftest import track_agent
-from tests.fakes import FakeLLM
 
 
 class TestParseIntentFromTitle:
@@ -120,13 +116,26 @@ class TestAutonomousFlowE2E:
 
     def test_run_autonomous_dispatches_federation_health(self, fake_llm):
         """Task with [FEDERATION_HEALTH] title → deterministic handler, 0 tokens."""
-        from steward.services import SVC_TASK_MANAGER
+        from steward.services import SVC_REAPER, SVC_TASK_MANAGER
         from vibe_core.di import ServiceRegistry
 
         agent = self._make_agent(fake_llm)
-        task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
 
-        task_mgr.add_task(title="[FEDERATION_HEALTH] Check federation", priority=50)
+        # Stop Cetana — its background GenesisDiscoveryHook populates the
+        # reaper with real federation peers from the GitHub API. Those peers
+        # lack 'code_analysis' etc. capabilities, causing the federation
+        # health handler to report degradation instead of returning None.
+        agent._cetana.stop()
+
+        # Clear any peers discovered before Cetana was stopped
+        reaper = ServiceRegistry.get(SVC_REAPER)
+        if reaper is not None:
+            reaper._peers.clear()
+
+        task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
+        # Priority 100 ensures this task is dispatched first, even if genesis
+        # creates other tasks during run_autonomous's phase_genesis() call
+        task_mgr.add_task(title="[FEDERATION_HEALTH] Check federation", priority=100)
 
         result = asyncio.run(agent.run_autonomous())
         # Healthy federation (no dead peers, no backlog) → None → 0 LLM calls
@@ -681,11 +690,8 @@ class TestHebbianAutonomousLearning:
 
     def test_different_workflow_not_blocked(self, fake_llm):
         """Failing on workflow 'ci-tests' doesn't block workflow 'lint-check'."""
-        import asyncio
-        from unittest.mock import patch
 
         from steward.services import SVC_TASK_MANAGER
-        from steward.tools.circuit_breaker import GateResult
         from vibe_core.di import ServiceRegistry
 
         agent = self._make_agent(fake_llm)

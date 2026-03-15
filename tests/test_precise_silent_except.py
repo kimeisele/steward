@@ -15,7 +15,6 @@ from steward.remedies.precise_silent_except import (
     _is_dangerous_catch,
 )
 
-
 # ── Helper ──────────────────────────────────────────────────────────────
 
 def _transform(code: str) -> tuple[str, bool, bool]:

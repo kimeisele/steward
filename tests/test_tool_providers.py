@@ -11,9 +11,6 @@ Validates:
 from __future__ import annotations
 
 import textwrap
-from pathlib import Path
-
-import pytest
 
 from steward.protocols import ToolProvider
 from steward.tool_providers import (

@@ -155,6 +155,6 @@ class TestThinkToolInAgent:
         assert "think" in names
 
     def test_think_registered_in_observe_namespace(self):
-        from steward.buddhi import ToolNamespace, _NAMESPACE_TOOLS
+        from steward.buddhi import _NAMESPACE_TOOLS, ToolNamespace
 
         assert "think" in _NAMESPACE_TOOLS[ToolNamespace.OBSERVE]

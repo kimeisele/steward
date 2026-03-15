@@ -279,7 +279,6 @@ def _read_health() -> dict[str, object]:
 def _read_gaps(cwd: str) -> dict[str, object]:
     """Read capability gaps from GapTracker."""
     try:
-        from steward.gaps import GapTracker
         from steward.services import SVC_MEMORY
         from vibe_core.di import ServiceRegistry
 
