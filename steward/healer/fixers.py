@@ -38,11 +38,6 @@ _IMPORT_TO_PIP: dict[str, str] = {
 }
 
 
-def classify(kind: FindingKind) -> FixStrategy:
-    """Classify a finding kind into a fix strategy."""
-    return _STRATEGY.get(kind, FixStrategy.SKIP)
-
-
 # ── Deterministic Fixers (0 tokens each) ───────────────────────────────
 
 

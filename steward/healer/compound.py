@@ -9,6 +9,8 @@ import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 
+from steward.healer.fixers import _fix_undeclared_dependency
+from steward.healer.types import _FIXERS
 from steward.senses.diagnostic_sense import FindingKind, Severity
 
 if TYPE_CHECKING:
