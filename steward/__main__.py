@@ -299,8 +299,20 @@ def main() -> None:
         action="store_true",
         help="Run as persistent daemon: boot once, Cetana heartbeat drives work. Kill with SIGTERM.",
     )
+    parser.add_argument(
+        "--briefing",
+        action="store_true",
+        help="Output dynamic context briefing (senses + gaps + sessions) to stdout. No LLM needed.",
+    )
 
     args = parser.parse_args()
+
+    # Briefing mode — dynamic context dump, no LLM needed
+    if args.briefing:
+        from steward.briefing import generate_briefing
+
+        print(generate_briefing(cwd=args.cwd))
+        return
 
     # Telegram mode — delegate to telegram interface
     if args.telegram:
