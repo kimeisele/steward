@@ -9,9 +9,9 @@ Split from monolithic healer.py into focused modules:
 - pipeline.py: RepoHealer orchestrator
 """
 
-# Import fixers to trigger @_fixer registration
-from steward.healer import fixers as _fixers_module  # noqa: F401
-from steward.healer import compound as _compound_module  # noqa: F401
+# Import fixers to trigger @_fixer registration (side-effect imports)
+import steward.healer.fixers as _fixers_module  # noqa: F401
+import steward.healer.compound as _compound_module  # noqa: F401
 
 # Re-export public API (backward compatible)
 from steward.healer.compound import _COMPOUND_FIXERS, _fix_ci_failing
