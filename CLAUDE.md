@@ -50,7 +50,7 @@ North Star: execute tasks with minimal tokens by making the architecture itself 
 | `SVC_MARKETPLACE` | Marketplace — slot conflict resolution for federation peers. |
 | `SVC_MEMORY` | MemoryProtocol — persistent agent memory (Chitta). |
 | `SVC_NARASIMHA` | NarasimhaProtocol — hypervisor-level emergency killswitch. |
-| `SVC_NORTH_STAR` | North Star — infrastructure-level goal seed (not LLM prompt). The north_star is  |
+| `SVC_NORTH_STAR` | North Star — infrastructure-level goal seed (not LLM prompt). MahaCompression seed for alignment. |
 | `SVC_OUROBOROS` | OuroborosLoopOrchestrator — self-healing pipeline (detect → verify → heal). |
 | `SVC_PHASE_HOOKS` | PhaseHookRegistry — composable phase dispatch for MURALI. |
 | `SVC_PROMPT_CONTEXT` | PromptContext — dynamic context resolvers for system prompt. |

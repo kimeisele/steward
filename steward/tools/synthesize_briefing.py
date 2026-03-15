@@ -190,7 +190,10 @@ class SynthesizeBriefingTool(Tool):
         if services:
             parts.append("### Services (SVC_ constants)\n")
             for svc_name, docstring in sorted(services.items()):
-                parts.append(f"- `{svc_name}`: {docstring}")
+                # Collapse multi-line docstrings to first sentence to avoid
+                # LLM truncation when fitting into table cells.
+                first_line = docstring.split("\n")[0].strip()
+                parts.append(f"- `{svc_name}`: {first_line}")
             parts.append("")
 
         # Phases
