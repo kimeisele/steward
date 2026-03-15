@@ -53,6 +53,8 @@ class GitSense:
         self._gh = gh_client
         self._remote_cache: dict | None = None
         self._remote_cache_time: float = 0.0
+        # Merge detection: track last known main HEAD
+        self._last_main_head: str | None = None
 
     def has_remote_perception(self) -> bool:
         """RemotePerception protocol — True when gh CLI is available."""
@@ -127,6 +129,13 @@ class GitSense:
             if remote.get("ci_conclusion") == "failure":
                 intensity = max(intensity, 0.8)
                 quality = "tamas"
+
+        # Merge detection: compare main HEAD to last known
+        merge_detected = self._detect_merge()
+        if merge_detected:
+            data["merge_detected"] = True
+            data["merge_new_head"] = merge_detected
+            intensity = max(intensity, 0.6)  # merges demand attention
 
         return SensePerception(
             sense=Jnanendriya.SROTRA,
@@ -219,6 +228,40 @@ class GitSense:
         self._remote_cache = result
         self._remote_cache_time = now
         return result
+
+    def _detect_merge(self) -> str | None:
+        """Detect if main branch advanced since last check.
+
+        Returns the new HEAD sha if a merge was detected, None otherwise.
+        Updates internal state so each merge is reported exactly once.
+        """
+        if not self._is_git:
+            return None
+        # Fetch latest main from remote (non-blocking, best-effort)
+        try:
+            subprocess.run(
+                ["git", "fetch", "origin", "main", "--quiet"],
+                cwd=self._cwd,
+                capture_output=True,
+                timeout=10,
+            )
+        except (subprocess.SubprocessError, FileNotFoundError):
+            pass  # offline is fine — use local refs
+        current_main = self._git("rev-parse", "origin/main").strip()
+        if not current_main:
+            # No remote main ref — try local
+            current_main = self._git("rev-parse", "main").strip()
+        if not current_main:
+            return None
+        if self._last_main_head is None:
+            # First check — initialize, don't report as merge
+            self._last_main_head = current_main
+            return None
+        if current_main != self._last_main_head:
+            self._last_main_head = current_main
+            logger.info("Merge detected: main advanced to %s", current_main[:8])
+            return current_main
+        return None
 
     def _check_upstream(self) -> str:
         """Check relationship with upstream branch."""

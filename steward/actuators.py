@@ -307,3 +307,21 @@ class GitHubActuator:
         if result is None:
             return ActuatorResult(success=False, error=f"gh pr merge {pr_number} failed")
         return ActuatorResult(success=True, output=result.strip())
+
+    def enable_auto_merge(self, pr_url: str) -> ActuatorResult:
+        """Enable GitHub auto-merge on a PR.
+
+        Uses `gh pr merge --auto` — GitHub merges automatically when
+        all required status checks pass. Requires branch protection
+        rules to be configured on the repo.
+        """
+        result = self._gh.call(
+            ["pr", "merge", "--auto", "--merge", pr_url.strip()],
+            timeout=15,
+        )
+        if result is None:
+            return ActuatorResult(
+                success=False,
+                error=f"gh pr merge --auto failed for {pr_url}",
+            )
+        return ActuatorResult(success=True, output=result.strip())

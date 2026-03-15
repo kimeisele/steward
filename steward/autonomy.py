@@ -126,6 +126,7 @@ class AutonomyEngine:
         self._synaptic = synaptic
         self._ledger = ledger
         self._conversation_reset_fn = conversation_reset_fn
+        self._senses = senses
 
         # Composed modules — focused, testable, low LCOM4
         self.handlers = IntentHandlers(
@@ -518,6 +519,30 @@ class AutonomyEngine:
                 title=f"[{typed.name}] {intent.title}",
                 priority=priority,
             )
+
+        # Merge detection: if GitSense sees main advanced, inject POST_MERGE
+        self._check_merge_and_inject(task_mgr, active)
+
+    def _check_merge_and_inject(self, task_mgr: object, active: list) -> None:
+        """Detect merges via GitSense and inject POST_MERGE task."""
+        from vibe_core.mahamantra.protocols._sense import Jnanendriya
+
+        git_sense = self._senses.senses.get(Jnanendriya.SROTRA)
+        if git_sense is None:
+            return
+        perception = git_sense.perceive()
+        if not isinstance(perception.data, dict):
+            return
+        if perception.data.get("merge_detected"):
+            # Don't duplicate
+            if any(t.title.startswith("[POST_MERGE]") for t in active):
+                return
+            new_head = perception.data.get("merge_new_head", "unknown")[:8]
+            task_mgr.add_task(
+                title=f"[POST_MERGE] Verify merge {new_head}",
+                priority=95,
+            )
+            logger.info("GENESIS: merge detected (%s) — injected POST_MERGE task", new_head)
 
     def phase_karma(self) -> None:
         """KARMA: Execute — dispatch next pending task.
