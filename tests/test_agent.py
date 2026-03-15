@@ -504,7 +504,6 @@ class TestHealthGateThreadSafety:
         llm = FakeLLM([])
         agent = StewardAgent(provider=llm)
 
-
         def writer():
             for _ in range(100):
                 agent._on_cetana_anomaly(None)  # None → early return (isinstance check)

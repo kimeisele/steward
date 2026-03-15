@@ -100,11 +100,13 @@ class GitHubFederationRelay:
 
         url = f"{GITHUB_API}/repos/{self._hub_repo}/contents/{path}"
         encoded = base64.b64encode(json.dumps(content, indent=2).encode()).decode()
-        body = json.dumps({
-            "message": message,
-            "content": encoded,
-            "sha": sha,
-        }).encode()
+        body = json.dumps(
+            {
+                "message": message,
+                "content": encoded,
+                "sha": sha,
+            }
+        ).encode()
         req = urllib.request.Request(url, data=body, headers=self._headers(), method="PUT")
         try:
             with urllib.request.urlopen(req, timeout=15) as resp:
@@ -133,10 +135,7 @@ class GitHubFederationRelay:
             return 0
 
         # Filter: messages targeted at us (or broadcast "*")
-        for_us = [
-            m for m in hub_outbox
-            if isinstance(m, dict) and m.get("target") in (self._agent_id, "*")
-        ]
+        for_us = [m for m in hub_outbox if isinstance(m, dict) and m.get("target") in (self._agent_id, "*")]
         if not for_us:
             self._last_pull = time.monotonic()
             return 0
@@ -153,10 +152,7 @@ class GitHubFederationRelay:
 
         # Deduplicate by (source, timestamp)
         existing_keys = {(m.get("source", ""), m.get("timestamp", 0)) for m in local}
-        new_msgs = [
-            m for m in for_us
-            if (m.get("source", ""), m.get("timestamp", 0)) not in existing_keys
-        ]
+        new_msgs = [m for m in for_us if (m.get("source", ""), m.get("timestamp", 0)) not in existing_keys]
 
         if new_msgs:
             local.extend(new_msgs)

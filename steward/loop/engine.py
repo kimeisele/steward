@@ -227,7 +227,9 @@ class AgentLoop:
                 l0_function = resonance.guardian_function
                 logger.debug(
                     "L0 intent: guardian=%s fn=%s (seed=%d)",
-                    l0_guardian, l0_function, cr.seed,
+                    l0_guardian,
+                    l0_function,
+                    cr.seed,
                 )
             except Exception as e:
                 logger.debug("L0 intent failed (non-fatal): %s", e)
@@ -248,11 +250,14 @@ class AgentLoop:
                 if evicted:
                     logger.info(
                         "SikSasTakam %s: purged %d stale entries",
-                        siks_out.effect_name, evicted,
+                        siks_out.effect_name,
+                        evicted,
                     )
             logger.debug(
                 "SikSasTakam beat=%d effect=%s guna=%s",
-                beat, siks_out.effect_name, siks_out.guna,
+                beat,
+                siks_out.effect_name,
+                siks_out.guna,
             )
 
         # North Star alignment check — is this task aligned with agent purpose?
@@ -326,7 +331,9 @@ class AgentLoop:
                 if self._conversation.max_tokens
                 else 0.0
             )
-            directive = self._buddhi.pre_flight(user_message, round_num, context_pct, seed=cr.seed, l0_guardian=l0_guardian)
+            directive = self._buddhi.pre_flight(
+                user_message, round_num, context_pct, seed=cr.seed, l0_guardian=l0_guardian
+            )
             if round_num == 0:
                 usage.buddhi_action = directive.action.value
                 usage.buddhi_guna = directive.guna.value
