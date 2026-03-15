@@ -4,7 +4,7 @@ Every test verifies BEHAVIOR: how does the health signal respond
 to real operational conditions? No dataclass field checking.
 """
 
-from steward.antahkarana.vedana import VedanaSignal, measure_vedana
+from steward.antahkarana.vedana import measure_vedana
 
 
 class TestVedanaHealthyAgent:

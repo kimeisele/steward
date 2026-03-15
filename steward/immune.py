@@ -18,7 +18,6 @@ Ref: agent-city/city/immune.py, steward issue #5
 
 from __future__ import annotations
 
-import json
 import logging
 import subprocess
 import sys

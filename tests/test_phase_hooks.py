@@ -9,9 +9,7 @@ Verifies:
 - PhaseContext mutation (health_anomaly written by hooks, read by agent)
 """
 
-import time
 
-import pytest
 
 from steward.phase_hook import (
     ALL_PHASES,

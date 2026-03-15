@@ -5,11 +5,10 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from tests.fakes import FakeResponse
-
 from steward.loop.engine import AgentLoop
 from steward.summarizer import Summarizer, should_summarize
 from steward.types import Conversation, Message, ToolUse
+from tests.fakes import FakeResponse
 from vibe_core.tools.tool_registry import ToolRegistry
 
 # ── Specialized LLM for summarization tests ──────────────────────────

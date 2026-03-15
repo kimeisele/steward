@@ -14,7 +14,7 @@ from dataclasses import dataclass
 import pytest
 
 from steward.agent import StewardAgent
-from steward.types import AgentEvent, EventType, LLMUsage, Message, NormalizedResponse, StreamDelta, ToolUse
+from steward.types import AgentEvent, EventType, LLMUsage, NormalizedResponse, StreamDelta, ToolUse
 
 # ── Scripted LLM that returns tool calls then text ──────────────────
 
@@ -216,7 +216,6 @@ class TestEndToEnd:
 
         Verifies phase transitions through AgentUsage.
         """
-        import json
         import os
         import tempfile
 

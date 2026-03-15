@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "steward-agent"
-version = "0.17.0"
+dynamic = ["version"]
 description = "Steward — Autonomous Superagent Engine (Sankhya-25 Architecture)"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -57,11 +57,18 @@ steward-telegram = "steward.interfaces.telegram:main"
 steward-api = "steward.interfaces.api:main"
 
 [project.urls]
+Homepage = "https://github.com/kimeisele/steward"
 Source = "https://github.com/kimeisele/steward"
 Tracker = "https://github.com/kimeisele/steward/issues"
 
+[tool.setuptools.dynamic]
+version = {attr = "steward.__version__"}
+
 [tool.setuptools.packages.find]
 include = ["steward*"]
+
+[tool.setuptools.package-data]
+steward = ["py.typed"]
 
 # ── Test Configuration ──────────────────────────────────────────────
 [tool.pytest.ini_options]
@@ -80,7 +87,7 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]
-ignore = ["E501", "F401", "E402"]
+ignore = ["E501", "E402"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["steward", "vibe_core"]

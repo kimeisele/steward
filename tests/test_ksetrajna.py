@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-from tests.fakes import FakeLLM, FakeResponse
-
 from steward.agent import StewardAgent
 from steward.antahkarana.ksetrajna import BubbleSnapshot, KsetraJna, _compute_drift
 from steward.antahkarana.vedana import VedanaSignal, measure_vedana
 from steward.types import ToolUse
-
+from tests.fakes import FakeLLM, FakeResponse
 
 # ── Helpers ──────────────────────────────────────────────────────────
 

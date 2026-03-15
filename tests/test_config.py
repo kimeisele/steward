@@ -5,10 +5,8 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from tests.fakes import FakeLLM, FakeResponse
-
 from steward.config import StewardConfig, _parse_config, load_config
-
+from tests.fakes import FakeLLM
 
 # ── Tests ────────────────────────────────────────────────────────────
 

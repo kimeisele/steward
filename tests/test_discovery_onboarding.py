@@ -5,8 +5,6 @@ import time
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 from steward.federation import OP_HEARTBEAT, FederationBridge
 from steward.hooks.dharma import DharmaFederationHook
 from steward.identity import StewardIdentity

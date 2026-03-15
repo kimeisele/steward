@@ -22,7 +22,6 @@ from pathlib import Path
 from vibe_core.mahamantra.protocols._sense import (
     Jnanendriya,
     SensePerception,
-    SenseProtocol,
     Tanmatra,
 )
 

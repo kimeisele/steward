@@ -21,14 +21,14 @@ import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict
 
 from vibe_core.knowledge.code_scanner import CodeScanner
 from vibe_core.knowledge.graph import UnifiedKnowledgeGraph
 from vibe_core.knowledge.schema import NodeType, RelationType
 from vibe_core.mahamantra.adapters.compression import MahaCompression
 from vibe_core.protocols.capability import CapabilityResult, CapabilityType
-from vibe_core.state.guna_classifier import GunaClassifier, StateGuna
+from vibe_core.state.guna_classifier import GunaClassifier
 
 logger = logging.getLogger("STEWARD.CAPABILITY.EXPLORE")
 

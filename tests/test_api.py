@@ -4,9 +4,6 @@ Tests the FastAPI app creation and endpoints without requiring
 fastapi/uvicorn to be installed (uses conditional imports).
 """
 
-import json
-import os
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 

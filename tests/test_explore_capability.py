@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
-from steward.capabilities.explore import ExploreCapability, ExploreMap, _explore
+from steward.capabilities.explore import ExploreCapability, _explore
 from vibe_core.protocols.capability import CapabilityType
 
 

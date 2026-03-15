@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-from tests.fakes import FakeLLM, FakeResponse
-
 from steward.agent import StewardAgent
 from steward.services import SVC_PROMPT_CONTEXT, boot
+from tests.fakes import FakeLLM, FakeResponse
 from vibe_core.di import ServiceRegistry
 from vibe_core.runtime.prompt_context import PromptContext
-
 
 # ── Tests ────────────────────────────────────────────────────────────
 

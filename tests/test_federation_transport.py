@@ -9,8 +9,6 @@ Validates:
 
 import json
 
-import pytest
-
 from steward.federation_transport import (
     FilesystemFederationTransport,
     NadiFederationTransport,

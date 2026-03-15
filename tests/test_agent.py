@@ -5,15 +5,11 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-import pytest
-
-from tests.fakes import FakeLLM, FakeResponse, FakeUsage
-
 from steward.agent import StewardAgent
 from steward.loop.engine import AgentLoop
-from steward.types import AgentEvent, Conversation, EventType, Message, NormalizedResponse, ToolUse
+from steward.types import AgentEvent, Conversation, EventType, Message, ToolUse
+from tests.fakes import FakeLLM, FakeResponse, FakeUsage
 from vibe_core.tools.tool_registry import ToolRegistry
-
 
 # ── Helper: collect events from async loop ───────────────────────────
 
@@ -619,7 +615,6 @@ class TestHealthAnomalyEngineConstraint:
 
     def test_anomaly_error_message_when_capped(self):
         """When rounds are capped by anomaly, error message reflects it."""
-        from steward.loop.engine import ANOMALY_REMAINING_ROUNDS
 
         class PermanentAnomalyGate:
             """Always reports anomaly — simulates persistent critical health."""

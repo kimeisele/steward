@@ -13,7 +13,6 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from steward.context import ERROR_MARKER
 from steward.types import ToolUse
 from vibe_core.mahamantra.adapters.attention import MahaAttention
 from vibe_core.protocols.mahajanas.nrisimha.types.narasimha import NarasimhaProtocol, ThreatLevel

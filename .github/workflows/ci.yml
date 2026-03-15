@@ -1,4 +1,4 @@
-# Steward CI — run tests + lint on every push and PR
+# Steward CI — run tests + lint + security on every push and PR
 
 name: CI
 
@@ -27,7 +27,6 @@ jobs:
         run: |
           pip install steward-protocol[providers]
           pip install -e ".[providers,search,api,dev]"
-          pip install ruff bandit
 
       - name: Run tests
         run: python -m pytest tests/ -x -q --timeout=30
@@ -45,8 +44,24 @@ jobs:
       - name: Install ruff
         run: pip install ruff
 
-      - name: Ruff check (steward + tests)
-        run: ruff check steward/ tests/ --select=E9,F63,F7,F82 --output-format=github
+      - name: Ruff check (uses pyproject.toml config)
+        run: ruff check steward/ tests/ --output-format=github
 
-      - name: Ruff format check (steward + tests)
+      - name: Ruff format check
         run: ruff format --check steward/ tests/
+
+  security:
+    name: Security scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install bandit
+        run: pip install bandit
+
+      - name: Bandit security scan
+        run: bandit -r steward/ -c pyproject.toml -q --format github 2>/dev/null || bandit -r steward/ -s B101,B404,B603 -q

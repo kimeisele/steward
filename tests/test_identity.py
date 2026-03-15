@@ -1,27 +1,22 @@
 """Tests for Phase 3: StewardIdentity + trust gating + fingerprint tracking."""
 
-import time
 from unittest.mock import patch
 
 import pytest
 
 from steward.federation import (
-    DEFAULT_DELEGATION_TRUST_FLOOR,
     OP_DELEGATE_TASK,
-    OP_HEARTBEAT,
     FederationBridge,
 )
 from steward.identity import StewardIdentity
 from steward.reaper import (
     FINGERPRINT_RESET_TRUST,
     FINGERPRINT_STABLE_THRESHOLD,
-    FINGERPRINT_TRUST_BONUS,
     INITIAL_TRUST,
     HeartbeatReaper,
     PeerRecord,
-    PeerStatus,
 )
-from steward.services import SVC_FEDERATION, SVC_REAPER, SVC_TASK_MANAGER
+from steward.services import SVC_TASK_MANAGER
 from vibe_core.di import ServiceRegistry
 from vibe_core.task_management.task_manager import TaskManager
 

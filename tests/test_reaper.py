@@ -10,8 +10,6 @@ import time
 import pytest
 
 from steward.reaper import (
-    DEFAULT_LEASE_TTL_S,
-    DEFAULT_TRUST_DECAY,
     INITIAL_TRUST,
     MAX_PEERS,
     HeartbeatReaper,

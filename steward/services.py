@@ -331,7 +331,6 @@ def boot(
     # 22. KnowledgeGraph (4-dimensional codebase understanding — zero tokens)
     #     Lazy scan: graph is created empty at boot, populated on first query
     #     via ensure_scanned(). Avoids ~200ms AST scan on every boot.
-    from vibe_core.knowledge.graph import UnifiedKnowledgeGraph
 
     knowledge_graph = _LazyKnowledgeGraph(cwd_path)
     ServiceRegistry.register(SVC_KNOWLEDGE_GRAPH, knowledge_graph)
