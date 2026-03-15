@@ -13,6 +13,7 @@ from pathlib import Path
 from steward.phase_hook import MOKSHA, BasePhaseHook, PhaseContext
 from steward.services import (
     SVC_FEDERATION,
+    SVC_FEDERATION_RELAY,
     SVC_FEDERATION_TRANSPORT,
     SVC_GIT_NADI_SYNC,
     SVC_MARKETPLACE,
@@ -97,6 +98,13 @@ class MokshaFederationHook(BasePhaseHook):
             flushed = federation.flush_outbound(transport)
             if flushed:
                 logger.debug("FEDERATION: flushed %d outbound events", flushed)
+
+                # Push to hub via GitHub API relay (cross-repo delivery)
+                relay = ServiceRegistry.get(SVC_FEDERATION_RELAY)
+                if relay is not None:
+                    pushed = relay.push_to_hub()
+                    if pushed:
+                        logger.info("FEDERATION: relay pushed %d messages to hub", pushed)
 
                 # Git push after flushing — publish messages to remote
                 git_sync = ServiceRegistry.get(SVC_GIT_NADI_SYNC)

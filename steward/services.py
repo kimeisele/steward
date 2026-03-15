@@ -133,6 +133,10 @@ class SVC_GIT_NADI_SYNC:
     """GitNadiSync — git pull/push for federation nadi files."""
 
 
+class SVC_FEDERATION_RELAY:
+    """GitHubFederationRelay — GitHub API bridge to hub repo."""
+
+
 class SVC_REAPER:
     """HeartbeatReaper — network garbage collection for federation peers."""
 
@@ -373,6 +377,18 @@ def boot(
         if git_sync.is_git_repo:
             ServiceRegistry.register(SVC_GIT_NADI_SYNC, git_sync)
             logger.info("Git nadi sync: active (interval=%ds)", git_sync._sync_interval_s)
+
+        # 28c. GitHubFederationRelay (GitHub API bridge to hub — cross-repo delivery)
+        from steward.federation_relay import GitHubFederationRelay
+
+        relay = GitHubFederationRelay(
+            agent_id="steward",
+            local_outbox=Path(fed_dir) / "nadi_outbox.json",
+            local_inbox=Path(fed_dir) / "nadi_inbox.json",
+        )
+        if relay.available:
+            ServiceRegistry.register(SVC_FEDERATION_RELAY, relay)
+            logger.info("Federation relay: active (hub=%s)", relay._hub_repo)
 
     # 29. PhaseHookRegistry (composable MURALI phase dispatch)
     from steward.hooks import register_default_hooks
