@@ -349,11 +349,11 @@ def boot(
     federation = FederationBridge(reaper=reaper, marketplace=marketplace)
     ServiceRegistry.register(SVC_FEDERATION, federation)
 
-    # 28. FederationTransport (auto-discover from environment)
+    # 28. FederationTransport (auto-discover: env var or default data/federation/)
     import os
 
-    fed_dir = os.environ.get("STEWARD_FEDERATION_DIR")
-    if fed_dir:
+    fed_dir = os.environ.get("STEWARD_FEDERATION_DIR") or str(Path(cwd) / "data" / "federation")
+    if Path(fed_dir).is_dir():
         from steward.federation_transport import create_transport
 
         transport = create_transport(fed_dir)
