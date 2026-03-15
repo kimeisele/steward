@@ -43,7 +43,9 @@ class RepoHealer:
         self._synaptic = synaptic
 
     async def _llm_compound_fix(
-        self, finding: "Finding", workspace: Path,
+        self,
+        finding: "Finding",
+        workspace: Path,
     ) -> list[str]:
         """Phase B of COMPOUND: one LLM call via the agent's tool loop.
 
@@ -57,9 +59,7 @@ class RepoHealer:
         error_summary = _extract_ci_error_summary(finding, workspace)
 
         # Minimal instruction — the agent has tools, it can read files itself
-        instruction = (
-            f"Fix CI failure in {workspace}. {error_summary}"
-        )
+        instruction = f"Fix CI failure in {workspace}. {error_summary}"
 
         try:
             await self._run_fn(instruction)
@@ -71,7 +71,10 @@ class RepoHealer:
         try:
             r = subprocess.run(
                 ["git", "diff", "--name-only"],
-                capture_output=True, text=True, timeout=10, cwd=str(workspace),
+                capture_output=True,
+                text=True,
+                timeout=10,
+                cwd=str(workspace),
             )
             if r.returncode == 0 and r.stdout.strip():
                 return [f.strip() for f in r.stdout.strip().split("\n") if f.strip()]
@@ -166,7 +169,9 @@ class RepoHealer:
                     all_changed.extend(llm_changed)
                     applied.append((finding, True))
                     fixed_count += 1
-                    logger.info("Compound-fixed %s: %s (LLM, %d files)", finding.kind.value, finding.detail, len(llm_changed))
+                    logger.info(
+                        "Compound-fixed %s: %s (LLM, %d files)", finding.kind.value, finding.detail, len(llm_changed)
+                    )
                 else:
                     applied.append((finding, False))
             except Exception as e:
@@ -212,12 +217,15 @@ class RepoHealer:
         pr_url = ""
         if changed_set:
             body = _build_pr_body(applied, gate_passed)
-            pr_url = self._pipeline._create_pr(
-                branch_name=f"steward/heal/{repo_name}",
-                intent_name="HEAL_REPO",
-                problem=f"Healing {repo_name}: {fixed_count} findings fixed",
-                changed_files=changed_set,
-            ) or ""
+            pr_url = (
+                self._pipeline._create_pr(
+                    branch_name=f"steward/heal/{repo_name}",
+                    intent_name="HEAL_REPO",
+                    problem=f"Healing {repo_name}: {fixed_count} findings fixed",
+                    changed_files=changed_set,
+                )
+                or ""
+            )
 
         for finding in deterministic + compound:
             self._synaptic.update(f"heal:{finding.kind.value}:{repo_name}", "fix", success=True)

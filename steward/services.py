@@ -352,7 +352,7 @@ def boot(
     # 28. FederationTransport (auto-discover: env var or default data/federation/)
     import os
 
-    fed_dir = os.environ.get("STEWARD_FEDERATION_DIR") or str(Path(cwd) / "data" / "federation")
+    fed_dir = os.environ.get("STEWARD_FEDERATION_DIR") or (str(Path(cwd) / "data" / "federation") if cwd else "")
     if Path(fed_dir).is_dir():
         from steward.federation_transport import create_transport
 

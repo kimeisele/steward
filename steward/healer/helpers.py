@@ -106,9 +106,23 @@ def _extract_ci_error_summary(finding: "Finding", workspace: Path) -> str:
 
     try:
         r = subprocess.run(
-            ["gh", "run", "list", "--workflow", wf_match.group(1),
-             "--status", "failure", "--limit", "1", "--json", "databaseId"],
-            capture_output=True, text=True, timeout=15, cwd=str(workspace),
+            [
+                "gh",
+                "run",
+                "list",
+                "--workflow",
+                wf_match.group(1),
+                "--status",
+                "failure",
+                "--limit",
+                "1",
+                "--json",
+                "databaseId",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            cwd=str(workspace),
         )
         if r.returncode != 0:
             return finding.detail
@@ -119,7 +133,10 @@ def _extract_ci_error_summary(finding: "Finding", workspace: Path) -> str:
 
         r2 = subprocess.run(
             ["gh", "run", "view", str(runs[0]["databaseId"]), "--log-failed"],
-            capture_output=True, text=True, timeout=30, cwd=str(workspace),
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=str(workspace),
         )
         if r2.returncode != 0:
             return finding.detail
@@ -137,10 +154,17 @@ def _extract_ci_error_summary(finding: "Finding", workspace: Path) -> str:
         if "\t" in stripped:
             stripped = stripped.split("\t", 2)[-1].strip()
         # Capture assertion errors, failures, tracebacks
-        if any(kw in stripped.lower() for kw in (
-            "assert", "error", "failed", "traceback",
-            "raise", "exception",
-        )):
+        if any(
+            kw in stripped.lower()
+            for kw in (
+                "assert",
+                "error",
+                "failed",
+                "traceback",
+                "raise",
+                "exception",
+            )
+        ):
             # Strip ANSI codes and CI noise
             clean = re.sub(r"\x1b\[[0-9;]*m", "", stripped)
             clean = re.sub(r"^##\[.*?\]\s*", "", clean)
@@ -184,5 +208,3 @@ def _build_pr_body(
         )
 
     return "\n".join(lines)
-
-
