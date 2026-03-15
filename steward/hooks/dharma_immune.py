@@ -21,7 +21,15 @@ logger = logging.getLogger("STEWARD.HOOKS.DHARMA_IMMUNE")
 
 
 class DharmaImmuneHook(BasePhaseHook):
-    """Run immune self-diagnostics during DHARMA phase."""
+    """Run immune self-diagnostics during DHARMA phase.
+
+    Only runs every 4th cycle to avoid blocking the MURALI loop.
+    The full test suite takes 3+ minutes — running it every cycle
+    prevents MOKSHA from flushing nadi messages.
+    """
+
+    _cycle_count: int = 0
+    _RUN_EVERY_N_CYCLES: int = 4
 
     @property
     def name(self) -> str:
@@ -33,12 +41,14 @@ class DharmaImmuneHook(BasePhaseHook):
 
     @property
     def priority(self) -> int:
-        return 60  # After federation (50), before cleanup
+        return 60
 
     def should_run(self, ctx: PhaseContext) -> bool:
-        # Only run if immune system is available
         immune = ServiceRegistry.get(SVC_IMMUNE)
-        return immune is not None and immune.available
+        if immune is None or not immune.available:
+            return False
+        self._cycle_count += 1
+        return self._cycle_count % self._RUN_EVERY_N_CYCLES == 0
 
     def execute(self, ctx: PhaseContext) -> None:
         immune = ServiceRegistry.get(SVC_IMMUNE)
