@@ -7,33 +7,12 @@ from typing import Any
 
 import pytest
 
+from tests.fakes import FakeLLM, FakeResponse, FakeUsage
+
 from steward.agent import StewardAgent
 from steward.loop.engine import AgentLoop
-from steward.types import AgentEvent, Conversation, EventType, LLMUsage, Message, NormalizedResponse, ToolUse
+from steward.types import AgentEvent, Conversation, EventType, Message, NormalizedResponse, ToolUse
 from vibe_core.tools.tool_registry import ToolRegistry
-
-# ── Fake LLM Provider ────────────────────────────────────────────────
-
-# Aliases for backward compat
-FakeUsage = LLMUsage
-FakeResponse = NormalizedResponse
-
-
-class FakeLLM:
-    """Fake LLM that returns pre-programmed responses in sequence."""
-
-    def __init__(self, responses: list[FakeResponse]) -> None:
-        self._responses = list(responses)
-        self._call_count = 0
-        self.calls: list[dict] = []
-
-    def invoke(self, **kwargs: Any) -> FakeResponse:
-        self.calls.append(kwargs)
-        if self._call_count < len(self._responses):
-            resp = self._responses[self._call_count]
-            self._call_count += 1
-            return resp
-        return FakeResponse(content="[no more responses]")
 
 
 # ── Helper: collect events from async loop ───────────────────────────
@@ -45,12 +24,17 @@ def run_loop(loop: AgentLoop, message: str) -> tuple[str, list[AgentEvent]]:
     async def _collect():
         events = []
         final_text = ""
+        streamed_chunks: list[str] = []
         async for event in loop.run(message):
             events.append(event)
-            if event.type == EventType.TEXT:
+            if event.type == EventType.TEXT_DELTA:
+                streamed_chunks.append(str(event.content) if event.content else "")
+            elif event.type == EventType.TEXT:
                 final_text = event.content or ""
             elif event.type == EventType.ERROR:
                 final_text = f"[Error: {event.content}]"
+        if streamed_chunks and not final_text:
+            final_text = "".join(streamed_chunks)
         return final_text, events
 
     return asyncio.run(_collect())
