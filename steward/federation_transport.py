@@ -65,6 +65,10 @@ class NadiFederationTransport:
             for item in data:
                 if not isinstance(item, dict):
                     continue
+                # Validate required nadi protocol fields
+                if not all(k in item for k in ("source", "operation")):
+                    logger.warning("Nadi inbox: dropping malformed message: %s", list(item.keys())[:5])
+                    continue
                 key = (item.get("source", ""), item.get("timestamp", 0))
                 if key in self._seen:
                     continue
@@ -94,10 +98,17 @@ class NadiFederationTransport:
                     logger.warning("Nadi outbox corrupt, starting fresh: %s", e)
 
             for msg in messages:
-                if isinstance(msg, dict):
-                    existing.append(msg)
-                elif hasattr(msg, "to_dict"):
-                    existing.append(msg.to_dict())
+                payload = msg if isinstance(msg, dict) else (msg.to_dict() if hasattr(msg, "to_dict") else None)
+                if payload is None:
+                    logger.warning("Nadi: dropping non-serializable message: %s", type(msg))
+                    continue
+                # Strict validation: required fields
+                if not all(k in payload for k in ("source", "operation")):
+                    logger.warning(
+                        "Nadi: dropping malformed message (missing source/operation): %s", list(payload.keys())
+                    )
+                    continue
+                existing.append(payload)
 
             if len(existing) > NADI_BUFFER_SIZE:
                 existing = existing[-NADI_BUFFER_SIZE:]

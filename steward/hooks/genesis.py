@@ -70,8 +70,25 @@ def _get_federation_owner() -> str:
     return _CACHED_OWNER
 
 
+_GH_CACHE: dict[str, tuple[float, str | None]] = {}  # key → (timestamp, result)
+_GH_CACHE_TTL = 300.0  # 5 min cache
+
+
 def _gh(args: list[str], cwd: str | None = None) -> str | None:
-    """Run gh CLI command, return stdout or None on failure."""
+    """Run gh CLI command with response caching.
+
+    Caches results for 5 minutes to prevent API rate limit exhaustion.
+    A single scan was consuming 100+ API calls — now cached.
+    """
+    cache_key = " ".join(args)
+    now = time.time()
+
+    # Check cache
+    if cache_key in _GH_CACHE:
+        cached_time, cached_result = _GH_CACHE[cache_key]
+        if (now - cached_time) < _GH_CACHE_TTL:
+            return cached_result
+
     try:
         r = subprocess.run(
             ["gh", *args],
@@ -80,7 +97,9 @@ def _gh(args: list[str], cwd: str | None = None) -> str | None:
             timeout=_GH_TIMEOUT,
             cwd=cwd,
         )
-        return r.stdout if r.returncode == 0 else None
+        result = r.stdout if r.returncode == 0 else None
+        _GH_CACHE[cache_key] = (now, result)
+        return result
     except (subprocess.TimeoutExpired, FileNotFoundError):
         return None
 
