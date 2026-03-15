@@ -3,35 +3,11 @@
 from __future__ import annotations
 
 import tempfile
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+
+from tests.fakes import FakeLLM, FakeResponse
 
 from steward.config import StewardConfig, _parse_config, load_config
-
-# ── Fake LLM for agent tests ────────────────────────────────────────
-
-
-@dataclass
-class FakeUsage:
-    input_tokens: int = 10
-    output_tokens: int = 20
-
-
-@dataclass
-class FakeResponse:
-    content: str = ""
-    tool_calls: list[Any] | None = None
-    usage: FakeUsage | None = None
-
-    def __post_init__(self) -> None:
-        if self.usage is None:
-            self.usage = FakeUsage()
-
-
-class FakeLLM:
-    def invoke(self, **kwargs: Any) -> FakeResponse:
-        return FakeResponse(content="ok")
 
 
 # ── Tests ────────────────────────────────────────────────────────────

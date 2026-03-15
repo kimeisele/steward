@@ -6,22 +6,10 @@ StewardAgent MUST be GAD-000 compliant from day 1.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from tests.fakes import FakeLLM, FakeResponse
 
 from steward.agent import StewardAgent
 from vibe_core.mahamantra.protocols._gad import GADBase, GADProtocol
-
-
-@dataclass
-class FakeResponse:
-    content: str = "test response"
-    tool_calls: list | None = None
-    usage: None = None
-
-
-class FakeLLM:
-    def invoke(self, **kwargs: object) -> FakeResponse:
-        return FakeResponse()
 
 
 class TestGADCompliance:

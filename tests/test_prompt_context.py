@@ -2,47 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any
+from tests.fakes import FakeLLM, FakeResponse
 
 from steward.agent import StewardAgent
 from steward.services import SVC_PROMPT_CONTEXT, boot
 from vibe_core.di import ServiceRegistry
 from vibe_core.runtime.prompt_context import PromptContext
-
-# ── Fake LLM ─────────────────────────────────────────────────────────
-
-
-@dataclass
-class FakeUsage:
-    input_tokens: int = 10
-    output_tokens: int = 20
-
-
-@dataclass
-class FakeResponse:
-    content: str = ""
-    tool_calls: list[Any] | None = None
-    usage: FakeUsage | None = None
-
-    def __post_init__(self) -> None:
-        if self.usage is None:
-            self.usage = FakeUsage()
-
-
-class FakeLLM:
-    def __init__(self, responses: list[FakeResponse]) -> None:
-        self._responses = list(responses)
-        self._call_count = 0
-        self.calls: list[dict[str, object]] = []
-
-    def invoke(self, **kwargs: Any) -> FakeResponse:
-        self.calls.append(kwargs)
-        if self._call_count < len(self._responses):
-            resp = self._responses[self._call_count]
-            self._call_count += 1
-            return resp
-        return FakeResponse(content="[no more responses]")
 
 
 # ── Tests ────────────────────────────────────────────────────────────
