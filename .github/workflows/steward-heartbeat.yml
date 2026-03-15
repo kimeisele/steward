@@ -64,8 +64,9 @@ jobs:
         run: |
           CYCLES=${{ github.event.inputs.cycles || '4' }}
           python -c "
-          import logging
+          import logging, traceback
           logging.basicConfig(level=logging.INFO, format='%(name)s %(levelname)s %(message)s')
+          logger = logging.getLogger('HEARTBEAT')
 
           from steward.provider import build_chamber
           from steward.agent import StewardAgent
@@ -74,10 +75,17 @@ jobs:
           agent = StewardAgent(provider=chamber)
 
           for i in range($CYCLES):
-              agent._phase_genesis()
-              agent._phase_dharma()
-              agent.run_autonomous_sync(idle_minutes=15)
-              agent._phase_moksha()
+              for phase_name, phase_fn in [
+                  ('GENESIS', agent._phase_genesis),
+                  ('DHARMA', agent._phase_dharma),
+                  ('KARMA', lambda: agent.run_autonomous_sync(idle_minutes=15)),
+                  ('MOKSHA', agent._phase_moksha),
+              ]:
+                  try:
+                      phase_fn()
+                  except Exception as e:
+                      logger.error('%s failed: %s', phase_name, e)
+                      traceback.print_exc()
           "
 
       - name: Commit federation state
