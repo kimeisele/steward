@@ -27,7 +27,6 @@ from vibe_core.mahamantra.substrate.mantra.siksastakam import (
 )
 from vibe_core.mahamantra.substrate.vm.venu_orchestrator import VenuOrchestrator
 
-
 # ── Venu Service Wiring ──────────────────────────────────────────────
 
 
@@ -165,7 +164,7 @@ class TestToolOutputCompression:
         conv = Conversation()
         conv.add(Message(role=MessageRole.SYSTEM, content="test"))
 
-        loop = AgentLoop(
+        AgentLoop(
             provider=provider,
             registry=ToolRegistry(),
             conversation=conv,
@@ -356,9 +355,8 @@ class TestLearningEffect:
 
     def test_buddhi_records_seed_outcome(self):
         """Buddhi.record_seed() stores seed-level Hebbian weight."""
-        from vibe_core.mahamantra.substrate.manas.synaptic import HebbianSynaptic
-
         from steward.buddhi import Buddhi
+        from vibe_core.mahamantra.substrate.manas.synaptic import HebbianSynaptic
 
         synaptic = HebbianSynaptic()
         buddhi = Buddhi(synaptic=synaptic)
@@ -611,9 +609,8 @@ class TestAntarangaWiring:
 
     def test_boot_wires_antaranga(self):
         """boot() registers AntarangaRegistry in ServiceRegistry."""
-        from vibe_core.mahamantra.substrate.cell_system.antaranga import AntarangaRegistry
-
         from steward.services import SVC_ANTARANGA
+        from vibe_core.mahamantra.substrate.cell_system.antaranga import AntarangaRegistry
 
         boot()
         antaranga = ServiceRegistry.get(SVC_ANTARANGA)
@@ -630,9 +627,9 @@ class TestAntarangaWiring:
     def test_antaranga_collision_creates_standing_wave(self):
         """Tool collision injects prana into a deterministic slot."""
         from vibe_core.mahamantra.substrate.cell_system.antaranga import (
-            AntarangaRegistry,
             GENESIS_PRANA_U32,
             INTEGRITY_FULL,
+            AntarangaRegistry,
         )
 
         reg = AntarangaRegistry()
@@ -661,9 +658,9 @@ class TestAntarangaWiring:
     def test_antaranga_resonance_accumulates_prana(self):
         """Repeated tool use → resonance → prana accumulates."""
         from vibe_core.mahamantra.substrate.cell_system.antaranga import (
-            AntarangaRegistry,
             GENESIS_PRANA_U32,
             INTEGRITY_FULL,
+            AntarangaRegistry,
         )
 
         reg = AntarangaRegistry()
@@ -701,9 +698,9 @@ class TestAntarangaWiring:
     def test_antaranga_diw_modulation(self):
         """Venu DIW modulates active slots (lifecycle transformation)."""
         from vibe_core.mahamantra.substrate.cell_system.antaranga import (
-            AntarangaRegistry,
             GENESIS_PRANA_U32,
             INTEGRITY_FULL,
+            AntarangaRegistry,
         )
 
         reg = AntarangaRegistry()

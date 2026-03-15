@@ -171,7 +171,7 @@ def _explore(target: Path, focus: str) -> ExploreMap:
     # Step 1: Scan target into a fresh graph
     graph = UnifiedKnowledgeGraph()
     scanner = CodeScanner(graph)
-    stats = scanner.scan_directory(target)
+    scanner.scan_directory(target)
 
     total_nodes = len(graph.nodes)
     total_edges = sum(len(edges) for edges in graph.edges.values())

@@ -54,14 +54,14 @@ from steward.types import (
 )
 from vibe_core.mahamantra.adapters.attention import MahaAttention
 from vibe_core.mahamantra.adapters.compression import MahaCompression
-from vibe_core.mahamantra.substrate.encoding.maha_llm_kernel import MahaLLMKernel
-from vibe_core.mahamantra.substrate.mantra.siksastakam import SiksastakamSynth
 from vibe_core.mahamantra.substrate.cell_system.antaranga import (
     FLAG_ACTIVE,
     GENESIS_PRANA_U32,
     INTEGRITY_FULL,
     AntarangaRegistry,
 )
+from vibe_core.mahamantra.substrate.encoding.maha_llm_kernel import MahaLLMKernel
+from vibe_core.mahamantra.substrate.mantra.siksastakam import SiksastakamSynth
 from vibe_core.mahamantra.substrate.vm.venu_orchestrator import VenuOrchestrator
 from vibe_core.playbook.ephemeral_storage import EphemeralStorage
 from vibe_core.protocols.mahajanas.nrisimha.types.narasimha import NarasimhaProtocol

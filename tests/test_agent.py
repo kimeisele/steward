@@ -504,7 +504,6 @@ class TestHealthGateThreadSafety:
         llm = FakeLLM([])
         agent = StewardAgent(provider=llm)
 
-        errors = []
 
         def writer():
             for _ in range(100):

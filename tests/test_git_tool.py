@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from steward.tools.git import GitTool, _PROTECTED_BRANCHES
+from steward.tools.git import _PROTECTED_BRANCHES, GitTool
 
 
 @pytest.fixture
@@ -19,6 +19,7 @@ def git_repo(tmp_path: Path) -> Path:
     subprocess.run(["git", "init"], cwd=cwd, capture_output=True)
     subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=cwd, capture_output=True)
     subprocess.run(["git", "config", "user.name", "Test"], cwd=cwd, capture_output=True)
+    subprocess.run(["git", "config", "commit.gpgsign", "false"], cwd=cwd, capture_output=True)
     # Create initial file and commit on main
     (tmp_path / "hello.py").write_text("print('hello')\n")
     subprocess.run(["git", "add", "."], cwd=cwd, capture_output=True)

@@ -608,6 +608,7 @@ class TestCrossRepoWorkspace:
             "GIT_COMMITTER_EMAIL": "t@t",
         }
         subprocess.run(["git", "init", str(source_repo)], capture_output=True, env=env)
+        subprocess.run(["git", "-C", str(source_repo), "config", "commit.gpgsign", "false"], capture_output=True, env=env)
         (source_repo / "README.md").write_text("test repo")
         subprocess.run(["git", "-C", str(source_repo), "add", "."], capture_output=True, env=env)
         subprocess.run(["git", "-C", str(source_repo), "commit", "-m", "init"], capture_output=True, env=env)
@@ -660,8 +661,8 @@ class TestCallbackEvents:
 
         from steward.agent import StewardAgent
         from steward.services import SVC_FEDERATION, SVC_TASK_MANAGER
-        from vibe_core.di import ServiceRegistry
         from tests.conftest import track_agent
+        from vibe_core.di import ServiceRegistry
 
         agent = track_agent(StewardAgent(provider=fake_llm))
         task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
@@ -688,8 +689,8 @@ class TestCallbackEvents:
 
         from steward.agent import StewardAgent
         from steward.services import SVC_FEDERATION, SVC_TASK_MANAGER
-        from vibe_core.di import ServiceRegistry
         from tests.conftest import track_agent
+        from vibe_core.di import ServiceRegistry
 
         agent = track_agent(StewardAgent(provider=fake_llm))
         task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)

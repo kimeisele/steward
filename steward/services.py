@@ -390,6 +390,12 @@ def boot(
             ServiceRegistry.register(SVC_FEDERATION_RELAY, relay)
             logger.info("Federation relay: active (hub=%s)", relay._hub_repo)
 
+    # 31. NagaDiamondProtocol (TDD enforcement: RED/GREEN gates)
+    from vibe_core.naga.diamond import NagaDiamondProtocol
+
+    diamond = NagaDiamondProtocol(workspace=cwd_path)
+    ServiceRegistry.register(SVC_DIAMOND, diamond)
+
     # 29. PhaseHookRegistry (composable MURALI phase dispatch)
     from steward.hooks import register_default_hooks
     from steward.phase_hook import PhaseHookRegistry
@@ -434,7 +440,11 @@ def boot(
         lambda: _check_service_wired(SVC_CACHE, "EphemeralStorage"),
         IssueSeverity.HIGH,
     )
-    # vajra_diamond_wired — DEFERRED (Diamond not booted)
+    checker.register_checker(
+        "vajra_diamond_wired",
+        lambda: _check_service_wired(SVC_DIAMOND, "NagaDiamondProtocol"),
+        IssueSeverity.HIGH,
+    )
     checker.register_checker(
         "vajra_attention_wired",
         lambda: _check_service_wired(SVC_ATTENTION, "MahaAttention"),

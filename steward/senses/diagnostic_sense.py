@@ -351,10 +351,6 @@ def _detect_circular_imports(repo_path: Path) -> list[Finding]:
     Only considers intra-repo (local package) imports — third-party
     and stdlib are excluded. Reports the shortest cycle found per file.
     """
-    import sys
-
-    stdlib_modules = getattr(sys, "stdlib_module_names", set())
-
     # Discover local packages
     local_packages: set[str] = set()
     for init in repo_path.rglob("__init__.py"):

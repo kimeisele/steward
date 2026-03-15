@@ -10,10 +10,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from steward.healer import (
+    _IMPORT_TO_PIP,
     FixStrategy,
     HealResult,
     RepoHealer,
-    _IMPORT_TO_PIP,
     _add_dependency_to_toml,
     _build_pr_body,
     _extract_ci_error_summary,
@@ -33,7 +33,6 @@ from steward.senses.diagnostic_sense import (
     FindingKind,
     Severity,
 )
-
 
 # ── Strategy Classification ─────────────────────────────────────────────
 
@@ -189,7 +188,7 @@ class TestFixUndeclaredDependency:
             detail="'PIL' is imported but not declared",
             fix_hint="Add 'PIL' to [project.dependencies]",
         )
-        changed = _fix_undeclared_dependency(finding, tmp_path)
+        _fix_undeclared_dependency(finding, tmp_path)
         content = (tmp_path / "pyproject.toml").read_text()
         assert '"pillow"' in content
 
