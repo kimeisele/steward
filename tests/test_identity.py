@@ -7,9 +7,9 @@ import pytest
 
 from steward.federation import (
     DEFAULT_DELEGATION_TRUST_FLOOR,
-    FederationBridge,
     OP_DELEGATE_TASK,
     OP_HEARTBEAT,
+    FederationBridge,
 )
 from steward.identity import StewardIdentity
 from steward.reaper import (
@@ -71,7 +71,6 @@ class TestFingerprintChangeResetsrust:
         # First heartbeat with fingerprint A
         peer = reaper.record_heartbeat("agent-x", timestamp=100.0, fingerprint="fp_original")
         assert peer.fingerprint == "fp_original"
-        original_trust = peer.trust
 
         # Second heartbeat with DIFFERENT fingerprint → trust reset
         peer = reaper.record_heartbeat("agent-x", timestamp=200.0, fingerprint="fp_fork")

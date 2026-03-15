@@ -42,11 +42,12 @@ from steward.services import (
     SVC_FEEDBACK,
     SVC_MAHA_LLM,
     SVC_MEMORY,
-    SVC_SIKSASTAKAM,
     SVC_NARASIMHA,
     SVC_NORTH_STAR,
     SVC_PHASE_HOOKS,
+    SVC_PROMPT_CONTEXT,
     SVC_SAFETY_GUARD,
+    SVC_SIKSASTAKAM,
     SVC_SYNAPSE_STORE,
     SVC_TOOL_REGISTRY,
     SVC_VENU,
@@ -400,6 +401,16 @@ class StewardAgent(GADBase):
             ledger_context = self._ledger.prompt_context()
             if ledger_context:
                 context_parts.append(ledger_context)
+            # Dynamic context: live system data (time, branch) — zero LLM cost
+            prompt_ctx = ServiceRegistry.get(SVC_PROMPT_CONTEXT)
+            if prompt_ctx is not None:
+                try:
+                    resolved = prompt_ctx.resolve(["system_time", "current_branch"])
+                    dyn_parts = [f"{k}: {v}" for k, v in resolved.items() if v]
+                    if dyn_parts:
+                        context_parts.append("\n[Dynamic Context]\n" + "\n".join(dyn_parts) + "\n")
+                except Exception:
+                    pass  # Non-fatal — senses already cover basics
             effective_prompt = "".join(context_parts)
         else:
             effective_prompt = self._system_prompt

@@ -24,7 +24,6 @@ from steward.phase_hook import (
     PhaseHookRegistry,
 )
 
-
 # ── PhaseHookRegistry ────────────────────────────────────────────────
 
 
@@ -270,7 +269,7 @@ class TestDharmaReaperHook:
         from tests.conftest import track_agent
         from vibe_core.di import ServiceRegistry
 
-        agent = track_agent(StewardAgent(provider=fake_llm))
+        track_agent(StewardAgent(provider=fake_llm))
         reaper = ServiceRegistry.get(SVC_REAPER)
         assert reaper is not None
 
@@ -287,7 +286,7 @@ class TestDharmaMarketplaceHook:
         from tests.conftest import track_agent
         from vibe_core.di import ServiceRegistry
 
-        agent = track_agent(StewardAgent(provider=fake_llm))
+        track_agent(StewardAgent(provider=fake_llm))
         marketplace = ServiceRegistry.get(SVC_MARKETPLACE)
         assert marketplace is not None
 
@@ -304,7 +303,7 @@ class TestDharmaFederationHook:
         from tests.conftest import track_agent
         from vibe_core.di import ServiceRegistry
 
-        agent = track_agent(StewardAgent(provider=fake_llm))
+        track_agent(StewardAgent(provider=fake_llm))
         federation = ServiceRegistry.get(SVC_FEDERATION)
         assert federation is not None
         initial_pending = federation.stats()["outbound_pending"]
@@ -327,7 +326,7 @@ class TestMokshaSynapseHook:
         from steward.hooks.moksha import MokshaSynapseHook
         from tests.conftest import track_agent
 
-        agent = track_agent(StewardAgent(provider=fake_llm))
+        track_agent(StewardAgent(provider=fake_llm))
         hook = MokshaSynapseHook()
         ctx = PhaseContext(cwd="/tmp")
         hook.execute(ctx)  # Should not crash
@@ -339,7 +338,7 @@ class TestMokshaPersistenceHook:
         from steward.hooks.moksha import MokshaPersistenceHook
         from tests.conftest import track_agent
 
-        agent = track_agent(StewardAgent(provider=fake_llm))
+        track_agent(StewardAgent(provider=fake_llm))
         steward_dir = tmp_path / ".steward"
         steward_dir.mkdir()
 
@@ -357,7 +356,7 @@ class TestMokshaFederationHook:
         from steward.hooks.moksha import MokshaFederationHook
         from tests.conftest import track_agent
 
-        agent = track_agent(StewardAgent(provider=fake_llm))
+        track_agent(StewardAgent(provider=fake_llm))
         hook = MokshaFederationHook()
         ctx = PhaseContext(cwd="/tmp")
         hook.execute(ctx)  # No transport → no crash
@@ -374,7 +373,7 @@ class TestDefaultHookRegistration:
         from tests.conftest import track_agent
         from vibe_core.di import ServiceRegistry
 
-        agent = track_agent(StewardAgent(provider=fake_llm))
+        track_agent(StewardAgent(provider=fake_llm))
         hooks = ServiceRegistry.get(SVC_PHASE_HOOKS)
         assert hooks is not None
         assert hooks.hook_count(DHARMA) == 5  # health, reaper, marketplace, federation, immune

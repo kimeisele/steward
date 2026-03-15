@@ -7,11 +7,10 @@ from unittest.mock import patch
 
 import pytest
 
-from steward.federation import FederationBridge, OP_HEARTBEAT
+from steward.federation import OP_HEARTBEAT, FederationBridge
 from steward.hooks.dharma import DharmaFederationHook
 from steward.identity import StewardIdentity
 from steward.reaper import HeartbeatReaper
-
 
 STEWARD_ROOT = Path(__file__).resolve().parents[1]
 

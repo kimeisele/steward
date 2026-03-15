@@ -613,7 +613,7 @@ class TestBuddhiPhaseGuidance:
             [(True, "")],
         )
         # Read (no recent write) → should transition to VERIFY
-        v = buddhi.evaluate(
+        buddhi.evaluate(
             [ToolUse(id="4", name="read_file", parameters={"path": "/c.py"})],
             [(True, "")],
         )
@@ -623,7 +623,7 @@ class TestBuddhiPhaseGuidance:
         # recent 3 = [read, edit, read] — recent_writes: edit_file IS in _WRITE_NAMES, and it succeeded
         # So recent_writes = 1 → still EXECUTE
         # We need more reads after the write to get to VERIFY
-        v2 = buddhi.evaluate(
+        buddhi.evaluate(
             [ToolUse(id="5", name="read_file", parameters={"path": "/d.py"})],
             [(True, "")],
         )

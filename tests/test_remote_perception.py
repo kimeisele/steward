@@ -7,13 +7,12 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import dataclass, field
 from collections import deque
+from dataclasses import dataclass, field
 
 from steward.senses.gh import GhClient, get_gh_client
 from steward.senses.git_sense import GitSense
 from vibe_core.mahamantra.protocols._sense import Jnanendriya, Tanmatra
-
 
 # ── Fake GhClient for GitSense tests ────────────────────────────────
 

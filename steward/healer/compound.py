@@ -49,8 +49,6 @@ def _fix_ci_failing(finding: "Finding", workspace: Path) -> list[str]:
     This is the deterministic HALF of the compound pipeline.
     The LLM half runs in heal_repo only if this returns empty.
     """
-    import subprocess
-
     # Extract workflow name from finding detail
     wf_match = re.search(r"workflow '([^']+)'", finding.detail)
     wf_name = wf_match.group(1) if wf_match else ""

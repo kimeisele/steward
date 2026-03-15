@@ -248,6 +248,7 @@ class TestWMC:
     def test_simple_methods(self):
         """Methods with no branching → WMC = method count (CC=1 each)."""
         import ast
+
         from steward.senses.code_sense import _compute_wmc
 
         source = (
@@ -263,6 +264,7 @@ class TestWMC:
     def test_branching_methods(self):
         """Methods with if/for/while → WMC > method count."""
         import ast
+
         from steward.senses.code_sense import _compute_wmc
 
         source = (
@@ -290,6 +292,7 @@ class TestWMC:
     def test_boolean_operators(self):
         """BoolOps (and/or) add to complexity."""
         import ast
+
         from steward.senses.code_sense import _compute_wmc
 
         source = (
@@ -312,6 +315,7 @@ class TestWMC:
     def test_except_handlers(self):
         """Try/except adds complexity per handler."""
         import ast
+
         from steward.senses.code_sense import _compute_wmc
 
         source = (
@@ -336,6 +340,7 @@ class TestWMC:
     def test_dunder_methods_excluded(self):
         """__init__ and other dunders don't count toward WMC."""
         import ast
+
         from steward.senses.code_sense import _compute_wmc
 
         source = (
@@ -353,6 +358,7 @@ class TestWMC:
     def test_empty_class(self):
         """Class with no methods → WMC=0."""
         import ast
+
         from steward.senses.code_sense import _compute_wmc
 
         source = "class Empty:\n    x = 1\n"
@@ -363,6 +369,7 @@ class TestWMC:
     def test_ternary_expression(self):
         """Ternary (IfExp) counts as a decision point."""
         import ast
+
         from steward.senses.code_sense import _compute_wmc
 
         source = (

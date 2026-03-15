@@ -237,12 +237,12 @@ class TestEphemeralStorageWiring:
 
 
 class TestDiamondProtocolDeferred:
-    """Diamond is DEFERRED — not booted, but SVC constant exists."""
+    """Diamond is now ACTIVE — TDD enforcement via RED/GREEN gates."""
 
-    def test_diamond_not_registered_at_boot(self):
+    def test_diamond_registered_at_boot(self):
         boot(tools=[_DummyTool()])
         diamond = ServiceRegistry.get(SVC_DIAMOND)
-        assert diamond is None  # Deferred — not in boot()
+        assert diamond is not None
 
 
 class TestVajraWiringChecks:

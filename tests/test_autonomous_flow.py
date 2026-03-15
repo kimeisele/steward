@@ -159,7 +159,7 @@ class TestAutonomousFlowE2E:
             priority=70,
         )
 
-        result = asyncio.run(agent.run_autonomous())
+        asyncio.run(agent.run_autonomous())
         # Federated tasks go to LLM (FakeLLM returns "ok")
         assert fake_llm.call_count >= 1
 

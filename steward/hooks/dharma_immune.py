@@ -64,9 +64,7 @@ class DharmaImmuneHook(BasePhaseHook):
                         ingestion.violations_found,
                         ingestion.sources_parsed,
                     )
-                    ctx.operations.append(
-                        f"ouroboros:violations={ingestion.violations_found}"
-                    )
+                    ctx.operations.append(f"ouroboros:violations={ingestion.violations_found}")
             except Exception as e:
                 logger.debug("Ouroboros ingestion failed (non-fatal): %s", e)
 
