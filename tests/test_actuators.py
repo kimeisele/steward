@@ -290,3 +290,34 @@ class TestGitHubActuatorMergePR:
         actuator.merge_pr(1, method="rebase")
         args = gh.call.call_args[0][0]
         assert "--rebase" in args
+
+
+class TestGitHubActuatorEnableAutoMerge:
+    def test_enable_auto_merge_succeeds(self):
+        gh = MagicMock()
+        gh.call.return_value = "Auto-merge enabled"
+        actuator = GitHubActuator(gh_client=gh)
+
+        result = actuator.enable_auto_merge("https://github.com/owner/repo/pull/42")
+        assert result.success
+        args = gh.call.call_args[0][0]
+        assert "--auto" in args
+        assert "--merge" in args
+
+    def test_enable_auto_merge_strips_url(self):
+        gh = MagicMock()
+        gh.call.return_value = "Auto-merge enabled"
+        actuator = GitHubActuator(gh_client=gh)
+
+        actuator.enable_auto_merge("  https://github.com/owner/repo/pull/42  \n")
+        args = gh.call.call_args[0][0]
+        assert args[-1] == "https://github.com/owner/repo/pull/42"
+
+    def test_enable_auto_merge_fails(self):
+        gh = MagicMock()
+        gh.call.return_value = None
+        actuator = GitHubActuator(gh_client=gh)
+
+        result = actuator.enable_auto_merge("https://github.com/owner/repo/pull/42")
+        assert not result.success
+        assert "auto" in result.error.lower()
