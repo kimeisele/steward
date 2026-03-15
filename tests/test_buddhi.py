@@ -288,11 +288,11 @@ class TestPreFlightTokenSavings:
         buddhi._approach = "MOKSHA"
 
         d = buddhi.pre_flight("research", 1)
-        assert len(d.tool_names) == 4
+        assert len(d.tool_names) == 5  # OBSERVE: read_file, glob, grep, http, think
         assert "http" in d.tool_names
 
     def test_test_action_sends_fewer_tools(self):
-        """TEST sends OBSERVE + EXECUTE = 5 tools (read_file, glob, grep, http, bash)."""
+        """TEST sends OBSERVE + EXECUTE = 6 tools (read_file, glob, grep, http, think, bash)."""
         buddhi = Buddhi()
         buddhi._action = SemanticActionType.TEST
         buddhi._guna = IntentGuna.TAMAS
@@ -300,7 +300,7 @@ class TestPreFlightTokenSavings:
         buddhi._approach = "KARMA"
 
         d = buddhi.pre_flight("test", 1)
-        assert len(d.tool_names) == 5
+        assert len(d.tool_names) == 6
         assert "bash" in d.tool_names
         assert "grep" in d.tool_names
 
@@ -712,25 +712,26 @@ class TestToolNamespace:
         from steward.buddhi import ToolNamespace, resolve_namespaces
 
         tools = resolve_namespaces(frozenset({ToolNamespace.OBSERVE}))
-        assert tools == frozenset({"read_file", "glob", "grep", "http"})
+        assert tools == frozenset({"read_file", "glob", "grep", "http", "think"})
 
     def test_resolve_multiple_namespaces(self):
         """Resolve combined namespaces — union of all tools."""
         from steward.buddhi import ToolNamespace, resolve_namespaces
 
         tools = resolve_namespaces(frozenset({ToolNamespace.OBSERVE, ToolNamespace.EXECUTE}))
-        assert tools == frozenset({"read_file", "glob", "grep", "http", "bash"})
+        assert tools == frozenset({"read_file", "glob", "grep", "http", "think", "bash"})
 
     def test_resolve_all_namespaces(self):
-        """Resolving all namespaces gives all 8 tools."""
+        """Resolving all namespaces gives all 9 tools."""
         from steward.buddhi import ToolNamespace, resolve_namespaces
 
         tools = resolve_namespaces(frozenset(ToolNamespace))
         assert "read_file" in tools
         assert "bash" in tools
         assert "http" in tools
+        assert "think" in tools
         assert "sub_agent" in tools
-        assert len(tools) == 8
+        assert len(tools) == 9
 
     def test_sub_agent_in_delegate_namespace(self):
         """sub_agent is in the DELEGATE namespace."""

@@ -9,6 +9,7 @@ from steward.tools.http import HttpTool
 from steward.tools.read_file import ReadFileTool
 from steward.tools.sub_agent import SubAgentTool
 from steward.tools.synthesize_briefing import SynthesizeBriefingTool
+from steward.tools.think import ThinkTool
 from steward.tools.web_search import WebSearchTool
 from steward.tools.write_file import WriteFileTool
 
@@ -22,6 +23,7 @@ __all__ = [
     "ReadFileTool",
     "SubAgentTool",
     "SynthesizeBriefingTool",
+    "ThinkTool",
     "WebSearchTool",
     "WriteFileTool",
 ]
