@@ -183,20 +183,29 @@ class FederationBridge:
         if not self._outbound:
             return 0
 
+        # Get known peer IDs for targeted delivery (not broadcast *)
+        peer_ids = []
+        if self.reaper is not None:
+            for p in self.reaper.alive_peers() + self.reaper.suspect_peers():
+                if p.agent_id != self.agent_id:
+                    peer_ids.append(p.agent_id)
+
         messages = []
         for event in self._outbound:
-            messages.append(
-                {
-                    "source": self.agent_id,
-                    "target": "*",  # broadcast
-                    "operation": event.operation,
-                    "payload": event.payload,
-                    "timestamp": event.timestamp,
-                    "priority": 1,  # RAJAS (normal)
-                    "correlation_id": "",
-                    "ttl_s": 900.0,  # 15 min (FederationMessage default)
-                }
-            )
+            targets = peer_ids if peer_ids else ["*"]
+            for target in targets:
+                messages.append(
+                    {
+                        "source": self.agent_id,
+                        "target": target,
+                        "operation": event.operation,
+                        "payload": event.payload,
+                        "timestamp": event.timestamp,
+                        "priority": 1,
+                        "correlation_id": "",
+                        "ttl_s": 900.0,
+                    }
+                )
 
         try:
             count = transport.append_to_inbox(messages)
