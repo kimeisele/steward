@@ -31,6 +31,7 @@ def register_default_hooks(registry: PhaseHookRegistry) -> None:
         MokshaPersistenceHook,
         MokshaSynapseHook,
     )
+    from steward.hooks.moksha_bridge import MokshaContextBridgeHook
 
     # GENESIS hooks (discovery)
     registry.register(GenesisDiscoveryHook())
@@ -44,7 +45,8 @@ def register_default_hooks(registry: PhaseHookRegistry) -> None:
     registry.register(DharmaFederationHook())
     registry.register(DharmaImmuneHook())
 
-    # MOKSHA hooks (priority order: synapse → persistence → federation)
+    # MOKSHA hooks (priority order: synapse → persistence → federation → context bridge)
     registry.register(MokshaSynapseHook())
     registry.register(MokshaPersistenceHook())
     registry.register(MokshaFederationHook())
+    registry.register(MokshaContextBridgeHook())

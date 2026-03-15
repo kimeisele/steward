@@ -213,6 +213,13 @@ def create_app():
         except HTTPException:
             return HealthResponse(status="no_providers", version=__version__, providers=0, tools=[])
 
+    @app.get("/context", dependencies=[Depends(_verify_token)])
+    async def get_context():
+        """Live context bridge — steward's full state for external consumers."""
+        from steward.context_bridge import assemble_context
+
+        return assemble_context(_CWD)
+
     @app.get("/stats", dependencies=[Depends(_verify_token)])
     async def stats():
         """Session ledger stats + provider stats."""
