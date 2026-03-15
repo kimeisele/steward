@@ -71,36 +71,47 @@ def _get_federation_owner() -> str:
 
 
 _GH_CACHE: dict[str, tuple[float, str | None]] = {}
-_GH_CACHE_TTL = 300.0  # 5 min cache
-_GH_CALL_COUNT = 0
-_GH_CALL_BUDGET = 50  # MAX 50 real API calls per session — CBR
+_GH_CACHE_TTL = 300.0  # 5 min response cache
+_gh_quota = None  # CBR quota — lazy init
+
+
+def _get_gh_quota():
+    """CBR quota for GitHub API — same OperationalQuota as LLM provider."""
+    global _gh_quota
+    if _gh_quota is None:
+        from vibe_core.runtime.quota_manager import OperationalQuota, QuotaLimits
+
+        _gh_quota = OperationalQuota(
+            limits=QuotaLimits(
+                requests_per_minute=10,  # 10 RPM rolling window
+                tokens_per_minute=999999,
+                cost_per_hour_usd=999.0,
+                cost_per_day_usd=999.0,
+            )
+        )
+    return _gh_quota
 
 
 def _gh(args: list[str], cwd: str | None = None) -> str | None:
-    """Run gh CLI command with CBR budget + cache.
+    """Run gh CLI command with CBR quota (OperationalQuota) + response cache.
 
-    Hard budget: max 50 API calls per session. After that, cache-only.
-    Cache TTL: 5 minutes. Same query within TTL → no API call.
+    Same rate-limiting system as ProviderChamber uses for LLM calls.
+    10 RPM rolling window. 5-min response cache. Stale fallback when throttled.
     """
-    global _GH_CALL_COUNT
     cache_key = " ".join(args)
     now = time.time()
 
-    # Cache hit → free
     if cache_key in _GH_CACHE:
         cached_time, cached_result = _GH_CACHE[cache_key]
         if (now - cached_time) < _GH_CACHE_TTL:
             return cached_result
 
-    # Budget exhausted → return cached (even stale) or None
-    if _GH_CALL_COUNT >= _GH_CALL_BUDGET:
+    quota = _get_gh_quota()
+    try:
+        quota.check_before_request(estimated_tokens=1, operation=f"gh:{cache_key[:40]}")
+    except Exception:
         stale = _GH_CACHE.get(cache_key)
-        if stale:
-            return stale[1]
-        logger.warning(
-            "GH API budget exhausted (%d/%d) — dropping call: %s", _GH_CALL_COUNT, _GH_CALL_BUDGET, cache_key[:60]
-        )
-        return None
+        return stale[1] if stale else None
 
     try:
         r = subprocess.run(
@@ -110,7 +121,7 @@ def _gh(args: list[str], cwd: str | None = None) -> str | None:
             timeout=_GH_TIMEOUT,
             cwd=cwd,
         )
-        _GH_CALL_COUNT += 1
+        quota.record_request(tokens_used=1, cost_usd=0.0, operation=f"gh:{cache_key[:40]}")
         result = r.stdout if r.returncode == 0 else None
         _GH_CACHE[cache_key] = (now, result)
         return result
