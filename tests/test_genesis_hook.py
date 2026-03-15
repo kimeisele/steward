@@ -54,6 +54,7 @@ class TestGenesisDiscoveryHook:
 
         with patch("steward.hooks.genesis._discover_from_world_registry") as mock_world, \
              patch("steward.hooks.genesis._discover_from_github_topics") as mock_topics, \
+             patch("steward.hooks.genesis._check_policy_compliance", return_value=[]), \
              patch("steward.hooks.genesis._discover_from_org_repos") as mock_org:
             mock_world.return_value = {
                 "agent-city": {"repo": "kimeisele/agent-city", "capabilities": ["governance"]},
@@ -85,6 +86,7 @@ class TestGenesisDiscoveryHook:
 
         with patch("steward.hooks.genesis._discover_from_world_registry") as mock_world, \
              patch("steward.hooks.genesis._discover_from_github_topics") as mock_topics, \
+             patch("steward.hooks.genesis._check_policy_compliance", return_value=[]), \
              patch("steward.hooks.genesis._discover_from_org_repos") as mock_org:
             # Same repo in both sources — world registry wins (priority)
             mock_world.return_value = {
@@ -111,6 +113,7 @@ class TestGenesisDiscoveryHook:
 
         with patch("steward.hooks.genesis._discover_from_world_registry") as mock_world, \
              patch("steward.hooks.genesis._discover_from_github_topics", return_value={}), \
+             patch("steward.hooks.genesis._check_policy_compliance", return_value=[]), \
              patch("steward.hooks.genesis._discover_from_org_repos", return_value={}):
             mock_world.return_value = {"peer-x": {"repo": "kimeisele/peer-x"}}
 
@@ -142,6 +145,7 @@ class TestGenesisDiscoveryHook:
 
         with patch("steward.hooks.genesis._discover_from_world_registry") as mock_world, \
              patch("steward.hooks.genesis._discover_from_github_topics", return_value={}), \
+             patch("steward.hooks.genesis._check_policy_compliance", return_value=[]), \
              patch("steward.hooks.genesis._discover_from_org_repos", return_value={}):
             mock_world.return_value = {"peer-a": {"repo": "kimeisele/peer-a"}}
             hook.execute(ctx)
