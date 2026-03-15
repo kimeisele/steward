@@ -29,7 +29,6 @@ class ThinkTool(Tool):
 
     def __init__(self) -> None:
         self._chitta: object | None = None
-        self._gandha: object | None = None
         self._vedana_source: object | None = None
         self._ksetrajna: object | None = None
         self._maha_buddhi: object | None = None
@@ -81,7 +80,6 @@ class ThinkTool(Tool):
             hypothesis=hypothesis,
             planned_action=planned_action,
             chitta=self._chitta,
-            gandha=self._gandha,
             vedana_source=self._vedana_source,
             ksetrajna=self._ksetrajna,
             maha_buddhi=self._maha_buddhi,
@@ -99,7 +97,6 @@ def _build_symbolic_feedback(
     hypothesis: str,
     planned_action: str,
     chitta: object | None,
-    gandha: object | None,
     vedana_source: object | None,
     ksetrajna: object | None,
     maha_buddhi: object | None,
@@ -139,9 +136,11 @@ def _build_symbolic_feedback(
             feedback["files_read"] = list(set(read_files))
 
     # ── Gandha: Pattern detection ─────────────────────────────────
-    if gandha is not None and chitta is not None:
+    if chitta is not None:
         try:
-            detection = gandha.detect(chitta.impressions)
+            from steward.antahkarana.gandha import detect_patterns
+
+            detection = detect_patterns(chitta.impressions)
             if detection and detection.pattern:
                 feedback["pattern_warning"] = (
                     f"[{detection.severity.name}] Pattern detected: {detection.pattern}. "
