@@ -68,6 +68,7 @@ _STRATEGY: dict[FindingKind, FixStrategy] = {
     FindingKind.SYNTAX_ERROR: FixStrategy.DETERMINISTIC,
     FindingKind.CIRCULAR_IMPORT: FixStrategy.DETERMINISTIC,
     FindingKind.CI_FAILING: FixStrategy.COMPOUND,
+    FindingKind.NADI_BLOCKED: FixStrategy.DETERMINISTIC,
     FindingKind.LARGE_FILE: FixStrategy.SKIP,
 }
 
@@ -512,6 +513,38 @@ def _fix_circular_import(finding: "Finding", workspace: Path) -> list[str]:
 
     target.write_text(new_source)
     return [finding.file]
+
+
+@_fixer(FindingKind.NADI_BLOCKED)
+def _fix_nadi_blocked(finding: "Finding", workspace: Path) -> list[str]:
+    """Unblock nadi transport by adding gitignore exception.
+
+    Adds '!data/federation/' after 'data/' or 'data/*' in .gitignore.
+    """
+    gitignore = workspace / ".gitignore"
+    if not gitignore.exists():
+        return []
+
+    content = gitignore.read_text()
+    if "!data/federation" in content:
+        return []  # Already has exception
+
+    lines = content.splitlines(keepends=True)
+    new_lines: list[str] = []
+    inserted = False
+
+    for line in lines:
+        new_lines.append(line)
+        stripped = line.strip()
+        if not inserted and stripped in ("data/", "data/*"):
+            new_lines.append("!data/federation/\n")
+            inserted = True
+
+    if not inserted:
+        return []
+
+    gitignore.write_text("".join(new_lines))
+    return [".gitignore"]
 
 
 # ── Compound Fixers (deterministic pipeline + gated LLM fallback) ──────
