@@ -26,18 +26,35 @@ def generate_briefing(cwd: str | None = None) -> str:
     from steward.context_bridge import assemble_context, collect_architecture_metadata
 
     ctx = assemble_context(cwd)
+
+    # Cold-start fallback: if services aren't booted, read last heartbeat's context.json
+    if not ctx.get("federation", {}).get("peers") and not ctx.get("immune"):
+        context_json = Path(cwd) / ".steward" / "context.json"
+        if context_json.exists():
+            try:
+                import json
+
+                cached = json.loads(context_json.read_text())
+                # Merge cached data for sections that are empty
+                for key in ("federation", "immune", "health", "cetana"):
+                    if not ctx.get(key) and cached.get(key):
+                        ctx[key] = cached[key]
+            except (json.JSONDecodeError, OSError):
+                pass
+
     arch = collect_architecture_metadata()
 
-    return _format(ctx, arch)
+    return _format(ctx, arch, cwd)
 
 
-def _format(ctx: dict, arch: dict) -> str:
+def _format(ctx: dict, arch: dict, cwd: str = ".") -> str:
     """Format context + architecture as cockpit markdown."""
     parts: list[str] = []
 
     # Header
     project = ctx.get("project", {})
-    parts.append(f"# Steward — {project.get('name', '?')}")
+    name = project.get("name", "") or Path(cwd).resolve().name
+    parts.append(f"# Steward — {name}")
 
     # Senses
     senses = ctx.get("senses", {})
@@ -100,8 +117,9 @@ def _format(ctx: dict, arch: dict) -> str:
         parts.append(f"\n### Services ({len(services)})")
         parts.append("| Service | Description |")
         parts.append("|---------|-------------|")
-        for name, doc in sorted(services.items()):
-            parts.append(f"| `{name}` | {doc[:80]} |")
+        for svc_name, doc in sorted(services.items()):
+            clean_doc = " ".join(doc.split())[:80]  # collapse newlines
+            parts.append(f"| `{svc_name}` | {clean_doc} |")
 
     phases = arch.get("phases", {})
     hooks = arch.get("hooks", {})
@@ -124,7 +142,7 @@ def _format(ctx: dict, arch: dict) -> str:
         parts.append("| # | Element | Category | Role |")
         parts.append("|---|---------|----------|------|")
         for k in kshetra:
-            parts.append(f"| {k['number']} | {k['element']} | {k['category']} | {k['role'][:50]} |")
+            parts.append(f"| {k['number']} | {k['element']} | {k['category']} | {k['role']} |")
 
     # Gaps
     gaps = ctx.get("gaps", {})
