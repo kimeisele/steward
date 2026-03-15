@@ -90,6 +90,7 @@ class TestGitSense:
 
         sense = GitSense(cwd=".")
         sense._last_main_head = "abc123"
+        sense._merge_cache_time = 0  # bypass TTL
         with patch.object(sense, "_git", return_value="abc123\n"):
             with patch("subprocess.run"):
                 result = sense._detect_merge()
@@ -101,11 +102,29 @@ class TestGitSense:
 
         sense = GitSense(cwd=".")
         sense._last_main_head = "abc123"
+        sense._merge_cache_time = 0  # bypass TTL
         with patch.object(sense, "_git", return_value="def456\n"):
             with patch("subprocess.run"):
                 result = sense._detect_merge()
         assert result == "def456"
         assert sense._last_main_head == "def456"
+
+    def test_merge_detection_ttl_cache(self):
+        """Second call within TTL returns None (cached)."""
+        from unittest.mock import patch
+
+        sense = GitSense(cwd=".")
+        sense._last_main_head = "abc123"
+        sense._merge_cache_time = 0  # bypass TTL for first call
+        with patch.object(sense, "_git", return_value="def456\n"):
+            with patch("subprocess.run"):
+                result1 = sense._detect_merge()
+        assert result1 == "def456"
+        # Second call within TTL — should return None (cached)
+        with patch.object(sense, "_git", return_value="ghi789\n"):
+            with patch("subprocess.run"):
+                result2 = sense._detect_merge()
+        assert result2 is None  # TTL prevents re-check
 
     def test_merge_detection_outside_git(self):
         """Non-git repo → None."""
@@ -119,6 +138,7 @@ class TestGitSense:
 
         sense = GitSense(cwd=".")
         sense._last_main_head = "old_head"
+        sense._merge_cache_time = 0  # bypass TTL
         with patch.object(sense, "_git") as mock_git:
             # Different returns for different git commands
             def git_side_effect(*args):
