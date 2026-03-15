@@ -205,18 +205,20 @@ class IntentHandlers:
             if stats["errors"] > 0:
                 problems.append(f"federation errors: {stats['errors']}")
 
-        # Cross-repo awareness: scan actual federation state via GitHub API
+        # Cross-repo awareness via Reaper data (populated by GenesisDiscoveryHook)
         try:
             from steward.senses.federation_sense import scan_federation_state
 
             state = scan_federation_state()
             summary = state.get("summary", {})
-            if summary.get("ci_red", 0) > 0:
-                problems.append(f"{summary['ci_red']} repo(s) with failing CI")
-            if summary.get("without_descriptor", 0) > 0:
-                problems.append(f"{summary['without_descriptor']} repo(s) without federation descriptor")
-            if summary.get("actively_sending", 0) < 2:
-                problems.append(f"only {summary.get('actively_sending', 0)} repo(s) sending nadi messages")
+            total = summary.get("total_peers", 0)
+            if total > 0:
+                dead = summary.get("dead", 0)
+                if dead > 0:
+                    problems.append(f"{dead} dead peer(s) in federation")
+                suspect = summary.get("suspect", 0)
+                if suspect > total // 2:
+                    problems.append(f"{suspect}/{total} peers suspect")
         except Exception as e:
             logger.debug("Federation scan failed: %s", e)
 
