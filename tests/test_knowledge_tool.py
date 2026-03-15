@@ -7,7 +7,6 @@ instead of pushing KG context into the system prompt.
 import pytest
 
 from steward.tools.knowledge import KnowledgeGraphTool
-from vibe_core.di import ServiceRegistry
 
 
 class TestKnowledgeGraphTool:
@@ -39,7 +38,7 @@ class TestKnowledgeGraphTool:
 
     def test_returns_results_when_kg_available(self):
         """When KG is registered and has data, returns context."""
-        from steward.services import SVC_KNOWLEDGE_GRAPH, boot
+        from steward.services import boot
 
         # Boot registers a _LazyKnowledgeGraph
         boot(tools=[])

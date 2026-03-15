@@ -7,7 +7,7 @@ All perception is deterministic (zero LLM).
 import tempfile
 from pathlib import Path
 
-from steward.senses.code_sense import CodeSense, _compute_lcom4
+from steward.senses.code_sense import CodeSense
 from steward.senses.coordinator import SenseCoordinator
 from steward.senses.git_sense import GitSense
 from steward.senses.health_sense import HealthSense

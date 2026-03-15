@@ -3,10 +3,7 @@
 import json
 import time
 
-import pytest
-
 from steward.marketplace import (
-    DEFAULT_CLAIM_TTL_S,
     MAX_CLAIMS,
     ClaimOutcome,
     Marketplace,

@@ -12,7 +12,6 @@ Extracted from AutonomyEngine to reduce LCOM4 (god-class → focused modules).
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
 from pathlib import Path
@@ -231,7 +230,6 @@ class FixPipeline:
         import subprocess
         import time as _time
 
-        from steward.senses.gh import get_gh_client
 
         if self._breaker.is_suspended:
             logger.warning("Circuit breaker suspended — skipping proactive fix")

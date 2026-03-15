@@ -412,7 +412,6 @@ class CircuitBreaker:
         (HEAD versions). Only fails if new violations were introduced.
         Graceful: skips if ruff not installed.
         """
-        import re as _re
 
         py_files = sorted(f for f in changed_files if f.endswith(".py"))
         if not py_files:
@@ -578,7 +577,6 @@ class CircuitBreaker:
         Compares AST structure of test files before (HEAD) and after (LLM).
         Only checks files that match test file patterns (test_*.py, *_test.py).
         """
-        import ast
 
         test_files = sorted(f for f in changed_files if f.endswith(".py") and _is_test_file(f))
         if not test_files:
@@ -659,7 +657,6 @@ class CircuitBreaker:
 
         Compares HEAD vs LLM version. Only fails if public surface DECREASED.
         """
-        import ast
 
         py_files = sorted(f for f in changed_files if f.endswith(".py") and not _is_test_file(f))
         if not py_files:

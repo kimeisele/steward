@@ -16,7 +16,7 @@ import logging
 from typing import Iterator
 
 from steward.provider.chamber import _normalize_usage
-from steward.types import LLMUsage, NormalizedResponse, StreamDelta, ToolUse
+from steward.types import NormalizedResponse, StreamDelta, ToolUse
 
 logger = logging.getLogger("STEWARD.PROVIDER")
 

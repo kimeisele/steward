@@ -9,10 +9,9 @@ Federation standard: matches agent-city and steward-protocol conftest quality.
 """
 
 import logging
-import os
 import tempfile
 from pathlib import Path
-from typing import Any, Generator
+from typing import Generator
 
 import pytest
 

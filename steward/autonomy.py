@@ -475,7 +475,7 @@ class AutonomyEngine:
 
     def phase_genesis(self, idle_override: int | None = None, last_interaction: float | None = None) -> None:
         """GENESIS: Discover — generate typed tasks from Sankalpa intents."""
-        from steward.intents import INTENT_TYPE_KEY, TaskIntent
+        from steward.intents import TaskIntent
 
         sankalpa = ServiceRegistry.get(SVC_SANKALPA)
         task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)

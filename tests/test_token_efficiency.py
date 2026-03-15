@@ -20,9 +20,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any
-
-import pytest
 
 from steward.agent import StewardAgent
 from steward.loop.engine import (
@@ -35,7 +32,6 @@ from steward.loop.engine import (
 from steward.services import lean_tool_signatures
 from steward.types import (
     AgentEvent,
-    AgentUsage,
     Conversation,
     EventType,
     Message,

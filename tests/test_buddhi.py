@@ -8,7 +8,7 @@ Uses REAL substrate primitives:
 
 from __future__ import annotations
 
-from steward.buddhi import Buddhi, BuddhiDirective, BuddhiVerdict, ModelTier
+from steward.buddhi import Buddhi, BuddhiDirective, ModelTier
 from steward.types import ToolUse
 from vibe_core.mahamantra.protocols.compression import IntentGuna
 from vibe_core.mahamantra.substrate.manas.synaptic import HebbianSynaptic

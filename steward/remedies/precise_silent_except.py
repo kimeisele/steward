@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import libcst as cst
 import libcst.matchers as m
+
 from vibe_core.mahamantra.dharma.kapila.remedies.base import CSTRemedy
 
 # Exception types that are INTENTIONALLY caught and silenced.

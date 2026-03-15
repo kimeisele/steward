@@ -2,8 +2,6 @@
 
 import time
 
-import pytest
-
 from steward.federation import (
     OP_CLAIM_OUTCOME,
     OP_CLAIM_SLOT,

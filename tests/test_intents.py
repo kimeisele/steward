@@ -7,7 +7,6 @@ Verifies that the autonomy loop works without LLM calls:
   - Handlers return None (no issue) or problem string (needs LLM)
 """
 
-import pytest
 
 from steward.intents import INTENT_TYPE_KEY, TaskIntent
 
@@ -121,7 +120,7 @@ class TestDeterministicDispatch:
     def test_dispatch_federation_health_with_dead_peers(self, fake_llm):
         """Federation health check detects dead peers."""
         from steward.agent import StewardAgent
-        from steward.reaper import HeartbeatReaper, PeerStatus
+        from steward.reaper import PeerStatus
         from steward.services import SVC_REAPER
         from tests.conftest import track_agent
         from vibe_core.di import ServiceRegistry
@@ -175,9 +174,22 @@ class TestDeterministicDispatch:
         from unittest.mock import MagicMock, patch
 
         from steward.agent import StewardAgent
+        from steward.services import SVC_REAPER
         from tests.conftest import track_agent
+        from vibe_core.di import ServiceRegistry
 
         agent = track_agent(StewardAgent(provider=fake_llm))
+
+        # Stop Cetana daemon thread — it runs GenesisDiscoveryHook in the
+        # background which populates the reaper with real federation peers
+        # from the GitHub API, causing execute_federation_health() to detect
+        # missing capabilities and return a non-None problem string.
+        agent._cetana.stop()
+
+        # Clear any peers already discovered before Cetana was stopped
+        reaper = ServiceRegistry.get(SVC_REAPER)
+        if reaper is not None:
+            reaper._peers.clear()
 
         # Mock subprocess to avoid real pip call in UPDATE_DEPS
         mock_result = MagicMock()

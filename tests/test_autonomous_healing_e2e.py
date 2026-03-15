@@ -11,9 +11,7 @@ Proves the autonomous loop works without human intervention:
 from __future__ import annotations
 
 import time
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import patch
 
 from steward.hooks.genesis import GenesisDiscoveryHook
 from steward.phase_hook import PhaseContext

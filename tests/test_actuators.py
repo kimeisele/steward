@@ -3,14 +3,9 @@
 import subprocess
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from steward.actuators import (
-    ActuatorResult,
     GitActuator,
     GitHubActuator,
-    IssueResult,
-    PRResult,
 )
 
 # ── GitActuator ──────────────────────────────────────────────────────
