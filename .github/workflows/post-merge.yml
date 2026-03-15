@@ -1,0 +1,143 @@
+# Post-Merge Digest — Steward's nerve ending for code changes.
+#
+# Fires on every PR merge to main. Runs a focused autonomous cycle:
+#   1. POST_MERGE intent: lint + test + CI verification (0 LLM tokens)
+#   2. If problems found: LLM wakes to fix (gated by CircuitBreaker)
+#   3. Federation state sync
+#
+# This is the missing link between "code lands" and "steward reacts."
+# Without this, steward only notices damage on 15-minute cron.
+
+name: Post-Merge Digest
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+# Single-writer — avoid stomping the heartbeat
+concurrency:
+  group: steward-heartbeat
+  cancel-in-progress: false
+
+jobs:
+  digest:
+    name: Digest merged changes
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true
+    timeout-minutes: 8
+
+    steps:
+      - name: Checkout steward
+        uses: actions/checkout@v4
+
+      - name: Checkout steward-protocol
+        uses: actions/checkout@v4
+        with:
+          repository: kimeisele/steward-protocol
+          path: .deps/steward-protocol
+          token: ${{ secrets.FEDERATION_PAT }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -e .deps/steward-protocol
+          pip install -e ".[dev]"
+
+      - name: Restore state
+        uses: actions/cache@v4
+        with:
+          path: |
+            .steward/
+            data/federation/
+          key: steward-state-${{ github.run_id }}
+          restore-keys: |
+            steward-state-
+
+      - name: Run post-merge cycle
+        env:
+          GH_TOKEN: ${{ secrets.FEDERATION_PAT }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          STEWARD_MERGE_PR: ${{ github.event.pull_request.number }}
+          STEWARD_MERGE_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          python -c "
+          import logging, os, traceback
+          logging.basicConfig(level=logging.INFO, format='%(name)s %(levelname)s %(message)s')
+          logger = logging.getLogger('POST_MERGE')
+
+          pr = os.environ.get('STEWARD_MERGE_PR', '?')
+          title = os.environ.get('STEWARD_MERGE_TITLE', '?')
+          logger.info('Digesting PR #%s: %s', pr, title)
+
+          from steward.provider import build_chamber
+          from steward.agent import StewardAgent
+          from steward.services import SVC_TASK_MANAGER
+          from vibe_core.di import ServiceRegistry
+
+          chamber = build_chamber()
+          agent = StewardAgent(provider=chamber)
+
+          # Inject POST_MERGE task with high priority (react immediately)
+          task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
+          if task_mgr:
+              task_mgr.add_task(
+                  title=f'[POST_MERGE] Verify PR #{pr}: {title}',
+                  priority=95,
+              )
+
+          # Run focused cycle: GENESIS (discover) + KARMA (dispatch POST_MERGE)
+          try:
+              agent._phase_genesis()
+          except Exception as e:
+              logger.error('GENESIS failed: %s', e)
+              traceback.print_exc()
+
+          try:
+              result = agent.run_autonomous_sync(idle_minutes=0)
+              if result:
+                  logger.info('Post-merge result: %s', result[:200])
+              else:
+                  logger.info('Post-merge: all clear')
+          except Exception as e:
+              logger.error('KARMA failed: %s', e)
+              traceback.print_exc()
+
+          # MOKSHA: persist state
+          try:
+              agent._phase_moksha()
+          except Exception:
+              pass
+
+          agent.close()
+          "
+
+      - name: Commit state changes
+        if: always()
+        run: |
+          git config user.name "steward-bot"
+          git config user.email "bot@steward"
+          git add .steward/ data/federation/ || true
+          git diff --cached --quiet || \
+            git commit -m "chore: post-merge digest PR #${{ github.event.pull_request.number }}"
+          git pull --rebase origin main || true
+          git push || true
+
+      - name: Save state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .steward/
+            data/federation/
+          key: steward-state-${{ github.run_id }}

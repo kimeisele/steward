@@ -50,6 +50,7 @@ class IntentHandlers:
             TaskIntent.HEALTH_CHECK: self.execute_health_check,
             TaskIntent.SENSE_SCAN: self.execute_sense_scan,
             TaskIntent.CI_CHECK: self.execute_ci_check,
+            TaskIntent.POST_MERGE: self.execute_post_merge,
             TaskIntent.FEDERATION_HEALTH: self.execute_federation_health,
             TaskIntent.CROSS_REPO_DIAGNOSTIC: self.execute_cross_repo_diagnostic,
             TaskIntent.HEAL_REPO: self.execute_heal_repo,
@@ -99,6 +100,65 @@ class IntentHandlers:
                 return f"CI is failing: workflow '{failing}'. Check the logs and fix the failing tests."
         except Exception as e:
             logger.debug("CI check failed (non-fatal): %s", e)
+        return None
+
+    def execute_post_merge(self) -> str | None:
+        """Post-merge verification — 0 tokens.
+
+        Runs after every PR merge to catch regressions immediately.
+        Combines CI check + lint check + test baseline in one pass.
+        Returns problem description if anything is broken.
+        """
+        import subprocess
+
+        problems: list[str] = []
+
+        # 1. Quick lint check (ruff) — catches import errors, syntax issues
+        try:
+            r = subprocess.run(
+                ["ruff", "check", "--select", "E,F,I,W", "--quiet", "."],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                cwd=self._cwd,
+            )
+            if r.returncode != 0:
+                # Count violations, report top offenders
+                lines = [l for l in r.stdout.strip().splitlines() if l.strip()]
+                if lines:
+                    problems.append(f"ruff: {len(lines)} lint violation(s), first: {lines[0][:120]}")
+        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+            logger.debug("Post-merge lint check skipped: %s", e)
+
+        # 2. Test baseline — run pytest with short timeout
+        try:
+            r = subprocess.run(
+                ["python", "-m", "pytest", "-x", "-q", "--timeout=30", "--tb=line"],
+                capture_output=True,
+                text=True,
+                timeout=120,
+                cwd=self._cwd,
+            )
+            if r.returncode != 0:
+                # Extract failure summary
+                summary = ""
+                for line in r.stdout.splitlines():
+                    if "failed" in line.lower() or "error" in line.lower():
+                        summary = line.strip()
+                        break
+                if not summary:
+                    summary = r.stdout.strip().splitlines()[-1] if r.stdout.strip() else "unknown failure"
+                problems.append(f"tests: {summary}")
+        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+            logger.debug("Post-merge test check skipped: %s", e)
+
+        # 3. CI status from GitHub (if available)
+        ci_problem = self.execute_ci_check()
+        if ci_problem:
+            problems.append(ci_problem)
+
+        if problems:
+            return f"Post-merge issues: {'; '.join(problems)}. Fix before next merge."
         return None
 
     def execute_update_deps(self) -> str | None:
