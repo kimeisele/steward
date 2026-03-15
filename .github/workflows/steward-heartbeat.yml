@@ -32,7 +32,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: kimeisele/steward-protocol
-          path: ../steward-protocol
+          path: .deps/steward-protocol
           token: ${{ secrets.FEDERATION_PAT }}
 
       - name: Setup Python
@@ -42,7 +42,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -e ../steward-protocol
+          pip install -e .deps/steward-protocol
           pip install -e ".[dev]"
 
       - name: Restore state
