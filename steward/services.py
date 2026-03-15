@@ -189,10 +189,15 @@ def boot(
     Returns:
         ServiceRegistry class (call .get(SVC_*) to retrieve services)
     """
-    # TODO(multi-agent): reset_all() nukes every registered service.
-    # If two StewardAgent instances share a process, the second boot()
-    # destroys the first agent's wiring. Needs scoped registries or
-    # per-agent namespaces in steward-protocol ServiceRegistry.
+    # Multi-agent safety: warn if services are already booted.
+    # reset_all() nukes every registered service — if two StewardAgent
+    # instances share a process, the second boot() destroys the first
+    # agent's wiring. Log a warning so this doesn't fail silently.
+    if ServiceRegistry.get(SVC_TOOL_REGISTRY) is not None:
+        logger.warning(
+            "ServiceRegistry already booted — reset_all() will destroy existing wiring. "
+            "Multiple StewardAgent instances in one process are not yet supported."
+        )
     ServiceRegistry.reset_all()
 
     # 1. ToolRegistry

@@ -409,8 +409,8 @@ class StewardAgent(GADBase):
                     dyn_parts = [f"{k}: {v}" for k, v in resolved.items() if v]
                     if dyn_parts:
                         context_parts.append("\n[Dynamic Context]\n" + "\n".join(dyn_parts) + "\n")
-                except Exception:
-                    pass  # Non-fatal — senses already cover basics
+                except Exception as e:
+                    logger.debug("Dynamic context resolution failed (non-fatal): %s", e)
             effective_prompt = "".join(context_parts)
         else:
             effective_prompt = self._system_prompt
