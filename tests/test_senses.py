@@ -72,6 +72,81 @@ class TestGitSense:
             sense = GitSense(cwd=tmpdir)
             assert sense.get_pain_level() == 0.0
 
+    def test_merge_detection_first_check_initializes(self):
+        """First _detect_merge call initializes state, returns None."""
+        from unittest.mock import patch, MagicMock
+
+        sense = GitSense(cwd=".")
+        assert sense._last_main_head is None
+        with patch.object(sense, "_git", return_value="abc123\n"):
+            with patch("subprocess.run"):  # mock fetch
+                result = sense._detect_merge()
+        assert result is None
+        assert sense._last_main_head == "abc123"
+
+    def test_merge_detection_no_change(self):
+        """Same HEAD → no merge detected."""
+        from unittest.mock import patch
+
+        sense = GitSense(cwd=".")
+        sense._last_main_head = "abc123"
+        with patch.object(sense, "_git", return_value="abc123\n"):
+            with patch("subprocess.run"):
+                result = sense._detect_merge()
+        assert result is None
+
+    def test_merge_detection_new_head(self):
+        """Different HEAD → merge detected, returns new sha."""
+        from unittest.mock import patch
+
+        sense = GitSense(cwd=".")
+        sense._last_main_head = "abc123"
+        with patch.object(sense, "_git", return_value="def456\n"):
+            with patch("subprocess.run"):
+                result = sense._detect_merge()
+        assert result == "def456"
+        assert sense._last_main_head == "def456"
+
+    def test_merge_detection_outside_git(self):
+        """Non-git repo → None."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sense = GitSense(cwd=tmpdir)
+            assert sense._detect_merge() is None
+
+    def test_perceive_includes_merge_data(self):
+        """When merge detected, perception data includes merge info."""
+        from unittest.mock import patch
+
+        sense = GitSense(cwd=".")
+        sense._last_main_head = "old_head"
+        with patch.object(sense, "_git") as mock_git:
+            # Different returns for different git commands
+            def git_side_effect(*args):
+                if args[0] == "rev-parse" and args[1] == "origin/main":
+                    return "new_head\n"
+                if args[0] == "rev-parse" and args[1] == "--abbrev-ref":
+                    return "main\n"
+                if args[0] == "rev-parse" and args[1] == "HEAD":
+                    return "abc\n"
+                if args[0] == "rev-parse" and args[1] == "@{upstream}":
+                    return "abc\n"
+                if args[0] == "status":
+                    return ""
+                if args[0] == "stash":
+                    return ""
+                if args[0] == "log":
+                    return "abc123 test\n"
+                if args[0] == "rev-parse" and args[1] == "main":
+                    return "new_head\n"
+                return ""
+
+            mock_git.side_effect = git_side_effect
+            with patch("subprocess.run"):  # mock fetch
+                perception = sense.perceive()
+
+        assert perception.data.get("merge_detected") is True
+        assert perception.data.get("merge_new_head") == "new_head"
+
 
 # ── ProjectSense (TVAK) ───────────────────────────────────────────────
 
