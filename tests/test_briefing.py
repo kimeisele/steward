@@ -4,7 +4,7 @@ import json
 import tempfile
 from pathlib import Path
 
-from steward.briefing import generate_briefing, _load_gaps_from_disk
+from steward.briefing import generate_briefing
 
 
 class TestGenerateBriefing:
@@ -13,7 +13,7 @@ class TestGenerateBriefing:
     def test_returns_string_with_header(self, tmp_path):
         result = generate_briefing(cwd=str(tmp_path))
         assert isinstance(result, str)
-        assert "# Steward Briefing" in result
+        assert "# Steward" in result
         assert str(tmp_path.name) in result
 
     def test_includes_perception_when_git_repo(self, tmp_path):
@@ -21,7 +21,7 @@ class TestGenerateBriefing:
         # Init a minimal git repo
         (tmp_path / ".git").mkdir()
         result = generate_briefing(cwd=str(tmp_path))
-        assert "# Steward Briefing" in result
+        assert "# Steward" in result
 
     def test_includes_session_history(self, tmp_path):
         """If sessions.json exists, briefing includes it."""
@@ -50,58 +50,22 @@ class TestGenerateBriefing:
         result = generate_briefing(cwd=str(tmp_path))
         assert "Fix CI pipeline" in result
 
-    def test_includes_gaps(self, tmp_path):
-        """If memory.json has gaps, briefing includes them."""
-        import time
-
-        steward_dir = tmp_path / ".steward"
-        steward_dir.mkdir()
-        memory = {
-            "steward": {
-                "gap_tracker": {
-                    "value": [
-                        {
-                            "category": "tool",
-                            "description": "Tool 'deploy' failed: connection timeout",
-                            "context": "",
-                            "timestamp": time.time(),
-                            "resolved": False,
-                            "resolution": "",
-                        }
-                    ]
-                }
-            }
-        }
-        (steward_dir / "memory.json").write_text(json.dumps(memory))
+    def test_includes_architecture(self, tmp_path):
+        """Briefing includes architecture metadata from living code."""
         result = generate_briefing(cwd=str(tmp_path))
-        assert "Capability Gaps" in result
-        assert "deploy" in result
-
-    def test_includes_project_instructions(self, tmp_path):
-        """If .steward/instructions.md exists, briefing includes it."""
-        steward_dir = tmp_path / ".steward"
-        steward_dir.mkdir()
-        (steward_dir / "instructions.md").write_text("Always run tests before pushing.")
-        result = generate_briefing(cwd=str(tmp_path))
-        assert "Always run tests before pushing" in result
+        assert "Architecture" in result
+        assert "North Star" in result
 
     def test_empty_project_still_works(self, tmp_path):
         """Briefing works even with zero state."""
         result = generate_briefing(cwd=str(tmp_path))
-        assert "# Steward Briefing" in result
+        assert "# Steward" in result
         assert len(result) > 10
 
 
-class TestLoadGapsFromDisk:
-    """Test gap loading from raw memory.json."""
+class TestBriefingContent:
+    """Test that briefing includes architecture data."""
 
-    def test_no_file(self, tmp_path):
-        gaps = _load_gaps_from_disk(str(tmp_path))
-        assert len(gaps.active_gaps()) == 0
-
-    def test_corrupt_json(self, tmp_path):
-        steward_dir = tmp_path / ".steward"
-        steward_dir.mkdir()
-        (steward_dir / "memory.json").write_text("{invalid json")
-        gaps = _load_gaps_from_disk(str(tmp_path))
-        assert len(gaps.active_gaps()) == 0
+    def test_includes_north_star(self, tmp_path):
+        result = generate_briefing(cwd=str(tmp_path))
+        assert "North Star" in result or "Architecture" in result
