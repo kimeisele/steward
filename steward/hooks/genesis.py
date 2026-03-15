@@ -172,11 +172,15 @@ class GenesisDiscoveryHook(BasePhaseHook):
 def _discover_from_world_registry() -> dict[str, dict]:
     """Read agent-world/config/world_registry.yaml via GitHub API.
 
-    Returns dict of repo_id → {repo, capabilities, status}.
+    Parses both cities and agents sections — all federation nodes.
+    Returns dict of node_id → {repo, capabilities, source}.
     """
+    import base64
+
+    import yaml
+
     peers: dict[str, dict] = {}
 
-    # Fetch world_registry.yaml from agent-world repo
     owner = _get_federation_owner()
     raw = _gh(["api", f"repos/{owner}/agent-world/contents/config/world_registry.yaml",
                "--jq", ".content"])
@@ -184,45 +188,39 @@ def _discover_from_world_registry() -> dict[str, dict]:
         return peers
 
     try:
-        import base64
         content = base64.b64decode(raw.strip()).decode("utf-8")
-    except Exception:
+        data = yaml.safe_load(content)
+    except Exception as e:
+        logger.debug("World registry parse failed: %s", e)
         return peers
 
-    # Parse YAML (simple line-based parser — no PyYAML dependency required)
-    current_city: dict = {}
-    in_capabilities = False
+    if not isinstance(data, dict):
+        return peers
 
-    for line in content.splitlines():
-        stripped = line.strip()
+    # Parse cities
+    for city in data.get("cities") or []:
+        cid = city.get("city_id", "")
+        if cid:
+            peers[cid] = {
+                "repo": city.get("repo", ""),
+                "capabilities": city.get("capabilities", []),
+                "source": "world_registry_city",
+            }
 
-        if stripped.startswith("- city_id:"):
-            if current_city.get("city_id"):
-                peers[current_city["city_id"]] = current_city
-            current_city = {"city_id": stripped.split(":", 1)[1].strip()}
-            in_capabilities = False
+    # Parse agents
+    for agent in data.get("agents") or []:
+        aid = agent.get("agent_id", "")
+        if aid and aid not in peers:  # cities take priority
+            peers[aid] = {
+                "repo": agent.get("repo", ""),
+                "capabilities": agent.get("capabilities", []),
+                "source": "world_registry_agent",
+            }
 
-        elif stripped.startswith("repo:") and current_city:
-            current_city["repo"] = stripped.split(":", 1)[1].strip()
-
-        elif stripped.startswith("status:") and current_city:
-            current_city["status"] = stripped.split(":", 1)[1].strip()
-
-        elif stripped == "capabilities:":
-            in_capabilities = True
-            current_city.setdefault("capabilities", [])
-
-        elif in_capabilities and stripped.startswith("- "):
-            current_city.setdefault("capabilities", []).append(stripped[2:].strip())
-
-        elif not stripped.startswith("-") and ":" in stripped:
-            in_capabilities = False
-
-    # Don't forget last city
-    if current_city.get("city_id"):
-        peers[current_city["city_id"]] = current_city
-
-    logger.debug("World registry: %d cities", len(peers))
+    logger.debug("World registry: %d nodes (%d cities, %d agents)",
+                 len(peers),
+                 len(data.get("cities") or []),
+                 len(data.get("agents") or []))
     return peers
 
 
