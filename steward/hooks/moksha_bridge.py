@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import time
+from pathlib import Path
 
 from steward.phase_hook import MOKSHA, BasePhaseHook, PhaseContext
 
@@ -66,7 +67,18 @@ class MokshaContextBridgeHook(BasePhaseHook):
 
             written = write_context_json(ctx.cwd, context)
             if written:
-                ctx.operations.append("moksha_context_bridge:updated")
+                ctx.operations.append("moksha_context_bridge:context_json")
+
+                # Also regenerate CLAUDE.md from the fresh context
+                try:
+                    from steward.briefing import generate_briefing
+
+                    briefing = generate_briefing(ctx.cwd)
+                    claude_md = Path(ctx.cwd) / "CLAUDE.md"
+                    claude_md.write_text(briefing, encoding="utf-8")
+                    ctx.operations.append("moksha_context_bridge:claude_md")
+                except Exception as e:
+                    logger.debug("CLAUDE.md generation failed (non-fatal): %s", e)
 
             self._last_write = now
         except Exception as e:
