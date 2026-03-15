@@ -148,7 +148,7 @@ class SynthesizeBriefingTool(Tool):
             if output_path:
                 dest = Path(output_path)
             else:
-                dest = Path(self._cwd) / ".steward" / "CLAUDE.md"
+                dest = Path(self._cwd) / "CLAUDE.md"
 
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_text(briefing, encoding="utf-8")
