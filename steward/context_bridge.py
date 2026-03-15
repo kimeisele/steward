@@ -1,23 +1,25 @@
 """
-Context Bridge — Steward's voice to external consumers (Claude Code, Opus).
+Context Bridge — Steward's living state for external consumers.
 
-This is NOT a data dump. Steward speaks through this bridge to brief an
-incoming Opus session with full situational awareness: how the system feels,
-what it sees, where it hurts, what it tried, what it needs.
+Two layers:
+  1. assemble_context()   — Deterministic data collection (zero LLM).
+     Reads senses, vedana, gaps, sessions, tasks, federation, immune, cetana.
+  2. collect_architecture_metadata() — Reads architecture from LIVING CODE.
+     SVC_ docstrings, kshetra mapping, phase hooks, north star — all from
+     the actual codebase, not hardcoded prose.
 
-Three layers:
-  1. Architecture DNA — What this system IS (MURALI, Vedana, Buddhi, Sanskrit naming)
-  2. Living State    — How the system FEELS right now (health, senses, patterns)
-  3. Call to Action   — What needs attention (gaps, pain, failed sessions)
+The SYNTHESIS (CLAUDE.md) is done by steward's own LLM via the
+synthesize_briefing tool. This module only collects raw material.
 
 Usage:
-    from steward.context_bridge import assemble_context, render_markdown, write_context_files
+    from steward.context_bridge import assemble_context, collect_architecture_metadata
+    from steward.context_bridge import write_context_json
 
     context = assemble_context("/path/to/project")
-    md = render_markdown(context)
-    write_context_files("/path/to/project", context)
+    write_context_json("/path/to/project", context)
 
-Or via the MokshaContextBridgeHook (automatic every heartbeat).
+    # Architecture metadata (for LLM synthesis prompt):
+    arch = collect_architecture_metadata()
 """
 
 from __future__ import annotations
@@ -29,90 +31,14 @@ import os
 import tempfile
 import time
 from pathlib import Path
-from typing import Any
 
 logger = logging.getLogger("STEWARD.CONTEXT_BRIDGE")
 
 # Schema version — bump when context shape changes materially
 _CONTEXT_VERSION = 1
 
-# ── Architecture DNA ─────────────────────────────────────────────────
-# This is the static layer — what steward IS. Updated rarely.
-# Written as a constant because it describes the system's design,
-# not its runtime state. Opus needs this to understand the codebase.
 
-_ARCHITECTURE_DNA = """\
-## Architecture: Steward Superagent
-
-Steward is a **living autonomous agent** — not a script, not a framework.
-It perceives its environment, feels health as pleasure/pain, makes decisions,
-heals itself, and coordinates with peer agents via federation.
-
-### Core Cycle: MURALI (Heartbeat)
-
-Every heartbeat tick rotates through 4 phases:
-
-- **GENESIS** — Discovery. Scan for federation peers, boot senses.
-- **DHARMA** — Governance. Check health, reap dead peers, purge expired claims, broadcast heartbeat.
-- **KARMA** — Execution. Process user task through tool loop (Buddhi directs tool selection).
-- **MOKSHA** — Persistence. Save state to disk, flush federation messages, write context bridge.
-
-Heartbeat frequency adapts to health:
-- Sattva (health > 0.8): 0.1 Hz — calm, 10s between beats.
-- Sadhana (0.5-0.8): 0.5 Hz — normal, 2s between beats.
-- Gajendra (< 0.5): 2.0 Hz — emergency, 0.5s between beats.
-
-### Perception: 5 Jnanendriyas (Senses)
-
-| Sense | Sanskrit | Perceives |
-|-------|----------|-----------|
-| Git | Srotra (ear) | Branch, dirty files, upstream, CI status, open PRs |
-| Project | Tvak (skin) | Languages, frameworks, key dirs, config files |
-| Code | Caksu (eye) | Packages, classes, functions, LCOM4 cohesion, syntax errors |
-| Tests | Jihva (tongue) | Framework, test count, coverage, last result |
-| Health | Ghrana (nose) | Large files, stale files, lockfile, gitignore, readme |
-
-### Vedana: Health as Feeling
-
-Vedana computes a composite health signal (0.0-1.0):
-- 35% provider health (are LLM providers alive?)
-- 25% error pressure (recent error rate)
-- 15% context pressure (context window usage)
-- 15% synaptic confidence (Hebbian learning strength)
-- 10% tool success rate
-
-Guna classification: **sattva** (> 0.7, harmony), **rajas** (0.3-0.7, friction), **tamas** (< 0.3, inertia).
-
-### Buddhi: Decision Engine
-
-Classifies intent → selects tools → sets token budget → routes to model tier.
-Hebbian learning strengthens successful action→tool mappings across sessions.
-Gandha detects anti-patterns (loops, cascading errors, blind writes) and redirects.
-
-### Immune System
-
-Self-healing pipeline: diagnose → heal (AST surgery) → verify (run tests) → learn.
-CytokineBreaker prevents autoimmune cascades: 3 consecutive rollbacks → 5min cooldown.
-
-### Federation
-
-Peer discovery via agent-world registry + GitHub topics. HeartbeatReaper tracks
-liveness with trust decay. Marketplace resolves slot conflicts. Git-nadi transport
-for cross-agent messaging.
-
-### Key Conventions
-
-- **Sanskrit naming is load-bearing**, not decorative. Vedana IS health-as-feeling.
-  Buddhi IS discriminative intelligence. Don't rename to "health_checker" or "decision_engine".
-- **ServiceRegistry (DI)** — All services accessed via `ServiceRegistry.get(SVC_*)`.
-- **SVC_ constants** in `steward/services.py` are the canonical service keys.
-- **PhaseHooks** in `steward/hooks/` — add capabilities by adding hooks, not editing agent.py.
-- **Tests** — pytest, `tests/` directory. Run `pytest` from project root.
-- **North Star**: "execute tasks with minimal tokens by making the architecture itself intelligent"
-"""
-
-
-def assemble_context(cwd: str | None = None) -> dict[str, Any]:
+def assemble_context(cwd: str | None = None) -> dict[str, object]:
     """Assemble steward's full context from all available sources.
 
     Pulls from ServiceRegistry if services are booted (daemon mode).
@@ -121,7 +47,7 @@ def assemble_context(cwd: str | None = None) -> dict[str, Any]:
     Returns a structured dict — the canonical context representation.
     """
     cwd = cwd or str(Path.cwd())
-    ctx: dict[str, Any] = {
+    ctx: dict[str, object] = {
         "version": _CONTEXT_VERSION,
         "timestamp": time.time(),
         "project": {
@@ -157,85 +83,123 @@ def assemble_context(cwd: str | None = None) -> dict[str, Any]:
     return ctx
 
 
-def render_markdown(context: dict[str, Any]) -> str:
-    """Render assembled context as structured markdown for LLM consumption.
+def collect_architecture_metadata() -> dict[str, object]:
+    """Read architecture description from the LIVING CODE — not hardcoded text.
 
-    This is steward's VOICE — not a data dump. It prioritizes based on
-    health and pain, leads with what matters, omits what doesn't.
+    Collects:
+      - SVC_ class docstrings (what each service IS)
+      - Kshetra mapping (25 Sankhya elements → steward modules)
+      - Phase constants + hook registry (MURALI cycle)
+      - North Star text (the system's compressed purpose)
+
+    Returns structured dict that an LLM can consume to understand
+    steward's architecture. Zero hardcoded prose.
     """
-    parts: list[str] = []
+    arch: dict[str, object] = {}
 
-    # ── Architecture DNA (always present — Opus needs to understand the system)
-    parts.append(_ARCHITECTURE_DNA)
+    # ── North Star (the system's purpose, from code) ─────────────────
+    try:
+        from steward.services import NORTH_STAR_TEXT
 
-    # ── Health headline (lead with how the system feels)
-    health = context.get("health", {})
-    parts.append(_render_health_headline(health))
+        arch["north_star"] = NORTH_STAR_TEXT
+    except Exception:
+        arch["north_star"] = None
 
-    # ── Urgent items first (pain-driven priority)
-    gaps = context.get("gaps", {})
-    sessions = context.get("sessions", {})
-    immune = context.get("immune", {})
+    # ── SVC_ service docstrings (what each service IS) ───────────────
+    try:
+        import steward.services as svc_mod
 
-    urgencies = _collect_urgencies(health, gaps, sessions, immune)
-    if urgencies:
-        parts.append("## Needs Attention\n")
-        for u in urgencies:
-            parts.append(f"- {u}")
-        parts.append("")
+        services = {}
+        for name in dir(svc_mod):
+            if name.startswith("SVC_"):
+                cls = getattr(svc_mod, name)
+                if isinstance(cls, type) and cls.__doc__:
+                    services[name] = cls.__doc__.strip()
+        arch["services"] = services
+    except Exception:
+        arch["services"] = {}
 
-    # ── Environmental perception (what steward sees)
-    senses = context.get("senses", {})
-    if senses:
-        parts.append(_render_senses(senses))
+    # ── Kshetra (25-tattva mapping from living code) ─────────────────
+    try:
+        from steward.kshetra import enumerate_kshetra
 
-    # ── Capability gaps (what steward couldn't do)
-    if gaps.get("active"):
-        parts.append(_render_gaps(gaps))
+        arch["kshetra"] = enumerate_kshetra()
+    except Exception:
+        arch["kshetra"] = []
 
-    # ── Recent sessions (what steward did)
-    if sessions.get("recent"):
-        parts.append(_render_sessions(sessions))
+    # ── Phase constants (MURALI cycle) ───────────────────────────────
+    try:
+        from steward.phase_hook import DHARMA, GENESIS, KARMA, MOKSHA
 
-    # ── Tasks (pending work)
-    tasks = context.get("tasks", {})
-    if tasks.get("pending"):
-        parts.append(_render_tasks(tasks))
+        arch["phases"] = {
+            GENESIS: "Discover — run senses, scan environment",
+            DHARMA: "Govern — check invariants, validate health",
+            KARMA: "Execute — work on highest-priority task",
+            MOKSHA: "Reflect — persist state, log stats, learn",
+        }
+    except Exception:
+        arch["phases"] = {}
 
-    # ── Federation (peer network — only if peers exist)
-    federation = context.get("federation", {})
-    if federation.get("total_peers", 0) > 0:
-        parts.append(_render_federation(federation))
+    # ── Registered hooks (what behavior is wired into each phase) ────
+    try:
+        from steward.services import SVC_PHASE_HOOKS
+        from vibe_core.di import ServiceRegistry
 
-    # ── Immune system (only if noteworthy)
-    if immune.get("heals_attempted", 0) > 0 or immune.get("breaker_tripped"):
-        parts.append(_render_immune(immune))
+        hook_registry = ServiceRegistry.get(SVC_PHASE_HOOKS)
+        if hook_registry is not None:
+            hooks = {}
+            for phase, hook_list in hook_registry._hooks.items():
+                hooks[phase] = [
+                    {
+                        "name": h.name,
+                        "priority": h.priority,
+                        "doc": type(h).__doc__.strip() if type(h).__doc__ else None,
+                    }
+                    for h in sorted(hook_list, key=lambda x: x.priority)
+                ]
+            arch["hooks"] = hooks
+        else:
+            arch["hooks"] = {}
+    except Exception:
+        arch["hooks"] = {}
 
-    # ── Cetana (heartbeat — only if running)
-    cetana = context.get("cetana", {})
-    if cetana.get("alive"):
-        parts.append(_render_cetana(cetana))
+    # ── Registered tools (what steward can DO) ───────────────────────
+    try:
+        from steward.services import SVC_TOOL_REGISTRY
+        from vibe_core.di import ServiceRegistry
 
-    return "\n".join(parts).strip() + "\n"
+        tool_reg = ServiceRegistry.get(SVC_TOOL_REGISTRY)
+        if tool_reg is not None:
+            arch["tools"] = [
+                {"name": d["name"], "description": d.get("description", "")}
+                for d in tool_reg.get_tool_descriptions()
+            ]
+        else:
+            arch["tools"] = []
+    except Exception:
+        arch["tools"] = []
+
+    return arch
 
 
-def write_context_files(cwd: str, context: dict[str, Any]) -> bool:
-    """Write context.json and CLAUDE.md to .steward/ directory.
+def write_context_json(cwd: str, context: dict[str, object]) -> bool:
+    """Write context.json to .steward/ directory.
 
     Uses atomic writes (tempfile + rename) and hash-based dedup
     to avoid unnecessary filesystem churn.
 
-    Returns True if files were written, False if content unchanged.
+    CLAUDE.md is NOT written here — that's done by the synthesize_briefing
+    tool using steward's own LLM intelligence.
+
+    Returns True if file was written, False if content unchanged.
     """
     steward_dir = Path(cwd) / ".steward"
     steward_dir.mkdir(parents=True, exist_ok=True)
 
     json_path = steward_dir / "context.json"
-    md_path = steward_dir / "CLAUDE.md"
 
     # Serialize
     json_content = json.dumps(context, indent=2, default=str)
-    md_content = render_markdown(context)
 
     # Hash check — skip write if unchanged
     new_hash = hashlib.sha256(json_content.encode()).hexdigest()[:16]
@@ -244,16 +208,11 @@ def write_context_files(cwd: str, context: dict[str, Any]) -> bool:
     if new_hash == old_hash:
         return False
 
-    # Atomic write: json
+    # Atomic write
     _atomic_write(json_path, json_content)
-
-    # Atomic write: markdown
-    _atomic_write(md_path, md_content)
-
-    # Store hash
     _atomic_write(steward_dir / ".context_hash", new_hash)
 
-    logger.debug("Context bridge: wrote context.json + CLAUDE.md (hash=%s)", new_hash)
+    logger.debug("Context bridge: wrote context.json (hash=%s)", new_hash)
     return True
 
 
@@ -262,7 +221,7 @@ def write_context_files(cwd: str, context: dict[str, Any]) -> bool:
 # disk (CLI cold-start). Never crashes — returns empty dict on failure.
 
 
-def _read_senses(cwd: str) -> dict[str, Any]:
+def _read_senses(cwd: str) -> dict[str, object]:
     """Read environmental perception from SenseCoordinator or cold-boot."""
     try:
         from steward.senses.coordinator import SenseCoordinator
@@ -270,7 +229,7 @@ def _read_senses(cwd: str) -> dict[str, Any]:
         senses = SenseCoordinator(cwd=cwd)
         senses.perceive_all(force=False)  # Use cache if available
 
-        result: dict[str, Any] = {}
+        result: dict[str, object] = {}
         prompt = senses.format_for_prompt()
         if prompt:
             result["prompt_summary"] = prompt
@@ -287,7 +246,7 @@ def _read_senses(cwd: str) -> dict[str, Any]:
         return {}
 
 
-def _read_health() -> dict[str, Any]:
+def _read_health() -> dict[str, object]:
     """Read Vedana health signal from Cetana's last beat."""
     try:
         from steward.services import SVC_PROVIDER
@@ -319,7 +278,7 @@ def _read_health() -> dict[str, Any]:
         return {}
 
 
-def _read_gaps(cwd: str) -> dict[str, Any]:
+def _read_gaps(cwd: str) -> dict[str, object]:
     """Read capability gaps from GapTracker."""
     try:
         from steward.gaps import GapTracker
@@ -355,7 +314,7 @@ def _read_gaps(cwd: str) -> dict[str, Any]:
         return {}
 
 
-def _read_sessions(cwd: str) -> dict[str, Any]:
+def _read_sessions(cwd: str) -> dict[str, object]:
     """Read session history from SessionLedger."""
     try:
         from steward.session_ledger import SessionLedger
@@ -387,7 +346,7 @@ def _read_sessions(cwd: str) -> dict[str, Any]:
         return {}
 
 
-def _read_tasks(cwd: str) -> dict[str, Any]:
+def _read_tasks(cwd: str) -> dict[str, object]:
     """Read pending tasks from TaskManager."""
     try:
         from steward.services import SVC_TASK_MANAGER
@@ -415,13 +374,13 @@ def _read_tasks(cwd: str) -> dict[str, Any]:
         return {}
 
 
-def _read_federation() -> dict[str, Any]:
+def _read_federation() -> dict[str, object]:
     """Read federation peer state from Reaper + Marketplace."""
     try:
         from steward.services import SVC_MARKETPLACE, SVC_REAPER
         from vibe_core.di import ServiceRegistry
 
-        result: dict[str, Any] = {}
+        result: dict[str, object] = {}
 
         reaper = ServiceRegistry.get(SVC_REAPER)
         if reaper is not None:
@@ -450,7 +409,7 @@ def _read_federation() -> dict[str, Any]:
         return {}
 
 
-def _read_immune() -> dict[str, Any]:
+def _read_immune() -> dict[str, object]:
     """Read immune system state."""
     try:
         from steward.services import SVC_IMMUNE
@@ -466,7 +425,7 @@ def _read_immune() -> dict[str, Any]:
         return {}
 
 
-def _read_cetana() -> dict[str, Any]:
+def _read_cetana() -> dict[str, object]:
     """Read heartbeat (Cetana) state."""
     try:
         cetana = _get_cetana()
@@ -478,273 +437,10 @@ def _read_cetana() -> dict[str, Any]:
         return {}
 
 
-# ── Markdown Renderers ───────────────────────────────────────────────
-
-
-def _render_health_headline(health: dict[str, Any]) -> str:
-    """Render the health headline — the first thing Opus sees after DNA."""
-    if not health:
-        return "## System Status: Unknown (steward not running or no health data)\n"
-
-    value = health.get("value", 0)
-    guna = health.get("guna", "unknown")
-
-    if value >= 0.7:
-        mood = "Healthy"
-        detail = "All systems operational. No urgent action needed."
-    elif value >= 0.3:
-        mood = "Stressed"
-        pressure_parts = []
-        if health.get("error_pressure", 0) > 0.3:
-            pressure_parts.append(f"error pressure {health['error_pressure']:.0%}")
-        if health.get("context_pressure", 0) > 0.5:
-            pressure_parts.append(f"context pressure {health['context_pressure']:.0%}")
-        if health.get("provider_health", 1) < 0.8:
-            pressure_parts.append(f"provider health {health['provider_health']:.0%}")
-        detail = f"Friction detected: {', '.join(pressure_parts)}." if pressure_parts else "Moderate load."
-    else:
-        mood = "Critical"
-        detail = "System in distress. Health below 0.3 triggers emergency heartbeat frequency (2Hz)."
-
-    return f"## System Status: {mood} (health={value:.2f}, guna={guna})\n\n{detail}\n"
-
-
-def _collect_urgencies(
-    health: dict, gaps: dict, sessions: dict, immune: dict
-) -> list[str]:
-    """Collect urgent items that Opus should address, ordered by severity."""
-    urgencies: list[str] = []
-
-    # Critical health
-    if health.get("value", 1) < 0.3:
-        urgencies.append(
-            f"**CRITICAL**: System health at {health['value']:.2f} ({health.get('guna', '?')}). "
-            "Investigate provider failures, error cascades, or context exhaustion."
-        )
-
-    # Immune breaker tripped
-    breaker = immune.get("breaker", {})
-    if breaker.get("tripped") or immune.get("breaker_tripped"):
-        urgencies.append(
-            "**IMMUNE BREAKER TRIPPED**: Self-healing suspended after repeated failures. "
-            "Manual diagnosis needed — the immune system gave up."
-        )
-
-    # Recent session failures
-    recent = sessions.get("recent", [])
-    consecutive_errors = 0
-    for s in reversed(recent):
-        if s.get("outcome") == "error":
-            consecutive_errors += 1
-        else:
-            break
-    if consecutive_errors >= 2:
-        last_errors = [s for s in recent if s.get("outcome") == "error"]
-        tasks = [s.get("task", "?")[:80] for s in last_errors[-3:]]
-        urgencies.append(
-            f"**{consecutive_errors} consecutive failed sessions**: steward is stuck. "
-            f"Recent failures: {'; '.join(tasks)}"
-        )
-
-    # Active gaps
-    active_gaps = gaps.get("active", [])
-    if active_gaps:
-        gap_descs = [g.get("description", "?") for g in active_gaps[:3]]
-        urgencies.append(
-            f"**{len(active_gaps)} capability gap(s)**: {'; '.join(gap_descs)}"
-        )
-
-    # Provider degraded
-    if health.get("provider_health", 1) < 0.5:
-        urgencies.append(
-            f"**Provider health low** ({health.get('provider_health', 0):.0%}): "
-            "LLM providers may be down or rate-limited."
-        )
-
-    return urgencies
-
-
-def _render_senses(senses: dict[str, Any]) -> str:
-    """Render environmental perception."""
-    parts = ["## Environment\n"]
-
-    prompt = senses.get("prompt_summary", "")
-    if prompt:
-        parts.append(prompt)
-        parts.append("")
-
-    pain = senses.get("total_pain", 0)
-    if pain > 0.3:
-        parts.append(f"**Environmental pain: {pain:.2f}** — some senses report issues.\n")
-
-    return "\n".join(parts)
-
-
-def _render_gaps(gaps: dict[str, Any]) -> str:
-    """Render capability gaps."""
-    parts = ["## Capability Gaps\n"]
-
-    prompt = gaps.get("prompt_summary", "")
-    if prompt:
-        parts.append(prompt)
-    else:
-        for g in gaps.get("active", [])[:5]:
-            cat = g.get("category", "unknown")
-            desc = g.get("description", "?")
-            parts.append(f"- **[{cat}]** {desc}")
-
-    stats = gaps.get("stats", {})
-    if stats:
-        parts.append(
-            f"\nGap stats: {stats.get('active', 0)} active, "
-            f"{stats.get('resolved', 0)} resolved, "
-            f"{stats.get('total_tracked', 0)} total tracked."
-        )
-
-    parts.append("")
-    return "\n".join(parts)
-
-
-def _render_sessions(sessions: dict[str, Any]) -> str:
-    """Render recent session history."""
-    parts = ["## Recent Sessions\n"]
-
-    prompt = sessions.get("prompt_summary", "")
-    if prompt:
-        parts.append(prompt)
-    else:
-        for s in sessions.get("recent", [])[-5:]:
-            outcome = s.get("outcome", "?")
-            task = s.get("task", "?")[:100]
-            ts = s.get("timestamp", "")
-            rounds = s.get("rounds", 0)
-            marker = "x" if outcome == "error" else ("~" if outcome == "partial" else "v")
-            parts.append(f"- [{marker}] {ts}: {task} ({rounds} rounds, {outcome})")
-
-            # Show errors for failed sessions — Opus needs to know what went wrong
-            errors = s.get("errors", [])
-            if errors and outcome == "error":
-                for err in errors[:3]:
-                    parts.append(f"  - Error: {err}")
-
-    stats = sessions.get("stats", {})
-    if stats:
-        parts.append(
-            f"\nSession stats: {stats.get('total_sessions', 0)} total, "
-            f"{stats.get('success_rate', 0):.0%} success rate, "
-            f"{stats.get('avg_tokens_per_session', 0)} avg tokens."
-        )
-
-    parts.append("")
-    return "\n".join(parts)
-
-
-def _render_tasks(tasks: dict[str, Any]) -> str:
-    """Render pending tasks."""
-    parts = ["## Pending Tasks\n"]
-
-    for t in tasks.get("pending", [])[:10]:
-        title = t.get("title", "?")
-        priority = t.get("priority", 0)
-        status = t.get("status", "?")
-        parts.append(f"- [{status}] (p{priority}) {title}")
-
-    parts.append("")
-    return "\n".join(parts)
-
-
-def _render_federation(federation: dict[str, Any]) -> str:
-    """Render federation peer state."""
-    parts = ["## Federation\n"]
-
-    total = federation.get("total_peers", 0)
-    by_status = federation.get("by_status", {})
-    alive = by_status.get("alive", 0)
-    suspect = by_status.get("suspect", 0)
-    dead = by_status.get("dead", 0)
-    avg_trust = federation.get("avg_trust", 0)
-
-    parts.append(
-        f"Peers: {total} total ({alive} alive, {suspect} suspect, {dead} dead). "
-        f"Avg trust: {avg_trust:.2f}."
-    )
-
-    peers = federation.get("peers", [])
-    if peers:
-        parts.append("")
-        for p in peers[:10]:
-            agent = p.get("agent_id", "?")
-            status = p.get("status", "?")
-            trust = p.get("trust", 0)
-            caps = ", ".join(p.get("capabilities", [])[:5]) or "none"
-            parts.append(f"- {agent}: {status} (trust={trust:.2f}, caps=[{caps}])")
-
-    mkt = federation.get("marketplace", {})
-    if mkt:
-        parts.append(
-            f"\nMarketplace: {mkt.get('active_claims', 0)} active claims, "
-            f"{mkt.get('unique_agents', 0)} agents."
-        )
-
-    parts.append("")
-    return "\n".join(parts)
-
-
-def _render_immune(immune: dict[str, Any]) -> str:
-    """Render immune system state."""
-    parts = ["## Immune System\n"]
-
-    attempted = immune.get("heals_attempted", 0)
-    succeeded = immune.get("heals_succeeded", 0)
-    rolled_back = immune.get("heals_rolled_back", 0)
-    rate = immune.get("success_rate", 0)
-
-    parts.append(
-        f"Heals: {attempted} attempted, {succeeded} succeeded, "
-        f"{rolled_back} rolled back. Success rate: {rate:.0%}."
-    )
-
-    breaker = immune.get("breaker", {})
-    if breaker:
-        if breaker.get("tripped"):
-            cooldown = breaker.get("cooldown_remaining", 0)
-            parts.append(
-                f"\n**CytokineBreaker TRIPPED** — healing suspended. "
-                f"Cooldown: {cooldown:.0f}s remaining. "
-                f"Consecutive rollbacks: {breaker.get('consecutive_rollbacks', 0)}."
-            )
-        elif breaker.get("consecutive_rollbacks", 0) > 0:
-            parts.append(
-                f"Breaker warning: {breaker['consecutive_rollbacks']} consecutive rollbacks "
-                f"(trips at 3)."
-            )
-
-    parts.append("")
-    return "\n".join(parts)
-
-
-def _render_cetana(cetana: dict[str, Any]) -> str:
-    """Render heartbeat state."""
-    parts = ["## Heartbeat (Cetana)\n"]
-
-    hz = cetana.get("frequency_hz", 0)
-    beats = cetana.get("total_beats", 0)
-    phase = cetana.get("phase", "?")
-    anomalies = cetana.get("consecutive_anomalies", 0)
-
-    parts.append(f"Running: {hz:.1f} Hz, {beats} beats, current phase: {phase}.")
-
-    if anomalies > 0:
-        parts.append(f"**{anomalies} consecutive anomalies** detected.")
-
-    parts.append("")
-    return "\n".join(parts)
-
-
 # ── Helpers ──────────────────────────────────────────────────────────
 
 
-def _get_cetana() -> Any:
+def _get_cetana() -> object:
     """Get Cetana instance from the running agent (if any)."""
     try:
         from steward.agent import StewardAgent
@@ -757,7 +453,7 @@ def _get_cetana() -> Any:
         return None
 
 
-def _load_gaps_from_disk(cwd: str) -> Any:
+def _load_gaps_from_disk(cwd: str) -> object:
     """Load gap tracker from .steward/memory.json without booting full memory."""
     try:
         from steward.gaps import GapTracker

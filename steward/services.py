@@ -625,6 +625,25 @@ def _add_steward_missions(sankalpa: object) -> None:
                 max_executions_per_day=4,
                 enabled=True,
             ),
+            SankalpaStrategy(
+                id="strategy_synthesize_briefing",
+                name="Synthesize Context Briefing",
+                description=(
+                    "Use synthesize_briefing tool to update .steward/CLAUDE.md "
+                    "from steward's living state and architecture metadata"
+                ),
+                trigger=SankalpaTrigger(
+                    trigger_type=TriggerType.IDLE_BASED,
+                    idle_minutes=15,
+                ),
+                frequency=StrategyFrequency.DAILY,
+                intent_type="synthesize_briefing",
+                intent_template={},
+                requires_ci_green=False,
+                requires_no_pending_intents=True,
+                max_executions_per_day=6,
+                enabled=True,
+            ),
         ],
         owner="steward",
     )

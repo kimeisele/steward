@@ -1,9 +1,12 @@
 """
-MOKSHA Context Bridge Hook — Steward writes its living state for external consumers.
+MOKSHA Context Bridge Hook — Steward persists its living state to context.json.
 
-Every heartbeat tick (MOKSHA phase), steward renders its full context to:
+Every heartbeat tick (MOKSHA phase), steward writes its full context to:
   - .steward/context.json  (machine-readable, full fidelity)
-  - .steward/CLAUDE.md     (LLM-readable, prioritized by health/pain)
+
+CLAUDE.md is NOT written here — that's synthesized by steward's own LLM
+via the synthesize_briefing tool, triggered by Sankalpa missions or
+on-demand tool use.
 
 Priority 85: runs after persistence (50) and federation flush (80),
 so all state is committed before the bridge reads it.
@@ -22,7 +25,7 @@ logger = logging.getLogger("STEWARD.HOOKS.MOKSHA_BRIDGE")
 
 
 class MokshaContextBridgeHook(BasePhaseHook):
-    """Write steward's living context to .steward/ for external consumers."""
+    """Write steward's living context to .steward/context.json."""
 
     def __init__(self) -> None:
         self._last_write: float = 0.0
@@ -46,7 +49,7 @@ class MokshaContextBridgeHook(BasePhaseHook):
             return
 
         try:
-            from steward.context_bridge import assemble_context, write_context_files
+            from steward.context_bridge import assemble_context, write_context_json
 
             context = assemble_context(ctx.cwd)
 
@@ -61,7 +64,7 @@ class MokshaContextBridgeHook(BasePhaseHook):
                     "context_pressure": round(getattr(v, "context_pressure", 0), 3),
                 }
 
-            written = write_context_files(ctx.cwd, context)
+            written = write_context_json(ctx.cwd, context)
             if written:
                 ctx.operations.append("moksha_context_bridge:updated")
 
