@@ -65,7 +65,8 @@ class DharmaImmuneHook(BasePhaseHook):
         if healed:
             logger.info(
                 "DHARMA IMMUNE: %d pathogens healed (%d failed)",
-                len(healed), len(failed),
+                len(healed),
+                len(failed),
             )
             for r in healed:
                 logger.info("  ✓ %s: %s", r.rule_id, r.message)
@@ -74,6 +75,4 @@ class DharmaImmuneHook(BasePhaseHook):
             for r in failed:
                 logger.warning("  ✗ %s: %s", r.rule_id, r.message)
 
-        ctx.operations.append(
-            f"dharma_immune:healed={len(healed)},failed={len(failed)}"
-        )
+        ctx.operations.append(f"dharma_immune:healed={len(healed)},failed={len(failed)}")

@@ -111,11 +111,7 @@ class CytokineBreaker:
             "rollbacks": self.rollbacks,
             "consecutive_rollbacks": self.consecutive_rollbacks,
             "tripped": self.tripped,
-            "cooldown_remaining": (
-                max(0, self.cooldown_s - (time.time() - self.tripped_at))
-                if self.tripped
-                else 0
-            ),
+            "cooldown_remaining": (max(0, self.cooldown_s - (time.time() - self.tripped_at)) if self.tripped else 0),
         }
 
 
@@ -171,11 +167,7 @@ class StewardImmune:
             if isinstance(weight, (int, float)):
                 confidence = float(weight)
 
-        healable = (
-            rule_id is not None
-            and file_path is not None
-            and confidence >= _HEAL_THRESHOLD
-        )
+        healable = rule_id is not None and file_path is not None and confidence >= _HEAL_THRESHOLD
 
         return DiagnosisResult(
             pattern=detail,
@@ -279,7 +271,11 @@ class StewardImmune:
             if delta > _MAX_CASCADE_FAILURES:
                 logger.error(
                     "CYTOKINE: heal of '%s' in %s INCREASED failures by %d (%d → %d). ROLLING BACK.",
-                    diagnosis.rule_id, diagnosis.file_path, delta, baseline, after,
+                    diagnosis.rule_id,
+                    diagnosis.file_path,
+                    delta,
+                    baseline,
+                    after,
                 )
                 self._rollback_file(diagnosis.file_path)
                 result.success = False
@@ -292,7 +288,10 @@ class StewardImmune:
                 self._breaker.record_success()
                 logger.info(
                     "Immune: %s → %s VERIFIED (failures: %d → %d)",
-                    diagnosis.rule_id, diagnosis.file_path, baseline, after,
+                    diagnosis.rule_id,
+                    diagnosis.file_path,
+                    baseline,
+                    after,
                 )
 
         return results
@@ -337,9 +336,7 @@ class StewardImmune:
             "heals_rolled_back": self._heals_rolled_back,
             "breaker": self._breaker.stats(),
             "success_rate": (
-                round(self._heals_succeeded / self._heals_attempted, 3)
-                if self._heals_attempted > 0
-                else 0.0
+                round(self._heals_succeeded / self._heals_attempted, 3) if self._heals_attempted > 0 else 0.0
             ),
         }
 
@@ -400,7 +397,10 @@ class StewardImmune:
         try:
             result = subprocess.run(
                 [sys.executable, "-c", "import steward; import steward.healer"],
-                capture_output=True, text=True, timeout=10, cwd=self._cwd,
+                capture_output=True,
+                text=True,
+                timeout=10,
+                cwd=self._cwd,
             )
             if result.returncode != 0:
                 count += 1  # Import is broken — counts as a failure
@@ -418,7 +418,10 @@ class StewardImmune:
         try:
             subprocess.run(
                 ["git", "checkout", "HEAD", "--", str(file_path)],
-                capture_output=True, text=True, check=True, timeout=10,
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=10,
             )
             logger.info("Immune: rolled back %s", file_path)
             return True

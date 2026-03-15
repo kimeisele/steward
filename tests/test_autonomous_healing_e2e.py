@@ -35,6 +35,7 @@ class TestPeerRepoResolution:
 
         # Patch home to point to tmp_path
         from unittest.mock import patch
+
         with patch("steward.autonomy.Path.home", return_value=tmp_path):
             result = _resolve_peer_repo("test-peer")
         # Won't find it since we look in ~/projects/ not tmp_path directly
@@ -83,9 +84,11 @@ class TestAutonomousHealingLoop:
 
         hook = GenesisDiscoveryHook()
 
-        with patch("steward.hooks.genesis._discover_from_world_registry") as mock_world, \
-             patch("steward.hooks.genesis._discover_from_github_topics", return_value={}), \
-             patch("steward.hooks.genesis._discover_from_org_repos", return_value={}):
+        with (
+            patch("steward.hooks.genesis._discover_from_world_registry") as mock_world,
+            patch("steward.hooks.genesis._discover_from_github_topics", return_value={}),
+            patch("steward.hooks.genesis._discover_from_org_repos", return_value={}),
+        ):
             mock_world.return_value = {
                 "steward-test": {"repo": "kimeisele/steward-test", "capabilities": ["code_analysis"]},
             }
@@ -138,9 +141,11 @@ class TestAutonomousHealingLoop:
 
         hook = GenesisDiscoveryHook()
 
-        with patch("steward.hooks.genesis._discover_from_world_registry") as mock_world, \
-             patch("steward.hooks.genesis._discover_from_github_topics", return_value={}), \
-             patch("steward.hooks.genesis._discover_from_org_repos", return_value={}):
+        with (
+            patch("steward.hooks.genesis._discover_from_world_registry") as mock_world,
+            patch("steward.hooks.genesis._discover_from_github_topics", return_value={}),
+            patch("steward.hooks.genesis._discover_from_org_repos", return_value={}),
+        ):
             mock_world.return_value = {
                 "steward-test": {"repo": "kimeisele/steward-test"},
             }
@@ -174,6 +179,7 @@ class TestAutonomousHealingLoop:
 
         class FakeSenses:
             senses = {}
+
             def perceive_all(self):
                 pass
 
@@ -191,9 +197,11 @@ class TestAutonomousHealingLoop:
 
         hook = GenesisDiscoveryHook()
 
-        with patch("steward.hooks.genesis._discover_from_world_registry") as mock_world, \
-             patch("steward.hooks.genesis._discover_from_github_topics", return_value={}), \
-             patch("steward.hooks.genesis._discover_from_org_repos", return_value={}):
+        with (
+            patch("steward.hooks.genesis._discover_from_world_registry") as mock_world,
+            patch("steward.hooks.genesis._discover_from_github_topics", return_value={}),
+            patch("steward.hooks.genesis._discover_from_org_repos", return_value={}),
+        ):
             mock_world.return_value = {
                 "steward-test": {"repo": "kimeisele/steward-test", "capabilities": ["code_analysis"]},
             }
@@ -212,6 +220,7 @@ class TestAutonomousHealingLoop:
 
             class FakeSenses:
                 senses = {}
+
                 def perceive_all(self):
                     pass
 

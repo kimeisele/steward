@@ -47,7 +47,6 @@ class StewardIdentity:
             fingerprint=fingerprint,
         )
 
-
     @staticmethod
     def compute_fingerprint(agent_id: str, repo: str, seed: str) -> str:
         """Deterministic SHA-256 fingerprint."""

@@ -390,26 +390,17 @@ def _detect_circular_imports(repo_path: Path) -> list[Finding]:
                 # Detect `if TYPE_CHECKING:` pattern
                 test = node.test
                 if isinstance(test, ast.Name) and test.id == "TYPE_CHECKING":
-                    end_line = max(
-                        (getattr(n, "end_lineno", 0) or getattr(n, "lineno", 0))
-                        for n in ast.walk(node)
-                    )
+                    end_line = max((getattr(n, "end_lineno", 0) or getattr(n, "lineno", 0)) for n in ast.walk(node))
                     type_checking_ranges.append((node.lineno, end_line))
                 elif isinstance(test, ast.Attribute) and getattr(test, "attr", "") == "TYPE_CHECKING":
-                    end_line = max(
-                        (getattr(n, "end_lineno", 0) or getattr(n, "lineno", 0))
-                        for n in ast.walk(node)
-                    )
+                    end_line = max((getattr(n, "end_lineno", 0) or getattr(n, "lineno", 0)) for n in ast.walk(node))
                     type_checking_ranges.append((node.lineno, end_line))
 
         # Also collect function/method bodies (deferred imports don't cause cycles)
         deferred_ranges: list[tuple[int, int]] = []
         for node in ast.walk(tree):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                end_line = max(
-                    (getattr(n, "end_lineno", 0) or getattr(n, "lineno", 0))
-                    for n in ast.walk(node)
-                )
+                end_line = max((getattr(n, "end_lineno", 0) or getattr(n, "lineno", 0)) for n in ast.walk(node))
                 deferred_ranges.append((node.lineno, end_line))
 
         for node in ast.walk(tree):

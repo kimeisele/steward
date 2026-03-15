@@ -42,6 +42,7 @@ class TestCytokineBreaker:
         b.record_rollback()
         assert b.is_open()
         import time
+
         time.sleep(0.02)
         assert not b.is_open()  # Cooldown expired
 
@@ -92,8 +93,11 @@ class TestStewardImmune:
     def test_heal_unhealable_returns_failure(self):
         immune = StewardImmune(_cwd=".")
         diagnosis = DiagnosisResult(
-            pattern="unknown", rule_id=None, file_path=None,
-            confidence=0.0, healable=False,
+            pattern="unknown",
+            rule_id=None,
+            file_path=None,
+            confidence=0.0,
+            healable=False,
         )
         result = immune.heal(diagnosis)
         assert not result.success

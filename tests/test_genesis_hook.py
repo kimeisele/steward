@@ -57,10 +57,12 @@ class TestGenesisDiscoveryHook:
         hook = GenesisDiscoveryHook()
         ctx = PhaseContext(cwd="/tmp")
 
-        with patch("steward.hooks.genesis._discover_from_world_registry") as mock_world, \
-             patch("steward.hooks.genesis._discover_from_github_topics") as mock_topics, \
-             patch("steward.hooks.genesis._check_policy_compliance", return_value=[]), \
-             patch("steward.hooks.genesis._discover_from_org_repos") as mock_org:
+        with (
+            patch("steward.hooks.genesis._discover_from_world_registry") as mock_world,
+            patch("steward.hooks.genesis._discover_from_github_topics") as mock_topics,
+            patch("steward.hooks.genesis._check_policy_compliance", return_value=[]),
+            patch("steward.hooks.genesis._discover_from_org_repos") as mock_org,
+        ):
             mock_world.return_value = {
                 "agent-city": {"repo": "kimeisele/agent-city", "capabilities": ["governance"]},
             }
@@ -78,8 +80,7 @@ class TestGenesisDiscoveryHook:
         assert "steward-test" in call_ids
 
         # Capabilities passed through
-        city_call = [c for c in reaper.record_heartbeat.call_args_list
-                     if c.kwargs["agent_id"] == "agent-city"][0]
+        city_call = [c for c in reaper.record_heartbeat.call_args_list if c.kwargs["agent_id"] == "agent-city"][0]
         assert "governance" in city_call.kwargs["capabilities"]
 
     def test_execute_deduplicates_across_sources(self):
@@ -89,10 +90,12 @@ class TestGenesisDiscoveryHook:
         hook = GenesisDiscoveryHook()
         ctx = PhaseContext(cwd="/tmp")
 
-        with patch("steward.hooks.genesis._discover_from_world_registry") as mock_world, \
-             patch("steward.hooks.genesis._discover_from_github_topics") as mock_topics, \
-             patch("steward.hooks.genesis._check_policy_compliance", return_value=[]), \
-             patch("steward.hooks.genesis._discover_from_org_repos") as mock_org:
+        with (
+            patch("steward.hooks.genesis._discover_from_world_registry") as mock_world,
+            patch("steward.hooks.genesis._discover_from_github_topics") as mock_topics,
+            patch("steward.hooks.genesis._check_policy_compliance", return_value=[]),
+            patch("steward.hooks.genesis._discover_from_org_repos") as mock_org,
+        ):
             # Same repo in both sources — world registry wins (priority)
             mock_world.return_value = {
                 "agent-city": {"repo": "kimeisele/agent-city", "capabilities": ["governance"]},
@@ -116,10 +119,12 @@ class TestGenesisDiscoveryHook:
         hook = GenesisDiscoveryHook()
         ctx = PhaseContext(cwd="/tmp")
 
-        with patch("steward.hooks.genesis._discover_from_world_registry") as mock_world, \
-             patch("steward.hooks.genesis._discover_from_github_topics", return_value={}), \
-             patch("steward.hooks.genesis._check_policy_compliance", return_value=[]), \
-             patch("steward.hooks.genesis._discover_from_org_repos", return_value={}):
+        with (
+            patch("steward.hooks.genesis._discover_from_world_registry") as mock_world,
+            patch("steward.hooks.genesis._discover_from_github_topics", return_value={}),
+            patch("steward.hooks.genesis._check_policy_compliance", return_value=[]),
+            patch("steward.hooks.genesis._discover_from_org_repos", return_value={}),
+        ):
             mock_world.return_value = {"peer-x": {"repo": "kimeisele/peer-x"}}
 
             # First scan — registers peer
@@ -148,10 +153,12 @@ class TestGenesisDiscoveryHook:
         hook = GenesisDiscoveryHook()
         ctx = PhaseContext(cwd="/tmp")
 
-        with patch("steward.hooks.genesis._discover_from_world_registry") as mock_world, \
-             patch("steward.hooks.genesis._discover_from_github_topics", return_value={}), \
-             patch("steward.hooks.genesis._check_policy_compliance", return_value=[]), \
-             patch("steward.hooks.genesis._discover_from_org_repos", return_value={}):
+        with (
+            patch("steward.hooks.genesis._discover_from_world_registry") as mock_world,
+            patch("steward.hooks.genesis._discover_from_github_topics", return_value={}),
+            patch("steward.hooks.genesis._check_policy_compliance", return_value=[]),
+            patch("steward.hooks.genesis._discover_from_org_repos", return_value={}),
+        ):
             mock_world.return_value = {"peer-a": {"repo": "kimeisele/peer-a"}}
             hook.execute(ctx)
             assert "peer-a" in hook._known_repos
@@ -180,6 +187,7 @@ cities:
       - world_truth
 """
         import base64
+
         encoded = base64.b64encode(yaml_content.encode()).decode()
 
         with patch("steward.hooks.genesis._gh", return_value=encoded):
@@ -198,10 +206,12 @@ cities:
 
 class TestGitHubTopicDiscovery:
     def test_parses_search_results(self):
-        search_result = json.dumps([
-            {"name": "steward-test", "description": "test sandbox"},
-            {"name": "agent-lab", "description": "lab"},
-        ])
+        search_result = json.dumps(
+            [
+                {"name": "steward-test", "description": "test sandbox"},
+                {"name": "agent-lab", "description": "lab"},
+            ]
+        )
 
         with patch("steward.hooks.genesis._gh", return_value=search_result):
             peers = _discover_from_github_topics()
@@ -218,20 +228,25 @@ class TestGitHubTopicDiscovery:
 
 class TestOrgRepoDiscovery:
     def test_finds_federation_repos(self):
-        repo_list = json.dumps([
-            {"name": "steward-test"},
-            {"name": "agent-city"},
-            {"name": "steward"},  # Self — should be skipped
-            {"name": "random-repo"},  # No descriptor
-        ])
+        repo_list = json.dumps(
+            [
+                {"name": "steward-test"},
+                {"name": "agent-city"},
+                {"name": "steward"},  # Self — should be skipped
+                {"name": "random-repo"},  # No descriptor
+            ]
+        )
 
         import base64
-        descriptor = json.dumps({
-            "kind": "agent_federation_descriptor",
-            "status": "active",
-            "capabilities": ["code_analysis"],
-            "owner_boundary": "test_surface",
-        })
+
+        descriptor = json.dumps(
+            {
+                "kind": "agent_federation_descriptor",
+                "status": "active",
+                "capabilities": ["code_analysis"],
+                "owner_boundary": "test_surface",
+            }
+        )
         encoded_descriptor = base64.b64encode(descriptor.encode()).decode()
 
         def mock_gh(args, cwd=None):
