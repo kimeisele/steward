@@ -70,24 +70,37 @@ def _get_federation_owner() -> str:
     return _CACHED_OWNER
 
 
-_GH_CACHE: dict[str, tuple[float, str | None]] = {}  # key → (timestamp, result)
+_GH_CACHE: dict[str, tuple[float, str | None]] = {}
 _GH_CACHE_TTL = 300.0  # 5 min cache
+_GH_CALL_COUNT = 0
+_GH_CALL_BUDGET = 50  # MAX 50 real API calls per session — CBR
 
 
 def _gh(args: list[str], cwd: str | None = None) -> str | None:
-    """Run gh CLI command with response caching.
+    """Run gh CLI command with CBR budget + cache.
 
-    Caches results for 5 minutes to prevent API rate limit exhaustion.
-    A single scan was consuming 100+ API calls — now cached.
+    Hard budget: max 50 API calls per session. After that, cache-only.
+    Cache TTL: 5 minutes. Same query within TTL → no API call.
     """
+    global _GH_CALL_COUNT
     cache_key = " ".join(args)
     now = time.time()
 
-    # Check cache
+    # Cache hit → free
     if cache_key in _GH_CACHE:
         cached_time, cached_result = _GH_CACHE[cache_key]
         if (now - cached_time) < _GH_CACHE_TTL:
             return cached_result
+
+    # Budget exhausted → return cached (even stale) or None
+    if _GH_CALL_COUNT >= _GH_CALL_BUDGET:
+        stale = _GH_CACHE.get(cache_key)
+        if stale:
+            return stale[1]
+        logger.warning(
+            "GH API budget exhausted (%d/%d) — dropping call: %s", _GH_CALL_COUNT, _GH_CALL_BUDGET, cache_key[:60]
+        )
+        return None
 
     try:
         r = subprocess.run(
@@ -97,6 +110,7 @@ def _gh(args: list[str], cwd: str | None = None) -> str | None:
             timeout=_GH_TIMEOUT,
             cwd=cwd,
         )
+        _GH_CALL_COUNT += 1
         result = r.stdout if r.returncode == 0 else None
         _GH_CACHE[cache_key] = (now, result)
         return result
