@@ -107,19 +107,11 @@ def _load_project_instructions(cwd: str) -> str | None:
     return None
 
 
-def _build_system_prompt(
-    base: str,
-    cwd: str,
-    tool_names: list[str],
-    dynamic_context: dict[str, str] | None = None,
-    project_instructions: str | None = None,
-    session_history: str | None = None,
-) -> str:
+def _build_system_prompt(base: str, cwd: str) -> str:
     """Build minimal system prompt. Every token counts.
 
     Only includes: base instruction + cwd.
     Tool signatures injected by engine (brain-in-a-jar).
-    Everything else is deterministic infrastructure — LLM doesn't need it.
     """
     return f"{base.rstrip()}\ncwd: {cwd}"
 
@@ -242,7 +234,6 @@ class StewardAgent(GADBase):
             self._base_system_prompt = _build_system_prompt(
                 _BASE_SYSTEM_PROMPT,
                 self._cwd,
-                self._registry.list_tools(),
             )
             self._system_prompt = self._base_system_prompt
 

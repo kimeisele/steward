@@ -457,16 +457,17 @@ def _read_github_issues(cwd: str) -> list[dict]:
     return []
 
 
-def _get_cetana() -> object:
-    """Get Cetana instance from the running agent (if any)."""
-    try:
-        from steward.agent import StewardAgent
+def _get_cetana() -> object | None:
+    """Get Cetana instance from ServiceRegistry if available.
 
-        # Cetana is a daemon thread on the agent — no SVC_ constant for it.
-        # We check if there's a running agent with a cetana attribute.
-        # This is best-effort; in CLI mode there's no agent.
-        return None  # Will be wired when hook has access to agent
-    except Exception:
+    Returns None when no agent is running (CLI mode, tests, hooks).
+    TODO: Wire via SVC_CETANA constant once Cetana is registered as a service.
+    """
+    try:
+        from vibe_core.di import ServiceRegistry
+
+        return ServiceRegistry.get("cetana")
+    except (ImportError, KeyError):
         return None
 
 
@@ -499,12 +500,15 @@ def _read_hash(path: Path) -> str:
 def _atomic_write(path: Path, content: str) -> None:
     """Write content atomically via tempfile + rename."""
     fd, tmp_path = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
+    closed = False
     try:
         os.write(fd, content.encode("utf-8"))
         os.close(fd)
+        closed = True
         os.replace(tmp_path, str(path))
     except Exception:
-        os.close(fd) if not os.get_inheritable(fd) else None
+        if not closed:
+            os.close(fd)
         try:
             os.unlink(tmp_path)
         except OSError:

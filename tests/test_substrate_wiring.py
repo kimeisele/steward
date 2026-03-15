@@ -546,7 +546,6 @@ class TestCBRConstants:
         prompt = _build_system_prompt(
             base=_BASE_SYSTEM_PROMPT,
             cwd="/Users/test/project",
-            tool_names=["bash", "read_file", "write_file", "glob", "edit_file", "grep"],
         )
         # ~4 chars per token
         estimated_tokens = len(prompt) // 4
