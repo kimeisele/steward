@@ -56,6 +56,7 @@ class FindingKind(enum.Enum):
     NO_PEER_JSON = "no_peer_json"
     LARGE_FILE = "large_file"
     CIRCULAR_IMPORT = "circular_import"
+    NADI_BLOCKED = "nadi_blocked"
 
 
 @dataclass(frozen=True)
@@ -705,6 +706,25 @@ def _analyze_federation(repo_path: Path) -> tuple[list[Finding], bool, dict, boo
                 fix_hint="Create data/federation/peer.json with identity, capabilities, endpoint fields",
             )
         )
+
+    # Check if nadi transport files are blocked by gitignore
+    gitignore_path = repo_path / ".gitignore"
+    if gitignore_path.exists() and has_peer:
+        try:
+            gitignore = gitignore_path.read_text()
+            # data/ or data/* without !data/federation/ exception blocks nadi
+            if ("data/" in gitignore or "data/*" in gitignore) and "!data/federation" not in gitignore:
+                findings.append(
+                    Finding(
+                        kind=FindingKind.NADI_BLOCKED,
+                        severity=Severity.WARNING,
+                        file=".gitignore",
+                        detail="Nadi transport blocked by .gitignore — federation messages cannot flow",
+                        fix_hint="Add '!data/federation/' exception to .gitignore after 'data/' or 'data/*'",
+                    )
+                )
+        except OSError:
+            pass
 
     return findings, has_descriptor, descriptor, has_peer, peer_caps
 
