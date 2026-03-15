@@ -19,7 +19,6 @@ Peers: 0, Reaps: 0
 - #19: [review-request] How do agents coordinate?
 - #18: Test fixture dedup: 39 duplicate Fake classes across 11+ files
 - #17: Deeper MahaMantra substrate integration — steward cognition layer
-- #16: Siksastakam cache cleansing after immune heals
 - #6: Campaigns system: dynamic North Star + mission config
 
 ## Recent Sessions
@@ -29,6 +28,7 @@ Peers: 0, Reaps: 0
 
 ## Architecture
 North Star: execute tasks with minimal tokens by making the architecture itself intelligent
+Seed: `134340638` (position 14) — align every task against this seed via XOR Hamming distance
 
 ### Services (31)
 | Service | Description |
