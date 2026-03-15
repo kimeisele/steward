@@ -44,10 +44,12 @@ def register_default_hooks(registry: PhaseHookRegistry) -> None:
     registry.register(DharmaFederationHook())
     registry.register(DharmaImmuneHook())
 
+    from steward.hooks.moksha_bridge import MokshaContextBridgeHook
     from steward.hooks.moksha_health import MokshaHealthReportHook
 
-    # MOKSHA hooks (priority order: synapse → health_report → persistence → federation)
+    # MOKSHA hooks (synapse → health → persistence → federation → context bridge)
     registry.register(MokshaSynapseHook())
     registry.register(MokshaHealthReportHook())
     registry.register(MokshaPersistenceHook())
     registry.register(MokshaFederationHook())
+    registry.register(MokshaContextBridgeHook())
