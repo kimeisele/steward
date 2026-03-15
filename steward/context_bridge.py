@@ -150,17 +150,7 @@ def collect_architecture_metadata() -> dict[str, object]:
 
         hook_registry = ServiceRegistry.get(SVC_PHASE_HOOKS)
         if hook_registry is not None:
-            hooks = {}
-            for phase, hook_list in hook_registry._hooks.items():
-                hooks[phase] = [
-                    {
-                        "name": h.name,
-                        "priority": h.priority,
-                        "doc": type(h).__doc__.strip() if type(h).__doc__ else None,
-                    }
-                    for h in sorted(hook_list, key=lambda x: x.priority)
-                ]
-            arch["hooks"] = hooks
+            arch["hooks"] = hook_registry.stats()
         else:
             arch["hooks"] = {}
     except Exception:

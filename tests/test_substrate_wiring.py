@@ -825,7 +825,7 @@ class TestVBRCognition:
 
 
 class TestMahaLLMWiring:
-    """MahaLLMKernel — DEFERRED (not booted), but SVC constant and lib still work."""
+    """MahaLLMKernel — booted and wired into AgentLoop for L0 intent."""
 
     def test_svc_maha_llm_exists(self):
         """SVC_MAHA_LLM key defined in services module."""
@@ -833,13 +833,13 @@ class TestMahaLLMWiring:
 
         assert SVC_MAHA_LLM is not None
 
-    def test_maha_llm_not_registered_at_boot(self):
-        """MahaLLM is deferred — not registered during boot()."""
+    def test_maha_llm_registered_at_boot(self):
+        """MahaLLM is registered during boot() for L0 intent classification."""
         from steward.services import SVC_MAHA_LLM
 
         boot()
         kernel = ServiceRegistry.get(SVC_MAHA_LLM)
-        assert kernel is None  # Deferred — not in boot()
+        assert kernel is not None  # Activated — wired into AgentLoop
 
     def test_maha_llm_resonate_deterministic(self):
         """Same input always produces same resonance (guardian + words)."""

@@ -293,8 +293,11 @@ def boot(
     antaranga = AntarangaRegistry()
     ServiceRegistry.register(SVC_ANTARANGA, antaranga)
 
-    # 18. MahaLLMKernel — DEFERRED (registered but not consumed by agent loop)
-    # Code lives in vibe_core.mahamantra.substrate.encoding.maha_llm_kernel
+    # 18. MahaLLMKernel (L0 deterministic intent — zero LLM cost)
+    from vibe_core.mahamantra.substrate.encoding.maha_llm_kernel import MahaLLMKernel
+
+    maha_llm = MahaLLMKernel()
+    ServiceRegistry.register(SVC_MAHA_LLM, maha_llm)
 
     # 19. SynapseStore (persistent Hebbian weights — cross-session learning)
     from vibe_core.state.synapse_store import SynapseStore
@@ -324,8 +327,11 @@ def boot(
     knowledge_graph = _LazyKnowledgeGraph(cwd_path)
     ServiceRegistry.register(SVC_KNOWLEDGE_GRAPH, knowledge_graph)
 
-    # 23. Ouroboros — DEFERRED (registered but not consumed by agent loop)
-    # Code lives in vibe_core.ouroboros.loop_orchestrator
+    # 23. Ouroboros (self-healing pipeline: detect → ingest → heal)
+    from vibe_core.ouroboros.loop_orchestrator import OuroborosLoopOrchestrator
+
+    ouroboros = OuroborosLoopOrchestrator(workspace=str(cwd_path))
+    ServiceRegistry.register(SVC_OUROBOROS, ouroboros)
 
     # 25. HeartbeatReaper (federation peer liveness + trust degradation)
     from steward.reaper import HeartbeatReaper
@@ -443,7 +449,11 @@ def boot(
         lambda: _check_service_wired(SVC_KNOWLEDGE_GRAPH, "UnifiedKnowledgeGraph"),
         IssueSeverity.HIGH,
     )
-    # vajra_ouroboros_wired — DEFERRED (Ouroboros not booted)
+    checker.register_checker(
+        "vajra_ouroboros_wired",
+        lambda: _check_service_wired(SVC_OUROBOROS, "OuroborosLoopOrchestrator"),
+        IssueSeverity.HIGH,
+    )
 
     ServiceRegistry.register(SVC_INTEGRITY, checker)
 

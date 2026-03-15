@@ -180,6 +180,30 @@ _ACTION_TIER: dict[SemanticActionType, ModelTier] = {
 }
 
 
+# ── L0 Guardian Tier Modulation ────────────────────────────────────
+# MahaLLMKernel classifies intent into guardians (12 total).
+# Guardian function determines tier adjustment:
+#   "deliverer" (nrisimha, prahlada) → escalate (critical fix/rescue)
+#   "source" (shambhu, kumaras)      → escalate (creation, design)
+#   "carrier" (all others)           → keep as-is (routine)
+
+_GUARDIAN_ESCALATE = frozenset({"nrisimha", "prahlada", "shambhu", "kumaras"})
+
+
+def _guardian_tier_modulate(tier: "ModelTier", guardian: str) -> "ModelTier":
+    """Refine model tier based on L0 guardian classification.
+
+    Deliverers/sources handle critical work → escalate one tier.
+    Carriers handle routine → no change.
+    """
+    if guardian in _GUARDIAN_ESCALATE:
+        if tier == ModelTier.FLASH:
+            return ModelTier.STANDARD
+        if tier == ModelTier.STANDARD:
+            return ModelTier.PRO
+    return tier
+
+
 # Phase modulation — multiplier on task_weight before DSP processing.
 # The phase attenuates the input signal, not the output budget.
 # EXECUTE = unity gain (1.0), everything else reduces the signal.
@@ -291,6 +315,7 @@ class Buddhi:
         round_num: int,
         context_pct: float = 0.0,
         seed: int = 0,
+        l0_guardian: str = "",
     ) -> BuddhiDirective:
         """Pre-flight gate — Manas perception + Chitta phase -> tool selection.
 
@@ -302,6 +327,7 @@ class Buddhi:
             round_num: Current tool-use round (0 = first LLM call)
             context_pct: Current context budget usage (0.0 to 1.0)
             seed: Input seed for Hebbian cache confidence lookup
+            l0_guardian: MahaLLMKernel guardian (deterministic L0 intent)
 
         Returns:
             BuddhiDirective with action, guna, tool_names, max_tokens, phase
@@ -383,6 +409,12 @@ class Buddhi:
                 elif tier == ModelTier.STANDARD and confidence < 0.25:
                     tier = ModelTier.PRO
                     logger.info("Tier escalated STANDARD→PRO (synapse %.2f for %s)", confidence, self._action.value)
+
+        # L0 guardian tier modulation — MahaLLMKernel refines the decision.
+        # Guardians with "deliverer" function handle critical fixes → escalate.
+        # Guardians with "carrier" function handle routine → keep/demote.
+        if l0_guardian and round_num == 0:
+            tier = _guardian_tier_modulate(tier, l0_guardian)
 
         # PRO tasks demote to STANDARD in VERIFY/COMPLETE (work is done)
         if tier == ModelTier.PRO and phase in (ExecutionPhase.VERIFY, ExecutionPhase.COMPLETE):

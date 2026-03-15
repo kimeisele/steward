@@ -40,7 +40,9 @@ from steward.services import (
     SVC_CACHE,
     SVC_COMPRESSION,
     SVC_FEEDBACK,
+    SVC_MAHA_LLM,
     SVC_MEMORY,
+    SVC_SIKSASTAKAM,
     SVC_NARASIMHA,
     SVC_NORTH_STAR,
     SVC_PHASE_HOOKS,
@@ -426,6 +428,8 @@ class StewardAgent(GADBase):
             compression=ServiceRegistry.get(SVC_COMPRESSION),
             north_star=ServiceRegistry.get(SVC_NORTH_STAR),
             feedback=ServiceRegistry.get(SVC_FEEDBACK),
+            maha_llm=ServiceRegistry.get(SVC_MAHA_LLM),
+            siksastakam=ServiceRegistry.get(SVC_SIKSASTAKAM),
         )
         async for event in loop.run(task):
             agent_bus.emit_signal(event)
