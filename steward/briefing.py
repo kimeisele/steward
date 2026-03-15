@@ -110,7 +110,18 @@ def _format(ctx: dict, arch: dict, cwd: str = ".") -> str:
 
     ns = arch.get("north_star")
     if ns:
-        parts.append(f"North Star: {ns}")
+        # Compute seed for alignment — every decision should be checked against this
+        try:
+            from vibe_core.mahamantra.adapters.compression import MahaCompression
+
+            seed_result = MahaCompression().compress(ns)
+            parts.append(
+                f"North Star: {ns}\n"
+                f"Seed: `{seed_result.seed}` (position {seed_result.position}) — "
+                f"align every task against this seed via XOR Hamming distance"
+            )
+        except Exception:
+            parts.append(f"North Star: {ns}")
 
     services = arch.get("services", {})
     if services:
