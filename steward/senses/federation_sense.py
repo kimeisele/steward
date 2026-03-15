@@ -24,89 +24,44 @@ logger = logging.getLogger("STEWARD.SENSE.FEDERATION")
 
 
 def scan_federation_state() -> dict:
-    """Scan all federation peers and return aggregate state.
+    """Build federation state from the Reaper (already populated by Genesis).
 
-    Reads from GitHub API — each repo's:
-    - Latest CI status
-    - Nadi outbox (if exists)
-    - Federation descriptor status
-    - Last commit age
-
-    Returns a dict that represents the federation's ACTUAL state,
-    not what steward THINKS the state is.
+    Does NOT make its own API calls — reads what GenesisDiscoveryHook
+    already collected. No duplication, no extra rate-limit consumption.
     """
-    from steward.hooks.genesis import _get_federation_owner, _gh
+    from steward.services import SVC_IMMUNE, SVC_REAPER
+    from vibe_core.di import ServiceRegistry
 
-    owner = _get_federation_owner()
-    if not owner:
-        return {"error": "no federation owner", "peers": {}}
+    reaper = ServiceRegistry.get(SVC_REAPER)
+    if reaper is None:
+        return {"error": "no reaper", "peers": {}}
 
-    # Get all repos
-    raw = _gh(["repo", "list", owner, "--json", "name,pushedAt", "--limit", "100"])
-    if not raw:
-        return {"error": "cannot list repos", "peers": {}}
+    alive = reaper.alive_peers()
+    suspect = reaper.suspect_peers()
+    dead = reaper.dead_peers()
 
-    try:
-        repos = json.loads(raw)
-    except (json.JSONDecodeError, TypeError):
-        return {"error": "cannot parse repo list", "peers": {}}
-
+    all_peers = alive + suspect + dead
     peers: dict[str, dict] = {}
-
-    for repo in repos:
-        name = repo.get("name", "")
-        if not name:
-            continue
-
-        peer_state: dict = {
-            "name": name,
-            "last_push": repo.get("pushedAt", ""),
+    for p in all_peers:
+        peers[p.agent_id] = {
+            "name": p.agent_id,
+            "status": p.status.value,
+            "trust": p.trust,
+            "capabilities": list(p.capabilities),
+            "last_seen": p.last_seen,
         }
 
-        # CI status (latest run)
-        ci_raw = _gh(["run", "list", "--repo", f"{owner}/{name}",
-                       "--limit", "1", "--json", "conclusion,workflowName"])
-        if ci_raw:
-            try:
-                runs = json.loads(ci_raw)
-                if runs:
-                    peer_state["ci_conclusion"] = runs[0].get("conclusion", "unknown")
-                    peer_state["ci_workflow"] = runs[0].get("workflowName", "")
-            except (json.JSONDecodeError, TypeError):
-                pass
-
-        # Federation descriptor
-        desc_raw = _gh(["api", f"repos/{owner}/{name}/contents/.well-known/agent-federation.json",
-                         "--jq", ".content"])
-        peer_state["has_descriptor"] = bool(desc_raw and desc_raw.strip())
-
-        # Nadi outbox
-        outbox_raw = _gh(["api", f"repos/{owner}/{name}/contents/data/federation/nadi_outbox.json",
-                           "--jq", ".size"])
-        if outbox_raw and outbox_raw.strip().isdigit():
-            peer_state["outbox_size"] = int(outbox_raw.strip())
-        else:
-            peer_state["outbox_size"] = 0
-
-        peers[name] = peer_state
-
-    # Aggregate
-    total = len(peers)
-    with_descriptor = sum(1 for p in peers.values() if p.get("has_descriptor"))
-    ci_green = sum(1 for p in peers.values() if p.get("ci_conclusion") == "success")
-    ci_red = sum(1 for p in peers.values() if p.get("ci_conclusion") == "failure")
-    sending = sum(1 for p in peers.values() if p.get("outbox_size", 0) > 10)
+    immune = ServiceRegistry.get(SVC_IMMUNE)
+    immune_stats = immune.stats() if immune else {}
 
     return {
         "timestamp": time.time(),
-        "owner": owner,
         "summary": {
-            "total_repos": total,
-            "with_descriptor": with_descriptor,
-            "without_descriptor": total - with_descriptor,
-            "ci_green": ci_green,
-            "ci_red": ci_red,
-            "actively_sending": sending,
+            "total_peers": len(all_peers),
+            "alive": len(alive),
+            "suspect": len(suspect),
+            "dead": len(dead),
         },
+        "immune": immune_stats,
         "peers": peers,
     }
