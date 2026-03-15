@@ -105,7 +105,8 @@ def collect_architecture_metadata() -> dict[str, object]:
         from steward.services import NORTH_STAR_TEXT
 
         arch["north_star"] = NORTH_STAR_TEXT
-    except Exception:
+    except Exception as e:
+        logger.debug("Failed to load north_star: %s", e)
         arch["north_star"] = None
 
     # ── SVC_ service docstrings (what each service IS) ───────────────
@@ -119,7 +120,8 @@ def collect_architecture_metadata() -> dict[str, object]:
                 if isinstance(cls, type) and cls.__doc__:
                     services[name] = cls.__doc__.strip()
         arch["services"] = services
-    except Exception:
+    except Exception as e:
+        logger.debug("Failed to collect SVC_ docstrings: %s", e)
         arch["services"] = {}
 
     # ── Kshetra (25-tattva mapping from living code) ─────────────────
@@ -127,7 +129,8 @@ def collect_architecture_metadata() -> dict[str, object]:
         from steward.kshetra import enumerate_kshetra
 
         arch["kshetra"] = enumerate_kshetra()
-    except Exception:
+    except Exception as e:
+        logger.debug("Failed to enumerate kshetra: %s", e)
         arch["kshetra"] = []
 
     # ── Phase constants (MURALI cycle) ───────────────────────────────
@@ -140,7 +143,8 @@ def collect_architecture_metadata() -> dict[str, object]:
             KARMA: "Execute — work on highest-priority task",
             MOKSHA: "Reflect — persist state, log stats, learn",
         }
-    except Exception:
+    except Exception as e:
+        logger.debug("Failed to load phase constants: %s", e)
         arch["phases"] = {}
 
     # ── Registered hooks (what behavior is wired into each phase) ────
@@ -153,7 +157,8 @@ def collect_architecture_metadata() -> dict[str, object]:
             arch["hooks"] = hook_registry.stats()
         else:
             arch["hooks"] = {}
-    except Exception:
+    except Exception as e:
+        logger.debug("Failed to read hook registry: %s", e)
         arch["hooks"] = {}
 
     # ── Registered tools (what steward can DO) ───────────────────────
@@ -168,7 +173,8 @@ def collect_architecture_metadata() -> dict[str, object]:
             ]
         else:
             arch["tools"] = []
-    except Exception:
+    except Exception as e:
+        logger.debug("Failed to read tool registry: %s", e)
         arch["tools"] = []
 
     return arch
@@ -477,7 +483,8 @@ def _load_gaps_from_disk(cwd: str) -> object:
             if isinstance(gaps_data, list):
                 tracker.load_from_dict(gaps_data)
         return tracker
-    except Exception:
+    except Exception as e:
+        logger.debug("Failed to load gaps from disk: %s", e)
         return None
 
 

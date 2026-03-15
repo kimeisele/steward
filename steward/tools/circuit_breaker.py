@@ -599,7 +599,8 @@ class CircuitBreaker:
                     cwd=self.cwd,
                     timeout=10,
                 )
-            except Exception:
+            except Exception as e:
+                logger.debug("test_integrity: git show failed for %s: %s", filepath, e)
                 continue
 
             if head_result.returncode != 0:
@@ -679,7 +680,8 @@ class CircuitBreaker:
                     cwd=self.cwd,
                     timeout=10,
                 )
-            except Exception:
+            except Exception as e:
+                logger.debug("api_surface: git show failed for %s: %s", filepath, e)
                 continue
 
             if head_result.returncode != 0:
