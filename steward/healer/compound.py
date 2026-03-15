@@ -23,11 +23,12 @@ _COMPOUND_FIXERS: dict[FindingKind, Callable[["Finding", Path], list[str]]] = {}
 
 def _compound_fixer(kind: FindingKind):
     """Register a compound fixer."""
+
     def decorator(fn: Callable[["Finding", Path], list[str]]):
         _COMPOUND_FIXERS[kind] = fn
         return fn
-    return decorator
 
+    return decorator
 
     def decorator(fn: Callable[["Finding", Path], list[str]]):
         _COMPOUND_FIXERS[kind] = fn
@@ -58,18 +59,24 @@ def _fix_ci_failing(finding: "Finding", workspace: Path) -> list[str]:
     log_output = ""
     try:
         r = subprocess.run(
-            ["gh", "run", "list", "--workflow", wf_name, "--status", "failure",
-             "--limit", "1", "--json", "databaseId"],
-            capture_output=True, text=True, timeout=15, cwd=str(workspace),
+            ["gh", "run", "list", "--workflow", wf_name, "--status", "failure", "--limit", "1", "--json", "databaseId"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            cwd=str(workspace),
         )
         if r.returncode == 0:
             import json as _json
+
             runs = _json.loads(r.stdout)
             if runs:
                 run_id = str(runs[0]["databaseId"])
                 r2 = subprocess.run(
                     ["gh", "run", "view", run_id, "--log-failed"],
-                    capture_output=True, text=True, timeout=30, cwd=str(workspace),
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    cwd=str(workspace),
                 )
                 if r2.returncode == 0:
                     log_output = r2.stdout[-5000:]  # Last 5KB of log
@@ -126,13 +133,19 @@ def _fix_ci_failing(finding: "Finding", workspace: Path) -> list[str]:
         try:
             r = subprocess.run(
                 ["ruff", "check", "--fix", "."],
-                capture_output=True, text=True, timeout=30, cwd=str(workspace),
+                capture_output=True,
+                text=True,
+                timeout=30,
+                cwd=str(workspace),
             )
             if r.returncode == 0:
                 # Check what ruff changed
                 r2 = subprocess.run(
                     ["git", "diff", "--name-only"],
-                    capture_output=True, text=True, timeout=10, cwd=str(workspace),
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    cwd=str(workspace),
                 )
                 if r2.stdout.strip():
                     changed = [f.strip() for f in r2.stdout.strip().split("\n") if f.strip()]
@@ -142,5 +155,3 @@ def _fix_ci_failing(finding: "Finding", workspace: Path) -> list[str]:
 
     # No deterministic fixer matched → return empty to signal LLM fallback
     return []
-
-
