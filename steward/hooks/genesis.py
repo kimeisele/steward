@@ -165,8 +165,87 @@ class GenesisDiscoveryHook(BasePhaseHook):
         if new_count:
             logger.info("GENESIS: discovered %d new peers (%d total)", new_count, len(discovered))
 
+        # Apply world policy compliance checks (trust penalties)
+        violations = _check_policy_compliance(discovered, reaper)
+        if violations:
+            logger.info("GENESIS: %d policy violations detected", len(violations))
+
         self._last_scan = time.time()
-        ctx.operations.append(f"genesis_discovery:peers={len(discovered)},new={new_count}")
+        ctx.operations.append(
+            f"genesis_discovery:peers={len(discovered)},new={new_count},violations={len(violations)}"
+        )
+
+
+def _check_policy_compliance(
+    discovered: dict[str, dict], reaper: object,
+) -> list[str]:
+    """Check discovered peers against world policies. Apply trust penalties.
+
+    Reads policies from agent-world. For each enforceable policy,
+    checks compliance and adjusts trust in the reaper.
+    """
+    import base64
+
+    import yaml
+
+    violations: list[str] = []
+    owner = _get_federation_owner()
+
+    # Load policies from agent-world
+    raw = _gh(["api", f"repos/{owner}/agent-world/contents/config/world_policies.yaml",
+               "--jq", ".content"])
+    if not raw:
+        return violations
+
+    try:
+        content = base64.b64decode(raw.strip()).decode("utf-8")
+        data = yaml.safe_load(content)
+    except Exception as e:
+        logger.debug("World policies parse failed: %s", e)
+        return violations
+
+    policies = data.get("policies") or []
+    trust_policies = [p for p in policies if p.get("enforcement") == "trust_penalty"]
+
+    if not trust_policies:
+        return violations
+
+    for repo_id, info in discovered.items():
+        repo_full = info.get("repo", "")
+        if not repo_full:
+            continue
+
+        peer = reaper.get_peer(repo_id) if hasattr(reaper, "get_peer") else None
+        if peer is None:
+            continue
+
+        for policy in trust_policies:
+            policy_id = policy.get("id", "")
+            penalty = float(policy.get("trust_penalty", 0))
+
+            if policy_id == "federation_descriptor_required":
+                # Check if repo has .well-known/agent-federation.json
+                if info.get("source") == "org_scan_unregistered":
+                    # No descriptor — apply penalty
+                    old_trust = peer.trust
+                    peer.trust = max(0.0, peer.trust - penalty)
+                    violations.append(f"{repo_id}: no descriptor (trust {old_trust:.2f} → {peer.trust:.2f})")
+                    logger.warning("Policy %s: %s lacks federation descriptor (trust -%.1f)",
+                                   policy_id, repo_id, penalty)
+
+            elif policy_id == "federation_ci_required":
+                # Check if repo has CI on pull_request
+                ci_raw = _gh(["api", f"repos/{repo_full}/contents/.github/workflows",
+                              "--jq", ".[].name"])
+                has_ci = ci_raw is not None and ci_raw.strip()
+                if not has_ci:
+                    old_trust = peer.trust
+                    peer.trust = max(0.0, peer.trust - penalty)
+                    violations.append(f"{repo_id}: no CI workflows (trust {old_trust:.2f} → {peer.trust:.2f})")
+                    logger.warning("Policy %s: %s has no CI (trust -%.1f)",
+                                   policy_id, repo_id, penalty)
+
+    return violations
 
 
 def _discover_from_world_registry() -> dict[str, dict]:
