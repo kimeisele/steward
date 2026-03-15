@@ -28,7 +28,9 @@ class DharmaImmuneHook(BasePhaseHook):
     prevents MOKSHA from flushing nadi messages.
     """
 
-    _cycle_count: int = 0
+    def __init__(self) -> None:
+        self._cycle_count: int = 0
+
     _RUN_EVERY_N_CYCLES: int = 4
 
     @property
