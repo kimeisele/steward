@@ -54,6 +54,7 @@ from steward.types import (
 )
 from vibe_core.mahamantra.adapters.attention import MahaAttention
 from vibe_core.mahamantra.adapters.compression import MahaCompression
+from vibe_core.mahamantra.substrate.encoding.maha_llm_kernel import MahaLLMKernel
 from vibe_core.mahamantra.substrate.cell_system.antaranga import (
     FLAG_ACTIVE,
     GENESIS_PRANA_U32,
@@ -157,6 +158,7 @@ class AgentLoop:
         compression: MahaCompression | None = None,
         north_star: int | None = None,
         feedback: object | None = None,
+        maha_llm: MahaLLMKernel | None = None,
     ) -> None:
         self._provider = provider
         self._registry = registry
@@ -178,6 +180,7 @@ class AgentLoop:
         self._health_gate = health_gate
         self._north_star = north_star
         self._feedback = feedback
+        self._maha_llm = maha_llm
 
         # Ensure system prompt is first message
         if system_prompt and (not conversation.messages or conversation.messages[0].role != MessageRole.SYSTEM):
@@ -210,6 +213,21 @@ class AgentLoop:
         # Entry-point compression: deterministic seed for this request
         cr = self._compression.compress(user_message)
         logger.debug("Input compressed: seed=%d, ratio=%.1f", cr.seed, cr.compression_ratio)
+
+        # L0 Intent: deterministic classification BEFORE LLM (zero tokens)
+        l0_guardian = ""
+        l0_function = ""
+        if self._maha_llm:
+            try:
+                resonance = self._maha_llm.resonate(user_message)
+                l0_guardian = resonance.guardian_name
+                l0_function = resonance.guardian_function
+                logger.debug(
+                    "L0 intent: guardian=%s fn=%s (seed=%d)",
+                    l0_guardian, l0_function, cr.seed,
+                )
+            except Exception as e:
+                logger.debug("L0 intent failed (non-fatal): %s", e)
 
         # Venu: step the orchestrator for this turn's DIW context
         venu_diw = 0
@@ -249,6 +267,8 @@ class AgentLoop:
         usage.venu_diw = venu_diw
         usage.venu_beat = venu_beat
         usage.input_seed = cr.seed
+        usage.l0_guardian = l0_guardian
+        usage.l0_function = l0_function
         # cbr_budget: accumulates per-round (input cap + output budget)
 
         # Cache check: only replay when Hebbian confidence is HIGH (> 0.7).

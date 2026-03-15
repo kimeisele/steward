@@ -293,8 +293,11 @@ def boot(
     antaranga = AntarangaRegistry()
     ServiceRegistry.register(SVC_ANTARANGA, antaranga)
 
-    # 18. MahaLLMKernel — DEFERRED (registered but not consumed by agent loop)
-    # Code lives in vibe_core.mahamantra.substrate.encoding.maha_llm_kernel
+    # 18. MahaLLMKernel (L0 deterministic intent — zero LLM cost)
+    from vibe_core.mahamantra.substrate.encoding.maha_llm_kernel import MahaLLMKernel
+
+    maha_llm = MahaLLMKernel()
+    ServiceRegistry.register(SVC_MAHA_LLM, maha_llm)
 
     # 19. SynapseStore (persistent Hebbian weights — cross-session learning)
     from vibe_core.state.synapse_store import SynapseStore

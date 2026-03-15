@@ -123,10 +123,11 @@ class PhaseHookRegistry:
     testable, independently deployable hook files.
     """
 
-    __slots__ = ("_hooks",)
+    __slots__ = ("_hooks", "_dispatch_counts")
 
     def __init__(self) -> None:
         self._hooks: dict[str, list[PhaseHook]] = {p: [] for p in ALL_PHASES}
+        self._dispatch_counts: dict[str, int] = {p: 0 for p in ALL_PHASES}
 
     def register(self, hook: PhaseHook) -> None:
         """Register a hook. Deduplicates by name within phase."""
@@ -160,6 +161,7 @@ class PhaseHookRegistry:
 
     def dispatch(self, phase: str, ctx: PhaseContext) -> None:
         """Execute all hooks for a phase in priority order, respecting gates."""
+        self._dispatch_counts[phase] = self._dispatch_counts.get(phase, 0) + 1
         hooks = self._hooks.get(phase, [])
         for hook in hooks:
             try:
@@ -187,6 +189,7 @@ class PhaseHookRegistry:
         return {
             phase: {
                 "count": len(hooks),
+                "dispatches": self._dispatch_counts.get(phase, 0),
                 "names": [h.name for h in hooks],
             }
             for phase, hooks in self._hooks.items()

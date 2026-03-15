@@ -152,8 +152,18 @@ def _format(ctx: dict, arch: dict, cwd: str = ".") -> str:
     phases = arch.get("phases", {})
     hooks = arch.get("hooks", {})
     if phases:
-        phase_line = " → ".join(f"**{p}**({len(hooks.get(p, []))})" for p in phases)
-        parts.append(f"MURALI: {phase_line}")
+        phase_parts = []
+        for p in phases:
+            hook_info = hooks.get(p, {})
+            if isinstance(hook_info, dict):
+                dispatches = hook_info.get("dispatches", 0)
+                count = hook_info.get("count", 0)
+            else:
+                # Legacy: list of hooks
+                dispatches = 0
+                count = len(hook_info) if isinstance(hook_info, list) else 0
+            phase_parts.append(f"**{p}**({dispatches}×/{count}h)")
+        parts.append(f"MURALI: {' → '.join(phase_parts)}")
 
     tools = arch.get("tools", [])
     if tools:

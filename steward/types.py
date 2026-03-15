@@ -293,6 +293,8 @@ class AgentUsage:
     venu_diw: int = 0  # DIW from VenuOrchestrator for this turn
     venu_beat: int = 0  # SikSasTakam beat (1-7) derived from Venu position
     input_seed: int = 0  # MahaCompression seed for input
+    l0_guardian: str = ""  # MahaLLMKernel guardian (deterministic intent)
+    l0_function: str = ""  # MahaLLMKernel function (carrier/deliverer/etc)
     cache_hit: bool = False  # whether cache bypass was used
     antaranga_active: int = 0  # Antaranga slots with prana > 0 (standing wave density)
     # CBR: Constant Bitrate Token Stream
