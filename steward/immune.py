@@ -378,15 +378,35 @@ class StewardImmune:
         return False, "Fixer returned no changes", ""
 
     def _count_test_failures(self) -> int | None:
-        """Count findings via DiagnosticSense (not pytest — atomic, fast)."""
+        """Count failures: DiagnosticSense findings + import smoke test.
+
+        Two checks (both atomic, <2s total):
+        1. DiagnosticSense: AST-level findings (static)
+        2. Import smoke test: can the main package still import? (runtime)
+        """
         from steward.senses.diagnostic_sense import diagnose_repo
 
+        count = 0
         try:
             report = diagnose_repo(self._cwd)
-            return len([f for f in report.findings if f.severity.value == "critical"])
+            count = len([f for f in report.findings if f.severity.value == "critical"])
         except Exception as e:
             logger.warning("Immune: diagnostic count failed: %s", e)
             return None
+
+        # Runtime smoke test — catch broken imports that AST can't see
+        try:
+            result = subprocess.run(
+                [sys.executable, "-c", "import steward; import steward.healer"],
+                capture_output=True, text=True, timeout=10, cwd=self._cwd,
+            )
+            if result.returncode != 0:
+                count += 1  # Import is broken — counts as a failure
+                logger.warning("Immune: import smoke test FAILED: %s", result.stderr[:200])
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+
+        return count
 
     @staticmethod
     def _rollback_file(file_path: Path | None) -> bool:
