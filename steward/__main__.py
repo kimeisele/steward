@@ -307,11 +307,22 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    # Briefing mode — dynamic context dump, no LLM needed
+    # Briefing mode — show committed CLAUDE.md if fresh, regenerate if stale
     if args.briefing:
+        import time
+
+        cwd = args.cwd or "."
+        committed = Path(cwd) / "CLAUDE.md"
+        if committed.exists():
+            age_s = time.time() - committed.stat().st_mtime
+            if age_s < 3600:  # < 1 hour old → use committed version
+                print(committed.read_text())
+                return
+
+        # Stale or missing → regenerate (cold-start, partial data)
         from steward.briefing import generate_briefing
 
-        print(generate_briefing(cwd=args.cwd))
+        print(generate_briefing(cwd=cwd))
         return
 
     # Telegram mode — delegate to telegram interface
