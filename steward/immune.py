@@ -296,68 +296,36 @@ class StewardImmune:
         return results
 
     def run_self_diagnostics(self) -> list[HealResult]:
-        """Run tests on self, discover pathogens, attempt healing."""
-        logger.info("Immune: initiating self-diagnostic...")
+        """Atomic self-diagnostic — no pytest, no full suite.
 
-        repo_root = Path(self._cwd)
-        test_dir = repo_root / "tests"
-        report_path = repo_root / ".introspection.json"
-
-        if report_path.exists():
-            report_path.unlink()
-
-        cmd = [
-            sys.executable, "-m", "pytest",
-            str(test_dir), "-q",
-            "--json-report", f"--json-report-file={report_path}",
-            "--json-report-omit", "collectors", "log", "streams",
-            "--timeout=10",
-        ]
+        Uses DiagnosticSense (AST-level, <1 second) to find pathogens.
+        Each finding is matched to a known pathogen and healed if possible.
+        This is how a real immune system works — targeted antibodies,
+        not a full-body MRI every heartbeat.
+        """
+        from steward.senses.diagnostic_sense import diagnose_repo
 
         try:
-            subprocess.run(cmd, capture_output=True, text=True, timeout=180)
-
-            if not report_path.exists():
-                logger.error("Immune: self-diagnostic failed to generate report.")
-                return []
-
-            with open(report_path) as f:
-                report = json.load(f)
-
-            failed_count = report.get("summary", {}).get("failed", 0)
-
-            if failed_count == 0:
-                logger.info("Immune: self-diagnostic passed. System healthy.")
-                return []
-
-            logger.warning("Immune: %d tests failed.", failed_count)
-
-            pathogens = []
-            for test in report.get("tests", []):
-                if test.get("outcome") == "failed":
-                    crash = test.get("call", {}).get("crash", {})
-                    path = crash.get("path", "")
-                    message = crash.get("message", "")
-                    if path and message:
-                        pathogens.append(f"Failure in {path}: {message}")
-
-            if pathogens:
-                return self.scan_and_heal(pathogens)
-
-            return []
-
-        except subprocess.TimeoutExpired:
-            logger.error("Immune: self-diagnostic TIMED OUT.")
-            return []
+            report = diagnose_repo(self._cwd)
         except Exception as e:
-            logger.error("Immune: self-diagnostic error: %s", e)
+            logger.warning("Immune: diagnostic failed: %s", e)
             return []
-        finally:
-            if report_path.exists():
-                try:
-                    report_path.unlink()
-                except OSError:
-                    pass
+
+        if not report.findings:
+            return []
+
+        # Convert findings to pathogen detail strings for scan_and_heal
+        pathogens = [
+            f"{f.kind.value} in {f.file}: {f.detail}"
+            for f in report.findings
+            if f.severity.value in ("critical", "warning")
+        ]
+
+        if not pathogens:
+            return []
+
+        logger.info("Immune: %d pathogens detected", len(pathogens))
+        return self.scan_and_heal(pathogens)
 
     def stats(self) -> dict:
         return {
@@ -410,37 +378,15 @@ class StewardImmune:
         return False, "Fixer returned no changes", ""
 
     def _count_test_failures(self) -> int | None:
-        """Count test failures via pytest JSON report."""
-        repo_root = Path(self._cwd)
-        report_path = repo_root / ".breaker_check.json"
-
-        if report_path.exists():
-            report_path.unlink()
-
-        cmd = [
-            sys.executable, "-m", "pytest",
-            str(repo_root / "tests"), "-q",
-            "--json-report", f"--json-report-file={report_path}",
-            "--json-report-omit", "collectors", "log", "streams",
-            "--tb=no", "--timeout=10",
-        ]
+        """Count findings via DiagnosticSense (not pytest — atomic, fast)."""
+        from steward.senses.diagnostic_sense import diagnose_repo
 
         try:
-            subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-            if not report_path.exists():
-                return None
-            with open(report_path) as f:
-                report = json.load(f)
-            return report.get("summary", {}).get("failed", 0)
-        except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError) as e:
-            logger.error("Immune: test count failed: %s", e)
+            report = diagnose_repo(self._cwd)
+            return len([f for f in report.findings if f.severity.value == "critical"])
+        except Exception as e:
+            logger.warning("Immune: diagnostic count failed: %s", e)
             return None
-        finally:
-            if report_path.exists():
-                try:
-                    report_path.unlink()
-                except OSError:
-                    pass
 
     @staticmethod
     def _rollback_file(file_path: Path | None) -> bool:
