@@ -74,11 +74,16 @@ class TestComputeFocus:
         assert focus.action >= 0.9
         assert "pain" in focus.driver
 
-    def test_sattva_compresses(self):
+    def test_sattva_compresses_noise_not_signal(self):
+        """Sattva compresses noise stages (toolbox, sessions) but not signal (orientation, architecture)."""
         ctx = {"senses": {"total_pain": 0.1}, "health": {"guna": "sattva"}}
         focus = compute_focus(ctx)
-        assert focus.orientation <= 0.6
+        # Signal stages stay high even in sattva
+        assert focus.orientation >= 0.7
+        assert focus.architecture >= 0.7
+        # Noise stages compress
         assert focus.toolbox <= 0.3
+        assert focus.sessions <= 0.3
         assert "sattva" in focus.driver
 
     def test_context_pressure_compresses(self):

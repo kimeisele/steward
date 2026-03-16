@@ -43,8 +43,8 @@ logger = logging.getLogger("STEWARD.BRIEFING_STAGES")
 # Hard ceiling — safety net after focus-weighted compression.
 
 BUDGET_COMPACT = 800
-BUDGET_STANDARD = 1500
-BUDGET_FULL = 3000
+BUDGET_STANDARD = 2000  # Sweet spot: 800-2000 tokens optimal for AI agents
+BUDGET_FULL = 4000  # Max before Claude shows accuracy degradation (~5500)
 BUDGET_UNLIMITED = 0
 
 _VERSION = "3.0.0"  # Foveated rendering pipeline
@@ -66,16 +66,16 @@ class BriefingFocus:
     Computed from system state — no LLM, deterministic.
     """
 
-    orientation: float = 0.7
-    status: float = 0.5
-    action: float = 0.8
-    knowledge: float = 0.5
-    environment: float = 0.6
-    gap_awareness: float = 0.5
-    federation_insight: float = 0.4
-    toolbox: float = 0.3
-    architecture: float = 0.5
-    sessions: float = 0.3
+    orientation: float = 0.8  # Irreplaceable mental model — high default
+    status: float = 0.7  # Health dashboard
+    action: float = 1.0  # Drives agent behavior — always full
+    knowledge: float = 0.7  # Validated learnings
+    environment: float = 0.8  # Current perception
+    gap_awareness: float = 0.6  # Known blind spots
+    federation_insight: float = 0.4  # May be empty
+    toolbox: float = 0.4  # Names sufficient
+    architecture: float = 0.8  # Service map — essential for coding
+    sessions: float = 0.3  # Footer stats
 
     # Diagnostic: what drove the focus computation
     driver: str = "default"
@@ -123,18 +123,20 @@ def compute_focus(ctx: dict) -> BriefingFocus:
         base = 0.7
         driver_parts.append("rajas")
 
-    # Start from base, then adjust per-stage
+    # Start from base. Essential sections stay high — only noise sections compress.
+    # Orientation, Architecture, Action, Environment = SIGNAL (never below 0.7)
+    # Toolbox, Sessions, FederationInsight = NOISE (can compress freely)
     weights = {
-        "orientation": base,
-        "status": base * 0.8,
-        "action": min(1.0, base + 0.2),  # Action always slightly boosted
-        "knowledge": base * 0.7,
-        "environment": base * 0.8,
-        "gap_awareness": base * 0.6,
-        "federation_insight": base * 0.5,
-        "toolbox": base * 0.4,
-        "architecture": base * 0.6,
-        "sessions": base * 0.4,
+        "orientation": max(0.7, base),  # Irreplaceable mental model
+        "status": max(0.5, base * 0.9),  # Health dashboard
+        "action": 1.0,  # Always full — drives agent behavior
+        "knowledge": max(0.5, base * 0.8),  # Validated learnings
+        "environment": max(0.7, base),  # Current perception = essential
+        "gap_awareness": max(0.5, base * 0.7),  # Known blind spots
+        "federation_insight": base * 0.6,  # May be empty — compress ok
+        "toolbox": base * 0.5,  # Can show just names
+        "architecture": max(0.7, base),  # Service map = essential for coding
+        "sessions": base * 0.4,  # Footer stats — compress ok
     }
 
     # ── 2. Per-sense pain → boost corresponding stages ──
@@ -267,39 +269,29 @@ class BriefingPipeline:
         self._stages.sort(key=lambda s: s.priority)
 
     def generate(self, ctx: dict, arch: dict, cwd: str) -> str:
-        """Foveated rendering: focus-weighted stages + budget safety net."""
+        """Foveated rendering: focus-weighted stages, iterative compression.
+
+        Never cuts or truncates. If over budget, re-renders ALL stages
+        with progressively lower focus until it fits. Every stage always
+        appears — just at lower resolution.
+        """
         # Pass 1: compute focus from substrate signals
         focus = compute_focus(ctx)
 
-        # Pass 2: run stages with focus weights
-        stage_outputs: list[tuple[BriefingStage, str]] = []
-        for stage in self._stages:
-            try:
-                if not stage.should_run(ctx, arch):
-                    logger.debug("Stage %s skipped (gate)", stage.name)
-                    continue
+        # Pass 2: render with focus, then iteratively compress if over budget
+        result_text = self._render_all(ctx, arch, cwd, focus)
 
-                # Get focus weight for this stage (1.0 for non-compressible)
-                if stage.compressible:
-                    stage_focus = getattr(focus, stage.name, 0.5)
-                else:
-                    stage_focus = 1.0
-
-                parts: list[str] = []
-                stage.enrich(parts, ctx, arch, cwd, stage_focus)
-                output = "\n".join(parts)
-                if output.strip():
-                    stage_outputs.append((stage, output))
-            except Exception as e:
-                logger.warning("Stage %s failed: %s", stage.name, e)
-
-        # Pass 3: safety net — hard ceiling (should rarely trigger with good focus)
         if self._token_budget > 0:
-            stage_outputs = self._enforce_ceiling(stage_outputs)
+            # Iterative compression: reduce focus by 20% per round, max 4 rounds
+            compression_factor = 1.0
+            for _ in range(4):
+                if _estimate_tokens(result_text) <= self._token_budget:
+                    break
+                compression_factor *= 0.8
+                compressed_focus = self._scale_focus(focus, compression_factor)
+                result_text = self._render_all(ctx, arch, cwd, compressed_focus)
 
-        # Assemble final output
-        sections = [output for _, output in stage_outputs]
-        result = "\n".join(sections)
+        result = result_text
 
         # Metadata footer
         token_count = _estimate_tokens(result)
@@ -313,48 +305,44 @@ class BriefingPipeline:
         )
         return result + metadata
 
-    def _enforce_ceiling(self, stage_outputs: list[tuple[BriefingStage, str]]) -> list[tuple[BriefingStage, str]]:
-        """Hard ceiling safety net. Only triggers if focus didn't compress enough."""
-        total_tokens = sum(_estimate_tokens(out) for _, out in stage_outputs)
+    def _render_all(self, ctx: dict, arch: dict, cwd: str, focus: BriefingFocus) -> str:
+        """Render all stages with given focus weights. Nothing is ever cut."""
+        stage_outputs: list[str] = []
+        for stage in self._stages:
+            try:
+                if not stage.should_run(ctx, arch):
+                    continue
 
-        if total_tokens <= self._token_budget:
-            return stage_outputs
+                if stage.compressible:
+                    stage_focus = getattr(focus, stage.name, 0.5)
+                else:
+                    stage_focus = 1.0
 
-        # Separate fixed vs compressible
-        fixed: list[tuple[BriefingStage, str, int]] = []
-        compressible: list[tuple[BriefingStage, str, int]] = []
-        for stage, output in stage_outputs:
-            tokens = _estimate_tokens(output)
-            if stage.compressible:
-                compressible.append((stage, output, tokens))
-            else:
-                fixed.append((stage, output, tokens))
+                parts: list[str] = []
+                stage.enrich(parts, ctx, arch, cwd, stage_focus)
+                output = "\n".join(parts)
+                if output.strip():
+                    stage_outputs.append(output)
+            except Exception as e:
+                logger.warning("Stage %s failed: %s", stage.name, e)
+        return "\n".join(stage_outputs)
 
-        fixed_tokens = sum(t for _, _, t in fixed)
-        budget_for_compressible = max(0, self._token_budget - fixed_tokens)
-
-        if budget_for_compressible == 0:
-            return [(s, o) for s, o, _ in fixed]
-
-        # Include compressible stages in priority order until budget exhausted
-        compressible.sort(key=lambda x: x[0].priority)
-        included: list[tuple[BriefingStage, str]] = []
-        remaining = budget_for_compressible
-        for stage, output, tokens in compressible:
-            if tokens <= remaining:
-                included.append((stage, output))
-                remaining -= tokens
-            elif remaining > 50:
-                char_limit = remaining * 4
-                truncated = output[:char_limit].rsplit("\n", 1)[0]
-                if truncated.strip():
-                    included.append((stage, truncated + "\n..."))
-                remaining = 0
-
-        result = [(s, o) for s, o, _ in fixed]
-        result.extend(included)
-        result.sort(key=lambda x: x[0].priority)
-        return result
+    @staticmethod
+    def _scale_focus(focus: BriefingFocus, factor: float) -> BriefingFocus:
+        """Scale all compressible focus weights down by factor. Floor at 0.1."""
+        return BriefingFocus(
+            orientation=max(0.1, focus.orientation * factor),
+            status=max(0.1, focus.status * factor),
+            action=focus.action,  # Never compress action
+            knowledge=max(0.1, focus.knowledge * factor),
+            environment=max(0.1, focus.environment * factor),
+            gap_awareness=max(0.1, focus.gap_awareness * factor),
+            federation_insight=max(0.1, focus.federation_insight * factor),
+            toolbox=max(0.1, focus.toolbox * factor),
+            architecture=max(0.1, focus.architecture * factor),
+            sessions=max(0.1, focus.sessions * factor),
+            driver=f"{focus.driver}, compressed={factor:.2f}",
+        )
 
     def _budget_label(self) -> str:
         if self._token_budget == 0:
