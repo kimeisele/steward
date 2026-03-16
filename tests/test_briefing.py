@@ -2,8 +2,7 @@
 
 from steward.briefing import (
     _collect_critical,
-    _derive_conventions,
-    _load_static_rules,
+    _load_orientation,
     generate_briefing,
 )
 
@@ -26,7 +25,6 @@ class TestGenerateBriefing:
     def test_includes_service_docstrings(self, tmp_path):
         """Services should show descriptions, not just names."""
         result = generate_briefing(cwd=str(tmp_path))
-        # At least one service should have its docstring visible
         assert "ToolRegistry" in result or "tool lookup" in result.lower()
 
     def test_includes_murali(self, tmp_path):
@@ -47,43 +45,41 @@ class TestGenerateBriefing:
         # CRITICAL section only appears when something is actually wrong
         assert "CRITICAL" not in result or "Health" in result
 
-
-class TestDeriveConventions:
-    def test_empty_dir_returns_empty(self, tmp_path):
-        assert _derive_conventions(str(tmp_path)) == []
-
-    def test_reads_ruff_config(self, tmp_path):
-        (tmp_path / "pyproject.toml").write_text('[tool.ruff]\nline-length = 100\ntarget-version = "py312"\n')
-        rules = _derive_conventions(str(tmp_path))
-        assert any("ruff" in r for r in rules)
-        assert any("100" in r for r in rules)
-
-    def test_reads_pytest_config(self, tmp_path):
-        (tmp_path / "pyproject.toml").write_text("[tool.pytest.ini_options]\ntestpaths = ['tests']\ntimeout = 30\n")
-        rules = _derive_conventions(str(tmp_path))
-        assert any("pytest" in r for r in rules)
+    def test_includes_orientation_from_conventions(self):
+        """When run from the real repo, orientation block should be present."""
+        result = generate_briefing(cwd=".")
+        # The conventions.md in .steward/ has architecture explanation
+        assert "Antahkarana" in result or "cognitive" in result.lower()
 
 
-class TestLoadStaticRules:
+class TestLoadOrientation:
     def test_no_file_returns_empty(self, tmp_path):
-        assert _load_static_rules(str(tmp_path)) == []
+        assert _load_orientation(str(tmp_path)) == ""
 
-    def test_loads_conventions(self, tmp_path):
+    def test_loads_content_skipping_file_comments(self, tmp_path):
         steward_dir = tmp_path / ".steward"
         steward_dir.mkdir()
-        (steward_dir / "conventions.md").write_text("# Header comment\n- Rule one\n- Rule two\n")
-        rules = _load_static_rules(str(tmp_path))
-        assert len(rules) == 2
-        assert "Rule one" in rules
-        assert "Rule two" in rules
+        (steward_dir / "conventions.md").write_text(
+            "# File-level comment\n# Another comment\n\n## What this is\nSteward is an agent.\n"
+        )
+        result = _load_orientation(str(tmp_path))
+        assert "## What this is" in result
+        assert "Steward is an agent" in result
 
-    def test_skips_comments_and_blanks(self, tmp_path):
+    def test_preserves_markdown_structure(self, tmp_path):
         steward_dir = tmp_path / ".steward"
         steward_dir.mkdir()
-        (steward_dir / "conventions.md").write_text("# Comment\n\n- Actual rule\n\n# Another comment\n")
-        rules = _load_static_rules(str(tmp_path))
-        assert len(rules) == 1
-        assert "Actual rule" in rules
+        content = "# Top comment\n\n## Section One\nContent here.\n\n## Section Two\nMore content.\n"
+        (steward_dir / "conventions.md").write_text(content)
+        result = _load_orientation(str(tmp_path))
+        assert "## Section One" in result
+        assert "## Section Two" in result
+
+    def test_empty_file_returns_empty(self, tmp_path):
+        steward_dir = tmp_path / ".steward"
+        steward_dir.mkdir()
+        (steward_dir / "conventions.md").write_text("")
+        assert _load_orientation(str(tmp_path)) == ""
 
 
 class TestCollectCritical:
