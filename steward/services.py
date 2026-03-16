@@ -153,14 +153,6 @@ class SVC_IMMUNE:
     """
 
 
-class SVC_AGENT_DECK:
-    """AgentDeck — seed-based agent registry (Steward's Pokedex).
-
-    Specialized agent profiles keyed by deterministic seed.
-    Hebbian learning tracks which profiles work for which tasks.
-    Federation shares proven profiles via OP_SHARE_AGENT_CARD.
-    """
-
 
 class SVC_NORTH_STAR:
     """North Star — infrastructure-level goal seed (not LLM prompt).
@@ -354,16 +346,7 @@ def boot(
     synapse_store.load()
     ServiceRegistry.register(SVC_SYNAPSE_STORE, synapse_store)
 
-    # 19b. AgentDeck (seed-based agent registry — Steward's Pokedex)
-    from steward.agent_deck import AgentDeck, install_starter_cards
-
-    agent_deck = AgentDeck()
-    deck_path = cwd_path / ".steward" / "agent_deck.json"
-    agent_deck.load(deck_path)
-    install_starter_cards(agent_deck)
-    ServiceRegistry.register(SVC_AGENT_DECK, agent_deck)
-
-    # 20. TaskManager (persistent task tracking)
+# 20. TaskManager (persistent task tracking)
     from vibe_core.task_management.task_manager import TaskManager
 
     task_manager = TaskManager(project_root=cwd_path)
