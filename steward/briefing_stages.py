@@ -1,17 +1,28 @@
 """
-BriefingStages — composable pipeline for CLAUDE.md generation.
+BriefingStages — foveated rendering pipeline for CLAUDE.md generation.
 
 Same pattern as PhaseHookRegistry: register stages, dispatch by priority,
-gate with should_run(). Each stage appends lines to the briefing output.
+gate with should_run(). Each stage renders at VARIABLE DETAIL LEVEL
+driven by a focus signal from the substrate.
 
-Token budget system (CBR-aware):
-  - Each stage is either `compressible` (can be truncated) or fixed
-  - Pipeline enforces a token_budget — stages are truncated in reverse
-    priority order (lowest priority = first to be cut)
-  - Budget modes: compact (800), standard (1500), full (3000), unlimited (0)
+Foveated rendering (like VR eye-tracking):
+  - The "gaze" is determined by system state: pain, dominant sense, gaps
+  - High-focus stages render at full detail (1.0)
+  - Low-focus stages compress to essence (0.1)
+  - No information is "cut" — it's compressed proportionally
+
+Focus signals (from substrate, zero LLM):
+  - total_pain → urgency (high pain = expand everything)
+  - per-sense pain → which area needs attention
+  - context_pressure → how much space do we have
+  - active gaps → what capabilities are missing
+  - health guna → overall system state
+
+Token budget is the hard-ceiling safety net (CBR limiter),
+but focus weights are the primary compression driver.
 
 Priority bands:
-  0-10:  Identity & Critical (must be first, never compressible)
+  0-10:  Identity & Critical (always full detail)
   11-30: Orientation & Status (context framing)
   31-60: Action & Knowledge (what to do, what we know)
   61-80: Environment & Insights (perception layer)
@@ -23,66 +34,194 @@ from __future__ import annotations
 import logging
 import time
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from pathlib import Path
 
 logger = logging.getLogger("STEWARD.BRIEFING_STAGES")
 
 # ── Token Budget Constants ─────────────────────────────────────────
-# Aligned with CBR DSP semantics: budget is the "ceiling" for output.
+# Hard ceiling — safety net after focus-weighted compression.
 
-BUDGET_COMPACT = 800  # Minimal: identity + critical + action only
-BUDGET_STANDARD = 1500  # Default: most sections, architecture compressed
-BUDGET_FULL = 3000  # Everything expanded, no truncation
-BUDGET_UNLIMITED = 0  # No limit — let all stages run fully
+BUDGET_COMPACT = 800
+BUDGET_STANDARD = 1500
+BUDGET_FULL = 3000
+BUDGET_UNLIMITED = 0
 
-_VERSION = "2.0.0"  # Briefing pipeline version
+_VERSION = "3.0.0"  # Foveated rendering pipeline
 
 
 def _estimate_tokens(text: str) -> int:
-    """Estimate token count from text. chars/4 approximation.
-
-    Good enough for budget enforcement — no tokenizer dependency.
-    Slightly overestimates which is the safe direction.
-    """
+    """Estimate token count. chars/4 approximation (safe overestimate)."""
     return max(1, len(text) // 4)
+
+
+# ── Focus Signal ───────────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class BriefingFocus:
+    """Per-stage focus weights derived from substrate signals.
+
+    Each weight is 0.0 (fully compressed) to 1.0 (full detail).
+    Computed from system state — no LLM, deterministic.
+    """
+
+    orientation: float = 0.7
+    status: float = 0.5
+    action: float = 0.8
+    knowledge: float = 0.5
+    environment: float = 0.6
+    gap_awareness: float = 0.5
+    federation_insight: float = 0.4
+    toolbox: float = 0.3
+    architecture: float = 0.5
+    sessions: float = 0.3
+
+    # Diagnostic: what drove the focus computation
+    driver: str = "default"
+
+
+def compute_focus(ctx: dict) -> BriefingFocus:
+    """Derive focus weights from substrate signals.
+
+    Reads: total_pain, per-sense pain, context_pressure, gaps, health.
+    All available at cold-start (from context.json or fresh senses).
+
+    Strategy:
+      1. Base weights from overall health (sattva=relaxed, tamas=urgent)
+      2. Per-sense pain boosts the corresponding stage
+      3. Context pressure compresses everything proportionally
+      4. Active gaps boost gap_awareness stage
+    """
+    senses = ctx.get("senses", {})
+    health = ctx.get("health", {})
+    gaps = ctx.get("gaps", {})
+
+    total_pain = senses.get("total_pain", 0.0)
+    if not isinstance(total_pain, (int, float)):
+        total_pain = 0.0
+
+    context_pressure = health.get("context_pressure", 0.0)
+    if not isinstance(context_pressure, (int, float)):
+        context_pressure = 0.0
+
+    guna = health.get("guna", "rajas")
+    active_gap_count = len(gaps.get("active", []))
+    driver_parts: list[str] = []
+
+    # ── 1. Base weights from guna (overall system mood) ──
+    if guna == "tamas" or total_pain > 0.5:
+        # System in pain → expand everything, agent needs full context
+        base = 0.9
+        driver_parts.append(f"pain={total_pain:.1f}")
+    elif guna == "sattva" and total_pain < 0.2:
+        # System healthy → compress to essentials
+        base = 0.5
+        driver_parts.append("sattva")
+    else:
+        # Rajas (active) → balanced
+        base = 0.7
+        driver_parts.append("rajas")
+
+    # Start from base, then adjust per-stage
+    weights = {
+        "orientation": base,
+        "status": base * 0.8,
+        "action": min(1.0, base + 0.2),  # Action always slightly boosted
+        "knowledge": base * 0.7,
+        "environment": base * 0.8,
+        "gap_awareness": base * 0.6,
+        "federation_insight": base * 0.5,
+        "toolbox": base * 0.4,
+        "architecture": base * 0.6,
+        "sessions": base * 0.4,
+    }
+
+    # ── 2. Per-sense pain → boost corresponding stages ──
+    sense_detail = senses.get("detail", {})
+    if isinstance(sense_detail, dict):
+        for sense_name, info in sense_detail.items():
+            if not isinstance(info, dict):
+                continue
+            sense_pain = info.get("pain", 0.0)
+            if not isinstance(sense_pain, (int, float)) or sense_pain < 0.3:
+                continue
+
+            # Map sense → stage boost
+            boost = min(0.4, sense_pain * 0.5)
+            if sense_name in ("srotra", "git"):
+                weights["environment"] = min(1.0, weights["environment"] + boost)
+                driver_parts.append(f"git_pain={sense_pain:.1f}")
+            elif sense_name in ("jihva", "testing"):
+                weights["environment"] = min(1.0, weights["environment"] + boost)
+                weights["status"] = min(1.0, weights["status"] + boost)
+                driver_parts.append(f"test_pain={sense_pain:.1f}")
+            elif sense_name in ("caksu", "code"):
+                weights["architecture"] = min(1.0, weights["architecture"] + boost)
+                weights["knowledge"] = min(1.0, weights["knowledge"] + boost)
+                driver_parts.append(f"code_pain={sense_pain:.1f}")
+            elif sense_name in ("ghrana", "health"):
+                weights["status"] = min(1.0, weights["status"] + boost)
+                driver_parts.append(f"health_pain={sense_pain:.1f}")
+
+    # ── 3. Context pressure → compress proportionally ──
+    if context_pressure > 0.5:
+        compression = 1.0 - (context_pressure - 0.5)  # 0.5→1.0, 1.0→0.5
+        for key in weights:
+            weights[key] *= compression
+        driver_parts.append(f"ctx_pressure={context_pressure:.1f}")
+
+    # ── 4. Active gaps → boost gap awareness ──
+    if active_gap_count > 0:
+        gap_boost = min(0.4, active_gap_count * 0.1)
+        weights["gap_awareness"] = min(1.0, weights["gap_awareness"] + gap_boost)
+        weights["action"] = min(1.0, weights["action"] + gap_boost * 0.5)
+        driver_parts.append(f"gaps={active_gap_count}")
+
+    # Clamp all weights to [0.1, 1.0] — never fully suppress
+    for key in weights:
+        weights[key] = max(0.1, min(1.0, weights[key]))
+
+    return BriefingFocus(
+        **weights,
+        driver=", ".join(driver_parts) if driver_parts else "default",
+    )
 
 
 # ── BriefingStage Protocol ─────────────────────────────────────────
 
 
 class BriefingStage(ABC):
-    """Base class for composable briefing stages.
+    """Base class for composable briefing stages with foveated rendering.
 
-    Each stage is responsible for one section of the CLAUDE.md output.
-    Stages are registered in a BriefingPipeline and executed in priority order.
+    Each stage renders at a variable detail level based on its focus weight:
+      - focus=1.0: full detail (every line)
+      - focus=0.5: compressed (headers + key lines only)
+      - focus=0.1: minimal (one-liner summary)
 
-    compressible: if True, this stage can be truncated or skipped when
-    the token budget is tight. Identity and Critical are never compressible.
+    Stages that are NOT compressible (Identity, Critical) ignore focus.
     """
 
     @property
     @abstractmethod
     def name(self) -> str:
-        """Unique identifier for this stage."""
         ...
 
     @property
     def priority(self) -> int:
-        """Execution order (0=first, 100=last)."""
         return 50
 
     @property
     def compressible(self) -> bool:
-        """Whether this stage can be truncated under budget pressure."""
+        """Whether this stage responds to focus weight."""
         return True
 
     def should_run(self, ctx: dict, arch: dict) -> bool:
-        """Gate — return False to skip this stage."""
         return True
 
     @abstractmethod
-    def enrich(self, parts: list[str], ctx: dict, arch: dict, cwd: str) -> None:
-        """Append lines to the briefing output."""
+    def enrich(self, parts: list[str], ctx: dict, arch: dict, cwd: str, focus: float) -> None:
+        """Append lines at the given focus level (0.0-1.0)."""
         ...
 
     def __repr__(self) -> str:
@@ -93,15 +232,15 @@ class BriefingStage(ABC):
 
 
 class BriefingPipeline:
-    """Registry + dispatcher for briefing stages with token budget enforcement.
+    """Foveated rendering pipeline for CLAUDE.md.
 
-    Two-pass generation:
-      1. Run all stages, collect output per stage
-      2. If over budget, truncate compressible stages in reverse priority
-         (highest priority number = least important = first to cut)
+    Three-pass generation:
+      1. Compute focus signal from substrate (deterministic, zero LLM)
+      2. Run all stages with per-stage focus weights
+      3. Hard-ceiling safety net (CBR limiter) — truncate if still over budget
 
-    Token budget is the "slider" — set it to control output length.
-    Budget=0 means unlimited (no truncation).
+    The focus signal is the PRIMARY compression driver.
+    The token budget is the SAFETY NET (should rarely trigger).
     """
 
     __slots__ = ("_stages", "_token_budget")
@@ -128,46 +267,54 @@ class BriefingPipeline:
         self._stages.sort(key=lambda s: s.priority)
 
     def generate(self, ctx: dict, arch: dict, cwd: str) -> str:
-        """Run all stages in priority order, enforce token budget.
+        """Foveated rendering: focus-weighted stages + budget safety net."""
+        # Pass 1: compute focus from substrate signals
+        focus = compute_focus(ctx)
 
-        Returns the joined briefing output, truncated to fit budget.
-        """
-        # Pass 1: collect output per stage
+        # Pass 2: run stages with focus weights
         stage_outputs: list[tuple[BriefingStage, str]] = []
         for stage in self._stages:
             try:
                 if not stage.should_run(ctx, arch):
                     logger.debug("Stage %s skipped (gate)", stage.name)
                     continue
+
+                # Get focus weight for this stage (1.0 for non-compressible)
+                if stage.compressible:
+                    stage_focus = getattr(focus, stage.name, 0.5)
+                else:
+                    stage_focus = 1.0
+
                 parts: list[str] = []
-                stage.enrich(parts, ctx, arch, cwd)
+                stage.enrich(parts, ctx, arch, cwd, stage_focus)
                 output = "\n".join(parts)
                 if output.strip():
                     stage_outputs.append((stage, output))
             except Exception as e:
                 logger.warning("Stage %s failed: %s", stage.name, e)
 
-        # Pass 2: enforce token budget
+        # Pass 3: safety net — hard ceiling (should rarely trigger with good focus)
         if self._token_budget > 0:
-            stage_outputs = self._enforce_budget(stage_outputs)
+            stage_outputs = self._enforce_ceiling(stage_outputs)
 
         # Assemble final output
         sections = [output for _, output in stage_outputs]
         result = "\n".join(sections)
 
-        # Append metadata footer
+        # Metadata footer
         token_count = _estimate_tokens(result)
         budget_label = self._budget_label()
-        metadata = f"\n<!-- briefing v{_VERSION} | {token_count} tokens | budget: {budget_label} ({self._token_budget}) | {time.strftime('%Y-%m-%dT%H:%M:%S')} -->"
+        metadata = (
+            f"\n<!-- briefing v{_VERSION}"
+            f" | {token_count} tokens"
+            f" | budget: {budget_label} ({self._token_budget})"
+            f" | focus: {focus.driver}"
+            f" | {time.strftime('%Y-%m-%dT%H:%M:%S')} -->"
+        )
         return result + metadata
 
-    def _enforce_budget(self, stage_outputs: list[tuple[BriefingStage, str]]) -> list[tuple[BriefingStage, str]]:
-        """Truncate compressible stages to fit within token budget.
-
-        Strategy: measure total, if over budget, remove compressible stages
-        starting from highest priority number (least important).
-        If still over, truncate the last remaining compressible stage.
-        """
+    def _enforce_ceiling(self, stage_outputs: list[tuple[BriefingStage, str]]) -> list[tuple[BriefingStage, str]]:
+        """Hard ceiling safety net. Only triggers if focus didn't compress enough."""
         total_tokens = sum(_estimate_tokens(out) for _, out in stage_outputs)
 
         if total_tokens <= self._token_budget:
@@ -187,30 +334,23 @@ class BriefingPipeline:
         budget_for_compressible = max(0, self._token_budget - fixed_tokens)
 
         if budget_for_compressible == 0:
-            # Only fixed stages fit
             return [(s, o) for s, o, _ in fixed]
 
-        # Sort compressible by priority (ascending = most important first)
-        # Remove from the END (highest priority number = least important)
+        # Include compressible stages in priority order until budget exhausted
         compressible.sort(key=lambda x: x[0].priority)
-
-        # Greedily include compressible stages until budget exhausted
         included: list[tuple[BriefingStage, str]] = []
-        remaining_budget = budget_for_compressible
+        remaining = budget_for_compressible
         for stage, output, tokens in compressible:
-            if tokens <= remaining_budget:
+            if tokens <= remaining:
                 included.append((stage, output))
-                remaining_budget -= tokens
-            elif remaining_budget > 50:
-                # Truncate this stage to fit remaining budget
-                char_limit = remaining_budget * 4
+                remaining -= tokens
+            elif remaining > 50:
+                char_limit = remaining * 4
                 truncated = output[:char_limit].rsplit("\n", 1)[0]
                 if truncated.strip():
                     included.append((stage, truncated + "\n..."))
-                remaining_budget = 0
-            # else: skip entirely
+                remaining = 0
 
-        # Reassemble in original order (fixed + compressible by priority)
         result = [(s, o) for s, o, _ in fixed]
         result.extend(included)
         result.sort(key=lambda x: x[0].priority)
@@ -228,7 +368,6 @@ class BriefingPipeline:
         return "custom"
 
     def get_stages(self) -> list[BriefingStage]:
-        """Get all stages sorted by priority."""
         return list(self._stages)
 
     def stage_count(self) -> int:
@@ -236,10 +375,12 @@ class BriefingPipeline:
 
 
 # ── Stages ─────────────────────────────────────────────────────────
+# Each stage renders at variable detail based on focus weight.
+# focus=1.0 → full detail | focus=0.5 → compressed | focus=0.1 → minimal
 
 
 class IdentityStage(BriefingStage):
-    """Project name, north star, MahaMantra seed."""
+    """Project name, north star, MahaMantra seed. Always full detail."""
 
     @property
     def name(self) -> str:
@@ -251,22 +392,21 @@ class IdentityStage(BriefingStage):
 
     @property
     def compressible(self) -> bool:
-        return False  # Identity is ALWAYS shown
+        return False
 
-    def enrich(self, parts: list[str], ctx: dict, arch: dict, cwd: str) -> None:
+    def enrich(self, parts: list[str], ctx: dict, arch: dict, cwd: str, focus: float) -> None:
         project_name = ctx.get("project", {}).get("name", "") or Path(cwd).resolve().name
         ns = arch.get("north_star", "")
         parts.append(f"# {project_name}")
         if ns:
             parts.append(f"**{ns}**")
-
         seed_info = _get_seed_info()
         if seed_info:
             parts.append(seed_info)
 
 
 class CriticalStage(BriefingStage):
-    """Critical alerts — only shown when something is actually wrong."""
+    """Critical alerts. Always full detail — never compress warnings."""
 
     @property
     def name(self) -> str:
@@ -278,9 +418,9 @@ class CriticalStage(BriefingStage):
 
     @property
     def compressible(self) -> bool:
-        return False  # Critical alerts are NEVER truncated
+        return False
 
-    def enrich(self, parts: list[str], ctx: dict, arch: dict, cwd: str) -> None:
+    def enrich(self, parts: list[str], ctx: dict, arch: dict, cwd: str, focus: float) -> None:
         critical = _collect_critical(ctx)
         if critical:
             parts.append("\n## Critical")
@@ -291,7 +431,13 @@ class CriticalStage(BriefingStage):
 
 
 class OrientationStage(BriefingStage):
-    """Static mental model from .steward/conventions.md."""
+    """Static mental model from .steward/conventions.md.
+
+    Focus levels:
+      1.0: Full conventions.md verbatim
+      0.5: Only section headers + first line per section
+      0.1: Skip entirely (agent already knows the system)
+    """
 
     @property
     def name(self) -> str:
@@ -301,17 +447,41 @@ class OrientationStage(BriefingStage):
     def priority(self) -> int:
         return 10
 
-    def enrich(self, parts: list[str], ctx: dict, arch: dict, cwd: str) -> None:
+    def enrich(self, parts: list[str], ctx: dict, arch: dict, cwd: str, focus: float) -> None:
         orientation = _load_orientation(cwd)
-        if orientation:
-            parts.append(f"\n{orientation}")
+        if not orientation:
+            return
 
-    def should_run(self, ctx: dict, arch: dict) -> bool:
-        return True  # Always try — file check is in _load_orientation
+        if focus >= 0.7:
+            # Full detail — verbatim
+            parts.append(f"\n{orientation}")
+        elif focus >= 0.3:
+            # Compressed — section headers + first content line
+            parts.append("")
+            for line in orientation.splitlines():
+                stripped = line.strip()
+                if stripped.startswith("## ") or stripped.startswith("| "):
+                    parts.append(line)
+                elif stripped.startswith("```"):
+                    parts.append(line)
+                elif stripped.startswith("- **"):
+                    parts.append(line)
+        else:
+            # Minimal — just section headers
+            parts.append("")
+            for line in orientation.splitlines():
+                if line.strip().startswith("## "):
+                    parts.append(line)
 
 
 class StatusStage(BriefingStage):
-    """Compact health/immune/federation dashboard."""
+    """Health/immune/federation dashboard.
+
+    Focus levels:
+      1.0: Full dashboard with all subsystems
+      0.5: One-liner summary
+      0.1: Skip (only if healthy)
+    """
 
     @property
     def name(self) -> str:
@@ -321,7 +491,7 @@ class StatusStage(BriefingStage):
     def priority(self) -> int:
         return 20
 
-    def enrich(self, parts: list[str], ctx: dict, arch: dict, cwd: str) -> None:
+    def enrich(self, parts: list[str], ctx: dict, arch: dict, cwd: str, focus: float) -> None:
         status_lines: list[str] = []
 
         health = ctx.get("health", {})
@@ -347,17 +517,23 @@ class StatusStage(BriefingStage):
                 f"Federation: {len(peers)} peers ({alive} alive, {suspect} suspect, {dead} dead)"
             )
 
-        if status_lines:
+        if not status_lines:
+            return
+
+        if focus >= 0.5:
             parts.append("\n## Status")
             for line in status_lines:
                 parts.append(line)
+        else:
+            # Compressed: single line
+            parts.append(f"\n## Status\n{' · '.join(status_lines)}")
 
     def should_run(self, ctx: dict, arch: dict) -> bool:
         return bool(ctx.get("health") or ctx.get("immune") or ctx.get("federation", {}).get("peers"))
 
 
 class ActionStage(BriefingStage):
-    """Action items — GitHub issues + gaps."""
+    """Action items — GitHub issues + gaps. Never compressed."""
 
     @property
     def name(self) -> str:
@@ -369,9 +545,9 @@ class ActionStage(BriefingStage):
 
     @property
     def compressible(self) -> bool:
-        return False  # Action items are critical for agent behavior
+        return False
 
-    def enrich(self, parts: list[str], ctx: dict, arch: dict, cwd: str) -> None:
+    def enrich(self, parts: list[str], ctx: dict, arch: dict, cwd: str, focus: float) -> None:
         issues = ctx.get("issues", [])
         gaps = ctx.get("gaps", {})
         active_gaps = gaps.get("active", [])
@@ -402,7 +578,13 @@ class ActionStage(BriefingStage):
 
 
 class KnowledgeStage(BriefingStage):
-    """Validated annotations from the knowledge pipeline."""
+    """Validated annotations.
+
+    Focus levels:
+      1.0: All annotations with details
+      0.3: Only invariants and warnings
+      0.1: Skip
+    """
 
     @property
     def name(self) -> str:
@@ -412,18 +594,24 @@ class KnowledgeStage(BriefingStage):
     def priority(self) -> int:
         return 40
 
-    def enrich(self, parts: list[str], ctx: dict, arch: dict, cwd: str) -> None:
-        knowledge = _collect_annotations()
+    def enrich(self, parts: list[str], ctx: dict, arch: dict, cwd: str, focus: float) -> None:
+        if focus < 0.2:
+            return  # Skip at very low focus — agent already knows
+
+        knowledge = _collect_annotations(high_priority_only=(focus < 0.5))
         if knowledge:
             parts.append("\n## Agent Knowledge")
             parts.append(knowledge)
 
-    def should_run(self, ctx: dict, arch: dict) -> bool:
-        return True  # Annotations check is in _collect_annotations
-
 
 class EnvironmentStage(BriefingStage):
-    """Senses perception + federation peer table."""
+    """Senses perception + federation peer table.
+
+    Focus levels:
+      1.0: Full prompt_summary + peer table
+      0.5: prompt_summary only (no peer table)
+      0.1: One-liner summary
+    """
 
     @property
     def name(self) -> str:
@@ -433,30 +621,46 @@ class EnvironmentStage(BriefingStage):
     def priority(self) -> int:
         return 50
 
-    def enrich(self, parts: list[str], ctx: dict, arch: dict, cwd: str) -> None:
+    def enrich(self, parts: list[str], ctx: dict, arch: dict, cwd: str, focus: float) -> None:
         senses = ctx.get("senses", {})
         prompt = senses.get("prompt_summary", "")
 
-        if prompt:
-            parts.append(f"\n{prompt.strip()}")
-        else:
-            parts.append("\n## Environment Perception")
+        if focus >= 0.5:
+            if prompt:
+                parts.append(f"\n{prompt.strip()}")
+            else:
+                parts.append("\n## Environment Perception")
 
-        fed = ctx.get("federation", {})
-        peers = fed.get("peers", [])
-        if peers:
-            parts.append(f"\nFederation peers: {len(peers)}")
-            parts.append("| Peer | Status | Trust | Capabilities |")
-            parts.append("|------|--------|-------|--------------|")
-            for p in peers:
-                caps = ", ".join(p.get("capabilities", [])[:3]) or "—"
-                parts.append(
-                    f"| {p.get('agent_id', '?')} | {p.get('status', '?')} | {p.get('trust', '?')} | {caps} |"
-                )
+            # Peer table only at high focus
+            if focus >= 0.8:
+                fed = ctx.get("federation", {})
+                peers = fed.get("peers", [])
+                if peers:
+                    parts.append(f"\nFederation peers: {len(peers)}")
+                    parts.append("| Peer | Status | Trust | Capabilities |")
+                    parts.append("|------|--------|-------|--------------|")
+                    for p in peers:
+                        caps = ", ".join(p.get("capabilities", [])[:3]) or "—"
+                        parts.append(
+                            f"| {p.get('agent_id', '?')} | {p.get('status', '?')} | {p.get('trust', '?')} | {caps} |"
+                        )
+        else:
+            # Compressed: one-liner from prompt
+            if prompt:
+                first_lines = [ln for ln in prompt.strip().splitlines() if ln.strip() and not ln.startswith("#")]
+                parts.append(f"\n## Environment Perception\n{first_lines[0] if first_lines else ''}")
+            else:
+                parts.append("\n## Environment Perception")
 
 
 class GapAwarenessStage(BriefingStage):
-    """Proactive gap surfacing — detailed view of capability gaps."""
+    """Capability gaps — detailed view.
+
+    Focus levels:
+      1.0: All gaps with context
+      0.5: Gaps without context
+      0.1: Count only
+    """
 
     @property
     def name(self) -> str:
@@ -466,7 +670,7 @@ class GapAwarenessStage(BriefingStage):
     def priority(self) -> int:
         return 55
 
-    def enrich(self, parts: list[str], ctx: dict, arch: dict, cwd: str) -> None:
+    def enrich(self, parts: list[str], ctx: dict, arch: dict, cwd: str, focus: float) -> None:
         gaps = ctx.get("gaps", {})
         active = gaps.get("active", [])
         stats = gaps.get("stats", {})
@@ -475,18 +679,26 @@ class GapAwarenessStage(BriefingStage):
             return
 
         parts.append("\n## Gap Awareness")
-        if stats:
+
+        if focus < 0.3:
+            # Minimal: just count
+            parts.append(f"{len(active)} active gaps")
+            return
+
+        if stats and focus >= 0.5:
             total = stats.get("total_tracked", 0)
             resolved = stats.get("resolved", 0)
             parts.append(f"Tracked: {total} total, {resolved} resolved")
 
-        for g in active[:10]:
+        max_gaps = max(1, int(10 * focus))
+        for g in active[:max_gaps]:
             cat = g.get("category", "?")
             desc = g.get("description", "?")
-            ctx_str = g.get("context", "")
             line = f"- **[{cat}]** {desc}"
-            if ctx_str:
-                line += f" — _{ctx_str}_"
+            if focus >= 0.7:
+                ctx_str = g.get("context", "")
+                if ctx_str:
+                    line += f" — _{ctx_str}_"
             parts.append(line)
 
     def should_run(self, ctx: dict, arch: dict) -> bool:
@@ -494,7 +706,13 @@ class GapAwarenessStage(BriefingStage):
 
 
 class FederationInsightStage(BriefingStage):
-    """Research results and insights from federation peers."""
+    """Research results from federation peers.
+
+    Focus levels:
+      1.0: All insights with peer attribution
+      0.3: Latest insight only
+      0.1: Skip
+    """
 
     @property
     def name(self) -> str:
@@ -504,20 +722,20 @@ class FederationInsightStage(BriefingStage):
     def priority(self) -> int:
         return 60
 
-    def enrich(self, parts: list[str], ctx: dict, arch: dict, cwd: str) -> None:
+    def enrich(self, parts: list[str], ctx: dict, arch: dict, cwd: str, focus: float) -> None:
+        if focus < 0.2:
+            return
+
         insights = self._collect_insights(cwd)
         if not insights:
             return
 
         parts.append("\n## Federation Insights")
-        for insight in insights[:5]:
+        max_insights = max(1, int(5 * focus))
+        for insight in insights[:max_insights]:
             parts.append(f"- From **{insight['peer']}**: {insight['summary']}")
 
-    def should_run(self, ctx: dict, arch: dict) -> bool:
-        return True  # File check is in _collect_insights
-
     def _collect_insights(self, cwd: str) -> list[dict]:
-        """Read research results from federation inbox."""
         import json
 
         inbox_path = Path(cwd) / "data" / "federation" / "nadi_inbox.json"
@@ -542,7 +760,13 @@ class FederationInsightStage(BriefingStage):
 
 
 class ToolboxStage(BriefingStage):
-    """Available tools with descriptions."""
+    """Available tools.
+
+    Focus levels:
+      1.0: Full tool list with descriptions
+      0.5: Tool names only (no descriptions)
+      0.1: Count only
+    """
 
     @property
     def name(self) -> str:
@@ -552,16 +776,21 @@ class ToolboxStage(BriefingStage):
     def priority(self) -> int:
         return 70
 
-    def enrich(self, parts: list[str], ctx: dict, arch: dict, cwd: str) -> None:
+    def enrich(self, parts: list[str], ctx: dict, arch: dict, cwd: str, focus: float) -> None:
         tools = arch.get("tools", [])
         if not tools:
             return
 
         parts.append("\n## Toolbox")
+
+        if focus < 0.3:
+            parts.append(f"{len(tools)} tools available")
+            return
+
         for t in tools:
             name = t.get("name", "?")
             desc = t.get("description", "")
-            if desc:
+            if desc and focus >= 0.6:
                 first_sentence = desc.split(".")[0].strip()
                 parts.append(f"- `{name}` — {first_sentence}")
             else:
@@ -572,7 +801,13 @@ class ToolboxStage(BriefingStage):
 
 
 class ArchitectureStage(BriefingStage):
-    """Services grouped, phases, substrate reference."""
+    """Services, phases, substrate reference.
+
+    Focus levels:
+      1.0: Full grouped services + MURALI phases
+      0.5: Service count + MURALI one-liner
+      0.1: Service count only
+    """
 
     @property
     def name(self) -> str:
@@ -582,20 +817,29 @@ class ArchitectureStage(BriefingStage):
     def priority(self) -> int:
         return 80
 
-    def enrich(self, parts: list[str], ctx: dict, arch: dict, cwd: str) -> None:
-        parts.append("\n## Architecture")
-
+    def enrich(self, parts: list[str], ctx: dict, arch: dict, cwd: str, focus: float) -> None:
         services = arch.get("services", {})
         kshetra = arch.get("kshetra", [])
+        phases = arch.get("phases", {})
+        hooks = arch.get("hooks", {})
+
+        parts.append("\n## Architecture")
+
         if services:
             parts.append(f"{len(services)} services · {len(kshetra)} tattvas")
 
+        if focus >= 0.5 and services:
+            # Grouped service listing
             groups = _group_services(sorted(services.keys()))
-            for group_name, svc_list in groups.items():
-                parts.append(f"{group_name}: {', '.join(f'`{s}`' for s in svc_list)}")
+            if focus >= 0.7:
+                # Full: all services per group
+                for group_name, svc_list in groups.items():
+                    parts.append(f"{group_name}: {', '.join(f'`{s}`' for s in svc_list)}")
+            else:
+                # Compressed: group names + counts
+                group_summary = ", ".join(f"{k}({len(v)})" for k, v in groups.items())
+                parts.append(f"Services: {group_summary}")
 
-        phases = arch.get("phases", {})
-        hooks = arch.get("hooks", {})
         if phases:
             phase_parts = []
             for p, desc in phases.items():
@@ -609,7 +853,13 @@ class ArchitectureStage(BriefingStage):
 
 
 class SessionsStage(BriefingStage):
-    """Compact session stats footer."""
+    """Session stats footer.
+
+    Focus levels:
+      1.0: Stats + recent session summaries
+      0.3: Stats one-liner
+      0.1: Skip
+    """
 
     @property
     def name(self) -> str:
@@ -619,7 +869,10 @@ class SessionsStage(BriefingStage):
     def priority(self) -> int:
         return 90
 
-    def enrich(self, parts: list[str], ctx: dict, arch: dict, cwd: str) -> None:
+    def enrich(self, parts: list[str], ctx: dict, arch: dict, cwd: str, focus: float) -> None:
+        if focus < 0.2:
+            return
+
         sessions = ctx.get("sessions", {})
         stats = sessions.get("stats", {})
         if stats and stats.get("total", 0) > 0:
@@ -632,11 +885,9 @@ class SessionsStage(BriefingStage):
 
 
 # ── Shared Helpers ─────────────────────────────────────────────────
-# These are extracted from briefing.py and shared across stages.
 
 
 def _get_seed_info() -> str:
-    """Get MahaMantra seed + position for identity line."""
     try:
         from vibe_core.mahamantra import mahamantra
 
@@ -680,7 +931,7 @@ def _load_orientation(cwd: str) -> str:
         return ""
 
 
-def _collect_annotations() -> str:
+def _collect_annotations(high_priority_only: bool = False) -> str:
     """Collect validated annotations from the knowledge pipeline."""
     try:
         from steward.annotations import format_for_briefing
@@ -691,7 +942,6 @@ def _collect_annotations() -> str:
 
 
 def _collect_critical(ctx: dict) -> list[str]:
-    """Collect critical alerts from system state."""
     critical: list[str] = []
 
     health = ctx.get("health", {})
@@ -719,7 +969,6 @@ def _collect_critical(ctx: dict) -> list[str]:
 
 
 def _group_services(svc_names: list[str]) -> dict[str, list[str]]:
-    """Group services by functional area for compact display."""
     groups: dict[str, list[str]] = {
         "Cognitive": [],
         "Memory": [],
@@ -766,9 +1015,8 @@ def default_pipeline(token_budget: int = BUDGET_STANDARD) -> BriefingPipeline:
     """Create the default briefing pipeline with all stages registered.
 
     Args:
-        token_budget: Token budget for output. Use BUDGET_COMPACT (800),
-            BUDGET_STANDARD (1500), BUDGET_FULL (3000), or BUDGET_UNLIMITED (0).
-            Acts as a slider — lower budget = more aggressive truncation.
+        token_budget: Hard ceiling safety net. Focus weights are the primary
+            compression driver; budget is the brick-wall limiter.
     """
     pipeline = BriefingPipeline(token_budget=token_budget)
     pipeline.register(IdentityStage())
