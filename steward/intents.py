@@ -47,6 +47,9 @@ class TaskIntent(enum.Enum):
     # Autonomous — self-documentation
     SYNTHESIZE_BRIEFING = "synthesize_briefing"
 
+    # Autonomous — federation architecture gaps
+    FEDERATION_GAP_SCAN = "federation_gap_scan"
+
     @property
     def is_proactive(self) -> bool:
         """Proactive intents create PRs instead of direct fixes."""

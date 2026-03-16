@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Callable
 
-from steward.services import SVC_FEDERATION, SVC_REAPER
+from steward.services import SVC_AGENT_DECK, SVC_FEDERATION, SVC_REAPER
 from vibe_core.di import ServiceRegistry
 
 if TYPE_CHECKING:
@@ -57,6 +57,7 @@ class IntentHandlers:
             TaskIntent.UPDATE_DEPS: self.execute_update_deps,
             TaskIntent.REMOVE_DEAD_CODE: self.execute_remove_dead_code,
             TaskIntent.SYNTHESIZE_BRIEFING: self.execute_synthesize_briefing,
+            TaskIntent.FEDERATION_GAP_SCAN: self.execute_federation_gap_scan,
         }
         handler = dispatch.get(intent)
         if handler is None:
@@ -368,4 +369,79 @@ class IntentHandlers:
         if context_json.stat().st_mtime > claude_md.stat().st_mtime:
             return "CLAUDE.md is stale (context.json updated since last synthesis). Use the synthesize_briefing tool to refresh it."
 
+        return None
+
+    def execute_federation_gap_scan(self) -> str | None:
+        """Scan federation architecture for gaps — 0 tokens.
+
+        Checks:
+        1. Delivery guarantees: are messages being lost? (outbox backlog)
+        2. Agent card coverage: do peers share specialized profiles?
+        3. Consensus: are slot conflicts unresolved?
+        4. Capability coverage: are critical capabilities missing?
+        5. Trust health: are peer trust scores degrading?
+        """
+        gaps: list[str] = []
+
+        # 1. Check delivery health (fire-and-forget gap)
+        federation = ServiceRegistry.get(SVC_FEDERATION)
+        if federation is not None:
+            stats = federation.stats()
+            if stats["errors"] > 3:
+                gaps.append(
+                    f"delivery_reliability: {stats['errors']} transport errors "
+                    f"(outbox backlog: {stats['outbound_pending']}). "
+                    f"Federation messages may be silently lost."
+                )
+            if stats["delegations_rejected"] > 0:
+                gaps.append(
+                    f"delegation_trust: {stats['delegations_rejected']} delegations "
+                    f"rejected due to low trust. Peers may need trust bootstrapping."
+                )
+
+        # 2. Check agent card coverage
+        deck = ServiceRegistry.get(SVC_AGENT_DECK)
+        if deck is not None:
+            deck_stats = deck.stats()
+            if deck_stats["total_cards"] == 0:
+                gaps.append(
+                    "agent_deck_empty: no specialized agent profiles. "
+                    "Steward cannot delegate to specialized sub-agents."
+                )
+            elif deck_stats["proven_cards"] == 0 and deck_stats["total_spawns"] > 5:
+                gaps.append(
+                    f"agent_deck_ineffective: {deck_stats['total_spawns']} spawns "
+                    f"but 0 proven cards. Sub-agent profiles may need tuning."
+                )
+
+        # 3. Check peer coverage
+        reaper = ServiceRegistry.get(SVC_REAPER)
+        if reaper is not None:
+            alive = reaper.alive_peers()
+            dead = reaper.dead_peers()
+            suspect = reaper.suspect_peers()
+
+            # Only flag isolation if peers WERE known but all died
+            # Empty federation (no peers ever) is not a gap — it's just solo mode
+            if dead and not alive and not suspect:
+                gaps.append(
+                    "federation_collapsed: all known peers are dead. Steward has lost contact with entire federation."
+                )
+            elif dead and len(dead) > len(alive):
+                gaps.append(
+                    f"federation_degraded: {len(dead)} dead peers vs {len(alive)} alive. "
+                    f"Majority of federation is unreachable."
+                )
+
+            # Trust degradation trend
+            if alive:
+                avg_trust = sum(p.trust for p in alive) / len(alive)
+                if avg_trust < 0.4:
+                    gaps.append(
+                        f"trust_erosion: average peer trust is {avg_trust:.2f}. "
+                        f"Federation trust is degrading — peers may need healing."
+                    )
+
+        if gaps:
+            return "Federation gaps detected: " + "; ".join(gaps)
         return None
