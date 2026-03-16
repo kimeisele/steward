@@ -44,6 +44,9 @@ class TaskIntent(enum.Enum):
     UPDATE_DEPS = "update_deps"
     REMOVE_DEAD_CODE = "remove_dead_code"
 
+    # Autonomous — self-documentation
+    SYNTHESIZE_BRIEFING = "synthesize_briefing"
+
     @property
     def is_proactive(self) -> bool:
         """Proactive intents create PRs instead of direct fixes."""
