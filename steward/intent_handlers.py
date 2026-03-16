@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Callable
 
-from steward.services import SVC_AGENT_DECK, SVC_FEDERATION, SVC_REAPER
+from steward.services import SVC_FEDERATION, SVC_REAPER
 from vibe_core.di import ServiceRegistry
 
 if TYPE_CHECKING:
@@ -399,22 +399,7 @@ class IntentHandlers:
                     f"rejected due to low trust. Peers may need trust bootstrapping."
                 )
 
-        # 2. Check agent card coverage
-        deck = ServiceRegistry.get(SVC_AGENT_DECK)
-        if deck is not None:
-            deck_stats = deck.stats()
-            if deck_stats["total_cards"] == 0:
-                gaps.append(
-                    "agent_deck_empty: no specialized agent profiles. "
-                    "Steward cannot delegate to specialized sub-agents."
-                )
-            elif deck_stats["proven_cards"] == 0 and deck_stats["total_spawns"] > 5:
-                gaps.append(
-                    f"agent_deck_ineffective: {deck_stats['total_spawns']} spawns "
-                    f"but 0 proven cards. Sub-agent profiles may need tuning."
-                )
-
-        # 3. Check peer coverage
+        # 2. Check peer coverage
         reaper = ServiceRegistry.get(SVC_REAPER)
         if reaper is not None:
             alive = reaper.alive_peers()
