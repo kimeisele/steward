@@ -96,12 +96,31 @@ class IntentHandlers:
         try:
             perception = git_sense.perceive()
             ci_status = perception.get("ci_status") if isinstance(perception, dict) else None
-            if ci_status and ci_status.get("conclusion") == "failure":
-                failing = ci_status.get("name", "unknown workflow")
-                return f"CI is failing: workflow '{failing}'. Check the logs and fix the failing tests."
+            if ci_status:
+                self._emit_ci_status(ci_status)
+                if ci_status.get("conclusion") == "failure":
+                    failing = ci_status.get("name", "unknown workflow")
+                    return f"CI is failing: workflow '{failing}'. Check the logs and fix the failing tests."
         except Exception as e:
             logger.debug("CI check failed (non-fatal): %s", e)
         return None
+
+    def _emit_ci_status(self, ci_status: dict) -> None:
+        """Emit CI status to federation so peers can track repo health."""
+        from steward.federation import OP_CI_STATUS
+        from steward.services import SVC_FEDERATION
+
+        bridge = ServiceRegistry.get(SVC_FEDERATION)
+        if bridge is None:
+            return
+        bridge.emit(
+            OP_CI_STATUS,
+            {
+                "repo": "kimeisele/steward",
+                "conclusion": ci_status.get("conclusion", "unknown"),
+                "workflow": ci_status.get("name", "unknown"),
+            },
+        )
 
     def execute_post_merge(self) -> str | None:
         """Post-merge verification — 0 tokens.
