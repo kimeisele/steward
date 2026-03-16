@@ -1,13 +1,10 @@
-# Post-Merge Nerve Ending — lightweight trigger, not a full install.
+# Post-Merge — trigger heartbeat so GitSense detects the merge fast.
 #
-# Two modes:
-#   1. API ping (if STEWARD_API_URL configured): curl → steward digests immediately
-#   2. Fallback: trigger the heartbeat workflow with dispatch event
-#
-# The REAL merge detection lives in GitSense._detect_merge() — steward's own
-# eyes. This workflow is just the fast-path notification so it doesn't wait
-# for the 15-minute cron. The handler (execute_post_merge) does the actual
-# lint/test/CI verification with 0 LLM tokens.
+# Without this, steward waits up to 15 minutes (cron) to notice.
+# This workflow just kicks the heartbeat with 1 cycle — GitSense
+# detects the merge via HEAD comparison, emits OP_MERGE_OCCURRED
+# to federation, and injects POST_MERGE task. All the real work
+# happens in steward's own architecture, not here.
 
 name: Post-Merge Digest
 
@@ -17,40 +14,20 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
-  actions: write  # needed for workflow_dispatch trigger
+  actions: write
 
 jobs:
   notify:
-    name: Notify steward of merge
+    name: Trigger steward heartbeat
     runs-on: ubuntu-latest
     if: github.event.pull_request.merged == true
     timeout-minutes: 1
 
     steps:
-      - name: Ping steward API
-        if: ${{ env.STEWARD_API_URL != '' }}
-        env:
-          STEWARD_API_URL: ${{ secrets.STEWARD_API_URL }}
-          STEWARD_API_TOKEN: ${{ secrets.STEWARD_API_TOKEN }}
-        run: |
-          PR="${{ github.event.pull_request.number }}"
-          TITLE="${{ github.event.pull_request.title }}"
-
-          curl -s -X POST "$STEWARD_API_URL/github-webhook" \
-            -H "Authorization: Bearer $STEWARD_API_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "{\"event\": \"pull_request.merged\", \"pr_number\": $PR, \"title\": $(echo "$TITLE" | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read().strip()))')}" \
-            --max-time 10 \
-            || echo "Steward API not reachable — merge detection will use GitSense fallback"
-
-      - name: Trigger heartbeat (fallback)
-        if: ${{ env.STEWARD_API_URL == '' }}
+      - name: Trigger heartbeat
         env:
           GH_TOKEN: ${{ secrets.FEDERATION_PAT || github.token }}
         run: |
-          # Trigger the heartbeat workflow with 1 cycle — steward's GitSense
-          # will detect the merge via HEAD comparison
           gh workflow run steward-heartbeat.yml \
             --repo "${{ github.repository }}" \
             -f cycles=1 \
@@ -58,7 +35,7 @@ jobs:
 
       - name: Log
         run: |
-          echo "## Post-Merge Notification" >> $GITHUB_STEP_SUMMARY
+          echo "## Post-Merge" >> $GITHUB_STEP_SUMMARY
           echo "- **PR**: #${{ github.event.pull_request.number }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Title**: ${{ github.event.pull_request.title }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Merge SHA**: ${{ github.event.pull_request.merge_commit_sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "Triggered heartbeat — GitSense will detect merge." >> $GITHUB_STEP_SUMMARY

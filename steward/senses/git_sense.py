@@ -46,6 +46,8 @@ class GitSense:
 
     # TTL for remote perception cache — gh CLI calls are expensive (~2s)
     _REMOTE_TTL = 60.0  # seconds
+    # TTL for merge detection — git fetch is a network call, don't hammer it
+    _MERGE_TTL = 60.0  # seconds
 
     def __init__(self, cwd: str | None = None, gh_client: GhClient | None = None) -> None:
         self._cwd = cwd or str(Path.cwd())
@@ -55,6 +57,8 @@ class GitSense:
         self._remote_cache_time: float = 0.0
         # Merge detection: track last known main HEAD
         self._last_main_head: str | None = None
+        self._merge_cache: str | None = None  # sentinel: None = not cached
+        self._merge_cache_time: float = 0.0
 
     def has_remote_perception(self) -> bool:
         """RemotePerception protocol — True when gh CLI is available."""
@@ -234,10 +238,19 @@ class GitSense:
 
         Returns the new HEAD sha if a merge was detected, None otherwise.
         Updates internal state so each merge is reported exactly once.
+        TTL-cached to avoid hammering the network with git fetch.
         """
         if not self._is_git:
             return None
-        # Fetch latest main from remote (non-blocking, best-effort)
+
+        # TTL cache — don't fetch more than once per _MERGE_TTL seconds
+        now = time.monotonic()
+        if self._merge_cache_time > 0 and (now - self._merge_cache_time) < self._MERGE_TTL:
+            return None  # already checked recently, no new merge to report
+
+        self._merge_cache_time = now
+
+        # Fetch latest main from remote (best-effort, offline is fine)
         try:
             subprocess.run(
                 ["git", "fetch", "origin", "main", "--quiet"],
@@ -246,10 +259,9 @@ class GitSense:
                 timeout=10,
             )
         except (subprocess.SubprocessError, FileNotFoundError):
-            pass  # offline is fine — use local refs
+            pass
         current_main = self._git("rev-parse", "origin/main").strip()
         if not current_main:
-            # No remote main ref — try local
             current_main = self._git("rev-parse", "main").strip()
         if not current_main:
             return None
