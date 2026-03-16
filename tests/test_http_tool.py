@@ -53,7 +53,8 @@ class TestHttpToolValidation:
         with pytest.raises(ValueError, match="Unsupported HTTP method"):
             self.tool.validate({"url": "https://example.com", "method": "TRACE"})
 
-    def test_validate_valid_methods(self):
+    @patch("steward.tools.http._is_private_ip", return_value=False)
+    def test_validate_valid_methods(self, _mock_ip):
         for method in ["GET", "POST", "PUT", "DELETE", "HEAD", "PATCH"]:
             self.tool.validate({"url": "https://example.com", "method": method})
 
