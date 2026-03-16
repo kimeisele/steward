@@ -175,6 +175,7 @@ class SubAgentTool(Tool):
                 metadata={"agent_card": card_name},
             )
         except Exception as e:
+            logger.exception("Sub-agent '%s' crashed", card_name)
             self._learn(card, success=False)
             return ToolResult(
                 success=False,
@@ -182,7 +183,7 @@ class SubAgentTool(Tool):
                 metadata={"agent_card": card_name},
             )
 
-    def _resolve_card(self, task: str, capability: str) -> object | None:
+    def _resolve_card(self, task: str, capability: str) -> Any:  # AgentCard | None
         """Query AgentDeck for a matching card. Returns None if no deck or no match."""
         from steward.services import SVC_AGENT_DECK
 
@@ -207,8 +208,8 @@ class SubAgentTool(Tool):
             if card is not None:
                 logger.info("DECK: routed to '%s' via seed %d", card.name, seed)
                 return card
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("DECK: seed computation failed for task: %s", exc)
 
         return None
 
