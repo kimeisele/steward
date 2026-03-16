@@ -1,9 +1,12 @@
 """
 Briefing — cockpit display from living system state.
 
-Pure formatter of context_bridge data. Conventions derived from pyproject.toml.
-Static rules loaded from .steward/conventions.md (if present).
-Structured for INSTANT agent orientation: critical → rules → state → action → architecture.
+Two layers compose the CLAUDE.md:
+  1. Static orientation from .steward/conventions.md (architecture, invariants, workflow)
+  2. Dynamic state from context_bridge (health, issues, senses, federation)
+
+The static block gives the agent a mental model of the system.
+The dynamic block tells it what's happening RIGHT NOW.
 """
 
 from __future__ import annotations
@@ -47,40 +50,38 @@ def _merge_cached_context(ctx: dict, cwd: str) -> None:
 
 
 def _format(ctx: dict, arch: dict, cwd: str = ".") -> str:
-    """Cockpit layout: identity → critical → rules → state → action → architecture."""
+    """Cockpit layout: identity → orientation → critical → state → action → architecture."""
     parts: list[str] = []
     name = ctx.get("project", {}).get("name", "") or Path(cwd).resolve().name
 
-    # ── 1. IDENTITY (one line — what this project IS) ──
+    # ── 1. IDENTITY ──
     ns = arch.get("north_star", "")
     parts.append(f"# {name}")
     if ns:
         parts.append(f"**{ns}**")
 
-    # ── 2. CRITICAL (what needs attention NOW — only if something is wrong) ──
+    # ── 2. ORIENTATION (static block — the agent's mental model) ──
+    orientation = _load_orientation(cwd)
+    if orientation:
+        parts.append(f"\n{orientation}")
+
+    # ── 3. CRITICAL (only if something is actually wrong) ──
     critical = _collect_critical(ctx)
     if critical:
         parts.append("\n## CRITICAL")
         for c in critical:
             parts.append(f"- {c}")
 
-    # ── 3. RULES (how to work in this repo — derived + static) ──
-    rules = _derive_conventions(cwd) + _load_static_rules(cwd)
-    if rules:
-        parts.append("\n## Rules")
-        for r in rules:
-            parts.append(f"- {r}")
-
-    # ── 4. ENVIRONMENT (compact system state from senses) ──
+    # ── 4. ENVIRONMENT (dynamic — what senses perceive right now) ──
     _append_environment(parts, ctx)
 
-    # ── 5. ACTION (what to do next — issues + gaps) ──
+    # ── 5. ACTION (issues + gaps) ──
     _append_action(parts, ctx)
 
-    # ── 6. ARCHITECTURE (services with descriptions, phases, tools) ──
+    # ── 6. ARCHITECTURE (dynamic — services, phases, tools from living code) ──
     _append_architecture(parts, arch)
 
-    # ── 7. SESSIONS (recent work — compact) ──
+    # ── 7. SESSIONS (compact) ──
     sessions = ctx.get("sessions", {})
     stats = sessions.get("stats", {})
     if stats and stats.get("total", 0) > 0:
@@ -120,74 +121,38 @@ def _collect_critical(ctx: dict) -> list[str]:
     return critical
 
 
-def _derive_conventions(cwd: str) -> list[str]:
-    """Derive development conventions from pyproject.toml — zero hardcoding."""
-    rules: list[str] = []
-    pyproject = Path(cwd) / "pyproject.toml"
-    if not pyproject.is_file():
-        return rules
+def _load_orientation(cwd: str) -> str:
+    """Load the static orientation block from .steward/conventions.md.
 
-    try:
-        # Use tomllib (3.11+) or fallback to basic parsing
-        try:
-            import tomllib
-        except ImportError:
-            import tomli as tomllib  # type: ignore[no-redef]
-
-        data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
-    except Exception:
-        return rules
-
-    # Linter/formatter
-    ruff = data.get("tool", {}).get("ruff", {})
-    if ruff:
-        line_len = ruff.get("line-length", 88)
-        target = ruff.get("target-version", "py311")
-        rules.append(f"`ruff check` + `ruff format` before every commit (line-length={line_len}, {target})")
-
-    # Test runner
-    pytest_cfg = data.get("tool", {}).get("pytest", {}).get("ini_options", {})
-    if pytest_cfg:
-        testpaths = pytest_cfg.get("testpaths", ["tests"])
-        timeout = pytest_cfg.get("timeout")
-        asyncio = pytest_cfg.get("asyncio_mode")
-        test_desc = f"`pytest {' '.join(testpaths)}`"
-        if timeout:
-            test_desc += f" (timeout={timeout}s"
-            if asyncio:
-                test_desc += f", asyncio={asyncio}"
-            test_desc += ")"
-        rules.append(test_desc)
-
-    # Security scanner
-    bandit = data.get("tool", {}).get("bandit", {})
-    if bandit:
-        rules.append("`bandit -r steward/` for security scanning")
-
-    # Python version
-    project = data.get("project", {})
-    py_req = project.get("requires-python")
-    if py_req:
-        rules.append(f"Python {py_req}")
-
-    return rules
-
-
-def _load_static_rules(cwd: str) -> list[str]:
-    """Load steward-specific invariants from .steward/conventions.md.
-
-    These are the 'few effective spots' — critical system invariants
-    that every agent must know but can't be derived from config files.
-    Each non-empty, non-comment line becomes a rule.
+    This is included verbatim — it contains the architectural mental model,
+    key directories, invariants, and workflow that an agent needs to orient.
     """
     path = Path(cwd) / ".steward" / "conventions.md"
     if not path.is_file():
-        return []
+        return ""
     try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-        return [line.lstrip("- ").strip() for line in lines if line.strip() and not line.strip().startswith("#")]
+        content = path.read_text(encoding="utf-8").strip()
+        # Strip leading comment lines (file-level comments, not content)
+        lines = content.splitlines()
+        # Skip lines that are file-level comments (before first non-comment content)
+        start = 0
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped and not stripped.startswith("#"):
+                # Found first content line, but check if previous line was a heading
+                # (headings start with # followed by space)
+                start = i
+                # Include the heading above if it exists
+                if i > 0 and lines[i - 1].strip().startswith("# "):
+                    start = i - 1
+                break
+            if stripped.startswith("## "):
+                # This is a section heading, include from here
+                start = i
+                break
+        return "\n".join(lines[start:]).strip()
     except OSError:
-        return []
+        return ""
 
 
 def _append_environment(parts: list[str], ctx: dict) -> None:
@@ -259,10 +224,8 @@ def _append_architecture(parts: list[str], arch: dict) -> None:
     if services:
         parts.append(f"{len(services)} services · {len(arch.get('kshetra', []))} tattvas")
         parts.append("")
-        # Services with their docstrings (compact: name — description)
         for svc_name in sorted(services):
             doc = services[svc_name]
-            # Take first line of docstring only
             first_line = doc.split("\n")[0].strip().rstrip(".")
             parts.append(f"- `{svc_name}`: {first_line}")
 
@@ -279,7 +242,6 @@ def _append_architecture(parts: list[str], arch: dict) -> None:
                 count = len(hook_info) if isinstance(hook_info, list) else 0
             phase_parts.append(f"**{p}**({count}h)")
         parts.append(f"MURALI: {' → '.join(phase_parts)}")
-        # Phase descriptions (compact)
         for p, desc in phases.items():
             parts.append(f"- {p}: {desc}")
 
@@ -290,6 +252,5 @@ def _append_architecture(parts: list[str], arch: dict) -> None:
         for t in tools:
             desc = t.get("description", "")
             if desc:
-                # First sentence only
                 desc = desc.split(".")[0].strip()
             parts.append(f"- `{t['name']}`: {desc}" if desc else f"- `{t['name']}`")
