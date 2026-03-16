@@ -26,7 +26,12 @@ logger = logging.getLogger("STEWARD.HOOKS.MOKSHA")
 
 
 class MokshaSynapseHook(BasePhaseHook):
-    """Persist Hebbian learning weights."""
+    """Persist Hebbian learning weights + annotation lifecycle.
+
+    Decay: HebbianSynaptic.decay() regresses all weights toward 0.5.
+    Trim:  HebbianSynaptic.trim() prunes weakest entries.
+    Save:  Flush dirty weights to disk.
+    """
 
     @property
     def name(self) -> str:
@@ -44,6 +49,12 @@ class MokshaSynapseHook(BasePhaseHook):
         synapse_store = ServiceRegistry.get(SVC_SYNAPSE_STORE)
         if synapse_store is not None:
             try:
+                # Annotation lifecycle: decay + trim via substrate primitives
+                from steward.annotations import decay_all, trim
+
+                decay_all()
+                trim(max_entries=50)
+
                 synapse_store.save()
             except Exception as e:
                 logger.debug("SynapseStore save failed (non-fatal): %s", e)
