@@ -182,16 +182,28 @@ def load_all() -> list[Annotation]:
 def collect_validated() -> list[Annotation]:
     """Collect annotations that pass alignment + confidence thresholds.
 
-    Returns annotations sorted by weight (highest first), grouped by category.
-    Only annotations with weight >= CONFIDENCE_THRESHOLD are included.
+    Applies temporal decay: annotations lose weight over time if not
+    reinforced. This prevents stale knowledge from accumulating.
+
+    Decay rate: -0.02 per day since last reinforcement.
+    Annotations below CONFIDENCE_THRESHOLD after decay are excluded.
     """
     all_annotations = load_all()
-    validated = [
-        ann for ann in all_annotations if ann.weight >= CONFIDENCE_THRESHOLD and ann.alignment >= ALIGNMENT_THRESHOLD
-    ]
-    # Sort: highest weight first
-    validated.sort(key=lambda a: a.weight, reverse=True)
-    return validated
+    now = time.time()
+    decayed: list[Annotation] = []
+
+    for ann in all_annotations:
+        # Temporal decay: annotations lose weight over time
+        age_days = (now - ann.created_at) / 86400.0
+        decay = min(age_days * 0.02, 0.4)  # max 0.4 decay (won't kill high-weight annotations)
+        effective_weight = max(ann.weight - decay, 0.0)
+
+        if effective_weight >= CONFIDENCE_THRESHOLD and ann.alignment >= ALIGNMENT_THRESHOLD:
+            decayed.append(ann)
+
+    # Sort: highest effective weight first
+    decayed.sort(key=lambda a: a.weight, reverse=True)
+    return decayed
 
 
 def reinforce(annotation_id: str, success: bool) -> None:
