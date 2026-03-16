@@ -200,7 +200,7 @@ class GenesisPokedexSyncHook(BasePhaseHook):
 
         agents = _fetch_pokedex(owner)
         if agents is None:
-            logger.debug("POKEDEX_SYNC: could not fetch pokedex — skipping")
+            logger.warning("POKEDEX_SYNC: could not fetch pokedex from %s — skipping", owner)
             self._last_sync = time.time()
             return
 
