@@ -168,10 +168,12 @@ class GitHubFederationRelay:
         return len(new_msgs)
 
     def push_to_hub(self) -> int:
-        """Push local outbox messages to hub's nadi_inbox.json.
+        """Push local outbox messages to hub's nadi_outbox.json.
 
-        Reads local nadi_outbox.json, appends to hub's inbox,
-        clears local outbox on success. Returns count pushed.
+        The hub is a shared message bus, not an agent — there is no
+        inbox/outbox distinction at the hub level.  All agents push to
+        nadi_outbox.json (the same file pull_from_hub reads from).
+        Clears local outbox on success. Returns count pushed.
         """
         if not self._token:
             return 0
@@ -194,29 +196,28 @@ class GitHubFederationRelay:
             self._last_push = time.monotonic()
             return 0
 
-        # Read hub's current inbox
-        hub_inbox, sha = self._get_file("nadi_inbox.json")
+        # Read hub's current outbox (shared bus — same file pull reads from)
+        hub_outbox, sha = self._get_file("nadi_outbox.json")
         if not sha:
-            # File might not exist or API error — try to get it
             self._last_push = time.monotonic()
             self._errors += 1
             return 0
 
-        # Append our messages to hub inbox
-        hub_inbox.extend(local_msgs)
+        # Append our messages to hub outbox
+        hub_outbox.extend(local_msgs)
 
         # Cap at 144 messages (NADI_BUFFER_SIZE)
-        if len(hub_inbox) > 144:
-            hub_inbox = hub_inbox[-144:]
+        if len(hub_outbox) > 144:
+            hub_outbox = hub_outbox[-144:]
 
         # Write back to hub
         commit_msg = f"steward: relay {len(local_msgs)} messages to hub"
-        if self._put_file("nadi_inbox.json", hub_inbox, sha, commit_msg):
+        if self._put_file("nadi_outbox.json", hub_outbox, sha, commit_msg):
             # Clear local outbox on success
             self._local_outbox.write_text("[]")
             self._last_push = time.monotonic()
             self._push_count += len(local_msgs)
-            logger.info("RELAY: pushed %d messages to hub inbox", len(local_msgs))
+            logger.info("RELAY: pushed %d messages to hub outbox", len(local_msgs))
             return len(local_msgs)
 
         self._last_push = time.monotonic()
