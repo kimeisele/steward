@@ -227,34 +227,52 @@ class TestGenesisPokedexSyncHook:
             ServiceRegistry.reset_all()
 
 
-class TestInstallStarterCardsPokedexSeeded:
-    def test_pokedex_seeded_skips_covered_capabilities(self):
-        """When pokedex_seeded=True, skip starters whose primary cap is covered."""
+class TestStartersAlongsidePokedex:
+    def test_starters_always_installed_alongside_pokedex(self):
+        """Starter cards are always present — Pokedex cards are additive."""
         from steward.agent_deck import install_starter_cards
 
         deck = AgentDeck()
 
+        # First: install starters (Steward's core)
+        installed = install_starter_cards(deck)
+        assert installed == 5
+
+        # Then: simulate Pokedex sync adding an agent with overlapping capability
         pokedex_card = AgentCard(
             seed=999999,
             name="PokedexFixer",
             capabilities=("fix_tests", "testing"),
             source="agent-city:pokedex",
+            hebbian_weight=0.3,  # Lower than starter's 0.5
         )
         deck.register(pokedex_card)
 
-        installed = install_starter_cards(deck, pokedex_seeded=True)
-
+        # Both starter AND Pokedex card coexist
         names = {c.name for c in deck.list_cards()}
-        assert "PokedexFixer" in names
-        assert installed < 5
+        assert "test_fixer" in names  # Starter card still there
+        assert "PokedexFixer" in names  # Pokedex card added on top
+        assert len(deck.list_cards()) == 6  # 5 starters + 1 pokedex
 
-    def test_pokedex_seeded_false_installs_all(self):
-        """When pokedex_seeded=False (default), install all starters."""
+    def test_starters_not_replaced_by_install_after_pokedex(self):
+        """Re-running install_starter_cards doesn't skip anything."""
         from steward.agent_deck import install_starter_cards
 
         deck = AgentDeck()
-        installed = install_starter_cards(deck, pokedex_seeded=False)
-        assert installed == 5
+        install_starter_cards(deck)
+
+        # Simulate Pokedex card with same capability
+        deck.register(AgentCard(
+            seed=888888,
+            name="FederationAgent",
+            capabilities=("fix_tests",),
+            source="agent-city:pokedex",
+        ))
+
+        # Re-install starters — should be no-op (already exist), not skip
+        reinstalled = install_starter_cards(deck)
+        assert reinstalled == 0  # All 5 already exist
+        assert len(deck.list_cards()) == 6  # Nothing removed
 
 
 def _make_ctx():
