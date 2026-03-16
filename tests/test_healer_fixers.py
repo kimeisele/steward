@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from pathlib import Path
 
 from steward.healer.fixers import (
     _IMPORT_TO_PIP,
@@ -20,7 +19,7 @@ from steward.healer.fixers import (
     _fix_syntax_error,
     _fix_undeclared_dependency,
 )
-from steward.healer.types import FixStrategy, _FIXERS, classify
+from steward.healer.types import _FIXERS, FixStrategy, classify
 from steward.senses.diagnostic_sense import FindingKind, Severity
 
 
@@ -77,9 +76,7 @@ class TestFixerRegistry:
 class TestFixUndeclaredDependency:
     def test_adds_to_multiline_deps(self, tmp_path):
         pyproject = tmp_path / "pyproject.toml"
-        pyproject.write_text(
-            '[project]\nname = "test"\ndependencies = [\n    "existing>=1.0",\n]\n'
-        )
+        pyproject.write_text('[project]\nname = "test"\ndependencies = [\n    "existing>=1.0",\n]\n')
         f = _F(fix_hint="Add 'requests' to [project.dependencies]")
         changed = _fix_undeclared_dependency(f, tmp_path)
         assert changed == ["pyproject.toml"]
@@ -87,9 +84,7 @@ class TestFixUndeclaredDependency:
 
     def test_resolves_import_to_pip_name(self, tmp_path):
         pyproject = tmp_path / "pyproject.toml"
-        pyproject.write_text(
-            '[project]\ndependencies = [\n    "foo",\n]\n'
-        )
+        pyproject.write_text('[project]\ndependencies = [\n    "foo",\n]\n')
         f = _F(fix_hint="Add 'yaml' to deps")
         changed = _fix_undeclared_dependency(f, tmp_path)
         assert changed == ["pyproject.toml"]
@@ -101,7 +96,7 @@ class TestFixUndeclaredDependency:
 
     def test_no_package_name_returns_empty(self, tmp_path):
         pyproject = tmp_path / "pyproject.toml"
-        pyproject.write_text('[project]\ndependencies = []\n')
+        pyproject.write_text("[project]\ndependencies = []\n")
         f = _F(fix_hint="fix it", detail="something broken")
         assert _fix_undeclared_dependency(f, tmp_path) == []
 
@@ -196,7 +191,7 @@ class TestFixBrokenImport:
             kind=FindingKind.BROKEN_IMPORT,
             detail="from deep.nested.mod import func — local module not found",
         )
-        changed = _fix_broken_import(f, tmp_path)
+        _fix_broken_import(f, tmp_path)
         assert (tmp_path / "deep" / "__init__.py").exists()
         assert (tmp_path / "deep" / "nested" / "__init__.py").exists()
 

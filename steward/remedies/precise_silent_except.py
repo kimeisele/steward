@@ -34,48 +34,52 @@ from vibe_core.mahamantra.dharma.kapila.remedies.base import CSTRemedy
 
 # Exception types that are INTENTIONALLY caught and silenced.
 # These represent expected control flow, not hidden bugs.
-_INTENTIONAL_EXCEPTIONS = frozenset({
-    # Flow control
-    "KeyboardInterrupt",
-    "SystemExit",
-    "GeneratorExit",
-    "StopIteration",
-    "StopAsyncIteration",
-    "CancelledError",
-    # Expected failures
-    "ImportError",
-    "ModuleNotFoundError",
-    "FileNotFoundError",
-    "NotADirectoryError",
-    "PermissionError",
-    "ProcessLookupError",
-    "ConnectionError",
-    "TimeoutError",
-    # Parse/type (expected in try-parse patterns)
-    "ValueError",
-    "TypeError",
-    "KeyError",
-    "IndexError",
-    "AttributeError",
-    "UnicodeDecodeError",
-    "UnicodeEncodeError",
-    # OS/subprocess
-    "OSError",
-    "IOError",
-    "CalledProcessError",
-    "TimeoutExpired",
-    "JSONDecodeError",
-})
+_INTENTIONAL_EXCEPTIONS = frozenset(
+    {
+        # Flow control
+        "KeyboardInterrupt",
+        "SystemExit",
+        "GeneratorExit",
+        "StopIteration",
+        "StopAsyncIteration",
+        "CancelledError",
+        # Expected failures
+        "ImportError",
+        "ModuleNotFoundError",
+        "FileNotFoundError",
+        "NotADirectoryError",
+        "PermissionError",
+        "ProcessLookupError",
+        "ConnectionError",
+        "TimeoutError",
+        # Parse/type (expected in try-parse patterns)
+        "ValueError",
+        "TypeError",
+        "KeyError",
+        "IndexError",
+        "AttributeError",
+        "UnicodeDecodeError",
+        "UnicodeEncodeError",
+        # OS/subprocess
+        "OSError",
+        "IOError",
+        "CalledProcessError",
+        "TimeoutExpired",
+        "JSONDecodeError",
+    }
+)
 
 # Qualified names (module.Exception) that are intentional
-_INTENTIONAL_QUALIFIED = frozenset({
-    "asyncio.CancelledError",
-    "asyncio.TimeoutError",
-    "subprocess.CalledProcessError",
-    "subprocess.TimeoutExpired",
-    "json.JSONDecodeError",
-    "signal.ItimerError",
-})
+_INTENTIONAL_QUALIFIED = frozenset(
+    {
+        "asyncio.CancelledError",
+        "asyncio.TimeoutError",
+        "subprocess.CalledProcessError",
+        "subprocess.TimeoutExpired",
+        "json.JSONDecodeError",
+        "signal.ItimerError",
+    }
+)
 
 
 def _extract_exception_names(exc_type: cst.BaseExpression | None) -> list[str]:

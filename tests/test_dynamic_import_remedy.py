@@ -91,9 +91,9 @@ class TestImportlibImport:
         result, found, applied = _transform(code)
         assert applied
         lines = result.splitlines()
-        importlib_idx = next(i for i, l in enumerate(lines) if "importlib.util" in l)
-        os_idx = next(i for i, l in enumerate(lines) if "import os" in l)
-        sys_idx = next(i for i, l in enumerate(lines) if "import sys" in l)
+        importlib_idx = next(i for i, line in enumerate(lines) if "importlib.util" in line)
+        os_idx = next(i for i, line in enumerate(lines) if "import os" in line)
+        sys_idx = next(i for i, line in enumerate(lines) if "import sys" in line)
         assert importlib_idx > os_idx
         assert importlib_idx > sys_idx
 

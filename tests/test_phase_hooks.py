@@ -9,8 +9,6 @@ Verifies:
 - PhaseContext mutation (health_anomaly written by hooks, read by agent)
 """
 
-
-
 from steward.phase_hook import (
     ALL_PHASES,
     DHARMA,

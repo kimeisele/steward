@@ -124,7 +124,7 @@ class IntentHandlers:
             )
             if r.returncode != 0:
                 # Count violations, report top offenders
-                lines = [l for l in r.stdout.strip().splitlines() if l.strip()]
+                lines = [ln for ln in r.stdout.strip().splitlines() if ln.strip()]
                 if lines:
                     problems.append(f"ruff: {len(lines)} lint violation(s), first: {lines[0][:120]}")
         except (subprocess.TimeoutExpired, FileNotFoundError) as e:

@@ -721,6 +721,7 @@ class StewardAgent(GADBase):
                 tool._ksetrajna = self._ksetrajna
                 try:
                     from vibe_core.mahamantra.substrate.manas.buddhi import MahaBuddhi
+
                     tool._maha_buddhi = MahaBuddhi()
                 except ImportError:
                     pass
