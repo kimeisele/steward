@@ -224,37 +224,6 @@ def create_app():
 
         return result
 
-    # ── GitHub Webhook ─────────────────────────────────────────────
-
-    class WebhookRequest(BaseModel):
-        event: str
-        pr_number: int | None = None
-        title: str | None = None
-
-    @app.post("/github-webhook", dependencies=[Depends(_verify_token)])
-    async def github_webhook(req: WebhookRequest):
-        """Receive GitHub events and inject tasks.
-
-        Called by post-merge.yml workflow or external webhook integration.
-        Injects a POST_MERGE task into the task queue — steward picks it up
-        on the next heartbeat. 0 LLM tokens for detection.
-        """
-        from steward.services import SVC_TASK_MANAGER
-        from vibe_core.di import ServiceRegistry
-
-        if req.event == "pull_request.merged":
-            task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
-            if task_mgr:
-                pr_info = f"PR #{req.pr_number}: {req.title}" if req.pr_number else "unknown PR"
-                task_mgr.add_task(
-                    title=f"[POST_MERGE] Verify {pr_info}",
-                    priority=95,
-                )
-                logger.info("Webhook: injected POST_MERGE task for %s", pr_info)
-                return {"status": "accepted", "task": f"POST_MERGE: {pr_info}"}
-
-        return {"status": "ignored", "event": req.event}
-
     # ── Agent Internet ────────────────────────────────────────────
 
     @app.get("/agent-internet/semantic/capabilities", dependencies=[Depends(_verify_token)])

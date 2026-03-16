@@ -524,7 +524,9 @@ class AutonomyEngine:
         self._check_merge_and_inject(task_mgr, active)
 
     def _check_merge_and_inject(self, task_mgr: object, active: list) -> None:
-        """Detect merges via GitSense and inject POST_MERGE task."""
+        """Detect merges via GitSense and inject POST_MERGE task + federation event."""
+        from steward.federation import OP_MERGE_OCCURRED
+        from steward.services import SVC_FEDERATION
         from vibe_core.mahamantra.protocols._sense import Jnanendriya
 
         git_sense = self._senses.senses.get(Jnanendriya.SROTRA)
@@ -534,15 +536,21 @@ class AutonomyEngine:
         if not isinstance(perception.data, dict):
             return
         if perception.data.get("merge_detected"):
-            # Don't duplicate
+            new_head = perception.data.get("merge_new_head", "unknown")
+
+            # Emit federation event — peers learn about this merge via DHARMA
+            bridge = ServiceRegistry.get(SVC_FEDERATION)
+            if bridge is not None:
+                bridge.emit(OP_MERGE_OCCURRED, {"new_head": new_head})
+
+            # Inject local task (don't duplicate)
             if any(t.title.startswith("[POST_MERGE]") for t in active):
                 return
-            new_head = perception.data.get("merge_new_head", "unknown")[:8]
             task_mgr.add_task(
-                title=f"[POST_MERGE] Verify merge {new_head}",
+                title=f"[POST_MERGE] Verify merge {new_head[:8]}",
                 priority=95,
             )
-            logger.info("GENESIS: merge detected (%s) — injected POST_MERGE task", new_head)
+            logger.info("GENESIS: merge detected (%s) — injected POST_MERGE + federation event", new_head[:8])
 
     def phase_karma(self) -> None:
         """KARMA: Execute — dispatch next pending task.

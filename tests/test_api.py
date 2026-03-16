@@ -49,13 +49,6 @@ class TestAPIApp:
         routes = [r.path for r in app.routes]
         assert "/task/stream" in routes
 
-    def test_webhook_endpoint_exists(self):
-        from steward.interfaces.api import create_app
-
-        app = create_app()
-        routes = [r.path for r in app.routes]
-        assert "/github-webhook" in routes
-
     def test_stats_endpoint_exists(self):
         from steward.interfaces.api import create_app
 
