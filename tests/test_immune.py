@@ -123,3 +123,20 @@ class TestStewardImmune:
         result = immune.diagnose("LCOM4=6 in steward/agent.py")
         assert result.confidence == 0.8
         synaptic.get_weight.assert_called_with("immune:god_class", "heal")
+
+
+class TestNewPathogenPatterns:
+    """Tests for patterns added from PR #34/#35 manual audit findings."""
+
+    def test_base_exception_catch(self):
+        assert _match_pattern("base_exception_catch in foo.py") == "base_exception_catch"
+        assert _match_pattern("except BaseException in bar.py") == "base_exception_catch"
+
+    def test_dynamic_import(self):
+        assert _match_pattern("dynamic_import in probe.py") == "dynamic_import"
+        assert _match_pattern("__import__('foo') in code.py") == "dynamic_import"
+
+    def test_unbounded_collection(self):
+        assert _match_pattern("unbounded_collection Queue()") == "unbounded_collection"
+        assert _match_pattern("Queue() without maxsize") == "unbounded_collection"
+        assert _match_pattern("deque() without maxlen") == "unbounded_collection"

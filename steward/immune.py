@@ -467,6 +467,13 @@ _PATHOGEN_PATTERNS: dict[str, str] = {
     "no_ci": "no_ci",
     "no_tests": "no_tests",
     "broken_import": "broken_import",
+    "base_exception_catch": "base_exception_catch",
+    "BaseException": "base_exception_catch",
+    "__import__": "dynamic_import",
+    "dynamic_import": "dynamic_import",
+    "unbounded_collection": "unbounded_collection",
+    "without maxsize": "unbounded_collection",
+    "without maxlen": "unbounded_collection",
 }
 
 

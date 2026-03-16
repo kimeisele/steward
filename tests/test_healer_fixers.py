@@ -8,8 +8,10 @@ from pathlib import Path
 
 from steward.healer.fixers import (
     _IMPORT_TO_PIP,
+    _fix_base_exception_catch,
     _fix_broken_import,
     _fix_circular_import,
+    _fix_dynamic_import,
     _fix_nadi_blocked,
     _fix_no_ci,
     _fix_no_federation_descriptor,
@@ -50,6 +52,8 @@ class TestFixerRegistry:
             (FindingKind.SYNTAX_ERROR, FixStrategy.DETERMINISTIC),
             (FindingKind.CIRCULAR_IMPORT, FixStrategy.DETERMINISTIC),
             (FindingKind.NADI_BLOCKED, FixStrategy.DETERMINISTIC),
+            (FindingKind.BASE_EXCEPTION_CATCH, FixStrategy.DETERMINISTIC),
+            (FindingKind.DYNAMIC_IMPORT, FixStrategy.DETERMINISTIC),
         ]:
             assert classify(kind) == strategy, f"{kind} should be {strategy}"
             assert kind in _FIXERS, f"{kind} has no registered fixer"
@@ -332,3 +336,89 @@ class TestFixNadiBlocked:
         gitignore.write_text("*.pyc\n__pycache__/\n")
         f = _F(kind=FindingKind.NADI_BLOCKED)
         assert _fix_nadi_blocked(f, tmp_path) == []
+
+
+# ── _fix_base_exception_catch ─────────────────────────────────────────
+
+
+class TestFixBaseExceptionCatch:
+    def test_replaces_base_exception_with_exception(self, tmp_path):
+        code = "try:\n    do_stuff()\nexcept BaseException:\n    pass\n"
+        target = tmp_path / "bad.py"
+        target.write_text(code)
+        f = _F(kind=FindingKind.BASE_EXCEPTION_CATCH, file="bad.py", line=3)
+        changed = _fix_base_exception_catch(f, tmp_path)
+        assert changed == ["bad.py"]
+        result = target.read_text()
+        assert "except Exception:" in result
+        assert "BaseException" not in result
+
+    def test_leaves_handler_with_reraise(self, tmp_path):
+        code = "try:\n    do_stuff()\nexcept BaseException:\n    cleanup()\n    raise\n"
+        target = tmp_path / "ok.py"
+        target.write_text(code)
+        f = _F(kind=FindingKind.BASE_EXCEPTION_CATCH, file="ok.py", line=3)
+        changed = _fix_base_exception_catch(f, tmp_path)
+        assert changed == []
+        assert "BaseException" in target.read_text()
+
+    def test_with_as_clause(self, tmp_path):
+        code = "try:\n    x()\nexcept BaseException as e:\n    log(e)\n"
+        target = tmp_path / "bad.py"
+        target.write_text(code)
+        f = _F(kind=FindingKind.BASE_EXCEPTION_CATCH, file="bad.py", line=3)
+        changed = _fix_base_exception_catch(f, tmp_path)
+        assert changed == ["bad.py"]
+        assert "except Exception as e:" in target.read_text()
+
+    def test_no_file_returns_empty(self, tmp_path):
+        f = _F(kind=FindingKind.BASE_EXCEPTION_CATCH, file="", line=1)
+        assert _fix_base_exception_catch(f, tmp_path) == []
+
+    def test_missing_file_returns_empty(self, tmp_path):
+        f = _F(kind=FindingKind.BASE_EXCEPTION_CATCH, file="nope.py", line=1)
+        assert _fix_base_exception_catch(f, tmp_path) == []
+
+
+# ── _fix_dynamic_import ───────────────────────────────────────────────
+
+
+class TestFixDynamicImport:
+    def test_replaces_import_with_find_spec(self, tmp_path):
+        code = 'import sys\n\nresult = __import__("foo")\n'
+        target = tmp_path / "probe.py"
+        target.write_text(code)
+        f = _F(kind=FindingKind.DYNAMIC_IMPORT, file="probe.py", line=3)
+        changed = _fix_dynamic_import(f, tmp_path)
+        assert changed == ["probe.py"]
+        result = target.read_text()
+        assert "importlib.util.find_spec" in result
+        assert "__import__" not in result
+        assert "import importlib.util" in result
+
+    def test_adds_importlib_import(self, tmp_path):
+        code = '__import__("bar")\n'
+        target = tmp_path / "probe.py"
+        target.write_text(code)
+        f = _F(kind=FindingKind.DYNAMIC_IMPORT, file="probe.py", line=1)
+        changed = _fix_dynamic_import(f, tmp_path)
+        assert changed == ["probe.py"]
+        assert "import importlib.util" in target.read_text()
+
+    def test_skips_if_importlib_already_imported(self, tmp_path):
+        code = 'import importlib.util\n\n__import__("baz")\n'
+        target = tmp_path / "probe.py"
+        target.write_text(code)
+        f = _F(kind=FindingKind.DYNAMIC_IMPORT, file="probe.py", line=3)
+        changed = _fix_dynamic_import(f, tmp_path)
+        assert changed == ["probe.py"]
+        # Should not duplicate import
+        assert target.read_text().count("import importlib.util") == 1
+
+    def test_no_file_returns_empty(self, tmp_path):
+        f = _F(kind=FindingKind.DYNAMIC_IMPORT, file="", line=1)
+        assert _fix_dynamic_import(f, tmp_path) == []
+
+    def test_missing_file_returns_empty(self, tmp_path):
+        f = _F(kind=FindingKind.DYNAMIC_IMPORT, file="nope.py", line=1)
+        assert _fix_dynamic_import(f, tmp_path) == []

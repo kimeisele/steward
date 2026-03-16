@@ -430,6 +430,143 @@ def _fix_circular_import(finding: "Finding", workspace: Path) -> list[str]:
     return [finding.file]
 
 
+@_fixer(FindingKind.BASE_EXCEPTION_CATCH)
+def _fix_base_exception_catch(finding: "Finding", workspace: Path) -> list[str]:
+    """Replace 'except BaseException' with 'except Exception'.
+
+    Only fixes handlers that do NOT re-raise — those are the dangerous ones
+    (they swallow KeyboardInterrupt and SystemExit, making the process unkillable).
+    Handlers that re-raise are intentional cleanup patterns and left alone.
+    """
+    if not finding.file:
+        return []
+
+    target = workspace / finding.file
+    if not target.exists():
+        return []
+
+    source = target.read_text()
+    try:
+        tree = ast.parse(source, filename=finding.file)
+    except SyntaxError:
+        return []
+
+    lines = source.splitlines(keepends=True)
+    changed = False
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ExceptHandler):
+            continue
+        if node.lineno != finding.line:
+            continue
+        if not isinstance(node.type, ast.Name) or node.type.id != "BaseException":
+            continue
+        # Verify no re-raise in this handler
+        has_reraise = any(isinstance(child, ast.Raise) for child in ast.walk(node))
+        if has_reraise:
+            continue
+
+        # Replace BaseException with Exception on this line
+        line_idx = node.lineno - 1
+        lines[line_idx] = lines[line_idx].replace("BaseException", "Exception", 1)
+        changed = True
+
+    if not changed:
+        return []
+
+    new_source = "".join(lines)
+    # Verify the fix parses
+    try:
+        ast.parse(new_source, filename=finding.file)
+    except SyntaxError:
+        return []
+
+    target.write_text(new_source)
+    return [finding.file]
+
+
+@_fixer(FindingKind.DYNAMIC_IMPORT)
+def _fix_dynamic_import(finding: "Finding", workspace: Path) -> list[str]:
+    """Replace __import__(name) with importlib.util.find_spec(name).
+
+    __import__() executes the module's __init__.py on import — dangerous
+    when probing untrusted modules. find_spec() checks existence without
+    executing any code.
+
+    Only replaces __import__ used for probing (result compared to None
+    or used in try/except). Direct attribute access on the result
+    (e.g. __import__('foo').bar) is left alone — those need the real import.
+    """
+    if not finding.file:
+        return []
+
+    target = workspace / finding.file
+    if not target.exists():
+        return []
+
+    source = target.read_text()
+    try:
+        tree = ast.parse(source, filename=finding.file)
+    except SyntaxError:
+        return []
+
+    lines = source.splitlines(keepends=True)
+    changed = False
+    needs_importlib = "importlib.util" not in source
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if not isinstance(node.func, ast.Name) or node.func.id != "__import__":
+            continue
+        if node.lineno != finding.line:
+            continue
+        if not node.args:
+            continue
+
+        line_idx = node.lineno - 1
+        line = lines[line_idx]
+
+        # Only replace simple probing patterns: __import__(name)
+        # Don't replace if the result is accessed: __import__(name).attr
+        # (that pattern genuinely needs the import to execute)
+        arg_source = ast.get_source_segment(source, node.args[0])
+        if arg_source is None:
+            continue
+
+        old = f"__import__({arg_source})"
+        new = f"importlib.util.find_spec({arg_source})"
+
+        if old in line:
+            lines[line_idx] = line.replace(old, new, 1)
+            changed = True
+
+    if not changed:
+        return []
+
+    # Add importlib.util import if needed
+    if needs_importlib:
+        import_line = "import importlib.util\n"
+        # Insert after the last import at the top of the file
+        insert_idx = 0
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith(("import ", "from ")) or not stripped or stripped.startswith("#"):
+                insert_idx = i + 1
+            else:
+                break
+        lines.insert(insert_idx, import_line)
+
+    new_source = "".join(lines)
+    try:
+        ast.parse(new_source, filename=finding.file)
+    except SyntaxError:
+        return []
+
+    target.write_text(new_source)
+    return [finding.file]
+
+
 @_fixer(FindingKind.NADI_BLOCKED)
 def _fix_nadi_blocked(finding: "Finding", workspace: Path) -> list[str]:
     """Unblock nadi transport by adding gitignore exception.

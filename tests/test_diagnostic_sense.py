@@ -14,6 +14,7 @@ from steward.senses.diagnostic_sense import (
     _analyze_dependencies,
     _analyze_federation,
     _analyze_imports,
+    _analyze_security_patterns,
     _extract_package_name,
     _parse_deps_from_toml,
     _parse_optional_deps_from_toml,
@@ -383,6 +384,90 @@ class TestCIStatus:
 
 
 # ── Cross-Repo Diagnostic Intent ────────────────────────────────────
+
+
+# ── Security Pattern Detection ────────────────────────────────────────
+
+
+class TestSecurityPatterns:
+    def test_detects_base_exception_without_reraise(self, tmp_path):
+        code = "try:\n    x()\nexcept BaseException:\n    pass\n"
+        (tmp_path / "bad.py").write_text(code)
+        findings = _analyze_security_patterns(tmp_path)
+        base_exc = [f for f in findings if f.kind == FindingKind.BASE_EXCEPTION_CATCH]
+        assert len(base_exc) == 1
+        assert base_exc[0].severity == Severity.CRITICAL
+        assert base_exc[0].line == 3
+
+    def test_ignores_base_exception_with_reraise(self, tmp_path):
+        code = "try:\n    x()\nexcept BaseException:\n    cleanup()\n    raise\n"
+        (tmp_path / "ok.py").write_text(code)
+        findings = _analyze_security_patterns(tmp_path)
+        base_exc = [f for f in findings if f.kind == FindingKind.BASE_EXCEPTION_CATCH]
+        assert len(base_exc) == 0
+
+    def test_ignores_except_exception(self, tmp_path):
+        code = "try:\n    x()\nexcept Exception:\n    pass\n"
+        (tmp_path / "ok.py").write_text(code)
+        findings = _analyze_security_patterns(tmp_path)
+        base_exc = [f for f in findings if f.kind == FindingKind.BASE_EXCEPTION_CATCH]
+        assert len(base_exc) == 0
+
+    def test_detects_dunder_import(self, tmp_path):
+        code = 'mod = __import__("something")\n'
+        (tmp_path / "probe.py").write_text(code)
+        findings = _analyze_security_patterns(tmp_path)
+        dyn = [f for f in findings if f.kind == FindingKind.DYNAMIC_IMPORT]
+        assert len(dyn) == 1
+        assert dyn[0].severity == Severity.WARNING
+
+    def test_detects_unbounded_queue(self, tmp_path):
+        code = "from queue import Queue\nq = Queue()\n"
+        (tmp_path / "svc.py").write_text(code)
+        findings = _analyze_security_patterns(tmp_path)
+        unbound = [f for f in findings if f.kind == FindingKind.UNBOUNDED_COLLECTION]
+        assert len(unbound) == 1
+
+    def test_ignores_bounded_queue(self, tmp_path):
+        code = "from queue import Queue\nq = Queue(maxsize=100)\n"
+        (tmp_path / "svc.py").write_text(code)
+        findings = _analyze_security_patterns(tmp_path)
+        unbound = [f for f in findings if f.kind == FindingKind.UNBOUNDED_COLLECTION]
+        assert len(unbound) == 0
+
+    def test_ignores_queue_with_positional_maxsize(self, tmp_path):
+        code = "from queue import Queue\nq = Queue(100)\n"
+        (tmp_path / "svc.py").write_text(code)
+        findings = _analyze_security_patterns(tmp_path)
+        unbound = [f for f in findings if f.kind == FindingKind.UNBOUNDED_COLLECTION]
+        assert len(unbound) == 0
+
+    def test_detects_unbounded_deque(self, tmp_path):
+        code = "from collections import deque\nd = deque()\n"
+        (tmp_path / "buf.py").write_text(code)
+        findings = _analyze_security_patterns(tmp_path)
+        unbound = [f for f in findings if f.kind == FindingKind.UNBOUNDED_COLLECTION]
+        assert len(unbound) == 1
+
+    def test_ignores_bounded_deque(self, tmp_path):
+        code = "from collections import deque\nd = deque(maxlen=50)\n"
+        (tmp_path / "buf.py").write_text(code)
+        findings = _analyze_security_patterns(tmp_path)
+        unbound = [f for f in findings if f.kind == FindingKind.UNBOUNDED_COLLECTION]
+        assert len(unbound) == 0
+
+    def test_skips_pycache_and_hidden(self, tmp_path):
+        cache = tmp_path / "__pycache__"
+        cache.mkdir()
+        (cache / "bad.py").write_text('__import__("evil")\n')
+        findings = _analyze_security_patterns(tmp_path)
+        assert len(findings) == 0
+
+    def test_skips_syntax_errors(self, tmp_path):
+        (tmp_path / "broken.py").write_text("def f(\n")
+        findings = _analyze_security_patterns(tmp_path)
+        # Should not crash, just skip the file
+        assert isinstance(findings, list)
 
 
 class TestCrossRepoDiagnosticIntent:
