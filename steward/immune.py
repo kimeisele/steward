@@ -456,8 +456,8 @@ class StewardImmune:
 
 # Known pathogens — maps detail patterns to remedy rule_ids
 _PATHOGEN_PATTERNS: dict[str, str] = {
-    "except Exception": "silent_exception",
-    "except pass": "silent_exception",
+    "except Exception": "steward_silent_except",
+    "except pass": "steward_silent_except",
     "Any": "any_type_usage",
     "LCOM4": "god_class",
     "circular_import": "circular_import",
@@ -467,10 +467,10 @@ _PATHOGEN_PATTERNS: dict[str, str] = {
     "no_ci": "no_ci",
     "no_tests": "no_tests",
     "broken_import": "broken_import",
-    "base_exception_catch": "base_exception_catch",
-    "BaseException": "base_exception_catch",
-    "__import__": "dynamic_import",
-    "dynamic_import": "dynamic_import",
+    "base_exception_catch": "steward_base_exception_catch",
+    "BaseException": "steward_base_exception_catch",
+    "__import__": "steward_dynamic_import",
+    "dynamic_import": "steward_dynamic_import",
     "unbounded_collection": "unbounded_collection",
     "without maxsize": "unbounded_collection",
     "without maxlen": "unbounded_collection",

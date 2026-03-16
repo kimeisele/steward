@@ -46,7 +46,7 @@ class TestCytokineBreaker:
 
 class TestPatternMatching:
     def test_matches_known_patterns(self):
-        assert _match_pattern("except Exception: pass in foo.py") == "silent_exception"
+        assert _match_pattern("except Exception: pass in foo.py") == "steward_silent_except"
         assert _match_pattern("LCOM4=5 in agent.py") == "god_class"
         assert _match_pattern("circular_import detected") == "circular_import"
         assert _match_pattern("no_ci found") == "no_ci"
@@ -55,7 +55,7 @@ class TestPatternMatching:
         assert _match_pattern("something completely unknown xyz") is None
 
     def test_case_insensitive(self):
-        assert _match_pattern("EXCEPT EXCEPTION in code") == "silent_exception"
+        assert _match_pattern("EXCEPT EXCEPTION in code") == "steward_silent_except"
 
 
 class TestExtractFilePath:
@@ -79,7 +79,7 @@ class TestStewardImmune:
     def test_diagnose_known_pattern(self):
         immune = StewardImmune(_cwd=".")
         result = immune.diagnose("except Exception: pass in steward/immune.py")
-        assert result.rule_id == "silent_exception"
+        assert result.rule_id == "steward_silent_except"
         assert result.confidence >= 0
 
     def test_diagnose_unknown_pattern(self):
@@ -129,12 +129,12 @@ class TestNewPathogenPatterns:
     """Tests for patterns added from PR #34/#35 manual audit findings."""
 
     def test_base_exception_catch(self):
-        assert _match_pattern("base_exception_catch in foo.py") == "base_exception_catch"
-        assert _match_pattern("except BaseException in bar.py") == "base_exception_catch"
+        assert _match_pattern("base_exception_catch in foo.py") == "steward_base_exception_catch"
+        assert _match_pattern("except BaseException in bar.py") == "steward_base_exception_catch"
 
     def test_dynamic_import(self):
-        assert _match_pattern("dynamic_import in probe.py") == "dynamic_import"
-        assert _match_pattern("__import__('foo') in code.py") == "dynamic_import"
+        assert _match_pattern("dynamic_import in probe.py") == "steward_dynamic_import"
+        assert _match_pattern("__import__('foo') in code.py") == "steward_dynamic_import"
 
     def test_unbounded_collection(self):
         assert _match_pattern("unbounded_collection Queue()") == "unbounded_collection"
