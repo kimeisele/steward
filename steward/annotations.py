@@ -1,22 +1,26 @@
 """
-Annotations — validated knowledge store with neuro-symbolic pipeline.
+Annotations — validated knowledge store using existing substrate primitives.
 
-Agent-contributed knowledge goes through a validation pipeline before
-it can influence CLAUDE.md generation. This is NOT a dumb append-store.
+Agent-contributed knowledge goes through a neuro-symbolic validation pipeline
+before it can influence CLAUDE.md generation.
 
-Pipeline:
-  1. MahaCompression → deterministic seed (for dedup + alignment)
-  2. North Star XOR  → alignment score (reject misaligned contributions)
+Validation pipeline (submit):
+  1. MahaCompression → deterministic seed (dedup + alignment)
+  2. North Star XOR  → alignment score (reject misaligned)
   3. Seed similarity  → dedup (reject near-duplicates)
-  4. Hebbian weight   → confidence tracking (utility over time)
-  5. PersistentMemory → structured storage with tags
 
-On briefing generation, only annotations that pass alignment AND
-confidence thresholds are included. Annotations that are never
-referenced by agents decay via Hebbian weight loss.
+Lifecycle (via existing substrate):
+  - SynapseStore: annotation weights stored as `ann:{id}` → `credibility`
+  - HebbianSynaptic.decay(): temporal regression toward 0.5 in MOKSHA phase
+  - HebbianSynaptic.trim(): prunes weakest entries when capacity exceeded
+  - Reinforcement: Buddhi calls reinforce() when agent uses/ignores knowledge
+
+Annotation metadata (text, category, file_ref) stored in PersistentMemory.
+Annotation credibility (weight) stored in SynapseStore — same system
+that tracks immune remedy confidence and tool success rates.
 
 Categories:
-  - invariant: things that must NEVER change (e.g., North Star immutability)
+  - invariant: things that must NEVER change
   - gotcha:    things that bite you if you don't know them
   - pattern:   recurring design patterns in this codebase
   - decision:  architectural decisions and their rationale
@@ -41,6 +45,10 @@ ALIGNMENT_THRESHOLD = 0.45  # XOR distance — below this = misaligned
 CONFIDENCE_THRESHOLD = 0.3  # Hebbian weight — below this = unvalidated
 SIMILARITY_THRESHOLD = 0.85  # Seed similarity — above this = duplicate
 
+# SynapseStore key prefix for annotation weights
+_SYNAPSE_PREFIX = "ann"
+_SYNAPSE_ACTION = "credibility"
+
 
 @dataclass(frozen=True)
 class Annotation:
@@ -53,9 +61,7 @@ class Annotation:
     file_ref: str = ""  # optional file:line reference
     seed: int = 0  # MahaCompression seed
     alignment: float = 0.0  # North Star alignment score
-    weight: float = 0.5  # Hebbian confidence (0.0-1.0)
     created_at: float = field(default_factory=time.time)
-    verified: bool = False  # True after system validation pass
 
 
 @dataclass
@@ -84,7 +90,7 @@ def submit(
       1. Compress text → seed
       2. Check North Star alignment (XOR distance)
       3. Check for near-duplicates (seed similarity)
-      4. Store in PersistentMemory with Hebbian weight 0.5
+      4. Store metadata in PersistentMemory, weight in SynapseStore
     """
     text = text.strip()
     if not text:
@@ -131,7 +137,7 @@ def submit(
                 similar_to=ann.id,
             )
 
-    # 4. Store
+    # 4. Store metadata in PersistentMemory
     annotation = Annotation(
         id=annotation_id,
         text=text,
@@ -140,19 +146,19 @@ def submit(
         file_ref=file_ref,
         seed=seed,
         alignment=alignment,
-        weight=0.5,
         created_at=time.time(),
-        verified=True,
     )
+    _store_metadata(annotation, existing)
 
-    _store(annotation, existing)
+    # 5. Initialize weight in SynapseStore at 0.5
+    _synapse_set(annotation_id, 0.5)
+
     logger.info(
         "Annotation accepted: id=%s category=%s alignment=%.3f",
         annotation_id,
         category,
         alignment,
     )
-
     return SubmitResult(
         accepted=True,
         annotation_id=annotation_id,
@@ -160,8 +166,89 @@ def submit(
     )
 
 
+def collect_validated() -> list[Annotation]:
+    """Collect annotations that pass alignment + confidence thresholds.
+
+    Weight is read from SynapseStore (which applies HebbianSynaptic.decay()
+    in MOKSHA phase). No custom decay logic here.
+    """
+    all_annotations = load_all()
+    validated: list[Annotation] = []
+
+    for ann in all_annotations:
+        weight = _synapse_get(ann.id)
+        if weight >= CONFIDENCE_THRESHOLD and ann.alignment >= ALIGNMENT_THRESHOLD:
+            validated.append(ann)
+
+    # Sort by weight (highest first)
+    validated.sort(key=lambda a: _synapse_get(a.id), reverse=True)
+    return validated
+
+
+def reinforce(annotation_id: str, success: bool) -> None:
+    """Update Hebbian weight via SynapseStore.
+
+    Uses the same increment/decrement that immune.py uses for
+    remedy confidence tracking.
+    """
+    store = _get_synapse_store()
+    if store is None:
+        return
+
+    trigger = f"{_SYNAPSE_PREFIX}:{annotation_id}"
+    if success:
+        store.increment_weight(trigger, _SYNAPSE_ACTION, delta=0.05, max_weight=0.95)
+    else:
+        store.decrement_weight(trigger, _SYNAPSE_ACTION, delta=0.05, min_weight=0.1)
+
+    logger.debug("Annotation %s reinforced: success=%s", annotation_id, success)
+
+
+def decay_all() -> int:
+    """Apply HebbianSynaptic temporal decay to all annotation weights.
+
+    Called from MOKSHA phase hook. Uses the substrate's own decay()
+    which regresses toward 0.5: w = w + factor * (0.5 - w)
+
+    Returns number of weights decayed.
+    """
+    store = _get_synapse_store()
+    if store is None:
+        return 0
+
+    # Access the underlying HebbianSynaptic if available
+    synaptic = getattr(store, "_synaptic", None) or getattr(store, "synaptic", None)
+    if synaptic is not None and hasattr(synaptic, "decay"):
+        count = synaptic.decay(factor=0.01)
+        if count > 0:
+            logger.debug("Annotation decay: %d weights regressed", count)
+        return count
+
+    return 0
+
+
+def trim(max_entries: int = 50) -> int:
+    """Prune weakest annotation weights via HebbianSynaptic.trim().
+
+    Called from MOKSHA phase hook. Removes weights closest to 0.5
+    (least decisive) when capacity is exceeded.
+    """
+    store = _get_synapse_store()
+    if store is None:
+        return 0
+
+    synaptic = getattr(store, "_synaptic", None) or getattr(store, "synaptic", None)
+    if synaptic is not None and hasattr(synaptic, "trim"):
+        count = synaptic.trim(max_entries=max_entries)
+        if count > 0:
+            logger.debug("Annotation trim: %d weakest entries pruned", count)
+        return count
+
+    return 0
+
+
 def load_all() -> list[Annotation]:
-    """Load all annotations from PersistentMemory."""
+    """Load all annotation metadata from PersistentMemory."""
     try:
         from steward.services import SVC_MEMORY
         from vibe_core.di import ServiceRegistry
@@ -179,60 +266,10 @@ def load_all() -> list[Annotation]:
         return _load_from_disk()
 
 
-def collect_validated() -> list[Annotation]:
-    """Collect annotations that pass alignment + confidence thresholds.
-
-    Applies temporal decay: annotations lose weight over time if not
-    reinforced. This prevents stale knowledge from accumulating.
-
-    Decay rate: -0.02 per day since last reinforcement.
-    Annotations below CONFIDENCE_THRESHOLD after decay are excluded.
-    """
-    all_annotations = load_all()
-    now = time.time()
-    decayed: list[Annotation] = []
-
-    for ann in all_annotations:
-        # Temporal decay: annotations lose weight over time
-        age_days = (now - ann.created_at) / 86400.0
-        decay = min(age_days * 0.02, 0.4)  # max 0.4 decay (won't kill high-weight annotations)
-        effective_weight = max(ann.weight - decay, 0.0)
-
-        if effective_weight >= CONFIDENCE_THRESHOLD and ann.alignment >= ALIGNMENT_THRESHOLD:
-            decayed.append(ann)
-
-    # Sort: highest effective weight first
-    decayed.sort(key=lambda a: a.weight, reverse=True)
-    return decayed
-
-
-def reinforce(annotation_id: str, success: bool) -> None:
-    """Update Hebbian weight for an annotation based on observed utility.
-
-    Called when an agent uses (or ignores) an annotation's knowledge:
-      - success=True:  agent used the knowledge and it helped → boost weight
-      - success=False: knowledge was wrong or unhelpful → decay weight
-    """
-    all_annotations = load_all()
-    updated = []
-    for ann in all_annotations:
-        if ann.id == annotation_id:
-            # Hebbian update: same rule as synaptic weights
-            w = ann.weight
-            if success:
-                w = w + 0.1 * (1 - w)  # asymptotic to 1.0
-            else:
-                w = w - 0.1 * w  # asymptotic to 0.0
-            ann = Annotation(**{**asdict(ann), "weight": round(w, 4)})
-        updated.append(ann)
-
-    _save_all(updated)
-
-
 def format_for_briefing(annotations: list[Annotation] | None = None) -> str:
     """Format validated annotations into a briefing-ready section.
 
-    Groups by category, includes weight as confidence indicator.
+    Groups by category, ordered by priority.
     """
     if annotations is None:
         annotations = collect_validated()
@@ -260,7 +297,44 @@ def format_for_briefing(annotations: list[Annotation] | None = None) -> str:
     return "\n".join(parts)
 
 
-# ── Internal ─────────────────────────────────────────────────────────
+# ── SynapseStore Integration ─────────────────────────────────────────
+
+
+def _get_synapse_store():
+    """Get SynapseStore from ServiceRegistry."""
+    try:
+        from steward.services import SVC_SYNAPSE_STORE
+        from vibe_core.di import ServiceRegistry
+
+        return ServiceRegistry.get(SVC_SYNAPSE_STORE)
+    except Exception:
+        return None
+
+
+def _synapse_get(annotation_id: str) -> float:
+    """Get annotation weight from SynapseStore."""
+    store = _get_synapse_store()
+    if store is None:
+        return 0.5  # neutral default
+
+    trigger = f"{_SYNAPSE_PREFIX}:{annotation_id}"
+    weight = store.get_weight(trigger, _SYNAPSE_ACTION)
+    if weight is None:
+        return 0.5
+    return float(weight)
+
+
+def _synapse_set(annotation_id: str, weight: float) -> None:
+    """Set annotation weight in SynapseStore."""
+    store = _get_synapse_store()
+    if store is None:
+        return
+
+    trigger = f"{_SYNAPSE_PREFIX}:{annotation_id}"
+    store.set_weight(trigger, _SYNAPSE_ACTION, weight, defer_save=True)
+
+
+# ── Compression & Alignment ──────────────────────────────────────────
 
 
 def _compress_seed(text: str) -> int:
@@ -292,7 +366,6 @@ def _north_star_alignment(seed: int) -> float:
     except Exception:
         pass
 
-    # Fallback: assume neutral alignment
     return 0.5
 
 
@@ -301,14 +374,19 @@ def _seed_similarity(seed_a: int, seed_b: int) -> float:
     return 1.0 - min(bin(seed_a ^ seed_b).count("1") / 32.0, 1.0)
 
 
-def _store(annotation: Annotation, existing: list[Annotation]) -> None:
-    """Store annotation in PersistentMemory."""
+# ── Metadata Persistence ─────────────────────────────────────────────
+# Annotation text/category/file_ref stored in PersistentMemory.
+# Weight/credibility stored SEPARATELY in SynapseStore.
+
+
+def _store_metadata(annotation: Annotation, existing: list[Annotation]) -> None:
+    """Store annotation metadata in PersistentMemory."""
     all_annotations = existing + [annotation]
-    _save_all(all_annotations)
+    _save_all_metadata(all_annotations)
 
 
-def _save_all(annotations: list[Annotation]) -> None:
-    """Save all annotations to PersistentMemory."""
+def _save_all_metadata(annotations: list[Annotation]) -> None:
+    """Save all annotation metadata to PersistentMemory."""
     data = [asdict(ann) for ann in annotations]
     try:
         from steward.services import SVC_MEMORY
@@ -362,7 +440,6 @@ def _save_to_disk(data: list[dict]) -> None:
             return
 
         raw = json.loads(memory_file.read_text(encoding="utf-8"))
-        # Update the annotations entry
         found = False
         for entry in raw.get("entries", []):
             if entry.get("key") == "annotations" and entry.get("session_id") == "steward":
@@ -399,7 +476,5 @@ def _dict_to_annotation(d: dict) -> Annotation:
         file_ref=d.get("file_ref", ""),
         seed=d.get("seed", 0),
         alignment=d.get("alignment", 0.5),
-        weight=d.get("weight", 0.5),
         created_at=d.get("created_at", 0.0),
-        verified=d.get("verified", False),
     )
