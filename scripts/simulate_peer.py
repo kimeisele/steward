@@ -86,5 +86,5 @@ with open(path, "w") as f:
     json.dump(messages, f, indent=2)
 
 print(f"Dropped {label} → {path}")
-print(f"Watch: tail -f .steward/daemon.log | grep -i 'delegate\\|heartbeat\\|federation\\|KARMA\\|workspace'")
+print("Watch: tail -f .steward/daemon.log | grep -i 'delegate\\|heartbeat\\|federation\\|KARMA\\|workspace'")
 print(f"Check callbacks: python scripts/simulate_peer.py {fed_dir} --check-callbacks")

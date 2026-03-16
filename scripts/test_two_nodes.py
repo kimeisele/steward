@@ -17,7 +17,6 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 # ── Git helpers ────────────────────────────────────────────────────
@@ -87,7 +86,7 @@ def main() -> int:
     # 3. Setup federation infrastructure for both nodes
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-    from steward.federation import FederationBridge, OP_DELEGATE_TASK, OP_TASK_COMPLETED
+    from steward.federation import OP_DELEGATE_TASK, OP_TASK_COMPLETED, FederationBridge
     from steward.federation_transport import NadiFederationTransport
     from steward.git_nadi_sync import GitNadiSync
     from steward.services import SVC_TASK_MANAGER
@@ -159,7 +158,7 @@ def main() -> int:
     (beta / "nadi_outbox.json").write_text(json.dumps(inbox_data))
 
     processed = beta_bridge.process_inbound(beta_transport)
-    assert processed > 0, f"Beta processed 0 messages (expected >= 1)"
+    assert processed > 0, "Beta processed 0 messages (expected >= 1)"
     print(f"[6/8] Beta: git pull + process_inbound ({processed} messages)")
 
     # 7. Beta completes the task and emits callback
@@ -189,7 +188,7 @@ def main() -> int:
     # the callback (we didn't go through DelegateToPeerTool). But the
     # message WAS received — verified via stats["inbound_processed"].
     alpha_inbound = alpha_bridge.stats()["inbound_processed"]
-    assert alpha_inbound >= 1, f"Alpha saw 0 inbound messages (expected >= 1)"
+    assert alpha_inbound >= 1, "Alpha saw 0 inbound messages (expected >= 1)"
     print(f"[8/8] Alpha: git pull + process_inbound ({alpha_inbound} seen, {processed} routed)")
 
     # ── Verify ─────────────────────────────────────────────────────
@@ -228,11 +227,11 @@ def main() -> int:
     print("\n" + "=" * 60)
     print("CRUCIBLE PASSED — Two nodes communicated over git federation")
     print("=" * 60)
-    print(f"\nData path proven:")
-    print(f"  Alpha: delegate_task → nadi_inbox → git push → hub")
-    print(f"  Beta:  hub → git pull → nadi_outbox → process → dispatch")
-    print(f"  Beta:  task_completed → nadi_inbox → git push → hub")
-    print(f"  Alpha: hub → git pull → nadi_outbox → process → callback")
+    print("\nData path proven:")
+    print("  Alpha: delegate_task → nadi_inbox → git push → hub")
+    print("  Beta:  hub → git pull → nadi_outbox → process → dispatch")
+    print("  Beta:  task_completed → nadi_inbox → git push → hub")
+    print("  Alpha: hub → git pull → nadi_outbox → process → callback")
     print(f"\nCleanup: rm -rf {base}")
 
     return 0

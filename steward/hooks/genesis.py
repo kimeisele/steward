@@ -61,8 +61,10 @@ def _get_federation_owner() -> str:
     if descriptor_path.exists():
         try:
             data = json.loads(descriptor_path.read_text())
-            # repo_id doesn't have owner, but we can try gh api
-            pass
+            repo = data.get("repo_id", "")
+            if "/" in repo:
+                _CACHED_OWNER = repo.split("/")[0]
+                return _CACHED_OWNER
         except (json.JSONDecodeError, OSError) as e:
             logger.debug("descriptor parse failed: %s", e)
 
@@ -442,7 +444,7 @@ def _discover_from_org_repos(
                             "owner_boundary": descriptor.get("owner_boundary", ""),
                         }
                         continue
-            except (json.JSONDecodeError, Exception) as e:
+            except Exception as e:
                 logger.debug("Descriptor parse failed for %s: %s", name, e)
 
         # No descriptor — only register if authoritative sources say it's a member
