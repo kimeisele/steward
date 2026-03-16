@@ -57,6 +57,9 @@ class FindingKind(enum.Enum):
     LARGE_FILE = "large_file"
     CIRCULAR_IMPORT = "circular_import"
     NADI_BLOCKED = "nadi_blocked"
+    BASE_EXCEPTION_CATCH = "base_exception_catch"
+    DYNAMIC_IMPORT = "dynamic_import"
+    UNBOUNDED_COLLECTION = "unbounded_collection"
 
 
 @dataclass(frozen=True)
@@ -793,6 +796,120 @@ def _analyze_test_infrastructure(repo_path: Path, test_file_count: int) -> list[
     return findings
 
 
+# ── Security Pattern Analysis ────────────────────────────────────────
+
+
+def _analyze_security_patterns(repo_path: Path) -> list[Finding]:
+    """AST-level detection of security anti-patterns.
+
+    Detects patterns that were previously only caught by manual audit:
+    1. except BaseException without re-raise (catches KeyboardInterrupt)
+    2. __import__() calls (executes arbitrary code at analysis time)
+    3. Queue()/deque() without size bounds (OOM vector)
+    """
+    findings: list[Finding] = []
+    py_files = sorted(repo_path.rglob("*.py"))[:_MAX_FILES]
+
+    for f in py_files:
+        rel = f.relative_to(repo_path)
+        parts = rel.parts
+        if _skip_path(parts):
+            continue
+
+        try:
+            source = f.read_text(encoding="utf-8", errors="replace")
+            tree = ast.parse(source, filename=str(rel))
+        except (SyntaxError, OSError, UnicodeDecodeError):
+            continue
+
+        rel_str = str(rel)
+
+        for node in ast.walk(tree):
+            # Pattern 1: except BaseException without re-raise
+            if isinstance(node, ast.ExceptHandler):
+                if isinstance(node.type, ast.Name) and node.type.id == "BaseException":
+                    # Check if the handler re-raises — if so, it's intentional
+                    has_reraise = any(
+                        isinstance(child, ast.Raise)
+                        for child in ast.walk(node)
+                    )
+                    if not has_reraise:
+                        findings.append(
+                            Finding(
+                                kind=FindingKind.BASE_EXCEPTION_CATCH,
+                                severity=Severity.CRITICAL,
+                                file=rel_str,
+                                line=node.lineno,
+                                detail="except BaseException without re-raise — catches KeyboardInterrupt/SystemExit",
+                                fix_hint="Replace 'except BaseException' with 'except Exception', or add explicit re-raise",
+                            )
+                        )
+
+            # Pattern 2: __import__() calls
+            if isinstance(node, ast.Call):
+                func = node.func
+                if isinstance(func, ast.Name) and func.id == "__import__":
+                    findings.append(
+                        Finding(
+                            kind=FindingKind.DYNAMIC_IMPORT,
+                            severity=Severity.WARNING,
+                            file=rel_str,
+                            line=node.lineno,
+                            detail="__import__() executes module code — use importlib.util.find_spec() for safe probing",
+                            fix_hint="Replace __import__(name) with importlib.util.find_spec(name)",
+                        )
+                    )
+
+            # Pattern 3: Queue()/deque() without size bounds
+            if isinstance(node, ast.Call):
+                func = node.func
+                func_name = None
+                if isinstance(func, ast.Name):
+                    func_name = func.id
+                elif isinstance(func, ast.Attribute):
+                    func_name = func.attr
+
+                if func_name in ("Queue", "SimpleQueue", "PriorityQueue", "LifoQueue"):
+                    has_maxsize = any(
+                        isinstance(kw, ast.keyword) and kw.arg == "maxsize"
+                        for kw in node.keywords
+                    )
+                    # Also check positional: Queue(100) sets maxsize
+                    has_positional = len(node.args) >= 1
+                    if not has_maxsize and not has_positional:
+                        findings.append(
+                            Finding(
+                                kind=FindingKind.UNBOUNDED_COLLECTION,
+                                severity=Severity.WARNING,
+                                file=rel_str,
+                                line=node.lineno,
+                                detail=f"{func_name}() without maxsize — unbounded growth can cause OOM",
+                                fix_hint=f"Add maxsize= parameter to {func_name}()",
+                            )
+                        )
+
+                if func_name == "deque":
+                    has_maxlen = any(
+                        isinstance(kw, ast.keyword) and kw.arg == "maxlen"
+                        for kw in node.keywords
+                    )
+                    # deque(iterable, maxlen) — maxlen is 2nd positional
+                    has_positional_maxlen = len(node.args) >= 2
+                    if not has_maxlen and not has_positional_maxlen:
+                        findings.append(
+                            Finding(
+                                kind=FindingKind.UNBOUNDED_COLLECTION,
+                                severity=Severity.WARNING,
+                                file=rel_str,
+                                line=node.lineno,
+                                detail="deque() without maxlen — unbounded growth can cause OOM",
+                                fix_hint="Add maxlen= parameter to deque()",
+                            )
+                        )
+
+    return findings
+
+
 # ── Main Diagnostic Entry Point ──────────────────────────────────────
 
 
@@ -847,8 +964,14 @@ def diagnose_repo(repo_url: str, *, timeout: int = 60) -> DiagnosticReport:
         # Layer 7: Circular import detection (import graph DFS)
         circular_findings = _detect_circular_imports(repo_path)
 
+        # Layer 8: Security pattern detection (AST-level)
+        security_findings = _analyze_security_patterns(repo_path)
+
         # Combine all findings, sort by severity
-        all_findings = import_findings + dep_findings + fed_findings + ci_findings + test_findings + circular_findings
+        all_findings = (
+            import_findings + dep_findings + fed_findings + ci_findings
+            + test_findings + circular_findings + security_findings
+        )
         severity_order = {Severity.CRITICAL: 0, Severity.WARNING: 1, Severity.INFO: 2}
         all_findings.sort(key=lambda f: severity_order.get(f.severity, 9))
 
