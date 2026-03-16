@@ -340,6 +340,7 @@ class FixPipeline:
 
             if pr_url:
                 logger.info("Proactive PR created: %s for %s", pr_url, intent_name)
+                self._emit_pr_created(pr_url, intent_name, problem, new_changes)
                 return f"Created PR: {pr_url}"
             return result
 
@@ -493,6 +494,36 @@ class FixPipeline:
         except Exception as e:
             logger.warning("PR creation failed: %s", e)
             return None
+
+    # ── Federation Events ──────────────────────────────────────────────
+
+    def _emit_pr_created(
+        self,
+        pr_url: str,
+        intent_name: str,
+        problem: str,
+        changed_files: set[str],
+    ) -> None:
+        """Emit federation event when a PR is created.
+
+        Agent-city surfaces these on Moltbook via MoltbookBridge.
+        """
+        from steward.federation import OP_PR_CREATED
+        from steward.services import SVC_FEDERATION
+
+        bridge = ServiceRegistry.get(SVC_FEDERATION)
+        if bridge is None:
+            return
+        bridge.emit(
+            OP_PR_CREATED,
+            {
+                "pr_url": pr_url,
+                "intent": intent_name,
+                "problem": problem[:200],
+                "files_changed": len(changed_files),
+                "repo": "kimeisele/steward",
+            },
+        )
 
     # ── Hebbian Learning ───────────────────────────────────────────────
 

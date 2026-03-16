@@ -38,16 +38,25 @@ class MokshaHealthReportHook(BasePhaseHook):
 
     def execute(self, ctx: PhaseContext) -> None:
         report = _build_health_report()
+        payload = json.dumps(report, indent=2) + "\n"
 
+        # Write to .steward/ (local state)
         output_dir = Path(".steward")
         output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / "federation_health.json"
-
         try:
-            output_path.write_text(json.dumps(report, indent=2) + "\n")
-            ctx.operations.append("moksha_health_report:ok")
+            (output_dir / "federation_health.json").write_text(payload)
         except OSError as e:
-            logger.warning("Failed to write health report: %s", e)
+            logger.warning("Failed to write health report to .steward: %s", e)
+
+        # Write to data/federation/ (git-visible, agent-city reads this path)
+        fed_dir = Path("data/federation")
+        fed_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            (fed_dir / "steward_health.json").write_text(payload)
+        except OSError as e:
+            logger.warning("Failed to write health report to federation dir: %s", e)
+
+        ctx.operations.append("moksha_health_report:ok")
 
 
 def _build_health_report() -> dict:
