@@ -38,6 +38,7 @@ class BuiltinToolProvider:
     def provide(self, cwd: str) -> list[Tool]:
         from steward.senses.gh import get_gh_client
         from steward.tools.agent_internet import AgentInternetTool
+        from steward.tools.annotate import AnnotateTool
         from steward.tools.bash import BashTool
         from steward.tools.delegate import DelegateToPeerTool
         from steward.tools.edit import EditTool
@@ -55,6 +56,7 @@ class BuiltinToolProvider:
         from steward.tools.write_file import WriteFileTool
 
         return [
+            AnnotateTool(),
             BashTool(cwd=cwd),
             ReadFileTool(),
             WriteFileTool(),

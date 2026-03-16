@@ -1,6 +1,7 @@
 """Built-in tools for the Steward agent engine."""
 
 from steward.tools.agent_internet import AgentInternetTool
+from steward.tools.annotate import AnnotateTool
 from steward.tools.bash import BashTool
 from steward.tools.edit import EditTool
 from steward.tools.glob import GlobTool
@@ -15,6 +16,7 @@ from steward.tools.write_file import WriteFileTool
 
 __all__ = [
     "AgentInternetTool",
+    "AnnotateTool",
     "BashTool",
     "EditTool",
     "GlobTool",
