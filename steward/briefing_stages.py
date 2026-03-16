@@ -4,8 +4,14 @@ BriefingStages — composable pipeline for CLAUDE.md generation.
 Same pattern as PhaseHookRegistry: register stages, dispatch by priority,
 gate with should_run(). Each stage appends lines to the briefing output.
 
+Token budget system (CBR-aware):
+  - Each stage is either `compressible` (can be truncated) or fixed
+  - Pipeline enforces a token_budget — stages are truncated in reverse
+    priority order (lowest priority = first to be cut)
+  - Budget modes: compact (800), standard (1500), full (3000), unlimited (0)
+
 Priority bands:
-  0-10:  Identity & Critical (must be first)
+  0-10:  Identity & Critical (must be first, never compressible)
   11-30: Orientation & Status (context framing)
   31-60: Action & Knowledge (what to do, what we know)
   61-80: Environment & Insights (perception layer)
@@ -15,10 +21,30 @@ Priority bands:
 from __future__ import annotations
 
 import logging
+import time
 from abc import ABC, abstractmethod
 from pathlib import Path
 
 logger = logging.getLogger("STEWARD.BRIEFING_STAGES")
+
+# ── Token Budget Constants ─────────────────────────────────────────
+# Aligned with CBR DSP semantics: budget is the "ceiling" for output.
+
+BUDGET_COMPACT = 800  # Minimal: identity + critical + action only
+BUDGET_STANDARD = 1500  # Default: most sections, architecture compressed
+BUDGET_FULL = 3000  # Everything expanded, no truncation
+BUDGET_UNLIMITED = 0  # No limit — let all stages run fully
+
+_VERSION = "2.0.0"  # Briefing pipeline version
+
+
+def _estimate_tokens(text: str) -> int:
+    """Estimate token count from text. chars/4 approximation.
+
+    Good enough for budget enforcement — no tokenizer dependency.
+    Slightly overestimates which is the safe direction.
+    """
+    return max(1, len(text) // 4)
 
 
 # ── BriefingStage Protocol ─────────────────────────────────────────
@@ -29,6 +55,9 @@ class BriefingStage(ABC):
 
     Each stage is responsible for one section of the CLAUDE.md output.
     Stages are registered in a BriefingPipeline and executed in priority order.
+
+    compressible: if True, this stage can be truncated or skipped when
+    the token budget is tight. Identity and Critical are never compressible.
     """
 
     @property
@@ -41,6 +70,11 @@ class BriefingStage(ABC):
     def priority(self) -> int:
         """Execution order (0=first, 100=last)."""
         return 50
+
+    @property
+    def compressible(self) -> bool:
+        """Whether this stage can be truncated under budget pressure."""
+        return True
 
     def should_run(self, ctx: dict, arch: dict) -> bool:
         """Gate — return False to skip this stage."""
@@ -59,16 +93,30 @@ class BriefingStage(ABC):
 
 
 class BriefingPipeline:
-    """Registry + dispatcher for briefing stages.
+    """Registry + dispatcher for briefing stages with token budget enforcement.
 
-    Stages register at boot. generate() runs all stages in priority order,
-    respecting gates. Output is a joined string of all stage contributions.
+    Two-pass generation:
+      1. Run all stages, collect output per stage
+      2. If over budget, truncate compressible stages in reverse priority
+         (highest priority number = least important = first to cut)
+
+    Token budget is the "slider" — set it to control output length.
+    Budget=0 means unlimited (no truncation).
     """
 
-    __slots__ = ("_stages",)
+    __slots__ = ("_stages", "_token_budget")
 
-    def __init__(self) -> None:
+    def __init__(self, token_budget: int = BUDGET_STANDARD) -> None:
         self._stages: list[BriefingStage] = []
+        self._token_budget = token_budget
+
+    @property
+    def token_budget(self) -> int:
+        return self._token_budget
+
+    @token_budget.setter
+    def token_budget(self, value: int) -> None:
+        self._token_budget = max(0, value)
 
     def register(self, stage: BriefingStage) -> None:
         """Register a stage. Deduplicates by name."""
@@ -80,17 +128,104 @@ class BriefingPipeline:
         self._stages.sort(key=lambda s: s.priority)
 
     def generate(self, ctx: dict, arch: dict, cwd: str) -> str:
-        """Run all stages in priority order, return joined output."""
-        parts: list[str] = []
+        """Run all stages in priority order, enforce token budget.
+
+        Returns the joined briefing output, truncated to fit budget.
+        """
+        # Pass 1: collect output per stage
+        stage_outputs: list[tuple[BriefingStage, str]] = []
         for stage in self._stages:
             try:
                 if not stage.should_run(ctx, arch):
                     logger.debug("Stage %s skipped (gate)", stage.name)
                     continue
+                parts: list[str] = []
                 stage.enrich(parts, ctx, arch, cwd)
+                output = "\n".join(parts)
+                if output.strip():
+                    stage_outputs.append((stage, output))
             except Exception as e:
                 logger.warning("Stage %s failed: %s", stage.name, e)
-        return "\n".join(parts)
+
+        # Pass 2: enforce token budget
+        if self._token_budget > 0:
+            stage_outputs = self._enforce_budget(stage_outputs)
+
+        # Assemble final output
+        sections = [output for _, output in stage_outputs]
+        result = "\n".join(sections)
+
+        # Append metadata footer
+        token_count = _estimate_tokens(result)
+        budget_label = self._budget_label()
+        metadata = f"\n<!-- briefing v{_VERSION} | {token_count} tokens | budget: {budget_label} ({self._token_budget}) | {time.strftime('%Y-%m-%dT%H:%M:%S')} -->"
+        return result + metadata
+
+    def _enforce_budget(self, stage_outputs: list[tuple[BriefingStage, str]]) -> list[tuple[BriefingStage, str]]:
+        """Truncate compressible stages to fit within token budget.
+
+        Strategy: measure total, if over budget, remove compressible stages
+        starting from highest priority number (least important).
+        If still over, truncate the last remaining compressible stage.
+        """
+        total_tokens = sum(_estimate_tokens(out) for _, out in stage_outputs)
+
+        if total_tokens <= self._token_budget:
+            return stage_outputs
+
+        # Separate fixed vs compressible
+        fixed: list[tuple[BriefingStage, str, int]] = []
+        compressible: list[tuple[BriefingStage, str, int]] = []
+        for stage, output in stage_outputs:
+            tokens = _estimate_tokens(output)
+            if stage.compressible:
+                compressible.append((stage, output, tokens))
+            else:
+                fixed.append((stage, output, tokens))
+
+        fixed_tokens = sum(t for _, _, t in fixed)
+        budget_for_compressible = max(0, self._token_budget - fixed_tokens)
+
+        if budget_for_compressible == 0:
+            # Only fixed stages fit
+            return [(s, o) for s, o, _ in fixed]
+
+        # Sort compressible by priority (ascending = most important first)
+        # Remove from the END (highest priority number = least important)
+        compressible.sort(key=lambda x: x[0].priority)
+
+        # Greedily include compressible stages until budget exhausted
+        included: list[tuple[BriefingStage, str]] = []
+        remaining_budget = budget_for_compressible
+        for stage, output, tokens in compressible:
+            if tokens <= remaining_budget:
+                included.append((stage, output))
+                remaining_budget -= tokens
+            elif remaining_budget > 50:
+                # Truncate this stage to fit remaining budget
+                char_limit = remaining_budget * 4
+                truncated = output[:char_limit].rsplit("\n", 1)[0]
+                if truncated.strip():
+                    included.append((stage, truncated + "\n..."))
+                remaining_budget = 0
+            # else: skip entirely
+
+        # Reassemble in original order (fixed + compressible by priority)
+        result = [(s, o) for s, o, _ in fixed]
+        result.extend(included)
+        result.sort(key=lambda x: x[0].priority)
+        return result
+
+    def _budget_label(self) -> str:
+        if self._token_budget == 0:
+            return "unlimited"
+        if self._token_budget <= BUDGET_COMPACT:
+            return "compact"
+        if self._token_budget <= BUDGET_STANDARD:
+            return "standard"
+        if self._token_budget <= BUDGET_FULL:
+            return "full"
+        return "custom"
 
     def get_stages(self) -> list[BriefingStage]:
         """Get all stages sorted by priority."""
@@ -114,6 +249,10 @@ class IdentityStage(BriefingStage):
     def priority(self) -> int:
         return 0
 
+    @property
+    def compressible(self) -> bool:
+        return False  # Identity is ALWAYS shown
+
     def enrich(self, parts: list[str], ctx: dict, arch: dict, cwd: str) -> None:
         project_name = ctx.get("project", {}).get("name", "") or Path(cwd).resolve().name
         ns = arch.get("north_star", "")
@@ -136,6 +275,10 @@ class CriticalStage(BriefingStage):
     @property
     def priority(self) -> int:
         return 5
+
+    @property
+    def compressible(self) -> bool:
+        return False  # Critical alerts are NEVER truncated
 
     def enrich(self, parts: list[str], ctx: dict, arch: dict, cwd: str) -> None:
         critical = _collect_critical(ctx)
@@ -223,6 +366,10 @@ class ActionStage(BriefingStage):
     @property
     def priority(self) -> int:
         return 30
+
+    @property
+    def compressible(self) -> bool:
+        return False  # Action items are critical for agent behavior
 
     def enrich(self, parts: list[str], ctx: dict, arch: dict, cwd: str) -> None:
         issues = ctx.get("issues", [])
@@ -615,9 +762,15 @@ def _group_services(svc_names: list[str]) -> dict[str, list[str]]:
 # ── Pipeline Factory ───────────────────────────────────────────────
 
 
-def default_pipeline() -> BriefingPipeline:
-    """Create the default briefing pipeline with all stages registered."""
-    pipeline = BriefingPipeline()
+def default_pipeline(token_budget: int = BUDGET_STANDARD) -> BriefingPipeline:
+    """Create the default briefing pipeline with all stages registered.
+
+    Args:
+        token_budget: Token budget for output. Use BUDGET_COMPACT (800),
+            BUDGET_STANDARD (1500), BUDGET_FULL (3000), or BUDGET_UNLIMITED (0).
+            Acts as a slider — lower budget = more aggressive truncation.
+    """
+    pipeline = BriefingPipeline(token_budget=token_budget)
     pipeline.register(IdentityStage())
     pipeline.register(CriticalStage())
     pipeline.register(OrientationStage())

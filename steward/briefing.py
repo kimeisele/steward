@@ -28,6 +28,18 @@ import logging
 from pathlib import Path
 
 from steward.briefing_stages import (
+    BUDGET_COMPACT as BUDGET_COMPACT,  # re-export
+)
+from steward.briefing_stages import (
+    BUDGET_FULL as BUDGET_FULL,  # re-export
+)
+from steward.briefing_stages import (
+    BUDGET_STANDARD as BUDGET_STANDARD,  # re-export
+)
+from steward.briefing_stages import (
+    BUDGET_UNLIMITED as BUDGET_UNLIMITED,  # re-export
+)
+from steward.briefing_stages import (
     _collect_critical as _collect_critical,  # re-export for backward compat
 )
 from steward.briefing_stages import (
@@ -69,8 +81,17 @@ def write_claude_md(cwd: str | None = None, force: bool = False) -> bool:
     return True
 
 
-def generate_briefing(cwd: str | None = None) -> str:
-    """Generate cockpit briefing from living system state."""
+def generate_briefing(cwd: str | None = None, token_budget: int = BUDGET_STANDARD) -> str:
+    """Generate cockpit briefing from living system state.
+
+    Args:
+        cwd: Working directory (defaults to current).
+        token_budget: Token budget slider. Controls output length.
+            BUDGET_COMPACT (800): identity + critical + action only
+            BUDGET_STANDARD (1500): most sections, architecture compressed
+            BUDGET_FULL (3000): everything expanded
+            BUDGET_UNLIMITED (0): no truncation
+    """
     cwd = cwd or str(Path.cwd())
 
     from steward.context_bridge import assemble_context, collect_architecture_metadata
@@ -83,7 +104,7 @@ def generate_briefing(cwd: str | None = None) -> str:
 
     arch = collect_architecture_metadata()
 
-    pipeline = default_pipeline()
+    pipeline = default_pipeline(token_budget=token_budget)
     return pipeline.generate(ctx, arch, cwd)
 
 

@@ -1,18 +1,23 @@
 """Tests for briefing_stages — composable pipeline for CLAUDE.md generation."""
 
 from steward.briefing_stages import (
+    BUDGET_COMPACT,
+    BUDGET_FULL,
+    BUDGET_STANDARD,
+    BUDGET_UNLIMITED,
     ActionStage,
     ArchitectureStage,
     BriefingPipeline,
-    BriefingStage,
     CriticalStage,
     EnvironmentStage,
     FederationInsightStage,
     GapAwarenessStage,
     IdentityStage,
+    OrientationStage,
     SessionsStage,
     StatusStage,
     ToolboxStage,
+    _estimate_tokens,
     default_pipeline,
 )
 
@@ -194,3 +199,100 @@ class TestSessionsStage:
         ctx = {"sessions": {"stats": {"total": 10, "success_rate": 0.8}}}
         stage.enrich(parts, ctx, {}, "/tmp")
         assert any("10 total" in p for p in parts)
+
+
+class TestTokenBudget:
+    """Token budget system — the slider that controls output length."""
+
+    def test_estimate_tokens(self):
+        assert _estimate_tokens("hello world") == max(1, len("hello world") // 4)
+        assert _estimate_tokens("") == 1  # floor of 1
+
+    def test_budget_default_is_standard(self):
+        pipeline = default_pipeline()
+        assert pipeline.token_budget == BUDGET_STANDARD
+
+    def test_budget_custom(self):
+        pipeline = default_pipeline(token_budget=1000)
+        assert pipeline.token_budget == 1000
+
+    def test_compact_smaller_than_standard(self):
+        """Compact mode produces fewer tokens than standard."""
+        compact = default_pipeline(token_budget=BUDGET_COMPACT)
+        standard = default_pipeline(token_budget=BUDGET_STANDARD)
+
+        ctx = {
+            "health": {"value": 0.9, "guna": "sattva"},
+            "sessions": {"stats": {"total": 5, "success_rate": 0.8}},
+        }
+        arch = {
+            "services": {"SVC_A": "a", "SVC_B": "b"},
+            "kshetra": ["x"],
+            "phases": {"genesis": "boot"},
+            "hooks": {},
+        }
+
+        compact_out = compact.generate(ctx, arch, "/tmp")
+        standard_out = standard.generate(ctx, arch, "/tmp")
+        assert len(compact_out) <= len(standard_out)
+
+    def test_unlimited_never_truncates(self):
+        """Unlimited budget includes everything."""
+        pipeline = default_pipeline(token_budget=BUDGET_UNLIMITED)
+        ctx = {
+            "health": {"value": 0.9, "guna": "sattva"},
+            "sessions": {"stats": {"total": 5, "success_rate": 0.8}},
+        }
+        arch = {
+            "services": {"SVC_A": "a"},
+            "kshetra": [],
+            "phases": {"genesis": "boot"},
+            "hooks": {},
+        }
+        result = pipeline.generate(ctx, arch, "/tmp")
+        assert "## Architecture" in result
+        assert "Sessions:" in result
+
+    def test_fixed_stages_never_truncated(self):
+        """Identity, Critical, Action are never compressible."""
+        assert not IdentityStage().compressible
+        assert not CriticalStage().compressible
+        assert not ActionStage().compressible
+
+    def test_compressible_stages_default_true(self):
+        """Most stages are compressible by default."""
+        assert OrientationStage().compressible
+        assert EnvironmentStage().compressible
+        assert ArchitectureStage().compressible
+        assert SessionsStage().compressible
+
+    def test_metadata_footer_present(self):
+        """Output always ends with metadata comment."""
+        pipeline = default_pipeline()
+        result = pipeline.generate({}, {}, "/tmp")
+        assert "<!-- briefing v" in result
+        assert "tokens" in result
+        assert "budget:" in result
+
+    def test_budget_label_compact(self):
+        pipeline = default_pipeline(token_budget=BUDGET_COMPACT)
+        assert pipeline._budget_label() == "compact"
+
+    def test_budget_label_standard(self):
+        pipeline = default_pipeline(token_budget=BUDGET_STANDARD)
+        assert pipeline._budget_label() == "standard"
+
+    def test_budget_label_full(self):
+        pipeline = default_pipeline(token_budget=BUDGET_FULL)
+        assert pipeline._budget_label() == "full"
+
+    def test_budget_label_unlimited(self):
+        pipeline = default_pipeline(token_budget=BUDGET_UNLIMITED)
+        assert pipeline._budget_label() == "unlimited"
+
+    def test_very_tight_budget_still_has_identity(self):
+        """Even at extremely tight budget, identity + critical always present."""
+        pipeline = default_pipeline(token_budget=100)
+        result = pipeline.generate({}, {}, "/tmp")
+        assert "# " in result  # Identity header
+        assert "No critical" in result  # Critical stage
