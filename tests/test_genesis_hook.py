@@ -225,16 +225,8 @@ class TestGitHubTopicDiscovery:
 
 
 class TestOrgRepoDiscovery:
-    def test_finds_federation_repos(self):
-        repo_list = json.dumps(
-            [
-                {"name": "steward-test"},
-                {"name": "agent-city"},
-                {"name": "steward"},  # Self — should be skipped
-                {"name": "random-repo"},  # No descriptor
-            ]
-        )
-
+    def test_checks_known_members_for_descriptors(self):
+        """Only checks repos already known from authoritative sources."""
         import base64
 
         descriptor = json.dumps(
@@ -248,26 +240,44 @@ class TestOrgRepoDiscovery:
         encoded_descriptor = base64.b64encode(descriptor.encode()).decode()
 
         def mock_gh(args, cwd=None):
-            if args[0] == "repo" and args[1] == "list":
-                return repo_list
-            if "agent-federation.json" in str(args):
-                if "random-repo" in str(args) or "steward/" in str(args):
-                    return None
+            if "agent-city" in str(args) and "agent-federation.json" in str(args):
                 return encoded_descriptor
-            return None
+            return None  # steward-test has no descriptor
 
         with patch("steward.hooks.genesis._gh", side_effect=mock_gh):
-            peers = _discover_from_org_repos()
+            peers = _discover_from_org_repos(
+                federation_members={"agent-city", "steward-test"}
+            )
 
-        assert "steward-test" in peers
         assert "agent-city" in peers
-        assert "steward" not in peers  # Self excluded
-        assert "random-repo" not in peers  # No descriptor
+        assert peers["agent-city"]["source"] == "federation_descriptor"
+        assert "code_analysis" in peers["agent-city"]["capabilities"]
+        # steward-test has no descriptor — registered as unregistered
+        assert "steward-test" in peers
+        assert peers["steward-test"]["source"] == "org_scan_unregistered"
 
-    def test_returns_empty_on_failure(self):
+    def test_skips_self(self):
+        """Steward repo is excluded even if in federation_members."""
         with patch("steward.hooks.genesis._gh", return_value=None):
+            peers = _discover_from_org_repos(
+                federation_members={"steward", "agent-city"}
+            )
+        assert "steward" not in peers
+        assert "agent-city" in peers
+
+    def test_returns_empty_without_members(self):
+        """No federation_members → no API calls, empty result."""
+        with patch("steward.hooks.genesis._gh") as mock_gh:
             peers = _discover_from_org_repos()
         assert peers == {}
+        mock_gh.assert_not_called()
+
+    def test_returns_empty_on_api_failure(self):
+        with patch("steward.hooks.genesis._gh", return_value=None):
+            peers = _discover_from_org_repos(federation_members={"agent-city"})
+        # Still registered as unregistered (API failure ≠ no descriptor)
+        assert "agent-city" in peers
+        assert peers["agent-city"]["source"] == "org_scan_unregistered"
 
 
 class TestGenesisHookRegistration:
