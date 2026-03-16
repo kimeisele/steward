@@ -444,13 +444,17 @@ class OrientationStage(BriefingStage):
             # Full detail — verbatim
             parts.append(f"\n{orientation}")
         elif focus >= 0.3:
-            # Compressed — section headers + first content line
+            # Compressed — section headers + key structural lines (no empty code blocks)
             parts.append("")
+            in_code_block = False
             for line in orientation.splitlines():
                 stripped = line.strip()
+                if stripped.startswith("```"):
+                    in_code_block = not in_code_block
+                    continue  # Skip delimiters — content inside is omitted anyway
+                if in_code_block:
+                    continue  # Skip code block content at medium focus
                 if stripped.startswith("## ") or stripped.startswith("| "):
-                    parts.append(line)
-                elif stripped.startswith("```"):
                     parts.append(line)
                 elif stripped.startswith("- **"):
                     parts.append(line)
@@ -886,11 +890,14 @@ def _get_seed_info() -> str:
         info_parts = []
         if seed:
             info_parts.append(f"Seed `{seed}`")
-        if position:
+        if position is not None and position != "":
             info_parts.append(f"position {position}")
         if compression:
             info_parts.append(f"{compression}x compression")
-        return " · ".join(info_parts) if info_parts else ""
+        # Only show if we have at least seed or seed+position (not position alone)
+        if info_parts and (seed or len(info_parts) >= 2):
+            return " · ".join(info_parts)
+        return ""
     except Exception:
         return ""
 
