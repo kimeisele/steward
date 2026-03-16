@@ -123,6 +123,7 @@ class AutonomyEngine:
         github_actuator: object | None = None,
         conversation_reset_fn: Callable[[], None] | None = None,
     ) -> None:
+        self._cwd = cwd
         self._synaptic = synaptic
         self._ledger = ledger
         self._conversation_reset_fn = conversation_reset_fn
@@ -475,7 +476,12 @@ class AutonomyEngine:
     # ── Cetana Phase Handlers ──────────────────────────────────────────
 
     def phase_genesis(self, idle_override: int | None = None, last_interaction: float | None = None) -> None:
-        """GENESIS: Discover — generate typed tasks from Sankalpa intents."""
+        """GENESIS: Discover — generate typed tasks from Sankalpa intents.
+
+        Evaluates campaign success signals FIRST, then feeds real state
+        into Sankalpa. Failing signals boost priority of relevant intents.
+        """
+        from steward.campaign_signals import evaluate as evaluate_campaign
         from steward.intents import TaskIntent
 
         sankalpa = ServiceRegistry.get(SVC_SANKALPA)
@@ -492,11 +498,14 @@ class AutonomyEngine:
         else:
             idle_minutes = 0
 
+        # Evaluate campaign success signals against real system state
+        campaign_health = evaluate_campaign(self._cwd, senses=self._senses)
+
         active = task_mgr.list_tasks(status=TaskStatus.PENDING) + task_mgr.list_tasks(status=TaskStatus.IN_PROGRESS)
         intents = sankalpa.think(
             idle_minutes=idle_minutes,
             pending_intents=len(active),
-            ci_green=True,
+            ci_green=campaign_health.ci_green,
         )
         for intent in intents:
             typed = TaskIntent.from_intent_type(intent.intent_type)
@@ -515,6 +524,11 @@ class AutonomyEngine:
                 priority = raw_priority
             else:
                 priority = _PRIORITY_MAP.get(str(raw_priority), 50)
+
+            # Failing campaign signals boost priority of relevant intents
+            priority += campaign_health.priority_boost(intent.intent_type)
+            priority = min(priority, 99)  # Cap below system-level (POST_MERGE=95)
+
             task_mgr.add_task(
                 title=f"[{typed.name}] {intent.title}",
                 priority=priority,

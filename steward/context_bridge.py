@@ -77,6 +77,9 @@ def assemble_context(cwd: str | None = None) -> dict[str, object]:
     # ── Immune (self-healing state) ──────────────────────────────────
     ctx["immune"] = _read_immune()
 
+    # ── Campaign (success signal evaluation) ─────────────────────────
+    ctx["campaign"] = _read_campaign(cwd)
+
     # ── Cetana (heartbeat state) ─────────────────────────────────────
     ctx["cetana"] = _read_cetana()
 
@@ -419,6 +422,25 @@ def _read_immune() -> dict[str, object]:
         return immune.stats()
     except Exception as e:
         logger.debug("Immune read failed (non-fatal): %s", e)
+        return {}
+
+
+def _read_campaign(cwd: str) -> dict[str, object]:
+    """Read campaign success signal evaluation."""
+    try:
+        from steward.campaign_signals import evaluate
+
+        health = evaluate(cwd)
+        if not health.signals:
+            return {}
+        return {
+            "campaign_id": health.campaign_id,
+            "all_met": health.all_met,
+            "signals": [{"kind": s.kind, "met": s.met, "actual": s.actual} for s in health.signals],
+            "failing": list(health.failing_kinds),
+        }
+    except Exception as e:
+        logger.debug("Campaign read failed (non-fatal): %s", e)
         return {}
 
 
