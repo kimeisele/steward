@@ -153,6 +153,15 @@ class SVC_IMMUNE:
     """
 
 
+class SVC_AGENT_DECK:
+    """AgentDeck — seed-based agent registry (Steward's Pokedex).
+
+    Specialized agent profiles keyed by deterministic seed.
+    Hebbian learning tracks which profiles work for which tasks.
+    Federation shares proven profiles via OP_SHARE_AGENT_CARD.
+    """
+
+
 class SVC_NORTH_STAR:
     """North Star — infrastructure-level goal seed (not LLM prompt).
 
@@ -344,6 +353,15 @@ def boot(
     synapse_store = SynapseStore(workspace=cwd_path)
     synapse_store.load()
     ServiceRegistry.register(SVC_SYNAPSE_STORE, synapse_store)
+
+    # 19b. AgentDeck (seed-based agent registry — Steward's Pokedex)
+    from steward.agent_deck import AgentDeck, install_starter_cards
+
+    agent_deck = AgentDeck()
+    deck_path = cwd_path / ".steward" / "agent_deck.json"
+    agent_deck.load(deck_path)
+    install_starter_cards(agent_deck)
+    ServiceRegistry.register(SVC_AGENT_DECK, agent_deck)
 
     # 20. TaskManager (persistent task tracking)
     from vibe_core.task_management.task_manager import TaskManager
@@ -712,6 +730,26 @@ def _add_steward_missions(sankalpa: object) -> None:
                 requires_ci_green=False,
                 requires_no_pending_intents=True,
                 max_executions_per_day=6,
+                enabled=True,
+            ),
+            SankalpaStrategy(
+                id="strategy_federation_gap_scan",
+                name="Federation Gap Scan",
+                description=(
+                    "Scan federation architecture for gaps: delivery reliability, "
+                    "agent card coverage, trust erosion, capability holes. "
+                    "Proposes healing actions for detected gaps."
+                ),
+                trigger=SankalpaTrigger(
+                    trigger_type=TriggerType.IDLE_BASED,
+                    idle_minutes=20,
+                ),
+                frequency=StrategyFrequency.DAILY,
+                intent_type="federation_gap_scan",
+                intent_template={},
+                requires_ci_green=False,
+                requires_no_pending_intents=True,
+                max_executions_per_day=3,
                 enabled=True,
             ),
         ],
