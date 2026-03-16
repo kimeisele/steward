@@ -829,10 +829,7 @@ def _analyze_security_patterns(repo_path: Path) -> list[Finding]:
             if isinstance(node, ast.ExceptHandler):
                 if isinstance(node.type, ast.Name) and node.type.id == "BaseException":
                     # Check if the handler re-raises — if so, it's intentional
-                    has_reraise = any(
-                        isinstance(child, ast.Raise)
-                        for child in ast.walk(node)
-                    )
+                    has_reraise = any(isinstance(child, ast.Raise) for child in ast.walk(node))
                     if not has_reraise:
                         findings.append(
                             Finding(
@@ -870,10 +867,7 @@ def _analyze_security_patterns(repo_path: Path) -> list[Finding]:
                     func_name = func.attr
 
                 if func_name in ("Queue", "SimpleQueue", "PriorityQueue", "LifoQueue"):
-                    has_maxsize = any(
-                        isinstance(kw, ast.keyword) and kw.arg == "maxsize"
-                        for kw in node.keywords
-                    )
+                    has_maxsize = any(isinstance(kw, ast.keyword) and kw.arg == "maxsize" for kw in node.keywords)
                     # Also check positional: Queue(100) sets maxsize
                     has_positional = len(node.args) >= 1
                     if not has_maxsize and not has_positional:
@@ -889,10 +883,7 @@ def _analyze_security_patterns(repo_path: Path) -> list[Finding]:
                         )
 
                 if func_name == "deque":
-                    has_maxlen = any(
-                        isinstance(kw, ast.keyword) and kw.arg == "maxlen"
-                        for kw in node.keywords
-                    )
+                    has_maxlen = any(isinstance(kw, ast.keyword) and kw.arg == "maxlen" for kw in node.keywords)
                     # deque(iterable, maxlen) — maxlen is 2nd positional
                     has_positional_maxlen = len(node.args) >= 2
                     if not has_maxlen and not has_positional_maxlen:
@@ -969,8 +960,13 @@ def diagnose_repo(repo_url: str, *, timeout: int = 60) -> DiagnosticReport:
 
         # Combine all findings, sort by severity
         all_findings = (
-            import_findings + dep_findings + fed_findings + ci_findings
-            + test_findings + circular_findings + security_findings
+            import_findings
+            + dep_findings
+            + fed_findings
+            + ci_findings
+            + test_findings
+            + circular_findings
+            + security_findings
         )
         severity_order = {Severity.CRITICAL: 0, Severity.WARNING: 1, Severity.INFO: 2}
         all_findings.sort(key=lambda f: severity_order.get(f.severity, 9))

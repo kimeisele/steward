@@ -17,6 +17,7 @@ from steward.remedies.precise_silent_except import (
 
 # ── Helper ──────────────────────────────────────────────────────────────
 
+
 def _transform(code: str) -> tuple[str, bool, bool]:
     """Run the remedy on code, return (result, violation_found, applied)."""
     tree = cst.parse_module(code)
@@ -26,6 +27,7 @@ def _transform(code: str) -> tuple[str, bool, bool]:
 
 
 # ── Classification tests ────────────────────────────────────────────────
+
 
 class TestExceptionNameExtraction:
     """_extract_exception_names parses CST nodes correctly."""
@@ -127,18 +129,12 @@ class TestIsDangerousCatch:
 
 # ── Transformation tests ────────────────────────────────────────────────
 
+
 class TestTransformDangerous:
     """Dangerous catches ARE transformed."""
 
     def test_bare_except_with_logging(self):
-        code = (
-            "import logging\n"
-            "logger = logging.getLogger(__name__)\n"
-            "try:\n"
-            "    x()\n"
-            "except:\n"
-            "    pass\n"
-        )
+        code = "import logging\nlogger = logging.getLogger(__name__)\ntry:\n    x()\nexcept:\n    pass\n"
         result, violation, applied = _transform(code)
         assert violation is True
         assert applied is True
@@ -146,42 +142,21 @@ class TestTransformDangerous:
         assert "pass" not in result.split("except")[1]
 
     def test_except_exception_with_logging(self):
-        code = (
-            "import logging\n"
-            "logger = logging.getLogger(__name__)\n"
-            "try:\n"
-            "    x()\n"
-            "except Exception:\n"
-            "    pass\n"
-        )
+        code = "import logging\nlogger = logging.getLogger(__name__)\ntry:\n    x()\nexcept Exception:\n    pass\n"
         result, violation, applied = _transform(code)
         assert violation is True
         assert applied is True
         assert "logger.debug" in result
 
     def test_except_base_exception_with_logging(self):
-        code = (
-            "import logging\n"
-            "logger = logging.getLogger(__name__)\n"
-            "try:\n"
-            "    x()\n"
-            "except BaseException:\n"
-            "    pass\n"
-        )
+        code = "import logging\nlogger = logging.getLogger(__name__)\ntry:\n    x()\nexcept BaseException:\n    pass\n"
         result, violation, applied = _transform(code)
         assert violation is True
         assert applied is True
         assert "logger.debug" in result
 
     def test_preserves_existing_exception_name(self):
-        code = (
-            "import logging\n"
-            "logger = logging.getLogger(__name__)\n"
-            "try:\n"
-            "    x()\n"
-            "except Exception as e:\n"
-            "    pass\n"
-        )
+        code = "import logging\nlogger = logging.getLogger(__name__)\ntry:\n    x()\nexcept Exception as e:\n    pass\n"
         result, violation, applied = _transform(code)
         assert applied is True
         # Should preserve the 'e' variable name
@@ -189,12 +164,7 @@ class TestTransformDangerous:
 
     def test_violation_without_logger(self):
         """Dangerous catch without logging: violation found but NOT applied."""
-        code = (
-            "try:\n"
-            "    x()\n"
-            "except Exception:\n"
-            "    pass\n"
-        )
+        code = "try:\n    x()\nexcept Exception:\n    pass\n"
         result, violation, applied = _transform(code)
         assert violation is True
         assert applied is False
@@ -220,14 +190,7 @@ class TestLeaveIntentional:
         assert "pass" in result
 
     def test_value_error_untouched(self):
-        code = (
-            "import logging\n"
-            "logger = logging.getLogger(__name__)\n"
-            "try:\n"
-            "    int(x)\n"
-            "except ValueError:\n"
-            "    pass\n"
-        )
+        code = "import logging\nlogger = logging.getLogger(__name__)\ntry:\n    int(x)\nexcept ValueError:\n    pass\n"
         result, violation, applied = _transform(code)
         assert violation is False
         assert applied is False
@@ -247,12 +210,7 @@ class TestLeaveIntentional:
 
     def test_os_error_untouched(self):
         code = (
-            "import logging\n"
-            "logger = logging.getLogger(__name__)\n"
-            "try:\n"
-            "    os.remove(f)\n"
-            "except OSError:\n"
-            "    pass\n"
+            "import logging\nlogger = logging.getLogger(__name__)\ntry:\n    os.remove(f)\nexcept OSError:\n    pass\n"
         )
         result, violation, applied = _transform(code)
         assert violation is False
@@ -329,12 +287,7 @@ class TestNonPassBodies:
 
     def test_handler_with_return_untouched(self):
         code = (
-            "import logging\n"
-            "logger = logging.getLogger(__name__)\n"
-            "try:\n"
-            "    x()\n"
-            "except Exception:\n"
-            "    return None\n"
+            "import logging\nlogger = logging.getLogger(__name__)\ntry:\n    x()\nexcept Exception:\n    return None\n"
         )
         result, violation, applied = _transform(code)
         assert violation is False
@@ -342,14 +295,7 @@ class TestNonPassBodies:
 
     def test_handler_with_ellipsis_is_bare(self):
         """Ellipsis (...) is treated as bare pass."""
-        code = (
-            "import logging\n"
-            "logger = logging.getLogger(__name__)\n"
-            "try:\n"
-            "    x()\n"
-            "except Exception:\n"
-            "    ...\n"
-        )
+        code = "import logging\nlogger = logging.getLogger(__name__)\ntry:\n    x()\nexcept Exception:\n    ...\n"
         result, violation, applied = _transform(code)
         assert violation is True
         assert applied is True

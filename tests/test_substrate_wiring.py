@@ -14,8 +14,6 @@ Wiring contract:
   - Every LLM call → compress → cache → learn (Hebbian muscle)
 """
 
-
-
 from steward.services import boot
 from vibe_core.di import ServiceRegistry
 from vibe_core.mahamantra.adapters.compression import MahaCompression

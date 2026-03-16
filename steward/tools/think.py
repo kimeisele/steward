@@ -114,10 +114,7 @@ def _build_symbolic_feedback(
 
         # Check if planned action was tried before
         if planned_action:
-            similar = [
-                imp for imp in impressions
-                if planned_action.lower() in str(imp).lower()
-            ]
+            similar = [imp for imp in impressions if planned_action.lower() in str(imp).lower()]
             if similar:
                 last = similar[-1]
                 feedback["memory"] = (
@@ -129,8 +126,7 @@ def _build_symbolic_feedback(
 
         # Files already read (for read-before-write check)
         read_files = [
-            imp.path for imp in impressions
-            if hasattr(imp, 'name') and imp.name == "read_file" and hasattr(imp, 'path')
+            imp.path for imp in impressions if hasattr(imp, "name") and imp.name == "read_file" and hasattr(imp, "path")
         ]
         if read_files:
             feedback["files_read"] = list(set(read_files))
@@ -157,8 +153,7 @@ def _build_symbolic_feedback(
             feedback["guna"] = vedana.guna
             if vedana.health < 0.5:
                 feedback["health_warning"] = (
-                    f"System health is LOW ({vedana.health:.2f}). "
-                    "Consider simpler actions or diagnostic steps first."
+                    f"System health is LOW ({vedana.health:.2f}). Consider simpler actions or diagnostic steps first."
                 )
         except Exception:
             logger.debug("Vedana health signal failed", exc_info=True)
@@ -177,9 +172,7 @@ def _build_symbolic_feedback(
                     )
                 trend = ksetrajna.trend()
                 if trend == "degrading":
-                    feedback["trend_warning"] = (
-                        "Health trend is DEGRADING. Recent actions are making things worse."
-                    )
+                    feedback["trend_warning"] = "Health trend is DEGRADING. Recent actions are making things worse."
         except Exception:
             logger.debug("KsetraJna meta-observation failed", exc_info=True)
 

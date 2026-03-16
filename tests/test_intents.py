@@ -7,7 +7,6 @@ Verifies that the autonomy loop works without LLM calls:
   - Handlers return None (no issue) or problem string (needs LLM)
 """
 
-
 from steward.intents import INTENT_TYPE_KEY, TaskIntent
 
 
