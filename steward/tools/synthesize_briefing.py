@@ -1,14 +1,17 @@
 """
-synthesize_briefing — Steward writes its own documentation via LLM.
+synthesize_briefing — LLM-enriched on-demand briefing synthesis.
 
-This tool lets steward use its own intelligence to synthesize a CLAUDE.md
-briefing for external consumers (Claude Code, Opus sessions). Instead of
-hardcoded templates, steward reads its own state and architecture from
-living code and asks its LLM to produce a prioritized briefing.
+This is the OPTIONAL LLM-enhanced path. The PRIMARY writer is
+briefing.write_claude_md() which runs deterministically every heartbeat.
+
+This tool is for on-demand deep synthesis (e.g., Sankalpa mission every
+15 min, or explicit agent request). It uses steward's LLM to enrich
+the deterministic briefing with prioritized insights.
 
 Input sources (all deterministic, zero LLM):
   - context.json: assembled from senses, vedana, gaps, sessions, etc.
   - Architecture metadata: SVC_ docstrings, kshetra, hooks, north star
+  - Validated annotations from steward.annotations pipeline
 
 The LLM then synthesizes these into a coherent briefing that:
   1. Leads with what matters most (health, urgencies, pain)
@@ -111,10 +114,12 @@ class SynthesizeBriefingTool(Tool):
 
         try:
             # 1. Collect raw material (deterministic, zero LLM)
+            from steward.annotations import collect_validated
             from steward.context_bridge import assemble_context, collect_architecture_metadata
 
             context = assemble_context(self._cwd)
             architecture = collect_architecture_metadata()
+            validated_annotations = collect_validated()
 
             # 2. Get steward's LLM provider
             from steward.services import SVC_PROVIDER
@@ -127,8 +132,8 @@ class SynthesizeBriefingTool(Tool):
                     error="No LLM provider available — cannot synthesize briefing",
                 )
 
-            # 3. Build the synthesis prompt
-            prompt = self._build_prompt(architecture, context)
+            # 3. Build the synthesis prompt (includes annotations)
+            prompt = self._build_prompt(architecture, context, validated_annotations)
 
             # 4. Call steward's own LLM
             response = provider.invoke(
@@ -174,7 +179,9 @@ class SynthesizeBriefingTool(Tool):
             logger.warning("Briefing synthesis failed: %s", e)
             return ToolResult(success=False, error=f"Synthesis failed: {e}")
 
-    def _build_prompt(self, architecture: dict[str, Any], context: dict[str, Any]) -> str:
+    def _build_prompt(
+        self, architecture: dict[str, Any], context: dict[str, Any], annotations: list | None = None
+    ) -> str:
         """Build the data payload for the synthesis LLM call."""
         parts: list[str] = []
 
@@ -229,6 +236,16 @@ class SynthesizeBriefingTool(Tool):
             for k in kshetra:
                 parts.append(f"| {k['number']} | {k['element']} | {k['category']} | {k['role']} |")
             parts.append("")
+
+        # Agent knowledge (validated annotations)
+        if annotations:
+            from steward.annotations import format_for_briefing
+
+            annotation_text = format_for_briefing(annotations)
+            if annotation_text:
+                parts.append("\n## AGENT KNOWLEDGE (validated annotations)\n")
+                parts.append(annotation_text)
+                parts.append("")
 
         parts.append("\n## CONTEXT (current state)\n")
         # Compact JSON — the LLM can parse it

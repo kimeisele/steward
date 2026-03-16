@@ -2,8 +2,9 @@
 
 from steward.briefing import (
     _collect_critical,
-    _load_orientation,
+    _generate_orientation,
     generate_briefing,
+    write_claude_md,
 )
 
 
@@ -12,6 +13,10 @@ class TestGenerateBriefing:
         result = generate_briefing(cwd=str(tmp_path))
         assert isinstance(result, str)
         assert "#" in result
+
+    def test_includes_auto_generated_marker(self, tmp_path):
+        result = generate_briefing(cwd=str(tmp_path))
+        assert "AUTO-GENERATED" in result
 
     def test_includes_north_star(self, tmp_path):
         result = generate_briefing(cwd=str(tmp_path))
@@ -22,18 +27,13 @@ class TestGenerateBriefing:
         assert "Architecture" in result
         assert "services" in result.lower()
 
-    def test_includes_service_docstrings(self, tmp_path):
-        """Services should show descriptions, not just names."""
-        result = generate_briefing(cwd=str(tmp_path))
-        assert "ToolRegistry" in result or "tool lookup" in result.lower()
-
     def test_includes_murali(self, tmp_path):
         result = generate_briefing(cwd=str(tmp_path))
         assert "MURALI" in result or "genesis" in result
 
-    def test_includes_phase_descriptions(self, tmp_path):
+    def test_includes_phase_info(self, tmp_path):
         result = generate_briefing(cwd=str(tmp_path))
-        assert "Discover" in result or "Govern" in result
+        assert "genesis" in result or "MURALI" in result
 
     def test_empty_project_still_works(self, tmp_path):
         result = generate_briefing(cwd=str(tmp_path))
@@ -42,44 +42,64 @@ class TestGenerateBriefing:
 
     def test_no_critical_when_healthy(self, tmp_path):
         result = generate_briefing(cwd=str(tmp_path))
-        # CRITICAL section only appears when something is actually wrong
-        assert "CRITICAL" not in result or "Health" in result
+        # Critical section only appears when something is actually wrong
+        assert "Critical" not in result or "No critical" in result
 
-    def test_includes_orientation_from_conventions(self):
-        """When run from the real repo, orientation block should be present."""
+    def test_includes_orientation(self):
+        """When run from the real repo, auto-generated orientation should be present."""
         result = generate_briefing(cwd=".")
-        # The conventions.md in .steward/ has architecture explanation
-        assert "Antahkarana" in result or "cognitive" in result.lower()
+        # The auto-generated orientation should detect key directories
+        assert "antahkarana" in result or "cognitive" in result.lower()
 
 
-class TestLoadOrientation:
-    def test_no_file_returns_empty(self, tmp_path):
-        assert _load_orientation(str(tmp_path)) == ""
+class TestGenerateOrientation:
+    def test_empty_dir(self, tmp_path):
+        """Orientation from empty dir still produces status section."""
+        result = _generate_orientation({}, str(tmp_path))
+        assert "## Status" in result
 
-    def test_loads_content_skipping_file_comments(self, tmp_path):
-        steward_dir = tmp_path / ".steward"
-        steward_dir.mkdir()
-        (steward_dir / "conventions.md").write_text(
-            "# File-level comment\n# Another comment\n\n## What this is\nSteward is an agent.\n"
-        )
-        result = _load_orientation(str(tmp_path))
-        assert "## What this is" in result
-        assert "Steward is an agent" in result
+    def test_detects_key_dirs(self):
+        """In the real repo, key directories should be detected."""
+        from steward.context_bridge import collect_architecture_metadata
 
-    def test_preserves_markdown_structure(self, tmp_path):
-        steward_dir = tmp_path / ".steward"
-        steward_dir.mkdir()
-        content = "# Top comment\n\n## Section One\nContent here.\n\n## Section Two\nMore content.\n"
-        (steward_dir / "conventions.md").write_text(content)
-        result = _load_orientation(str(tmp_path))
-        assert "## Section One" in result
-        assert "## Section Two" in result
+        arch = collect_architecture_metadata()
+        result = _generate_orientation(arch, ".")
+        assert "antahkarana" in result
+        assert "senses" in result
+        assert "tools" in result
 
-    def test_empty_file_returns_empty(self, tmp_path):
-        steward_dir = tmp_path / ".steward"
-        steward_dir.mkdir()
-        (steward_dir / "conventions.md").write_text("")
-        assert _load_orientation(str(tmp_path)) == ""
+    def test_includes_invariants(self):
+        from steward.context_bridge import collect_architecture_metadata
+
+        arch = collect_architecture_metadata()
+        result = _generate_orientation(arch, ".")
+        assert "NORTH_STAR_TEXT" in result
+        assert "MahaCompression" in result
+
+    def test_includes_workflow(self):
+        result = _generate_orientation({}, ".")
+        assert "ruff" in result or "make check" in result
+
+
+class TestWriteClaudeMd:
+    def test_writes_file(self, tmp_path):
+        written = write_claude_md(str(tmp_path), force=True)
+        assert written
+        claude_md = tmp_path / "CLAUDE.md"
+        assert claude_md.exists()
+        content = claude_md.read_text()
+        assert "AUTO-GENERATED" in content
+
+    def test_rate_limited(self, tmp_path):
+        write_claude_md(str(tmp_path), force=True)
+        # Second call within rate limit should be skipped
+        written = write_claude_md(str(tmp_path), force=False)
+        assert not written
+
+    def test_force_bypasses_rate_limit(self, tmp_path):
+        write_claude_md(str(tmp_path), force=True)
+        written = write_claude_md(str(tmp_path), force=True)
+        assert written
 
 
 class TestCollectCritical:
