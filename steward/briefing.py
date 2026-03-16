@@ -88,7 +88,19 @@ def _merge_cached_context(ctx: dict, cwd: str) -> None:
 
 
 def _format(ctx: dict, arch: dict, cwd: str = ".") -> str:
-    """Cockpit layout: identity → orientation → knowledge → critical → state → action → architecture."""
+    """Cockpit layout optimized for AI agent consumption.
+
+    Layout order (highest priority first):
+      1. IDENTITY    — who you are, what drives you
+      2. CRITICAL    — stop and read these FIRST (only if issues exist)
+      3. ORIENTATION — static mental model (conventions.md)
+      4. STATUS      — compact health/immune/federation state
+      5. ACTION      — what to do next (issues + gaps)
+      6. KNOWLEDGE   — validated annotations from prior agents
+      7. ENVIRONMENT — senses perception (git, code, tests, health)
+      8. TOOLBOX     — available tools with descriptions
+      9. ARCHITECTURE — services, phases, substrate (reference)
+    """
     parts: list[str] = []
     name = ctx.get("project", {}).get("name", "") or Path(cwd).resolve().name
 
@@ -98,7 +110,6 @@ def _format(ctx: dict, arch: dict, cwd: str = ".") -> str:
     if ns:
         parts.append(f"**{ns}**")
 
-    # Seed + position from MahaMantra (if available)
     seed_info = _get_seed_info()
     if seed_info:
         parts.append(seed_info)
@@ -112,29 +123,33 @@ def _format(ctx: dict, arch: dict, cwd: str = ".") -> str:
     else:
         parts.append("\n*No critical issues.*")
 
-    # ── 3. ORIENTATION (static block — the agent's mental model) ──
-    # This is conventions.md — irreplaceable knowledge that cannot be
-    # auto-derived from code: cognitive pipeline, philosophy, invariants.
+    # ── 3. ORIENTATION (static — the agent's irreplaceable mental model) ──
     orientation = _load_orientation(cwd)
     if orientation:
         parts.append(f"\n{orientation}")
 
-    # ── 4. AGENT KNOWLEDGE (validated annotations from pipeline) ──
+    # ── 4. STATUS (compact one-liner per subsystem) ──
+    _append_status(parts, ctx)
+
+    # ── 5. ACTION (what to do next — issues + gaps) ──
+    _append_action(parts, ctx)
+
+    # ── 6. AGENT KNOWLEDGE (validated annotations from pipeline) ──
     knowledge = _collect_annotations()
     if knowledge:
         parts.append("\n## Agent Knowledge")
         parts.append(knowledge)
 
-    # ── 5. ENVIRONMENT (dynamic — what senses perceive right now) ──
+    # ── 7. ENVIRONMENT (dynamic — what senses perceive right now) ──
     _append_environment(parts, ctx)
 
-    # ── 6. ACTION (issues + gaps) ──
-    _append_action(parts, ctx)
+    # ── 8. TOOLBOX (what tools are available) ──
+    _append_toolbox(parts, arch)
 
-    # ── 7. ARCHITECTURE (dynamic — services, phases, tools from living code) ──
+    # ── 9. ARCHITECTURE (reference — services, phases, substrate) ──
     _append_architecture(parts, arch)
 
-    # ── 8. SESSIONS (compact) ──
+    # ── Sessions (compact footer) ──
     sessions = ctx.get("sessions", {})
     stats = sessions.get("stats", {})
     if stats and stats.get("total", 0) > 0:
@@ -241,7 +256,7 @@ def _collect_critical(ctx: dict) -> list[str]:
 
 
 def _append_environment(parts: list[str], ctx: dict) -> None:
-    """Append environment perception — senses, health, immune, federation."""
+    """Append environment perception from senses + federation peer table."""
     senses = ctx.get("senses", {})
     prompt = senses.get("prompt_summary", "")
 
@@ -249,28 +264,18 @@ def _append_environment(parts: list[str], ctx: dict) -> None:
     if prompt:
         parts.append(f"\n{prompt.strip()}")
     else:
-        parts.append("\n## Environment")
+        parts.append("\n## Environment Perception")
 
-    health = ctx.get("health", {})
-    if health:
-        parts.append(f"Health: {health.get('value', '?')} ({health.get('guna', '?')})")
-
-    immune = ctx.get("immune", {})
-    if immune:
-        parts.append(
-            f"Immune: {immune.get('heals_attempted', 0)} attempts, "
-            f"{immune.get('heals_succeeded', 0)} succeeded, "
-            f"breaker {'TRIPPED' if immune.get('breaker', {}).get('tripped') else 'OK'}"
-        )
-
+    # Federation peer table (detailed view, separate from Status one-liner)
     fed = ctx.get("federation", {})
     peers = fed.get("peers", [])
     if peers:
-        parts.append(f"\nFederation: {len(peers)} peers")
-        parts.append("| Peer | Status | Trust |")
-        parts.append("|------|--------|-------|")
+        parts.append(f"\nFederation peers: {len(peers)}")
+        parts.append("| Peer | Status | Trust | Capabilities |")
+        parts.append("|------|--------|-------|--------------|")
         for p in peers:
-            parts.append(f"| {p.get('agent_id', '?')} | {p.get('status', '?')} | {p.get('trust', '?')} |")
+            caps = ", ".join(p.get("capabilities", [])[:3]) or "—"
+            parts.append(f"| {p.get('agent_id', '?')} | {p.get('status', '?')} | {p.get('trust', '?')} | {caps} |")
 
 
 def _append_action(parts: list[str], ctx: dict) -> None:
@@ -301,21 +306,68 @@ def _append_action(parts: list[str], ctx: dict) -> None:
             parts.append(f"- [{g.get('category', '?')}] {g.get('description', '?')}")
 
 
+def _append_status(parts: list[str], ctx: dict) -> None:
+    """Compact status dashboard — one line per subsystem."""
+    status_lines: list[str] = []
+
+    health = ctx.get("health", {})
+    if health:
+        h_val = health.get("value", "?")
+        guna = health.get("guna", "?")
+        status_lines.append(f"Health: {h_val} ({guna})")
+
+    immune = ctx.get("immune", {})
+    if immune:
+        breaker = "TRIPPED" if immune.get("breaker", {}).get("tripped") else "OK"
+        attempted = immune.get("heals_attempted", 0)
+        succeeded = immune.get("heals_succeeded", 0)
+        status_lines.append(f"Immune: {succeeded}/{attempted} heals, breaker {breaker}")
+
+    fed = ctx.get("federation", {})
+    peers = fed.get("peers", [])
+    if peers:
+        alive = sum(1 for p in peers if p.get("status") == "alive")
+        suspect = sum(1 for p in peers if p.get("status") == "suspect")
+        dead = sum(1 for p in peers if p.get("status") in ("dead", "evicted"))
+        status_lines.append(f"Federation: {len(peers)} peers ({alive} alive, {suspect} suspect, {dead} dead)")
+
+    if status_lines:
+        parts.append("\n## Status")
+        for line in status_lines:
+            parts.append(line)
+
+
+def _append_toolbox(parts: list[str], arch: dict) -> None:
+    """Append available tools — what the agent can actually DO."""
+    tools = arch.get("tools", [])
+    if not tools:
+        return
+
+    parts.append("\n## Toolbox")
+    for t in tools:
+        name = t.get("name", "?")
+        desc = t.get("description", "")
+        if desc:
+            # First sentence only for compact display
+            first_sentence = desc.split(".")[0].strip()
+            parts.append(f"- `{name}` — {first_sentence}")
+        else:
+            parts.append(f"- `{name}`")
+
+
 def _append_architecture(parts: list[str], arch: dict) -> None:
-    """Append architecture — services with docstrings, phases, tools."""
+    """Append architecture reference — services grouped, phases, substrate."""
     parts.append("\n## Architecture")
 
     services = arch.get("services", {})
+    kshetra = arch.get("kshetra", [])
     if services:
-        parts.append(f"{len(services)} services · {len(arch.get('kshetra', []))} tattvas")
+        parts.append(f"{len(services)} services · {len(kshetra)} tattvas")
 
-        # Compact: just list service names, not all docstrings
-        svc_names = sorted(services.keys())
-        if len(svc_names) > 15:
-            shown = svc_names[:15]
-            parts.append(f"Services: {', '.join(f'`{s}`' for s in shown)} +{len(svc_names) - 15} more")
-        else:
-            parts.append(f"Services: {', '.join(f'`{s}`' for s in svc_names)}")
+        # Group services by function for faster scanning
+        groups = _group_services(sorted(services.keys()))
+        for group_name, svc_list in groups.items():
+            parts.append(f"{group_name}: {', '.join(f'`{s}`' for s in svc_list)}")
 
     phases = arch.get("phases", {})
     hooks = arch.get("hooks", {})
@@ -329,3 +381,45 @@ def _append_architecture(parts: list[str], arch: dict) -> None:
                 count = len(hook_info) if isinstance(hook_info, list) else 0
             phase_parts.append(f"**{p}**({count})")
         parts.append(f"MURALI: {' → '.join(phase_parts)}")
+
+
+def _group_services(svc_names: list[str]) -> dict[str, list[str]]:
+    """Group services by functional area for compact display."""
+    groups: dict[str, list[str]] = {
+        "Cognitive": [],
+        "Memory": [],
+        "Safety": [],
+        "Federation": [],
+        "Healing": [],
+        "Other": [],
+    }
+
+    cognitive = {"SVC_ATTENTION", "SVC_MAHA_LLM", "SVC_COMPRESSION", "SVC_ANTARANGA", "SVC_VENU", "SVC_SIKSASTAKAM"}
+    memory = {"SVC_MEMORY", "SVC_SYNAPSE_STORE", "SVC_CACHE", "SVC_KNOWLEDGE_GRAPH", "SVC_TASK_MANAGER"}
+    safety = {"SVC_SAFETY_GUARD", "SVC_NARASIMHA", "SVC_INTEGRITY", "SVC_DIAMOND"}
+    federation = {
+        "SVC_FEDERATION",
+        "SVC_FEDERATION_TRANSPORT",
+        "SVC_FEDERATION_RELAY",
+        "SVC_GIT_NADI_SYNC",
+        "SVC_REAPER",
+        "SVC_MARKETPLACE",
+    }
+    healing = {"SVC_IMMUNE", "SVC_FEEDBACK", "SVC_OUROBOROS"}
+
+    for name in svc_names:
+        if name in cognitive:
+            groups["Cognitive"].append(name)
+        elif name in memory:
+            groups["Memory"].append(name)
+        elif name in safety:
+            groups["Safety"].append(name)
+        elif name in federation:
+            groups["Federation"].append(name)
+        elif name in healing:
+            groups["Healing"].append(name)
+        else:
+            groups["Other"].append(name)
+
+    # Remove empty groups
+    return {k: v for k, v in groups.items() if v}
