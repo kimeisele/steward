@@ -56,16 +56,13 @@ class TestExtractPackage:
 
 class TestAddDependencyToToml:
     def test_multiline_deps(self):
-        toml = (
-            '[project]\nname = "foo"\n'
-            'dependencies = [\n    "existing>=1.0",\n]\n'
-        )
+        toml = '[project]\nname = "foo"\ndependencies = [\n    "existing>=1.0",\n]\n'
         result = _add_dependency_to_toml(toml, "newpkg")
         assert '"newpkg",' in result
         assert '"existing>=1.0",' in result
 
     def test_empty_array(self):
-        toml = '[project]\ndependencies = []\n'
+        toml = "[project]\ndependencies = []\n"
         result = _add_dependency_to_toml(toml, "flask")
         assert '"flask"' in result
 

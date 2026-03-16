@@ -4,7 +4,6 @@ Tests the FastAPI app creation and endpoints without requiring
 fastapi/uvicorn to be installed (uses conditional imports).
 """
 
-
 import pytest
 
 

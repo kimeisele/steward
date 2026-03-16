@@ -230,7 +230,6 @@ class FixPipeline:
         import subprocess
         import time as _time
 
-
         if self._breaker.is_suspended:
             logger.warning("Circuit breaker suspended — skipping proactive fix")
             return None
