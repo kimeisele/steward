@@ -335,7 +335,7 @@ _STARTER_CARDS = [
             "read the test file and source code, identify the root cause, "
             "and fix it. Prefer minimal changes. Run pytest to verify."
         ),
-        tool_filter=("read_file", "edit", "bash", "grep", "glob"),
+        tool_filter=("read_file", "edit_file", "bash", "grep", "glob"),
     ),
     AgentCard(
         seed=0,
@@ -346,7 +346,7 @@ _STARTER_CARDS = [
             "violations, and fix them. Prefer auto-fixable rules. "
             "Run ruff check again to verify all violations are resolved."
         ),
-        tool_filter=("read_file", "edit", "bash", "grep", "glob"),
+        tool_filter=("read_file", "edit_file", "bash", "grep", "glob"),
     ),
     AgentCard(
         seed=0,
@@ -368,7 +368,7 @@ _STARTER_CARDS = [
             "packages, update pyproject.toml, run tests to verify compatibility. "
             "Create atomic updates — one package at a time if risky."
         ),
-        tool_filter=("read_file", "edit", "bash", "grep", "glob"),
+        tool_filter=("read_file", "edit_file", "bash", "grep", "glob"),
     ),
     AgentCard(
         seed=0,
