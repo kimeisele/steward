@@ -169,7 +169,36 @@ class SVC_NORTH_STAR:
 #
 # This text is compressed to a seed at boot. The seed is the constant.
 # Change the text = change the seed = change the attractor.
-NORTH_STAR_TEXT = "execute tasks with minimal tokens by making the architecture itself intelligent"
+#
+# Single source of truth: campaigns/default.json → north_star field.
+# Fallback: hardcoded string (safety net if JSON is missing/broken).
+_FALLBACK_NORTH_STAR = "execute tasks with minimal tokens by making the architecture itself intelligent"
+
+
+def _load_north_star() -> str:
+    """Load North Star text from campaigns/default.json (single source of truth).
+
+    Falls back to hardcoded string if the file is missing or malformed.
+    This ensures campaigns/default.json is the canonical config source.
+    """
+    import json
+    from pathlib import Path
+
+    # Try project-relative path first, then absolute
+    for base in [Path(__file__).parent.parent, Path.cwd()]:
+        path = base / "campaigns" / "default.json"
+        if path.exists():
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                campaigns = data.get("campaigns", [])
+                if campaigns and campaigns[0].get("north_star"):
+                    return campaigns[0]["north_star"]
+            except (json.JSONDecodeError, OSError, IndexError):
+                pass
+    return _FALLBACK_NORTH_STAR
+
+
+NORTH_STAR_TEXT = _load_north_star()
 
 
 # ── Boot ─────────────────────────────────────────────────────────────
