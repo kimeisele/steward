@@ -74,7 +74,7 @@ class TestGitSense:
 
     def test_merge_detection_first_check_initializes(self):
         """First _detect_merge call initializes state, returns None."""
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import patch
 
         sense = GitSense(cwd=".")
         assert sense._last_main_head is None

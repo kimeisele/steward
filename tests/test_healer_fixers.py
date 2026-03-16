@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from pathlib import Path
 
 from steward.healer.fixers import (
     _IMPORT_TO_PIP,
@@ -20,7 +19,7 @@ from steward.healer.fixers import (
     _fix_syntax_error,
     _fix_undeclared_dependency,
 )
-from steward.healer.types import FixStrategy, _FIXERS, classify
+from steward.healer.types import _FIXERS, FixStrategy, classify
 from steward.senses.diagnostic_sense import FindingKind, Severity
 
 
@@ -196,7 +195,7 @@ class TestFixBrokenImport:
             kind=FindingKind.BROKEN_IMPORT,
             detail="from deep.nested.mod import func — local module not found",
         )
-        changed = _fix_broken_import(f, tmp_path)
+        _fix_broken_import(f, tmp_path)
         assert (tmp_path / "deep" / "__init__.py").exists()
         assert (tmp_path / "deep" / "nested" / "__init__.py").exists()
 
