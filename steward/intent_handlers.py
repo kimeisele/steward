@@ -56,6 +56,7 @@ class IntentHandlers:
             TaskIntent.HEAL_REPO: self.execute_heal_repo,
             TaskIntent.UPDATE_DEPS: self.execute_update_deps,
             TaskIntent.REMOVE_DEAD_CODE: self.execute_remove_dead_code,
+            TaskIntent.SYNTHESIZE_BRIEFING: self.execute_synthesize_briefing,
         }
         handler = dispatch.get(intent)
         if handler is None:
@@ -95,12 +96,31 @@ class IntentHandlers:
         try:
             perception = git_sense.perceive()
             ci_status = perception.get("ci_status") if isinstance(perception, dict) else None
-            if ci_status and ci_status.get("conclusion") == "failure":
-                failing = ci_status.get("name", "unknown workflow")
-                return f"CI is failing: workflow '{failing}'. Check the logs and fix the failing tests."
+            if ci_status:
+                self._emit_ci_status(ci_status)
+                if ci_status.get("conclusion") == "failure":
+                    failing = ci_status.get("name", "unknown workflow")
+                    return f"CI is failing: workflow '{failing}'. Check the logs and fix the failing tests."
         except Exception as e:
             logger.debug("CI check failed (non-fatal): %s", e)
         return None
+
+    def _emit_ci_status(self, ci_status: dict) -> None:
+        """Emit CI status to federation so peers can track repo health."""
+        from steward.federation import OP_CI_STATUS
+        from steward.services import SVC_FEDERATION
+
+        bridge = ServiceRegistry.get(SVC_FEDERATION)
+        if bridge is None:
+            return
+        bridge.emit(
+            OP_CI_STATUS,
+            {
+                "repo": "kimeisele/steward",
+                "conclusion": ci_status.get("conclusion", "unknown"),
+                "workflow": ci_status.get("name", "unknown"),
+            },
+        )
 
     def execute_post_merge(self) -> str | None:
         """Post-merge verification — 0 tokens.
@@ -322,3 +342,30 @@ class IntentHandlers:
             f"Degraded peers requiring diagnostic: {', '.join(details)}. "
             f"Run diagnostic sense on their repos to identify issues."
         )
+
+    def execute_synthesize_briefing(self) -> str | None:
+        """Check if CLAUDE.md briefing is stale — 0 tokens.
+
+        Compares context.json mtime to CLAUDE.md mtime.
+        Only triggers when context.json exists AND is newer.
+        If no context.json yet (first boot), nothing to synthesize from.
+        """
+        from pathlib import Path
+
+        steward_dir = Path(self._cwd) / ".steward"
+        claude_md = Path(self._cwd) / "CLAUDE.md"
+        context_json = steward_dir / "context.json"
+
+        # No context.json yet → nothing to synthesize from (first boot)
+        if not context_json.exists():
+            return None
+
+        # No CLAUDE.md but context.json exists → needs synthesis
+        if not claude_md.exists():
+            return "CLAUDE.md does not exist. Use the synthesize_briefing tool to create it from .steward/context.json."
+
+        # context.json newer than CLAUDE.md → briefing is stale
+        if context_json.stat().st_mtime > claude_md.stat().st_mtime:
+            return "CLAUDE.md is stale (context.json updated since last synthesis). Use the synthesize_briefing tool to refresh it."
+
+        return None
