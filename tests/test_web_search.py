@@ -3,9 +3,17 @@
 from __future__ import annotations
 
 import os
+import sys
+from types import ModuleType
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+# Ensure tavily module exists for patching (may not be installed in test env)
+if "tavily" not in sys.modules:
+    _mock_tavily = ModuleType("tavily")
+    _mock_tavily.TavilyClient = None  # type: ignore[attr-defined]  # Patched per-test
+    sys.modules["tavily"] = _mock_tavily
 
 from steward.tools.web_search import WebSearchTool
 

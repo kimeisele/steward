@@ -61,8 +61,10 @@ def _get_federation_owner() -> str:
     if descriptor_path.exists():
         try:
             data = json.loads(descriptor_path.read_text())
-            # repo_id doesn't have owner, but we can try gh api
-            pass
+            repo = data.get("repo_id", "")
+            if "/" in repo:
+                _CACHED_OWNER = repo.split("/")[0]
+                return _CACHED_OWNER
         except (json.JSONDecodeError, OSError) as e:
             logger.debug("descriptor parse failed: %s", e)
 
@@ -392,36 +394,36 @@ def _discover_from_github_topics() -> dict[str, dict]:
 def _discover_from_org_repos(
     federation_members: set[str] | None = None,
 ) -> dict[str, dict]:
-    """Scan org repos for federation descriptors.
+    """Check known federation members for descriptors.
 
-    If federation_members is provided, also checks those specific repos
-    even if they lack descriptors (so the healer can onboard them).
-    No hardcoded prefix heuristics — the registry is the source of truth.
+    Only checks repos already identified by authoritative sources (world
+    registry, GitHub topics). This avoids N+1 API calls scanning ALL org
+    repos — with a 10 RPM quota, scanning 100 repos is impossible.
+
+    Repos with active descriptors get full capability info.
+    Known members without descriptors get registered as "unregistered"
+    so the healer can onboard them.
     """
+    import base64
+
     peers: dict[str, dict] = {}
     federation_members = federation_members or set()
 
-    raw = _gh(["repo", "list", f"{_get_federation_owner()}", "--json", "name", "--limit", "100"])
-    if not raw:
-        return peers
-
-    try:
-        repos = json.loads(raw)
-    except (json.JSONDecodeError, TypeError):
-        return peers
+    if not federation_members:
+        return peers  # Nothing to check — don't waste API calls
 
     _SKIP = {"steward"}  # Self
+    owner = _get_federation_owner()
 
-    for repo in repos:
-        name = repo.get("name", "")
-        if not name or name in _SKIP:
+    for name in federation_members:
+        if name in _SKIP or not name:
             continue
 
-        # Check for federation descriptor
+        # Check for federation descriptor (1 API call per known member)
         descriptor_raw = _gh(
             [
                 "api",
-                f"repos/{_get_federation_owner()}/{name}/contents/.well-known/agent-federation.json",
+                f"repos/{owner}/{name}/contents/.well-known/agent-federation.json",
                 "--jq",
                 ".content",
             ]
@@ -429,29 +431,26 @@ def _discover_from_org_repos(
 
         if descriptor_raw:
             try:
-                import base64
-
                 descriptor = json.loads(base64.b64decode(descriptor_raw.strip()))
                 if descriptor.get("status") == "active":
                     caps = descriptor.get("capabilities", [])
                     if isinstance(caps, list):
                         peers[name] = {
-                            "repo": f"{_get_federation_owner()}/{name}",
+                            "repo": f"{owner}/{name}",
                             "capabilities": caps,
                             "source": "federation_descriptor",
                             "owner_boundary": descriptor.get("owner_boundary", ""),
                         }
                         continue
-            except (json.JSONDecodeError, Exception) as e:
+            except Exception as e:
                 logger.debug("Descriptor parse failed for %s: %s", name, e)
 
-        # No descriptor — only register if authoritative sources say it's a member
-        if name in federation_members:
-            peers[name] = {
-                "repo": f"{_get_federation_owner()}/{name}",
-                "capabilities": [],
-                "source": "org_scan_unregistered",
-            }
+        # No descriptor — register as unregistered for healer onboarding
+        peers[name] = {
+            "repo": f"{owner}/{name}",
+            "capabilities": [],
+            "source": "org_scan_unregistered",
+        }
 
-    logger.debug("Org scan: %d repos", len(peers))
+    logger.debug("Org scan: %d repos (from %d known members)", len(peers), len(federation_members))
     return peers

@@ -30,7 +30,7 @@ class TestFederationDescriptor:
         data = json.loads(path.read_text())
         assert data["kind"] == "agent_federation_descriptor"
         assert data["version"] == 1
-        assert data["repo_id"] == "steward"
+        assert data["repo_id"] == "kimeisele/steward"
         assert data["status"] == "active"
         assert "authority_feed_manifest_url" in data
         assert "projection_intents" in data
