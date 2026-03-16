@@ -218,6 +218,10 @@ class FederationBridge:
             self._errors += 1
             return 0
 
+    # Max outbound events queued before oldest are dropped.
+    # Matches NADI_BUFFER_SIZE from federation_transport.py.
+    _MAX_OUTBOUND = 144
+
     def emit(self, operation: str, payload: dict) -> None:
         """Queue an outbound event for federation broadcast."""
         self._outbound.append(
@@ -228,6 +232,9 @@ class FederationBridge:
                 timestamp=time.time(),
             )
         )
+        # Cap queue — drop oldest if over limit
+        if len(self._outbound) > self._MAX_OUTBOUND:
+            self._outbound = self._outbound[-self._MAX_OUTBOUND :]
 
     def stats(self) -> dict:
         return {
