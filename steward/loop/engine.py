@@ -522,7 +522,7 @@ class AgentLoop:
                             tc, _ = to_execute[idx]
                             try:
                                 raw = fut.result()
-                            except BaseException as e:
+                            except Exception as e:
                                 raw = e
                             results[idx] = raw
                             result = tool_dispatch.coerce_result(raw)
