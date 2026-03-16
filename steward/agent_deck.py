@@ -384,33 +384,21 @@ _STARTER_CARDS = [
 ]
 
 
-def install_starter_cards(deck: AgentDeck, *, pokedex_seeded: bool = False) -> int:
+def install_starter_cards(deck: AgentDeck) -> int:
     """Register built-in starter cards with computed seeds.
 
-    Only installs cards that don't already exist (preserves learned weights).
-    If pokedex_seeded=True, only installs starters for capabilities not
-    already covered by Pokedex-imported cards.
+    Starter cards are Steward's core agent profiles — always installed,
+    never skipped. Only cards that already exist are preserved (learned
+    weights survive across restarts). Federation-imported cards are
+    additive and never replace starters.
+
     Returns count of newly installed cards.
     """
-    # If Pokedex already seeded the deck, check which capabilities are covered
-    covered_caps: set[str] = set()
-    if pokedex_seeded:
-        for card in deck.list_cards():
-            if card.source.startswith("agent-city:"):
-                covered_caps.update(card.capabilities)
-
     installed = 0
     for template in _STARTER_CARDS:
         seed = deck._compute_seed(template.name)
         if deck.get(seed) is not None:
             continue  # already exists — don't overwrite
-
-        # Skip if Pokedex already covers this starter's primary capability
-        if pokedex_seeded and covered_caps:
-            primary_cap = template.capabilities[0] if template.capabilities else ""
-            if primary_cap in covered_caps:
-                continue
-
         card = AgentCard(
             seed=seed,
             name=template.name,
