@@ -31,7 +31,7 @@ class TestBuiltinToolProvider:
     def test_provides_core_tools(self, tmp_path):
         provider = BuiltinToolProvider()
         tools = provider.provide(str(tmp_path))
-        assert len(tools) == 16
+        assert len(tools) == 17
 
     def test_tool_names(self, tmp_path):
         provider = BuiltinToolProvider()
@@ -154,7 +154,7 @@ class TestCollectTools:
                 raise RuntimeError("boom")
 
         tools = collect_tools([BrokenProvider(), BuiltinToolProvider()], str(tmp_path))
-        assert len(tools) == 16  # builtin still works
+        assert len(tools) == 17  # builtin still works
 
 
 class TestAgentToolProviders:
