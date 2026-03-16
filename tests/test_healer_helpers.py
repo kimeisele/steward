@@ -85,7 +85,7 @@ class TestAddDependencyToToml:
         result = _add_dependency_to_toml(toml, "newpkg")
         lines = result.splitlines()
         # New dep should match existing indentation
-        new_dep_line = [l for l in lines if "newpkg" in l][0]
+        new_dep_line = [ln for ln in lines if "newpkg" in ln][0]
         assert new_dep_line.startswith("        ")
 
 

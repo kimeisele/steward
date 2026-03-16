@@ -16,7 +16,6 @@ Uses LibCST (not regex, not AST) for precise, tree-aware transformation.
 from __future__ import annotations
 
 import libcst as cst
-import libcst.matchers as m
 
 from vibe_core.mahamantra.dharma.kapila.remedies.base import CSTRemedy
 

@@ -93,3 +93,16 @@ ignore = ["E501", "E402"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["steward", "vibe_core"]
+
+# ── Bandit (security scanning) ────────────────────────────────────
+[tool.bandit]
+skips = [
+    "B101",   # assert usage — fine in non-production code
+    "B104",   # hardcoded 0.0.0.0 bind — intentional for API server, host is configurable via env
+    "B110",   # try/except/pass — intentional in HTTP error body read (already handled above)
+    "B404",   # import subprocess — we need it
+    "B603",   # subprocess without shell=True — that's the safe way
+    "B607",   # partial executable path — we call git/ruff/bandit by name
+    "B108",   # hardcoded /tmp — used in tests only
+    "B310",   # urllib.urlopen — used for HTTP tools with validated URLs
+]
