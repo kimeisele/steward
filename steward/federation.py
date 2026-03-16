@@ -90,6 +90,7 @@ OP_DIAGNOSTIC_REPORT = "diagnostic_report"
 OP_MERGE_OCCURRED = "merge_occurred"
 OP_PR_CREATED = "pr_created"
 OP_CI_STATUS = "ci_status"
+OP_SHARE_AGENT_CARD = "share_agent_card"
 
 # Minimum trust level to accept inbound delegations
 DEFAULT_DELEGATION_TRUST_FLOOR: float = 0.3
@@ -145,6 +146,7 @@ class FederationBridge:
             OP_DELEGATE_TASK: self._handle_delegate_task,
             OP_TASK_COMPLETED: self._handle_task_callback,
             OP_TASK_FAILED: self._handle_task_callback,
+            OP_SHARE_AGENT_CARD: self._handle_share_agent_card,
         }
 
     def ingest(self, operation: str, payload: dict) -> bool:
@@ -246,6 +248,34 @@ class FederationBridge:
             "errors": self._errors,
             "delegations_rejected": self._delegations_rejected,
         }
+
+    def broadcast_agent_cards(self) -> int:
+        """Broadcast proven agent cards to federation peers.
+
+        Called during MOKSHA phase. Only shares cards that have
+        crossed the shareability threshold (3+ successes, proven weight).
+        Returns count of cards broadcast.
+        """
+        from steward.services import SVC_AGENT_DECK
+        from vibe_core.di import ServiceRegistry as _SR
+
+        deck = _SR.get(SVC_AGENT_DECK)
+        if deck is None:
+            return 0
+
+        cards = deck.shareable_cards()
+        for card in cards:
+            self.emit(
+                OP_SHARE_AGENT_CARD,
+                {
+                    "card": card.to_dict(),
+                    "source_agent": self.agent_id,
+                },
+            )
+
+        if cards:
+            logger.info("BRIDGE: broadcasting %d proven agent cards", len(cards))
+        return len(cards)
 
     # ── Private Handlers ──────────────────────────────────────────
 
@@ -355,6 +385,38 @@ class FederationBridge:
             priority,
         )
         return True
+
+    def _handle_share_agent_card(self, payload: dict) -> bool:
+        """Inbound agent card from a federation peer.
+
+        Peers share proven agent profiles (seeds) so the federation can
+        learn collectively. Cards are trust-gated and discounted.
+
+        Payload:
+            card: dict — AgentCard.to_dict() data
+            source_agent: str — who shared it
+        """
+        from steward.services import SVC_AGENT_DECK
+        from vibe_core.di import ServiceRegistry as _SR
+
+        deck = _SR.get(SVC_AGENT_DECK)
+        if deck is None:
+            return False
+
+        card_data = payload.get("card")
+        source = payload.get("source_agent", "unknown")
+        if not isinstance(card_data, dict):
+            return False
+
+        result = deck.ingest_shared_card(card_data, source=source)
+        if result is not None:
+            logger.info(
+                "BRIDGE: ingested shared agent card '%s' from %s (seed=%d)",
+                result.name,
+                source,
+                result.seed,
+            )
+        return result is not None
 
     def _handle_task_callback(self, payload: dict) -> bool:
         """Inbound task completion/failure callback from a peer.

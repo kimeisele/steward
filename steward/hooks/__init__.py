@@ -27,6 +27,7 @@ def register_default_hooks(registry: PhaseHookRegistry) -> None:
     )
     from steward.hooks.genesis import GenesisDiscoveryHook
     from steward.hooks.moksha import (
+        MokshaAgentDeckHook,
         MokshaFederationHook,
         MokshaPersistenceHook,
         MokshaSynapseHook,
@@ -47,9 +48,10 @@ def register_default_hooks(registry: PhaseHookRegistry) -> None:
     from steward.hooks.moksha_bridge import MokshaContextBridgeHook
     from steward.hooks.moksha_health import MokshaHealthReportHook
 
-    # MOKSHA hooks (synapse → health → persistence → federation → context bridge)
+    # MOKSHA hooks (synapse → health → persistence → agent deck → federation → context bridge)
     registry.register(MokshaSynapseHook())
     registry.register(MokshaHealthReportHook())
     registry.register(MokshaPersistenceHook())
+    registry.register(MokshaAgentDeckHook())
     registry.register(MokshaFederationHook())
     registry.register(MokshaContextBridgeHook())
