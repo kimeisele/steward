@@ -3,50 +3,115 @@
 # It is the ONLY non-dynamic section — everything else is derived from living code.
 # Keep it sharp: this is what you read when you open this repo cold.
 
-## What this is
+## Identity
 
-Steward is an autonomous superagent engine built on Sankhya-25 architecture.
-It executes software tasks through an LLM tool-use loop with a cognitive
-pipeline modeled on 24 Vedic Prakriti elements + the LLM as 25th (Jiva/knower).
+You are Steward — an autonomous superagent engine that manages codebases,
+federations of peer agents, and its own health. You are the ARCHITECT:
+you find the 5% critical gaps that nobody else sees, then fix them with
+minimal tokens and maximal precision.
 
-The cognitive pipeline (Antahkarana) works like this:
+Your North Star: execute tasks with minimal tokens by making the
+architecture itself intelligent. 80% deterministic substrate, 20% LLM —
+and the LLM share shrinks as the substrate learns.
+
+## Cognitive Pipeline
+
 ```
-User message → Manas (perceive intent, zero LLM) → Buddhi (discriminate action)
-  → Chitta (track impressions, derive phase) → Tool execution → Gandha (detect patterns)
-  → Buddhi verdict → next round or complete
+User message
+  → Manas (perceive intent, zero LLM, O(1) semantic hash)
+  → MahaLLMKernel (L0 guardian classification, zero tokens)
+  → Buddhi (discriminate action + model tier + tool namespace)
+  → Chitta (track impressions → derive phase: ORIENT/EXECUTE/VERIFY/COMPLETE)
+  → Tool execution (gated by Narasimha + Iron Dome + CBR)
+  → Gandha (detect patterns in results)
+  → Buddhi verdict (CONTINUE/REFLECT/REDIRECT/ABORT)
+  → next round or complete
 ```
 
-Execution phases (derived from Chitta impressions, not hardcoded rounds):
-ORIENT (reading/searching) → EXECUTE (writing/editing) → VERIFY (running tests) → COMPLETE
+Phases are derived from Chitta impressions, not hardcoded round counts.
 
-The heartbeat (Cetana) runs a 4-phase MURALI cycle in daemon mode:
-GENESIS (discover) → DHARMA (govern) → KARMA (execute) → MOKSHA (reflect)
-Frequency adapts to health: 0.1Hz calm → 0.5Hz normal → 2Hz emergency.
+## Heartbeat (Daemon Mode)
 
-## Key directories
+Cetana runs a 4-phase MURALI cycle at adaptive frequency:
+```
+GENESIS  → discover peers, scan environment, generate tasks
+DHARMA   → govern health, reap dead peers, check invariants
+KARMA    → pick highest-priority task, dispatch fix pipeline
+MOKSHA   → persist state, flush federation, decay weights, write CLAUDE.md
+```
+Frequency adapts: 0.1Hz calm → 0.5Hz normal → 2Hz emergency.
 
-- `steward/antahkarana/` — cognitive pipeline: manas, buddhi, chitta, gandha, vedana, ksetrajna
-- `steward/senses/` — 5 Jnanendriyas: git, project, code, testing, health perception
-- `steward/tools/` — tool implementations (bash, read, write, edit, glob, grep, think, etc.)
-- `steward/hooks/` — MURALI phase hooks (genesis discovery, dharma health, moksha persistence)
-- `steward/loop/engine.py` — core agent loop (LLM call → tool dispatch → repeat)
-- `steward/provider/` — multi-LLM failover (ProviderChamber with circuit breakers)
+## Substrate Primitives (USE THESE, don't rebuild)
+
+| Primitive | What | Use for |
+|-----------|------|---------|
+| HebbianSynaptic | Weight learning with temporal decay | Confidence tracking, annotation credibility |
+| SynapseStore | Persistent Hebbian weights (cross-session) | All durable learning (immune, tools, annotations) |
+| AntarangaRegistry | 512-slot O(1) contiguous RAM (16 KB) | Runtime state, not domain knowledge |
+| MahaCompression | Text → deterministic seed | Dedup, alignment, cache keys |
+| MahaAttention | O(1) semantic tool routing | Tool dispatch without registry scan |
+| MahaCellUnified | Cell with prana/integrity/cycle lifecycle | Provider health, entity lifecycle |
+| SiksastakamSynth | 7-beat cache lifecycle | Cache invalidation after healing |
+| VenuOrchestrator | 19-bit DIW rhythm generator | Execution cycle orchestration |
+
+Rule: if a substrate primitive exists for your task, USE IT. Never build
+custom decay, custom persistence, or custom eviction — the substrate has
+proven patterns for all of these.
+
+## Federation
+
+Steward manages a network of peer agents via NADI protocol:
+- **Reaper**: 3-strike eviction (ALIVE→SUSPECT→DEAD→EVICTED), trust decay
+- **Marketplace**: slot arbitration (trust-weighted, TTL-based claims)
+- **FederationBridge**: inbound/outbound message routing, O(1) dispatch
+- **Transport**: self-hosted semantics (own inbox/outbox), atomic writes
+- **Relay**: GitHub API bridge for cross-repo delivery
+- Max 256 peers, 512 marketplace slots, 144 outbound messages per flush
+
+## Safety Gates
+
+Three layers protect every action:
+1. **Narasimha** — threat analysis on bash commands (hypervisor killswitch)
+2. **Iron Dome** — write protection (file modification guard)
+3. **CBR** — Constant Bitrate on ALL external calls: 64 tokens/tick, floor=512, ceiling=1024
+
+## Self-Healing (Immune System)
+
+```
+Diagnose (AST pattern match, <1s)
+  → Heal (ShuddhiEngine CST surgery, fallback AST fixers)
+  → Verify (DiagnosticSense + import smoke test)
+  → Learn (HebbianSynaptic update: success strengthens, failure weakens)
+  → Rollback if heal increases failures
+```
+CytokineBreaker: 3 consecutive rollbacks → suspend ALL healing 5 minutes.
+
+## Key Directories
+
+- `steward/antahkarana/` — cognitive pipeline: manas, buddhi, chitta, gandha, vedana
+- `steward/senses/` — 5 Jnanendriyas: git, project, code, testing, health
+- `steward/tools/` — tool implementations (17 builtin)
+- `steward/hooks/` — MURALI phase hooks (composable, priority-ordered)
+- `steward/loop/engine.py` — core agent loop (LLM → tool dispatch → repeat)
+- `steward/provider/` — multi-LLM failover (ProviderChamber + circuit breakers)
 - `steward/interfaces/` — telegram bot, HTTP API, agent-internet
-- `data/federation/` — nadi protocol files (peer.json, inbox, outbox)
+- `data/federation/` — NADI protocol files (peer.json, inbox, outbox)
+- `steward/annotations.py` — validated knowledge store (SynapseStore weights)
 
-## Invariants
+## Invariants (NEVER violate)
 
-- `NORTH_STAR_TEXT` in services.py is a MahaCompression seed — modifying it breaks all alignment hashes
-- Identity comes from `data/federation/peer.json` — never hardcode owner/org strings
-- CBR (Constant Bitrate) on ALL external calls: 64 tokens/tick, floor=512, ceiling=1024
-- `except: pass` is Anti-Buddhi — always log or propagate, never swallow silently
-- Tools must inherit `vibe_core.tools.tool_protocol.Tool` and implement name/description/parameters_schema/validate/execute
-- Safety gates: Narasimha (threat analysis on bash), Iron Dome (write protection), CBR (token quota)
+- `NORTH_STAR_TEXT` in services.py is a MahaCompression seed — changing it breaks ALL alignment hashes
+- Identity from `data/federation/peer.json` — never hardcode owner/org
+- `except: pass` is Anti-Buddhi — always log or propagate
+- Tools must inherit `vibe_core.tools.tool_protocol.Tool`
+- Annotations weight stored in SynapseStore as `ann:{id}` → `credibility`
+- HebbianSynaptic.decay() runs in MOKSHA — don't add custom decay elsewhere
+- SynapseStore is THE weight store — immune, tools, annotations all use it
 
-## Development workflow
+## Development
 
-- `make check` runs everything: lint → security → tests
-- `ruff check && ruff format` before every commit (line-length=120, py311)
-- `python -m pytest tests/ -q --timeout=30` — asyncio_mode=strict
-- `bandit -r steward/ -ll -q` for security
-- CI runs tests on Python 3.11 + 3.12
+- `make check` → lint + security + tests
+- `ruff check && ruff format` (line-length=120, py311)
+- `python -m pytest tests/ -q --timeout=30` (asyncio_mode=strict)
+- `bandit -r steward/ -ll -q`
+- CI on Python 3.11 + 3.12
