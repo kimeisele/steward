@@ -1,6 +1,5 @@
 """Tests for briefing — cockpit display from living system state."""
 
-
 from steward.briefing import generate_briefing
 
 

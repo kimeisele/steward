@@ -51,9 +51,15 @@ class DynamicImportSafetyRemedy(CSTRemedy):
         self._needs_importlib_import = True
 
     def visit_ImportFrom(self, node: cst.ImportFrom) -> None:
-        if m.matches(node, m.ImportFrom(module=m.Attribute(
-            value=m.Name("importlib"), attr=m.Name("util"),
-        ))):
+        if m.matches(
+            node,
+            m.ImportFrom(
+                module=m.Attribute(
+                    value=m.Name("importlib"),
+                    attr=m.Name("util"),
+                )
+            ),
+        ):
             self._needs_importlib_import = False
 
     def visit_Import(self, node: cst.Import) -> None:
@@ -62,16 +68,18 @@ class DynamicImportSafetyRemedy(CSTRemedy):
         for alias in node.names:
             if isinstance(alias, cst.ImportAlias):
                 # Match `import importlib.util` or `import importlib`
-                if m.matches(alias.name, m.Attribute(
-                    value=m.Name("importlib"), attr=m.Name("util"),
-                )):
+                if m.matches(
+                    alias.name,
+                    m.Attribute(
+                        value=m.Name("importlib"),
+                        attr=m.Name("util"),
+                    ),
+                ):
                     self._needs_importlib_import = False
                 elif m.matches(alias.name, m.Name("importlib")):
                     self._needs_importlib_import = False
 
-    def leave_Call(
-        self, original_node: cst.Call, updated_node: cst.Call
-    ) -> cst.BaseExpression:
+    def leave_Call(self, original_node: cst.Call, updated_node: cst.Call) -> cst.BaseExpression:
         # Only match __import__(...)
         if not m.matches(updated_node.func, m.Name("__import__")):
             return updated_node
@@ -103,9 +111,7 @@ class DynamicImportSafetyRemedy(CSTRemedy):
             args=[clean_arg],
         )
 
-    def leave_Module(
-        self, original_node: cst.Module, updated_node: cst.Module
-    ) -> cst.Module:
+    def leave_Module(self, original_node: cst.Module, updated_node: cst.Module) -> cst.Module:
         if not self.applied or not self._needs_importlib_import:
             return updated_node
 

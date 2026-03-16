@@ -40,10 +40,12 @@ class TestThinkToolBasic:
 
     def test_execute_with_action(self):
         tool = ThinkTool()
-        result = tool.execute({
-            "hypothesis": "Need to fix imports",
-            "action": "edit context_bridge.py",
-        })
+        result = tool.execute(
+            {
+                "hypothesis": "Need to fix imports",
+                "action": "edit context_bridge.py",
+            }
+        )
         assert result.success
         assert "Think" in result.output
 
@@ -109,10 +111,12 @@ class TestThinkToolWithChitta:
 
         tool = ThinkTool()
         tool._chitta = chitta
-        result = tool.execute({
-            "hypothesis": "I need to modify the file",
-            "action": "bash",
-        })
+        result = tool.execute(
+            {
+                "hypothesis": "I need to modify the file",
+                "action": "bash",
+            }
+        )
         assert "2" in result.output or "Similar" in result.output
 
     def test_shows_files_in_memory(self):

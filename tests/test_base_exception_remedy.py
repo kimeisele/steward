@@ -72,18 +72,11 @@ class TestDangerousPatterns:
         assert "log_error()" in result
 
     def test_multiple_handlers(self):
-        code = (
-            "try:\n"
-            "    x()\n"
-            "except ValueError:\n"
-            "    pass\n"
-            "except BaseException:\n"
-            "    swallow()\n"
-        )
+        code = "try:\n    x()\nexcept ValueError:\n    pass\nexcept BaseException:\n    swallow()\n"
         result, found, applied = _transform(code)
         assert applied
         assert "except ValueError:" in result  # Untouched
-        assert "except Exception:" in result   # Narrowed
+        assert "except Exception:" in result  # Narrowed
         assert "BaseException" not in result
 
 
