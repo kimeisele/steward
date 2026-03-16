@@ -1,6 +1,5 @@
 # steward
 **execute tasks with minimal tokens by making the architecture itself intelligent**
-position 7
 
 *No critical issues.*
 
@@ -118,7 +117,7 @@ CytokineBreaker: 3 consecutive rollbacks → suspend ALL healing 5 minutes.
 - CI on Python 3.11 + 3.12
 
 ## Environment Perception
-Git: claude/improve-claude-docs-SZO4S, 3 dirty
+Git: claude/improve-claude-docs-SZO4S, 0 dirty
 Project: python
 Code: 188 files, 651 cls, 305 fn, 10 low-cohesion cls (worst: AutonomyEngine LCOM4=6)
 Tests: pytest, 80 files, last=unknown
@@ -133,4 +132,4 @@ Federation: `SVC_FEDERATION`, `SVC_FEDERATION_RELAY`, `SVC_FEDERATION_TRANSPORT`
 Healing: `SVC_FEEDBACK`, `SVC_IMMUNE`, `SVC_OUROBOROS`
 Other: `SVC_EVENT_BUS`, `SVC_NORTH_STAR`, `SVC_PHASE_HOOKS`, `SVC_PROMPT_CONTEXT`, `SVC_PROVIDER`, `SVC_SANKALPA`, `SVC_SIGNAL_BUS`, `SVC_TOOL_REGISTRY`
 MURALI: **genesis**(0) → **dharma**(0) → **karma**(0) → **moksha**(0)
-<!-- briefing v3.0.0 | 1545 tokens | budget: standard (2000) | focus: rajas | 2026-03-16T10:08:26 -->
+<!-- briefing v3.0.0 | 1543 tokens | budget: standard (2000) | focus: rajas | 2026-03-16T10:15:32 -->
