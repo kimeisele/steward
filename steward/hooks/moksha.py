@@ -108,6 +108,8 @@ class MokshaAgentDeckHook(BasePhaseHook):
         federation = ServiceRegistry.get(SVC_FEDERATION)
         if federation is not None:
             federation.broadcast_agent_cards()
+        else:
+            logger.debug("MOKSHA: federation unavailable — card broadcast skipped")
 
 
 class MokshaFederationHook(BasePhaseHook):
