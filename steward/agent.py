@@ -257,7 +257,7 @@ class StewardAgent(GADBase):
         self._phase_dispatch = {
             Phase.GENESIS: self._phase_genesis,
             Phase.DHARMA: self._phase_dharma,
-            Phase.KARMA: self._autonomy.phase_karma,
+            Phase.KARMA: self._phase_karma,
             Phase.MOKSHA: self._phase_moksha,
         }
 
@@ -780,6 +780,16 @@ class StewardAgent(GADBase):
             with self._health_lock:
                 self._health_anomaly_flag = True
                 self._health_anomaly_detail_str = ctx.health_anomaly_detail
+
+    def _phase_karma(self) -> None:
+        """KARMA: dispatch registered hooks, then execute next task via AutonomyEngine."""
+        ctx = self._make_phase_context()
+        hooks = ServiceRegistry.get(SVC_PHASE_HOOKS)
+        if hooks is not None:
+            from steward.phase_hook import KARMA
+
+            hooks.dispatch(KARMA, ctx)
+        self._autonomy.phase_karma()
 
     def _phase_moksha(self) -> None:
         """MOKSHA: dispatch registered hooks (synapse, persistence, federation)."""
