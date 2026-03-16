@@ -157,7 +157,10 @@ class GitHubFederationRelay:
         if new_msgs:
             local.extend(new_msgs)
             self._local_inbox.parent.mkdir(parents=True, exist_ok=True)
-            self._local_inbox.write_text(json.dumps(local, indent=2))
+            # Atomic write: tmp → rename to prevent corruption on crash
+            tmp = self._local_inbox.with_suffix(".tmp")
+            tmp.write_text(json.dumps(local, indent=2))
+            tmp.rename(self._local_inbox)
             logger.info("RELAY: pulled %d messages from hub → local inbox", len(new_msgs))
 
         self._last_pull = time.monotonic()

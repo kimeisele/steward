@@ -147,7 +147,7 @@ def _build_symbolic_feedback(
                     f"Suggestion: {detection.suggestion}"
                 )
         except Exception:
-            pass  # Gandha is advisory, not critical
+            logger.debug("Gandha pattern detection failed", exc_info=True)
 
     # ── Vedana: Health signal ─────────────────────────────────────
     if vedana_source is not None:
@@ -161,7 +161,7 @@ def _build_symbolic_feedback(
                     "Consider simpler actions or diagnostic steps first."
                 )
         except Exception:
-            pass
+            logger.debug("Vedana health signal failed", exc_info=True)
 
     # ── KsetraJna: Meta-observation ───────────────────────────────
     if ksetrajna is not None:
@@ -181,7 +181,7 @@ def _build_symbolic_feedback(
                         "Health trend is DEGRADING. Recent actions are making things worse."
                     )
         except Exception:
-            pass
+            logger.debug("KsetraJna meta-observation failed", exc_info=True)
 
     # ── MahaBuddhi: Cognitive alignment ───────────────────────────
     if maha_buddhi is not None and hypothesis:
@@ -194,7 +194,7 @@ def _build_symbolic_feedback(
                     "mode": getattr(cognition, "mode", None),
                 }
         except Exception:
-            pass
+            logger.debug("MahaBuddhi cognition failed", exc_info=True)
 
     # ── Synthesize guidance ───────────────────────────────────────
     guidance_parts = []

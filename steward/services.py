@@ -189,14 +189,15 @@ def boot(
     Returns:
         ServiceRegistry class (call .get(SVC_*) to retrieve services)
     """
-    # Multi-agent safety: warn if services are already booted.
+    # Multi-agent safety: refuse to boot twice.
     # reset_all() nukes every registered service — if two StewardAgent
     # instances share a process, the second boot() destroys the first
-    # agent's wiring. Log a warning so this doesn't fail silently.
+    # agent's wiring.  Raise instead of silently corrupting state.
     if ServiceRegistry.get(SVC_TOOL_REGISTRY) is not None:
-        logger.warning(
-            "ServiceRegistry already booted — reset_all() will destroy existing wiring. "
-            "Multiple StewardAgent instances in one process are not yet supported."
+        raise RuntimeError(
+            "ServiceRegistry already booted — refusing to reset_all() which would "
+            "destroy existing wiring.  Multiple StewardAgent instances in one "
+            "process are not yet supported."
         )
     ServiceRegistry.reset_all()
 
