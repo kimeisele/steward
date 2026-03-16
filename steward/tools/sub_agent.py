@@ -1,12 +1,9 @@
 """
-Sub-Agent Tool — Seed-aware task delegation via child AgentLoop.
+Sub-Agent Tool — Task delegation via child AgentLoop.
 
 Spawns a fresh AgentLoop with clean context to handle a sub-task.
-Queries the AgentDeck (Pokedex) for a specialized profile matching
-the task seed or capability. Falls back to generic spawn if no match.
-
-Learning: reports success/failure back to AgentDeck for Hebbian weight
-updates. Proven profiles get reused; weak ones get evicted.
+The key value: context isolation — the child gets a fresh conversation
+window, preventing parent context bloat on focused sub-tasks.
 """
 
 from __future__ import annotations
@@ -44,13 +41,9 @@ SUB_AGENT_MAX_OUTPUT = 4096
 class SubAgentTool(Tool):
     """Spawn a sub-agent to handle a focused sub-task.
 
-    If an AgentDeck is registered (SVC_AGENT_DECK), queries it for a
-    specialized profile matching the task. The profile provides:
-    - Custom system prompt (specialized instructions)
-    - Tool filter (only relevant tools for the task)
-    - Hebbian learning (success/failure feeds back to deck)
-
-    Falls back to generic spawn if no deck or no matching card.
+    Creates a fresh AgentLoop with clean context. The child agent
+    inherits the parent's tools (minus sub_agent to prevent recursion)
+    and governance infrastructure (safety guard, attention, memory).
     """
 
     def __init__(self, cwd: str | None = None, timeout: int = SUB_AGENT_TIMEOUT) -> None:
@@ -65,11 +58,9 @@ class SubAgentTool(Tool):
     @property
     def description(self) -> str:
         return (
-            "Delegate a sub-task to a specialized sub-agent. "
-            "The agent is selected from the AgentDeck based on task seed "
-            "or required capability. Use when the current context is too "
-            "large, when a task needs focused attention, or when a "
-            "specialized agent profile exists for the task type."
+            "Delegate a sub-task to a focused sub-agent with clean context. "
+            "Use when the current context is too large, when a task needs "
+            "focused attention, or when you want to isolate a sub-task."
         )
 
     @property
@@ -79,14 +70,6 @@ class SubAgentTool(Tool):
                 "type": "string",
                 "required": True,
                 "description": "The task for the sub-agent to complete",
-            },
-            "capability": {
-                "type": "string",
-                "required": False,
-                "description": (
-                    "Required capability (e.g., 'fix_tests', 'fix_lint', "
-                    "'review_code', 'explore'). Routes to a specialized agent."
-                ),
             },
         }
 
@@ -100,7 +83,6 @@ class SubAgentTool(Tool):
 
     def execute(self, parameters: dict[str, Any]) -> ToolResult:
         task = parameters["task"]
-        capability = parameters.get("capability", "")
 
         # Pull services from DI (booted by the time execute runs)
         provider = ServiceRegistry.get(SVC_PROVIDER)
@@ -109,12 +91,8 @@ class SubAgentTool(Tool):
 
         parent_registry: ToolRegistry | None = ServiceRegistry.get(SVC_TOOL_REGISTRY)
 
-        # Query AgentDeck for specialized profile
-        card = self._resolve_card(task, capability)
-        card_name = card.name if card else "generic"
-
-        # Build child ToolRegistry — filtered by card or all minus sub_agent
-        child_registry = self._build_child_registry(parent_registry, card)
+        # Build child ToolRegistry — all parent tools minus sub_agent
+        child_registry = self._build_child_registry(parent_registry)
 
         # Fresh conversation (clean context — the key value of sub-agent)
         conversation = Conversation(max_tokens=SUB_AGENT_MAX_CONTEXT)
@@ -127,8 +105,15 @@ class SubAgentTool(Tool):
         attention = ServiceRegistry.get(SVC_ATTENTION)
         memory = ServiceRegistry.get(SVC_MEMORY)
 
-        # System prompt: specialized (from card) or generic
-        system_prompt = self._build_system_prompt(card, child_registry)
+        # Generic system prompt
+        cwd_str = self._cwd or "."
+        tools_list = ", ".join(child_registry.list_tools())
+        system_prompt = (
+            "You are a focused sub-agent handling a specific task. "
+            "Complete the task efficiently and return a clear result.\n"
+            f"Working directory: {cwd_str}\n"
+            f"Available tools: {tools_list}"
+        )
 
         loop = AgentLoop(
             provider=provider,
@@ -151,111 +136,43 @@ class SubAgentTool(Tool):
             )
             rounds = buddhi.stats.get("total_evaluations", 0)
 
-            # Learn from outcome — feed back to AgentDeck
-            self._learn(card, success=ok)
-
             if not ok:
-                logger.warning("Sub-agent '%s' error: %s", card_name, result_text)
+                logger.warning("Sub-agent error: %s", result_text)
                 return ToolResult(
                     success=False,
                     error=f"Sub-agent error: {result_text}",
-                    metadata={"sub_agent_rounds": rounds, "agent_card": card_name},
+                    metadata={"sub_agent_rounds": rounds},
                 )
-            logger.info("Sub-agent '%s' completed (rounds=%d)", card_name, rounds)
+            logger.info("Sub-agent completed (rounds=%d)", rounds)
             return ToolResult(
                 success=True,
                 output=result_text or "[sub-agent completed with no output]",
-                metadata={"sub_agent_rounds": rounds, "agent_card": card_name},
+                metadata={"sub_agent_rounds": rounds},
             )
         except asyncio.TimeoutError:
-            self._learn(card, success=False)
             return ToolResult(
                 success=False,
-                error=f"Sub-agent '{card_name}' timed out after {self._timeout}s",
-                metadata={"agent_card": card_name},
+                error=f"Sub-agent timed out after {self._timeout}s",
             )
         except Exception as e:
-            logger.exception("Sub-agent '%s' crashed", card_name)
-            self._learn(card, success=False)
+            logger.exception("Sub-agent crashed")
             return ToolResult(
                 success=False,
-                error=f"Sub-agent '{card_name}' failed: {type(e).__name__}: {e}",
-                metadata={"agent_card": card_name},
+                error=f"Sub-agent failed: {type(e).__name__}: {e}",
             )
 
-    def _resolve_card(self, task: str, capability: str) -> Any:  # AgentCard | None
-        """Query AgentDeck for a matching card. Returns None if no deck or no match."""
-        from steward.services import SVC_AGENT_DECK
-
-        deck = ServiceRegistry.get(SVC_AGENT_DECK)
-        if deck is None:
-            return None
-
-        # Try capability match first (explicit routing)
-        if capability:
-            card = deck.match(capability=capability)
-            if card is not None:
-                logger.info("DECK: routed to '%s' via capability '%s'", card.name, capability)
-                return card
-
-        # Try seed match (deterministic routing)
-        try:
-            from vibe_core.mahamantra.adapters.compression import MahaCompression
-
-            mc = MahaCompression()
-            seed = mc.compress(task).seed
-            card = deck.match(seed=seed)
-            if card is not None:
-                logger.info("DECK: routed to '%s' via seed %d", card.name, seed)
-                return card
-        except Exception as exc:
-            logger.debug("DECK: seed computation failed for task: %s", exc)
-
-        return None
-
-    def _build_child_registry(self, parent_registry: ToolRegistry | None, card: object | None) -> ToolRegistry:
-        """Build filtered tool registry for child agent."""
+    def _build_child_registry(self, parent_registry: ToolRegistry | None) -> ToolRegistry:
+        """Build tool registry for child agent — all parent tools minus sub_agent."""
         child_registry = ToolRegistry()
         if parent_registry is None:
             return child_registry
 
-        tool_filter = set(card.tool_filter) if card and card.tool_filter else set()
-
         for tool_name, tool in parent_registry.tools.items():
             if tool_name == self.name:
                 continue  # prevent recursion
-            if tool_filter and tool_name not in tool_filter:
-                continue  # card restricts tools
             child_registry.register(tool)
 
         return child_registry
-
-    def _build_system_prompt(self, card: object | None, child_registry: ToolRegistry) -> str:
-        """Build system prompt — specialized from card or generic."""
-        cwd_str = self._cwd or "."
-        tools_list = ", ".join(child_registry.list_tools())
-
-        if card and card.system_prompt:
-            return f"{card.system_prompt}\nWorking directory: {cwd_str}\nAvailable tools: {tools_list}"
-
-        return (
-            "You are a focused sub-agent handling a specific task. "
-            "Complete the task efficiently and return a clear result.\n"
-            f"Working directory: {cwd_str}\n"
-            f"Available tools: {tools_list}"
-        )
-
-    @staticmethod
-    def _learn(card: object | None, *, success: bool) -> None:
-        """Report outcome back to AgentDeck for Hebbian learning."""
-        if card is None:
-            return
-        from steward.services import SVC_AGENT_DECK
-
-        deck = ServiceRegistry.get(SVC_AGENT_DECK)
-        if deck is None:
-            return
-        deck.learn(card, success=success)
 
     @staticmethod
     async def _run_loop(loop: AgentLoop, task: str) -> tuple[bool, str]:

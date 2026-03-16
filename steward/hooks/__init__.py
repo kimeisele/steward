@@ -26,17 +26,14 @@ def register_default_hooks(registry: PhaseHookRegistry) -> None:
         DharmaReaperHook,
     )
     from steward.hooks.genesis import GenesisDiscoveryHook
-    from steward.hooks.genesis_pokedex import GenesisPokedexSyncHook
     from steward.hooks.moksha import (
-        MokshaAgentDeckHook,
         MokshaFederationHook,
         MokshaPersistenceHook,
         MokshaSynapseHook,
     )
 
-    # GENESIS hooks (discovery → pokedex sync)
+    # GENESIS hooks
     registry.register(GenesisDiscoveryHook())
-    registry.register(GenesisPokedexSyncHook())
 
     from steward.hooks.dharma_immune import DharmaImmuneHook
 
@@ -50,10 +47,9 @@ def register_default_hooks(registry: PhaseHookRegistry) -> None:
     from steward.hooks.moksha_bridge import MokshaContextBridgeHook
     from steward.hooks.moksha_health import MokshaHealthReportHook
 
-    # MOKSHA hooks (synapse → health → persistence → agent deck → federation → context bridge)
+    # MOKSHA hooks (synapse → health → persistence → federation → context bridge)
     registry.register(MokshaSynapseHook())
     registry.register(MokshaHealthReportHook())
     registry.register(MokshaPersistenceHook())
-    registry.register(MokshaAgentDeckHook())
     registry.register(MokshaFederationHook())
     registry.register(MokshaContextBridgeHook())

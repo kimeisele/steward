@@ -12,7 +12,6 @@ from pathlib import Path
 
 from steward.phase_hook import MOKSHA, BasePhaseHook, PhaseContext
 from steward.services import (
-    SVC_AGENT_DECK,
     SVC_FEDERATION,
     SVC_FEDERATION_RELAY,
     SVC_FEDERATION_TRANSPORT,
@@ -76,40 +75,6 @@ class MokshaPersistenceHook(BasePhaseHook):
         if marketplace is not None:
             marketplace.save(steward_dir / "marketplace.json")
 
-
-class MokshaAgentDeckHook(BasePhaseHook):
-    """Persist AgentDeck and broadcast proven cards to federation."""
-
-    @property
-    def name(self) -> str:
-        return "moksha_agent_deck"
-
-    @property
-    def phase(self) -> str:
-        return MOKSHA
-
-    @property
-    def priority(self) -> int:
-        return 60  # After persistence, before federation flush
-
-    def execute(self, ctx: PhaseContext) -> None:
-        deck = ServiceRegistry.get(SVC_AGENT_DECK)
-        if deck is None:
-            return
-
-        # Persist deck to disk
-        deck_path = Path(ctx.cwd) / ".steward" / "agent_deck.json"
-        try:
-            deck.save(deck_path)
-        except Exception as e:
-            logger.debug("AgentDeck save failed (non-fatal): %s", e)
-
-        # Broadcast proven cards to federation peers
-        federation = ServiceRegistry.get(SVC_FEDERATION)
-        if federation is not None:
-            federation.broadcast_agent_cards()
-        else:
-            logger.debug("MOKSHA: federation unavailable — card broadcast skipped")
 
 
 class MokshaFederationHook(BasePhaseHook):

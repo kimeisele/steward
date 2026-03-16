@@ -346,40 +346,6 @@ class TestMokshaPersistenceHook:
         assert (steward_dir / "marketplace.json").exists()
 
 
-class TestMokshaAgentDeckHook:
-    def test_persists_deck_to_disk(self, tmp_path):
-        from steward.agent_deck import AgentCard, AgentDeck
-        from steward.hooks.moksha import MokshaAgentDeckHook
-        from steward.services import SVC_AGENT_DECK
-        from vibe_core.di import ServiceRegistry
-
-        deck = AgentDeck()
-        deck.register(AgentCard(seed=42, name="test_card", capabilities=("fix_tests",)))
-        ServiceRegistry.register(SVC_AGENT_DECK, deck)
-        try:
-            hook = MokshaAgentDeckHook()
-            ctx = PhaseContext(cwd=str(tmp_path))
-            hook.execute(ctx)
-
-            deck_path = tmp_path / ".steward" / "agent_deck.json"
-            assert deck_path.exists()
-        finally:
-            ServiceRegistry.reset_all()
-
-    def test_no_crash_without_federation(self, tmp_path):
-        from steward.agent_deck import AgentDeck
-        from steward.hooks.moksha import MokshaAgentDeckHook
-        from steward.services import SVC_AGENT_DECK
-        from vibe_core.di import ServiceRegistry
-
-        ServiceRegistry.register(SVC_AGENT_DECK, AgentDeck())
-        try:
-            hook = MokshaAgentDeckHook()
-            ctx = PhaseContext(cwd=str(tmp_path))
-            hook.execute(ctx)  # No federation → no crash, just log
-        finally:
-            ServiceRegistry.reset_all()
-
 
 class TestMokshaFederationHook:
     def test_flush_without_transport_is_noop(self, fake_llm):
@@ -408,8 +374,8 @@ class TestDefaultHookRegistration:
         hooks = ServiceRegistry.get(SVC_PHASE_HOOKS)
         assert hooks is not None
         assert hooks.hook_count(DHARMA) == 5  # health, reaper, marketplace, federation, immune
-        assert hooks.hook_count(GENESIS) == 2  # discovery, pokedex_sync
-        assert hooks.hook_count(MOKSHA) == 6  # synapse, health_report, persistence, agent_deck, federation, context_bridge
+        assert hooks.hook_count(GENESIS) == 1  # discovery
+        assert hooks.hook_count(MOKSHA) == 5  # synapse, health_report, persistence, federation, context_bridge
 
     def test_dharma_dispatch_through_agent(self, fake_llm):
         """Agent._phase_dharma() dispatches through PhaseHookRegistry."""
