@@ -26,6 +26,7 @@ def register_default_hooks(registry: PhaseHookRegistry) -> None:
         DharmaReaperHook,
     )
     from steward.hooks.genesis import GenesisDiscoveryHook
+    from steward.hooks.genesis_pokedex import GenesisPokedexSyncHook
     from steward.hooks.moksha import (
         MokshaAgentDeckHook,
         MokshaFederationHook,
@@ -33,8 +34,9 @@ def register_default_hooks(registry: PhaseHookRegistry) -> None:
         MokshaSynapseHook,
     )
 
-    # GENESIS hooks (discovery)
+    # GENESIS hooks (discovery → pokedex sync)
     registry.register(GenesisDiscoveryHook())
+    registry.register(GenesisPokedexSyncHook())
 
     from steward.hooks.dharma_immune import DharmaImmuneHook
 
