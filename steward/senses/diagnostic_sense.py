@@ -260,14 +260,16 @@ def _analyze_imports(
 
                 # Third-party
                 third_party.add(top)
-                # Check if actually importable
-                try:
-                    __import__(node.module)
-                except ImportError:
-                    # Try just the top-level
-                    try:
-                        __import__(top)
-                        # Top-level exists but submodule doesn't — specific name missing
+                # Check if actually importable — use find_spec to avoid executing
+                # arbitrary code in third-party __init__.py modules
+                import importlib.util
+
+                spec = importlib.util.find_spec(node.module)
+                if spec is None:
+                    # Try just the top-level package
+                    top_spec = importlib.util.find_spec(top)
+                    if top_spec is not None:
+                        # Top-level exists but submodule doesn't
                         findings.append(
                             Finding(
                                 kind=FindingKind.BROKEN_IMPORT,
@@ -278,7 +280,7 @@ def _analyze_imports(
                                 fix_hint=f"Check if '{node.module}' was renamed or moved in latest version of '{top}'",
                             )
                         )
-                    except ImportError:
+                    else:
                         findings.append(
                             Finding(
                                 kind=FindingKind.MISSING_DEPENDENCY,
@@ -289,8 +291,6 @@ def _analyze_imports(
                                 fix_hint=f"pip install {top}",
                             )
                         )
-                except Exception:
-                    pass  # Some packages fail on import for other reasons
 
             elif isinstance(node, ast.Import):
                 for alias in node.names:

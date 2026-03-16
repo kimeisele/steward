@@ -56,7 +56,7 @@ def create_app():
 
     from fastapi import Depends, FastAPI, HTTPException, Request
     from fastapi.responses import StreamingResponse
-    from pydantic import BaseModel
+    from pydantic import BaseModel, Field
 
     # ── App Setup ────────────────────────────────────────────────────
     from steward import __version__
@@ -108,7 +108,7 @@ def create_app():
     # ── Models ───────────────────────────────────────────────────────
 
     class TaskRequest(BaseModel):
-        task: str
+        task: str = Field(..., max_length=10000)
         max_tokens: int | None = None
 
     class TaskResponse(BaseModel):
