@@ -76,14 +76,15 @@ class DharmaReaperHook(BasePhaseHook):
     def priority(self) -> int:
         return 30
 
-    # Track which peers we've already diagnosed this session
-    # to avoid spamming diagnostics every cycle
-    _diagnosed: set[str] = set()
+    _DIAGNOSED_PATH = "data/federation/diagnosed_peers.json"
 
     def execute(self, ctx: PhaseContext) -> None:
         reaper = ServiceRegistry.get(SVC_REAPER)
         if reaper is None:
             return
+
+        # Load persisted diagnosed state (survives CI restarts)
+        diagnosed = self._load_diagnosed()
 
         # 1. REAP — advance peer state machine
         consequences = reaper.reap()
@@ -98,26 +99,27 @@ class DharmaReaperHook(BasePhaseHook):
             )
 
         # 2. CALL — diagnose suspect peers immediately (not at dead)
-        suspect = reaper.suspect_peers() if hasattr(reaper, "suspect_peers") else []
-        for peer in suspect:
-            if peer.agent_id in self._diagnosed:
+        for peer in reaper.suspect_peers():
+            if peer.agent_id in diagnosed:
                 continue
-            self._diagnosed.add(peer.agent_id)
+            diagnosed.add(peer.agent_id)
             self._diagnose_and_report(peer)
 
         # 3. ESCALATE — dead peers that didn't recover after diagnostic
-        dead = reaper.dead_peers() if hasattr(reaper, "dead_peers") else []
+        dead = reaper.dead_peers()
         if dead:
             self._escalate_dead_peers(dead)
 
         # 4. RESPONSE — clear diagnosed set for recovered peers
-        alive = reaper.alive_peers() if hasattr(reaper, "alive_peers") else []
-        alive_ids = {p.agent_id for p in alive}
-        recovered = self._diagnosed & alive_ids
+        alive_ids = {p.agent_id for p in reaper.alive_peers()}
+        recovered = diagnosed & alive_ids
         if recovered:
             for agent_id in recovered:
                 logger.info("KIRTAN RESPONSE: %s recovered — loop closed", agent_id)
-            self._diagnosed -= recovered
+            diagnosed -= recovered
+
+        # Persist diagnosed state for next CI run
+        self._save_diagnosed(diagnosed)
 
     def _diagnose_and_report(self, peer: object) -> None:
         """CALL: Diagnose a suspect peer and send report via NADI."""
@@ -208,6 +210,29 @@ class DharmaReaperHook(BasePhaseHook):
                     ),
                 )
                 logger.warning("KIRTAN ESCALATE: %s dead after diagnostic — task created (pri=90)", peer.agent_id)
+
+    def _load_diagnosed(self) -> set[str]:
+        """Load persisted diagnosed set from disk (survives CI restarts)."""
+        import json
+        from pathlib import Path
+
+        path = Path(self._DIAGNOSED_PATH)
+        if not path.exists():
+            return set()
+        try:
+            data = json.loads(path.read_text())
+            return set(data) if isinstance(data, list) else set()
+        except (json.JSONDecodeError, OSError):
+            return set()
+
+    def _save_diagnosed(self, diagnosed: set[str]) -> None:
+        """Persist diagnosed set to disk."""
+        import json
+        from pathlib import Path
+
+        path = Path(self._DIAGNOSED_PATH)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(sorted(diagnosed)))
 
 
 class DharmaMarketplaceHook(BasePhaseHook):
