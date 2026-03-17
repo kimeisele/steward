@@ -154,6 +154,14 @@ class SVC_IMMUNE:
 
 
 
+class SVC_KIRTAN:
+    """KirtanLoop — Call and Response primitive for action verification.
+
+    Like HebbianSynaptic for learning, KirtanLoop for verification.
+    Every action gets a response check. No fire-and-forget.
+    """
+
+
 class SVC_NORTH_STAR:
     """North Star — infrastructure-level goal seed (not LLM prompt).
 
@@ -438,6 +446,12 @@ def boot(
     phase_hooks = PhaseHookRegistry()
     register_default_hooks(phase_hooks)
     ServiceRegistry.register(SVC_PHASE_HOOKS, phase_hooks)
+
+    # 31. KirtanLoop — Call/Response verification primitive
+    from steward.kirtan import KirtanLoop
+
+    kirtan = KirtanLoop(ledger_path=str(Path(cwd) / "data" / "federation" / "kirtan_ledger.json"))
+    ServiceRegistry.register(SVC_KIRTAN, kirtan)
 
     # 30. StewardImmune (unified self-healing)
     from steward.immune import StewardImmune
