@@ -53,7 +53,16 @@ class DharmaHealthHook(BasePhaseHook):
 
 
 class DharmaReaperHook(BasePhaseHook):
-    """Run HeartbeatReaper to detect and manage dead peers."""
+    """Run HeartbeatReaper + Kirtan loop: CALL (diagnose suspect) → RESPONSE (verify next cycle).
+
+    The Steward is not a passive monitor. When a peer becomes suspect:
+    1. CALL: Run diagnostic on the peer repo immediately
+    2. REPORT: Send diagnostic_report via NADI to the peer
+    3. RESPONSE: Next cycle, check if peer recovered (heartbeat resumed)
+    4. ESCALATE: If still suspect/dead after diagnostic, create high-priority task
+
+    This is Call and Response — not fire-and-forget.
+    """
 
     @property
     def name(self) -> str:
@@ -67,10 +76,16 @@ class DharmaReaperHook(BasePhaseHook):
     def priority(self) -> int:
         return 30
 
+    # Track which peers we've already diagnosed this session
+    # to avoid spamming diagnostics every cycle
+    _diagnosed: set[str] = set()
+
     def execute(self, ctx: PhaseContext) -> None:
         reaper = ServiceRegistry.get(SVC_REAPER)
         if reaper is None:
             return
+
+        # 1. REAP — advance peer state machine
         consequences = reaper.reap()
         for c in consequences:
             logger.warning(
@@ -82,7 +97,93 @@ class DharmaReaperHook(BasePhaseHook):
                 c.new_trust,
             )
 
-        # SUPER-AGENT REACTION: dead/evicted peers → create federation tasks
+        # 2. CALL — diagnose suspect peers immediately (not at dead)
+        suspect = reaper.suspect_peers() if hasattr(reaper, "suspect_peers") else []
+        for peer in suspect:
+            if peer.agent_id in self._diagnosed:
+                continue
+            self._diagnosed.add(peer.agent_id)
+            self._diagnose_and_report(peer)
+
+        # 3. ESCALATE — dead peers that didn't recover after diagnostic
+        dead = reaper.dead_peers() if hasattr(reaper, "dead_peers") else []
+        if dead:
+            self._escalate_dead_peers(dead)
+
+        # 4. RESPONSE — clear diagnosed set for recovered peers
+        alive = reaper.alive_peers() if hasattr(reaper, "alive_peers") else []
+        alive_ids = {p.agent_id for p in alive}
+        recovered = self._diagnosed & alive_ids
+        if recovered:
+            for agent_id in recovered:
+                logger.info("KIRTAN RESPONSE: %s recovered — loop closed", agent_id)
+            self._diagnosed -= recovered
+
+    def _diagnose_and_report(self, peer: object) -> None:
+        """CALL: Diagnose a suspect peer and send report via NADI."""
+        agent_id = peer.agent_id
+        logger.info("KIRTAN CALL: diagnosing suspect peer %s", agent_id)
+
+        # Run diagnostic — check CI, repo health, workflow status
+        diagnostic = self._run_diagnostic(agent_id)
+
+        # Send diagnostic report via federation NADI
+        federation = ServiceRegistry.get(SVC_FEDERATION)
+        if federation is not None:
+            from steward.federation import OP_DIAGNOSTIC_REPORT
+
+            federation.emit(
+                OP_DIAGNOSTIC_REPORT,
+                {
+                    "target_peer": agent_id,
+                    "diagnostic": diagnostic,
+                    "steward_action": "suspect_investigation",
+                    "trust": getattr(peer, "trust", 0.0),
+                },
+            )
+            logger.info("KIRTAN CALL: diagnostic report sent to %s via NADI", agent_id)
+
+    def _run_diagnostic(self, agent_id: str) -> dict:
+        """Quick diagnostic on a suspect peer — what's wrong?"""
+        result: dict = {"agent_id": agent_id, "checks": []}
+
+        # Check if we can reach the peer's repo via GitHub API
+        import subprocess
+
+        try:
+            r = subprocess.run(
+                ["gh", "api", f"repos/kimeisele/{agent_id}", "--jq", ".pushed_at"],
+                capture_output=True, text=True, timeout=10,
+            )
+            if r.returncode == 0:
+                result["last_push"] = r.stdout.strip()
+                result["checks"].append("repo_accessible")
+            else:
+                result["checks"].append("repo_inaccessible")
+        except Exception:
+            result["checks"].append("repo_check_failed")
+
+        # Check CI status
+        try:
+            r = subprocess.run(
+                ["gh", "run", "list", "-R", f"kimeisele/{agent_id}",
+                 "--limit", "1", "--json", "conclusion,name"],
+                capture_output=True, text=True, timeout=10,
+            )
+            if r.returncode == 0:
+                import json
+                runs = json.loads(r.stdout)
+                if runs:
+                    result["last_ci"] = runs[0]
+                    conclusion = runs[0].get("conclusion", "unknown")
+                    result["checks"].append(f"ci_{conclusion}")
+        except Exception:
+            result["checks"].append("ci_check_failed")
+
+        return result
+
+    def _escalate_dead_peers(self, dead: list) -> None:
+        """ESCALATE: Dead peers → high-priority task for intervention."""
         from steward.services import SVC_TASK_MANAGER
 
         task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
@@ -91,23 +192,22 @@ class DharmaReaperHook(BasePhaseHook):
 
         from vibe_core.task_types import TaskStatus
 
-        active_tasks = task_mgr.list_tasks(status=TaskStatus.PENDING) + task_mgr.list_tasks(status=TaskStatus.IN_PROGRESS)
-        active_titles = {t.title for t in active_tasks}
+        active = task_mgr.list_tasks(status=TaskStatus.PENDING) + task_mgr.list_tasks(status=TaskStatus.IN_PROGRESS)
+        active_titles = {t.title for t in active}
 
-        for c in consequences:
-            if c.new_status in ("dead", "evicted"):
-                title = f"[FEDERATION_HEALTH] Peer {c.agent_id} is {c.new_status}"
-                if title not in active_titles:
-                    task_mgr.add_task(
-                        title=title,
-                        priority=70,
-                        description=(
-                            f"Peer {c.agent_id} transitioned from {c.old_status} to {c.new_status}. "
-                            f"Trust degraded from {c.old_trust:.2f} to {c.new_trust:.2f}. "
-                            f"Check if the peer repo is healthy, CI is passing, and heartbeat workflow is running."
-                        ),
-                    )
-                    logger.info("SUPER-AGENT: Created task for dead peer %s", c.agent_id)
+        for peer in dead:
+            title = f"[FEDERATION_HEALTH] Peer {peer.agent_id} dead — diagnostic sent, no recovery"
+            if title not in active_titles:
+                task_mgr.add_task(
+                    title=title,
+                    priority=90,  # High — peer didn't recover after diagnostic
+                    description=(
+                        f"Peer {peer.agent_id} is DEAD after diagnostic was sent. "
+                        f"Trust: {peer.trust:.2f}. The Kirtan CALL got no RESPONSE. "
+                        f"Manual intervention may be required."
+                    ),
+                )
+                logger.warning("KIRTAN ESCALATE: %s dead after diagnostic — task created (pri=90)", peer.agent_id)
 
 
 class DharmaMarketplaceHook(BasePhaseHook):
