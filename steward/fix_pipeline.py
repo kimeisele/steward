@@ -567,30 +567,65 @@ class FixPipeline:
     def escalate_problem(self, problem: str, intent_name: str, confidence: float) -> None:
         """Escalate a problem the agent can't fix autonomously.
 
-        When Hebbian confidence is too low, record for human attention.
-        Writes to .steward/needs_attention.md.
+        Creates a GitHub Issue on the steward repo — visible, trackable,
+        and external agents can see and help. Falls back to local file
+        if GitHub is unreachable.
+
+        This is a Kirtan escalation: the problem becomes VISIBLE to
+        the community, not buried in a markdown file nobody reads.
         """
+        import subprocess
         from datetime import datetime, timezone
 
+        timestamp = datetime.now(timezone.utc).isoformat()[:19]
+        title = f"[ESCALATION] {intent_name}: {problem[:80]}"
+        body = (
+            f"## Steward Escalation\n\n"
+            f"**Intent**: {intent_name}\n"
+            f"**Confidence**: {confidence:.2f} (below autonomous fix threshold)\n"
+            f"**Timestamp**: {timestamp}\n\n"
+            f"### Problem\n{problem}\n\n"
+            f"### Context\n"
+            f"The steward detected this problem but Hebbian confidence is too low "
+            f"for autonomous repair. This issue was created automatically so the "
+            f"community can investigate.\n\n"
+            f"Labels: `steward-escalation`, `needs-help`"
+        )
+
+        # Try GitHub Issue first (visible, trackable)
+        try:
+            r = subprocess.run(
+                [
+                    "gh", "issue", "create",
+                    "--repo", "kimeisele/steward",
+                    "--title", title,
+                    "--body", body,
+                    "--label", "steward-escalation",
+                ],
+                capture_output=True, text=True, timeout=15,
+            )
+            if r.returncode == 0:
+                issue_url = r.stdout.strip()
+                logger.info(
+                    "Escalated to GitHub Issue: %s (confidence=%.2f) → %s",
+                    intent_name, confidence, issue_url,
+                )
+                return
+            logger.warning("GitHub Issue creation failed: %s", r.stderr[:200])
+        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+            logger.warning("gh CLI unavailable: %s", e)
+
+        # Fallback: local file (better than nothing)
         escalation_dir = Path(self._cwd) / ".steward"
         escalation_dir.mkdir(parents=True, exist_ok=True)
         escalation_file = escalation_dir / "needs_attention.md"
-
-        timestamp = datetime.now(timezone.utc).isoformat()[:19]
         entry = (
             f"\n## [{timestamp}] {intent_name} (confidence: {confidence:.2f})\n"
             f"{problem}\n"
-            f"_Agent confidence too low for autonomous fix. Human review needed._\n"
+            f"_GitHub Issue creation failed. Local fallback._\n"
         )
-
         try:
             with open(escalation_file, "a") as f:
                 f.write(entry)
-            logger.info(
-                "Escalated to human: %s (confidence=%.2f) → %s",
-                intent_name,
-                confidence,
-                escalation_file,
-            )
-        except OSError as e:
-            logger.warning("Failed to write escalation file: %s", e)
+        except OSError:
+            pass
