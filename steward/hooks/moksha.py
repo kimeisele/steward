@@ -109,7 +109,7 @@ class MokshaFederationHook(BasePhaseHook):
         if federation is not None and transport is not None:
             flushed = federation.flush_outbound(transport)
             if flushed:
-                logger.debug("FEDERATION: flushed %d outbound events", flushed)
+                logger.info("FEDERATION: flushed %d outbound events to transport", flushed)
 
                 # Push to hub via GitHub API relay (cross-repo delivery)
                 relay = ServiceRegistry.get(SVC_FEDERATION_RELAY)
