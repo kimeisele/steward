@@ -109,6 +109,12 @@ class DharmaReaperHook(BasePhaseHook):
         dead = reaper.dead_peers()
         if dead:
             self._escalate_dead_peers(dead)
+            # Cycle complete for dead peers — clear from diagnosed so they
+            # can be re-diagnosed if they come back and go suspect again.
+            # Without this, diagnosed grows endlessly and the steward
+            # stops diagnosing after a few weeks.
+            dead_ids = {p.agent_id for p in dead}
+            diagnosed -= dead_ids
 
         # 4. RESPONSE — clear diagnosed set for recovered peers
         alive_ids = {p.agent_id for p in reaper.alive_peers()}
