@@ -65,7 +65,7 @@ class GitHubFederationRelay:
         return bool(self._token)
 
     def _load_token(self) -> str:
-        token = os.environ.get("GITHUB_TOKEN", "")
+        token = os.environ.get("GITHUB_TOKEN", "") or os.environ.get("GH_TOKEN", "")
         if not token:
             token_file = Path.home() / ".config" / "gh_token"
             if token_file.exists():
