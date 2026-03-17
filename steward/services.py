@@ -450,7 +450,7 @@ def boot(
     # 31. KirtanLoop — Call/Response verification primitive
     from steward.kirtan import KirtanLoop
 
-    kirtan = KirtanLoop(ledger_path=str(Path(cwd) / "data" / "federation" / "kirtan_ledger.json"))
+    kirtan = KirtanLoop(ledger_path=kirtan_path)
     ServiceRegistry.register(SVC_KIRTAN, kirtan)
 
     # 30. StewardImmune (unified self-healing)
