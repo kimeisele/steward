@@ -82,6 +82,33 @@ class DharmaReaperHook(BasePhaseHook):
                 c.new_trust,
             )
 
+        # SUPER-AGENT REACTION: dead/evicted peers → create federation tasks
+        from steward.services import SVC_TASK_MANAGER
+
+        task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
+        if task_mgr is None:
+            return
+
+        from vibe_core.task_types import TaskStatus
+
+        active_tasks = task_mgr.list_tasks(status=TaskStatus.PENDING) + task_mgr.list_tasks(status=TaskStatus.IN_PROGRESS)
+        active_titles = {t.title for t in active_tasks}
+
+        for c in consequences:
+            if c.new_status in ("dead", "evicted"):
+                title = f"[FEDERATION_HEALTH] Peer {c.agent_id} is {c.new_status}"
+                if title not in active_titles:
+                    task_mgr.add_task(
+                        title=title,
+                        priority=70,
+                        description=(
+                            f"Peer {c.agent_id} transitioned from {c.old_status} to {c.new_status}. "
+                            f"Trust degraded from {c.old_trust:.2f} to {c.new_trust:.2f}. "
+                            f"Check if the peer repo is healthy, CI is passing, and heartbeat workflow is running."
+                        ),
+                    )
+                    logger.info("SUPER-AGENT: Created task for dead peer %s", c.agent_id)
+
 
 class DharmaMarketplaceHook(BasePhaseHook):
     """Purge expired marketplace claims."""
