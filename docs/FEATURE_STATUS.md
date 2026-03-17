@@ -11,7 +11,7 @@ Honest. Updated 2026-03-17. Verified by reading code AND checking CI logs.
 | Immune System | WORKING | DharmaImmuneHook in default hooks. CytokineBreaker with 11 record_rollback() call sites. ShuddhiEngine with 17 remedies. 0 heals in production (no pathogens found yet). |
 | Federation Bridge | WORKING | FederationBridge routes inbound by operation (O(1) dispatch). Heartbeat, claim, release, delegation, diagnostic handlers wired. |
 | NADI Local Transport | WORKING | emit→flush→outbox verified locally. NadiFederationTransport reads inbox, writes outbox. Atomic write (tmp→rename). |
-| NADI Cross-Repo Delivery | UNVERIFIED | Relay workflow (agent-internet) pumps outboxes. GitHub API Transport for remote peers. End-to-end CI delivery not yet confirmed — testing now. |
+| NADI Cross-Repo Delivery | VERIFIED | 144 messages pushed to hub in CI. Hub outbox 92KB. Relay active. |
 | Hub Relay (Fallback) | WORKING | GitHubFederationRelay push_to_hub/pull_from_hub via GitHub Contents API. Writes to nadi_outbox.json (shared bus). |
 | Cetana Heartbeat | PARTIAL | 4-phase MURALI runs via CI cron every 15min. Adaptive frequency (SAMADHI/SADHANA/GAJENDRA) coded but not proven in production — CI restarts reset frequency state. |
 | Provider Chamber | WORKING | 3 providers: Google Flash, Mistral, Groq. Prana-ordered failover. MahaCellUnified lifecycle. |
