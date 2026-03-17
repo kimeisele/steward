@@ -172,7 +172,30 @@ class DharmaReaperHook(BasePhaseHook):
         return result
 
     def _escalate_to_task(self, target: str, payload: dict) -> None:
-        """KirtanLoop exhausted → create high-priority task."""
+        """KirtanLoop exhausted → GitHub Issue + high-priority task."""
+        import subprocess
+
+        # 1. GitHub Issue (visible, trackable — not a dead MD file)
+        title = f"[FEDERATION] Peer {target} unresponsive after diagnosis"
+        body = (
+            f"## Kirtan Escalation\n\n"
+            f"Peer `{target}` was diagnosed as suspect. Diagnostic was sent via NADI. "
+            f"After {payload.get('attempts', '?')} verification cycles, no recovery observed.\n\n"
+            f"**Payload**: {payload}\n\n"
+            f"This issue was created automatically by the steward's Kirtan loop."
+        )
+        try:
+            r = subprocess.run(
+                ["gh", "issue", "create", "--repo", "kimeisele/steward",
+                 "--title", title, "--body", body, "--label", "federation-health"],
+                capture_output=True, text=True, timeout=15,
+            )
+            if r.returncode == 0:
+                logger.warning("KIRTAN ESCALATE: %s → GitHub Issue %s", target, r.stdout.strip())
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+
+        # 2. Task in TaskManager (for the steward's own KARMA phase)
         from steward.services import SVC_TASK_MANAGER
 
         task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
@@ -182,11 +205,11 @@ class DharmaReaperHook(BasePhaseHook):
         from vibe_core.task_types import TaskStatus
 
         active = task_mgr.list_tasks(status=TaskStatus.PENDING) + task_mgr.list_tasks(status=TaskStatus.IN_PROGRESS)
-        title = f"[FEDERATION_HEALTH] {payload.get('message', target)}"
-        if any(t.title == title for t in active):
+        task_title = f"[FEDERATION_HEALTH] Peer {target} — Kirtan escalation"
+        if any(t.title == task_title for t in active):
             return
 
-        task_mgr.add_task(title=title, priority=90, description=str(payload))
+        task_mgr.add_task(title=task_title, priority=90, description=str(payload))
         logger.warning("KIRTAN ESCALATE: %s — task created (pri=90)", target)
 
 
