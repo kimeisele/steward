@@ -98,6 +98,8 @@ OP_DIAGNOSTIC_REPORT = "diagnostic_report"
 OP_MERGE_OCCURRED = "merge_occurred"
 OP_PR_CREATED = "pr_created"
 OP_CI_STATUS = "ci_status"
+OP_PR_REVIEW_REQUEST = "pr_review_request"
+OP_PR_REVIEW_VERDICT = "pr_review_verdict"
 
 # Minimum trust level to accept inbound delegations
 DEFAULT_DELEGATION_TRUST_FLOOR: float = 0.3
@@ -153,6 +155,7 @@ class FederationBridge:
             OP_DELEGATE_TASK: self._handle_delegate_task,
             OP_TASK_COMPLETED: self._handle_task_callback,
             OP_TASK_FAILED: self._handle_task_callback,
+            OP_PR_REVIEW_REQUEST: self._handle_pr_review_request,
         }
 
     def ingest(self, operation: str, payload: dict) -> bool:
@@ -255,7 +258,7 @@ class FederationBridge:
             "delegations_rejected": self._delegations_rejected,
         }
 
-# ── Private Handlers ──────────────────────────────────────────
+    # ── Private Handlers ──────────────────────────────────────────
 
     def _handle_heartbeat(self, payload: dict) -> bool:
         if self.reaper is None:
@@ -361,6 +364,105 @@ class FederationBridge:
             source,
             title,
             priority,
+        )
+        return True
+
+    def _handle_pr_review_request(self, payload: dict) -> bool:
+        """Inbound PR review request from a federation peer.
+
+        Runs diagnostic pipeline, registers KirtanLoop call, emits verdict.
+
+        Payload:
+            repo: str — repository (e.g. "kimeisele/agent-city")
+            pr_number: int — pull request number
+            author: str — PR author
+            files: list[str] — files changed
+            description: str — PR description
+            source_agent: str — who sent the request
+        """
+        from steward.pr_gate import diagnose_pr
+        from steward.services import SVC_KIRTAN
+
+        repo = payload.get("repo", "")
+        pr_number = payload.get("pr_number")
+        if not repo or not pr_number:
+            logger.warning("BRIDGE: pr_review_request missing repo or pr_number")
+            return False
+
+        source_agent = payload.get("source_agent", "unknown")
+        logger.info(
+            "BRIDGE: pr_review_request from %s for %s#%s",
+            source_agent,
+            repo,
+            pr_number,
+        )
+
+        # 1. KirtanLoop — track that we expect verdict to be enacted
+        kirtan = None
+        try:
+            kirtan = __import__("vibe_core.di", fromlist=["ServiceRegistry"]).ServiceRegistry.get(SVC_KIRTAN)
+        except Exception:
+            pass
+        if kirtan is not None:
+            kirtan.call(
+                f"pr_review:{repo}:{pr_number}",
+                target=repo,
+                expected_outcome="verdict_sent",
+            )
+
+        # 2. Diagnostic pipeline
+        diagnostics = diagnose_pr(
+            repo=repo,
+            pr_number=pr_number,
+            author=payload.get("author", ""),
+            files=payload.get("files", []),
+            reaper=self.reaper,
+        )
+
+        # 3. Derive verdict
+        verdict = "approve"
+        reasons = []
+
+        if diagnostics.get("ci_failing"):
+            verdict = "request_changes"
+            reasons.append("CI is failing")
+        if diagnostics.get("has_core_files"):
+            if verdict == "approve":
+                verdict = "approve"  # still approve, but flag for council
+            reasons.append("core files modified — council vote required")
+        if not diagnostics.get("author_is_peer"):
+            verdict = "request_changes"
+            reasons.append(f"author '{payload.get('author', '')}' not in federation peer registry")
+        if diagnostics.get("blast_radius", 0) > 20:
+            if verdict == "approve":
+                verdict = "request_changes"
+            reasons.append(f"high blast radius ({diagnostics['blast_radius']} files)")
+
+        reason = "; ".join(reasons) if reasons else "all checks passed"
+
+        # 4. Emit verdict
+        self.emit(
+            OP_PR_REVIEW_VERDICT,
+            {
+                "pr_number": pr_number,
+                "repo": repo,
+                "verdict": verdict,
+                "reason": reason,
+                "diagnostics": diagnostics,
+                "source_agent": self.agent_id,
+            },
+        )
+
+        # 5. Close KirtanLoop — verdict sent
+        if kirtan is not None:
+            kirtan.close(f"pr_review:{repo}:{pr_number}", success=True)
+
+        logger.info(
+            "BRIDGE: pr_review_verdict for %s#%s: %s (%s)",
+            repo,
+            pr_number,
+            verdict,
+            reason,
         )
         return True
 
