@@ -59,12 +59,12 @@ class TestPullFromHub:
         existing = [{"source": "agent-city", "timestamp": 100, "op": "heartbeat"}]
         (tmp_path / "inbox.json").write_text(json.dumps(existing))
 
-        # Mock _get_file to return hub messages including the duplicate
+        # Mock _get_file: first call = outbox, second call = inbox (empty)
         hub_messages = [
             {"source": "agent-city", "timestamp": 100, "target": "steward", "op": "heartbeat"},
             {"source": "agent-world", "timestamp": 200, "target": "steward", "op": "task"},
         ]
-        with patch.object(relay, "_get_file", return_value=(hub_messages, "sha123")):
+        with patch.object(relay, "_get_file", side_effect=[(hub_messages, "sha123"), ([], "sha456")]):
             count = relay.pull_from_hub()
 
         # Only the new message should be added
@@ -86,10 +86,38 @@ class TestPullFromHub:
             {"source": "agent-city", "timestamp": 200, "target": "other-agent", "op": "task"},
             {"source": "agent-city", "timestamp": 300, "target": "*", "op": "broadcast"},
         ]
-        with patch.object(relay, "_get_file", return_value=(hub_messages, "sha123")):
+        # first call = outbox (has messages), second call = inbox (empty)
+        with patch.object(relay, "_get_file", side_effect=[(hub_messages, "sha123"), ([], "sha456")]):
             count = relay.pull_from_hub()
 
         assert count == 2  # steward + broadcast, not other-agent
+
+
+    def test_pull_reads_both_outbox_and_inbox(self, tmp_path):
+        """Messages from hub inbox (agent-city convention) are also pulled."""
+        with patch.dict("os.environ", {"GITHUB_TOKEN": "tok"}):
+            relay = GitHubFederationRelay(
+                agent_id="steward",
+                local_inbox=tmp_path / "inbox.json",
+            )
+        relay._last_pull = 0
+
+        outbox_msgs = [
+            {"source": "agent-world", "timestamp": 100, "target": "steward", "operation": "heartbeat"},
+        ]
+        inbox_msgs = [
+            {"source": "agent-city", "timestamp": 200, "target": "steward-protocol", "operation": "pr_review_request"},
+        ]
+        with patch.object(relay, "_get_file", side_effect=[(outbox_msgs, "sha1"), (inbox_msgs, "sha2")]):
+            count = relay.pull_from_hub()
+
+        # Both messages pulled: one from outbox (exact match), one from inbox (substring match)
+        assert count == 2
+        inbox = json.loads((tmp_path / "inbox.json").read_text())
+        assert len(inbox) == 2
+        ops = {m["operation"] for m in inbox}
+        assert "heartbeat" in ops
+        assert "pr_review_request" in ops
 
 
 class TestPushToHub:
