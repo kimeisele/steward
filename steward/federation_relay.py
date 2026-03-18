@@ -117,10 +117,14 @@ class GitHubFederationRelay:
             return False
 
     def pull_from_hub(self) -> int:
-        """Fetch messages from hub's outbox targeted at this agent.
+        """Fetch messages from hub targeted at this agent.
 
-        Reads hub nadi_outbox.json, filters for target=self._agent_id,
-        appends to local nadi_inbox.json. Returns count of new messages.
+        Reads BOTH hub nadi_outbox.json and nadi_inbox.json. The hub has
+        two files because different agents use different conventions:
+        steward pushes to outbox, agent-city pushes to inbox. We read both.
+
+        Filters for target=self._agent_id, appends to local nadi_inbox.json.
+        Returns count of new messages.
         """
         if not self._token:
             return 0
@@ -130,12 +134,21 @@ class GitHubFederationRelay:
             return 0  # Throttled
 
         hub_outbox, _ = self._get_file("nadi_outbox.json")
-        if not hub_outbox:
+        hub_inbox, _ = self._get_file("nadi_inbox.json")
+
+        # Merge both hub files — agents may write to either
+        hub_all = (hub_outbox or []) + (hub_inbox or [])
+        if not hub_all:
             self._last_pull = time.monotonic()
             return 0
 
         # Filter: messages targeted at us (or broadcast "*")
-        for_us = [m for m in hub_outbox if isinstance(m, dict) and m.get("target") in (self._agent_id, "*")]
+        # Also accept messages with target containing our agent_id (e.g. "steward-protocol")
+        for_us = [
+            m for m in hub_all
+            if isinstance(m, dict)
+            and (m.get("target") in (self._agent_id, "*") or self._agent_id in m.get("target", ""))
+        ]
         if not for_us:
             self._last_pull = time.monotonic()
             return 0
