@@ -39,3 +39,18 @@ because the federation is young and mostly healthy.
 - GitHub onboarding pipeline (agent-city)
 - World governance (agent-world)
 - Relay pump (agent-internet)
+
+## Browser Integration (2026-03-19)
+
+| Component | Status | Evidence |
+|-----------|--------|----------|
+| browser_factory.py | WORKING locally | extract_urls + browse_url return correct data |
+| AgentWebBrowser import | WORKING | Conditional import, GitHub source registered |
+| URL extraction | WORKING | Regex matches URLs in Discussion text |
+| Page browsing | WORKING | GitHub README fetched, title + content returned |
+| Runtime integration | WIRED | browser_context passed to MicroBrain |
+| E2E Discussion→Browser→Response | UNVERIFIED | Triage escalates #133 (21+ attempts). Fresh thread needed. Next CI heartbeat will test. |
+
+**Blocker:** Discussion #133 is classified as "stuck" by triage (21+ unanswered).
+URL-containing comment never reaches gateway. Browser code never invoked.
+A fresh Discussion thread or a triage threshold adjustment would unblock this.
