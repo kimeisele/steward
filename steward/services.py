@@ -154,6 +154,18 @@ class SVC_IMMUNE:
 
 
 
+class SVC_A2A_ADAPTER:
+    """A2AProtocolAdapter — bridge between A2A JSON-RPC and NADI."""
+
+
+class SVC_A2A_DISCOVERY:
+    """A2APeerDiscovery — discover peers via A2A Agent Cards on GitHub."""
+
+
+class SVC_PR_VERDICT:
+    """PRVerdictPoster — post federation PR review verdicts to GitHub."""
+
+
 class SVC_KIRTAN:
     """KirtanLoop — Call and Response primitive for action verification.
 
@@ -402,6 +414,20 @@ def boot(
     federation = FederationBridge(reaper=reaper, marketplace=marketplace)
     ServiceRegistry.register(SVC_FEDERATION, federation)
 
+    # 27b. A2AProtocolAdapter (A2A JSON-RPC ↔ NADI bridge)
+    from steward.a2a_adapter import A2AProtocolAdapter
+
+    a2a_adapter = A2AProtocolAdapter(bridge=federation, agent_id="steward")
+    ServiceRegistry.register(SVC_A2A_ADAPTER, a2a_adapter)
+
+    # 27c. PRVerdictPoster (post federation PR verdicts to GitHub API)
+    from steward.pr_verdict_poster import PRVerdictPoster
+
+    pr_verdict = PRVerdictPoster()
+    if pr_verdict.available:
+        ServiceRegistry.register(SVC_PR_VERDICT, pr_verdict)
+        logger.info("PR verdict poster: active")
+
     # 28. FederationTransport (auto-discover: env var or default data/federation/)
     import os
 
@@ -432,6 +458,19 @@ def boot(
         if relay.available:
             ServiceRegistry.register(SVC_FEDERATION_RELAY, relay)
             logger.info("Federation relay: active (hub=%s)", relay._hub_repo)
+
+    # 28d. A2APeerDiscovery (discover peers via Agent Cards on GitHub)
+    from steward.a2a_discovery import A2APeerDiscovery
+
+    known_peers_path = Path(fed_dir) / "known_peers.json" if fed_dir else None
+    a2a_discovery = A2APeerDiscovery(
+        reaper=reaper,
+        known_peers_path=known_peers_path,
+    )
+    a2a_discovery.load_discovered()
+    if a2a_discovery.available:
+        ServiceRegistry.register(SVC_A2A_DISCOVERY, a2a_discovery)
+        logger.info("A2A peer discovery: active")
 
     # 31. NagaDiamondProtocol (TDD enforcement: RED/GREEN gates)
     from vibe_core.naga.diamond import NagaDiamondProtocol
