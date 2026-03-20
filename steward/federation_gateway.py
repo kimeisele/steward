@@ -304,6 +304,34 @@ class FederationGateway(GatewayProtocol):
             }
         return result
 
+    # ── Transport Integration ────────────────────────────────────
+
+    def process_inbound(self, transport: object) -> int:
+        """Process all pending inbound messages from a FederationTransport.
+
+        Drop-in replacement for FederationBridge.process_inbound() — same
+        signature, same return type — but routes every message through the
+        Five Tattva Gates before it reaches the bridge.
+
+        Returns count of messages successfully processed (passed all gates).
+        """
+        try:
+            messages = transport.read_outbox()
+        except Exception as e:
+            logger.warning("GATEWAY: read_outbox failed: %s", e)
+            self._stats.errors += 1
+            return 0
+
+        processed = 0
+        for msg in messages:
+            if not isinstance(msg, dict):
+                self._stats.rejected_parse += 1
+                continue
+            result = self.handle_federation_message(msg)
+            if result.get("success"):
+                processed += 1
+        return processed
+
     # ── Observability ─────────────────────────────────────────────
 
     def stats(self) -> dict[str, object]:
