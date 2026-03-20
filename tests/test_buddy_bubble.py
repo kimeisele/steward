@@ -119,6 +119,14 @@ def _make_registry(overrides: dict | None = None):
     return fake_get
 
 
+# ── Context bridge mock data ──────────────────────────────────────────
+
+CB_HEALTH = {"value": 0.85, "guna": "sattva", "provider_health": 0.9, "error_pressure": 0.1}
+CB_FEDERATION = {"total_peers": 2, "alive": 1, "suspect": 1, "dead": 0}
+CB_IMMUNE = {"heals_attempted": 3, "heals_succeeded": 2}
+CB_CETANA = {"heartbeat_count": 42, "phase": "KARMA"}
+
+
 # ── Tool basics ───────────────────────────────────────────────────────
 
 
@@ -159,7 +167,10 @@ def test_validate_accepts_all_actions():
 
 def test_peers_returns_all_states():
     tool = BuddyBubbleTool()
-    with patch("steward.tools.buddy_bubble.ServiceRegistry") as mock_reg:
+    with (
+        patch("steward.tools.buddy_bubble.ServiceRegistry") as mock_reg,
+        patch("steward.tools.buddy_bubble._cb_federation", return_value=CB_FEDERATION),
+    ):
         mock_reg.get = _make_registry()
         result = tool.execute({"action": "peers"})
 
@@ -173,7 +184,10 @@ def test_peers_returns_all_states():
 
 def test_peers_truncates_fingerprint():
     tool = BuddyBubbleTool()
-    with patch("steward.tools.buddy_bubble.ServiceRegistry") as mock_reg:
+    with (
+        patch("steward.tools.buddy_bubble.ServiceRegistry") as mock_reg,
+        patch("steward.tools.buddy_bubble._cb_federation", return_value=CB_FEDERATION),
+    ):
         mock_reg.get = _make_registry()
         result = tool.execute({"action": "peers"})
 
@@ -187,7 +201,10 @@ def test_peers_no_reaper():
     tool = BuddyBubbleTool()
     from steward import services as svc
 
-    with patch("steward.tools.buddy_bubble.ServiceRegistry") as mock_reg:
+    with (
+        patch("steward.tools.buddy_bubble.ServiceRegistry") as mock_reg,
+        patch("steward.tools.buddy_bubble._cb_federation", return_value={}),
+    ):
         mock_reg.get = _make_registry({svc.SVC_REAPER: None})
         result = tool.execute({"action": "peers"})
 
@@ -247,10 +264,35 @@ def test_marketplace_shows_claims():
 # ── health ────────────────────────────────────────────────────────────
 
 
-def test_health_graceful_without_cetana():
+def test_health_delegates_to_context_bridge():
+    """Health action should delegate to context_bridge readers."""
     tool = BuddyBubbleTool()
-    with patch("steward.tools.buddy_bubble.ServiceRegistry") as mock_reg:
-        mock_reg.get = _make_registry()
+    with (
+        patch("steward.tools.buddy_bubble._cb_health", return_value=CB_HEALTH),
+        patch("steward.tools.buddy_bubble._cb_cetana", return_value=CB_CETANA),
+        patch("steward.tools.buddy_bubble._cb_immune", return_value=CB_IMMUNE),
+    ):
+        result = tool.execute({"action": "health"})
+
+    assert result.success is True
+    data = json.loads(result.output)
+    # Base health from context_bridge
+    assert data["value"] == 0.85
+    assert data["guna"] == "sattva"
+    # Enriched with cetana
+    assert data["cetana"]["heartbeat_count"] == 42
+    # Enriched with immune
+    assert data["immune"]["heals_attempted"] == 3
+
+
+def test_health_graceful_when_context_bridge_empty():
+    """Health works even when context_bridge returns empty dicts."""
+    tool = BuddyBubbleTool()
+    with (
+        patch("steward.tools.buddy_bubble._cb_health", return_value={}),
+        patch("steward.tools.buddy_bubble._cb_cetana", return_value={}),
+        patch("steward.tools.buddy_bubble._cb_immune", return_value={}),
+    ):
         result = tool.execute({"action": "health"})
 
     assert result.success is True
@@ -261,7 +303,13 @@ def test_health_graceful_without_cetana():
 
 def test_status_includes_north_star():
     tool = BuddyBubbleTool()
-    with patch("steward.tools.buddy_bubble.ServiceRegistry") as mock_reg:
+    with (
+        patch("steward.tools.buddy_bubble.ServiceRegistry") as mock_reg,
+        patch("steward.tools.buddy_bubble._cb_health", return_value=CB_HEALTH),
+        patch("steward.tools.buddy_bubble._cb_cetana", return_value={}),
+        patch("steward.tools.buddy_bubble._cb_immune", return_value={}),
+        patch("steward.tools.buddy_bubble._cb_federation", return_value=CB_FEDERATION),
+    ):
         mock_reg.get = _make_registry()
         result = tool.execute({"action": "status"})
 
@@ -278,7 +326,10 @@ def test_status_includes_north_star():
 
 def test_federation_shows_bridge_details():
     tool = BuddyBubbleTool()
-    with patch("steward.tools.buddy_bubble.ServiceRegistry") as mock_reg:
+    with (
+        patch("steward.tools.buddy_bubble.ServiceRegistry") as mock_reg,
+        patch("steward.tools.buddy_bubble._cb_federation", return_value=CB_FEDERATION),
+    ):
         mock_reg.get = _make_registry()
         result = tool.execute({"action": "federation"})
 
@@ -306,11 +357,16 @@ def test_handler_exception_returns_failure():
 @pytest.mark.parametrize("action", list(ACTIONS))
 def test_all_actions_return_valid_json(action):
     tool = BuddyBubbleTool()
-    with patch("steward.tools.buddy_bubble.ServiceRegistry") as mock_reg:
+    with (
+        patch("steward.tools.buddy_bubble.ServiceRegistry") as mock_reg,
+        patch("steward.tools.buddy_bubble._cb_health", return_value=CB_HEALTH),
+        patch("steward.tools.buddy_bubble._cb_cetana", return_value={}),
+        patch("steward.tools.buddy_bubble._cb_immune", return_value={}),
+        patch("steward.tools.buddy_bubble._cb_federation", return_value=CB_FEDERATION),
+    ):
         mock_reg.get = _make_registry()
         result = tool.execute({"action": action})
 
     assert result.success is True
-    # Must be valid JSON
     parsed = json.loads(result.output)
     assert isinstance(parsed, dict)
