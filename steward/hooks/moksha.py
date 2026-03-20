@@ -14,6 +14,7 @@ from steward.phase_hook import MOKSHA, BasePhaseHook, PhaseContext
 from steward.services import (
     SVC_A2A_DISCOVERY,
     SVC_FEDERATION,
+    SVC_FEDERATION_GATEWAY,
     SVC_FEDERATION_RELAY,
     SVC_FEDERATION_TRANSPORT,
     SVC_GIT_NADI_SYNC,
@@ -89,7 +90,6 @@ class MokshaPersistenceHook(BasePhaseHook):
             marketplace.save(steward_dir / "marketplace.json")
 
 
-
 class MokshaFederationHook(BasePhaseHook):
     """Flush outbound federation events via transport."""
 
@@ -133,6 +133,19 @@ class MokshaFederationHook(BasePhaseHook):
                 git_sync = ServiceRegistry.get(SVC_GIT_NADI_SYNC)
                 if git_sync is not None:
                     git_sync.push()
+
+        # Drain gateway Hebbian signals → SynapseStore
+        # Fire-and-forget: gateway queues signals during DHARMA, we flush here.
+        gateway = ServiceRegistry.get(SVC_FEDERATION_GATEWAY)
+        synapse_store = ServiceRegistry.get(SVC_SYNAPSE_STORE)
+        if gateway is not None and synapse_store is not None:
+            signals = gateway._stats.drain_signals()
+            for protocol, success in signals:
+                trigger = f"gw:{protocol}"
+                if success:
+                    synapse_store.increment_weight(trigger, "accept")
+                else:
+                    synapse_store.decrement_weight(trigger, "accept")
 
         # Persist A2A discovery state
         a2a_discovery = ServiceRegistry.get(SVC_A2A_DISCOVERY)

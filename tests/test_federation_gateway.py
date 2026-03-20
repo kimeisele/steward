@@ -248,6 +248,143 @@ class TestGatewayProtocolInterface:
 # ── Stats ────────────────────────────────────────────────────────
 
 
+# ── process_inbound (Transport Integration) ──────────────────────
+
+
+class TestProcessInbound:
+    """Integration: transport → gateway → bridge, with all five gates active."""
+
+    def _make_transport(self, messages: list[dict]) -> MagicMock:
+        transport = MagicMock()
+        transport.read_outbox.return_value = messages
+        return transport
+
+    def test_processes_valid_nadi_messages(self):
+        """Valid NADI messages reach the bridge through all gates."""
+        bridge = MagicMock()
+        bridge.ingest.return_value = True
+        gw = FederationGateway(bridge=bridge)
+        transport = self._make_transport(
+            [
+                {"operation": "heartbeat", "source": "peer-a", "payload": {"agent_id": "peer-a"}},
+                {"operation": "claim_slot", "source": "peer-b", "payload": {"slot_id": "s1", "agent_id": "peer-b"}},
+            ]
+        )
+
+        processed = gw.process_inbound(transport)
+
+        assert processed == 2
+        assert bridge.ingest.call_count == 2
+        assert gw.stats()["total_requests"] == 2
+        assert gw.stats()["by_protocol"]["nadi"] == 2
+
+    def test_evicted_peer_blocked_at_validate(self):
+        """Evicted peer messages are rejected — NEVER reach the bridge."""
+        peer = MagicMock()
+        peer.status.value = "evicted"
+        reaper = MagicMock()
+        reaper.get_peer.return_value = peer
+        bridge = MagicMock()
+        gw = FederationGateway(bridge=bridge, reaper=reaper)
+        transport = self._make_transport(
+            [{"operation": "heartbeat", "source": "evicted-peer", "payload": {"agent_id": "evicted-peer"}}]
+        )
+
+        processed = gw.process_inbound(transport)
+
+        assert processed == 0
+        bridge.ingest.assert_not_called()  # CRITICAL: evicted peer NEVER reaches bridge
+        assert gw.stats()["rejected_validate"] == 1
+
+    def test_unknown_protocol_rejected(self):
+        """Messages with unrecognized schema are rejected at PARSE."""
+        bridge = MagicMock()
+        gw = FederationGateway(bridge=bridge)
+        transport = self._make_transport([{"garbage": "data"}, {"also": "garbage"}])
+
+        processed = gw.process_inbound(transport)
+
+        assert processed == 0
+        bridge.ingest.assert_not_called()
+        assert gw.stats()["rejected_parse"] == 2
+
+    def test_non_dict_messages_skipped(self):
+        """Non-dict items in transport are silently skipped."""
+        bridge = MagicMock()
+        bridge.ingest.return_value = True
+        gw = FederationGateway(bridge=bridge)
+        transport = self._make_transport(
+            [
+                "not a dict",
+                42,
+                None,
+                {"operation": "heartbeat", "source": "valid-peer", "payload": {}},
+            ]
+        )
+
+        processed = gw.process_inbound(transport)
+
+        assert processed == 1
+        assert gw.stats()["rejected_parse"] == 3  # 3 non-dicts
+
+    def test_mixed_valid_and_invalid(self):
+        """Mix of valid, invalid, and evicted — only valid messages pass."""
+        peer = MagicMock()
+        peer.status.value = "evicted"
+        reaper = MagicMock()
+        reaper.get_peer.side_effect = lambda aid: peer if aid == "bad-peer" else None
+        bridge = MagicMock()
+        bridge.ingest.return_value = True
+        gw = FederationGateway(bridge=bridge, reaper=reaper)
+        transport = self._make_transport(
+            [
+                {"operation": "heartbeat", "source": "good-peer", "payload": {}},  # PASS: unknown peer
+                {"operation": "heartbeat", "source": "bad-peer", "payload": {}},  # REJECT: evicted
+                {"garbage": True},  # REJECT: unknown protocol
+                {"operation": "claim_slot", "source": "good-peer", "payload": {"slot_id": "s1"}},  # PASS
+            ]
+        )
+
+        processed = gw.process_inbound(transport)
+
+        assert processed == 2
+        assert bridge.ingest.call_count == 2
+        assert gw.stats()["rejected_validate"] == 1
+        assert gw.stats()["rejected_parse"] == 1
+
+    def test_transport_read_failure(self):
+        """Transport read error is caught and counted."""
+        gw = FederationGateway(bridge=MagicMock())
+        transport = MagicMock()
+        transport.read_outbox.side_effect = OSError("disk full")
+
+        processed = gw.process_inbound(transport)
+
+        assert processed == 0
+        assert gw.stats()["errors"] == 1
+
+    def test_signals_queued_for_moksha(self):
+        """All processed messages queue Hebbian signals for MOKSHA drain."""
+        bridge = MagicMock()
+        bridge.ingest.return_value = True
+        gw = FederationGateway(bridge=bridge)
+        transport = self._make_transport(
+            [
+                {"operation": "heartbeat", "source": "p1", "payload": {}},
+                {"operation": "heartbeat", "source": "p2", "payload": {}},
+            ]
+        )
+
+        gw.process_inbound(transport)
+
+        signals = gw._stats.drain_signals()
+        assert len(signals) == 2
+        assert all(proto == "nadi" and success is True for proto, success in signals)
+
+
+# ── Stats ────────────────────────────────────────────────────────
+
+
 class TestStats:
     def test_stats_tracks_protocols(self):
         bridge = MagicMock()
