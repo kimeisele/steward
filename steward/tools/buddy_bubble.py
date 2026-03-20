@@ -4,6 +4,11 @@ Buddy Bubble — System Introspection Tool.
 Lets a CLI operator enter Steward's substrate to inspect, debug, and browse
 the entire system state. Pure substrate read — zero LLM tokens.
 
+ARCHITECTURE: Delegates to context_bridge for overlapping reads (health,
+federation basics, immune, cetana). Adds unique substrate-level introspection
+that context_bridge doesn't cover: Hebbian weights, Lotus routing, signal
+queues, deep federation internals.
+
 Actions:
   status     — Full system: all services, federation, health
   peers      — Reaper state: alive/suspect/dead, trust, capabilities
@@ -92,6 +97,51 @@ class BuddyBubbleTool(Tool):
             return ToolResult(success=False, error=f"Introspection failed: {e}")
 
 
+# ── Context Bridge Delegation ────────────────────────────────────────
+# context_bridge already reads: health, federation, immune, cetana.
+# We delegate those reads instead of reimplementing them.
+
+
+def _cb_health() -> dict[str, object]:
+    """Delegate to context_bridge._read_health()."""
+    try:
+        from steward.context_bridge import _read_health
+
+        return _read_health()
+    except Exception:
+        return {}
+
+
+def _cb_federation() -> dict[str, object]:
+    """Delegate to context_bridge._read_federation()."""
+    try:
+        from steward.context_bridge import _read_federation
+
+        return _read_federation()
+    except Exception:
+        return {}
+
+
+def _cb_immune() -> dict[str, object]:
+    """Delegate to context_bridge._read_immune()."""
+    try:
+        from steward.context_bridge import _read_immune
+
+        return _read_immune()
+    except Exception:
+        return {}
+
+
+def _cb_cetana() -> dict[str, object]:
+    """Delegate to context_bridge._read_cetana()."""
+    try:
+        from steward.context_bridge import _read_cetana
+
+        return _read_cetana()
+    except Exception:
+        return {}
+
+
 # ── Action Handlers ──────────────────────────────────────────────────
 
 
@@ -107,10 +157,10 @@ def _status() -> dict[str, object]:
     # Services inventory
     result["services"] = _collect_services()
 
-    # Health summary
+    # Health — delegated to context_bridge + enriched
     result["health"] = _health()
 
-    # Federation summary
+    # Federation summary — peers with full detail
     result["federation"] = _peers()
 
     # Marketplace summary
@@ -122,17 +172,22 @@ def _status() -> dict[str, object]:
 
 
 def _peers() -> dict[str, object]:
-    """Reaper peer state: alive/suspect/dead with full details."""
+    """Reaper peer state: alive/suspect/dead with full details.
+
+    Extends context_bridge._read_federation() with dead peers and
+    per-peer detail (heartbeat_count, fingerprint, last_seen) that
+    context_bridge omits.
+    """
     from steward.services import SVC_REAPER
 
     reaper = ServiceRegistry.get(SVC_REAPER)
     if reaper is None:
         return {"error": "Reaper not booted"}
 
-    result: dict[str, object] = {}
-    result.update(reaper.stats())
+    # Start with context_bridge's federation base (stats + alive/suspect summary)
+    result: dict[str, object] = _cb_federation()
 
-    # Full peer details — all states
+    # Override with DEEP peer detail (all 3 states incl. dead — context_bridge skips dead)
     for label, getter in (
         ("alive", reaper.alive_peers),
         ("suspect", reaper.suspect_peers),
@@ -156,7 +211,10 @@ def _peers() -> dict[str, object]:
 
 
 def _signals() -> dict[str, object]:
-    """Active A2A tasks and pending NADI messages."""
+    """Active A2A tasks and pending NADI messages.
+
+    UNIQUE to Buddy Bubble — context_bridge has no signal queue introspection.
+    """
     from steward.services import SVC_A2A_ADAPTER, SVC_FEDERATION, SVC_FEDERATION_TRANSPORT
 
     result: dict[str, object] = {}
@@ -185,7 +243,10 @@ def _signals() -> dict[str, object]:
 
 
 def _substrate() -> dict[str, object]:
-    """Lotus routing, Hebbian weights, Antaranga slots, cache stats."""
+    """Lotus routing, Hebbian weights, Antaranga slots, cache stats.
+
+    UNIQUE to Buddy Bubble — context_bridge has zero substrate introspection.
+    """
     from steward.services import SVC_ANTARANGA, SVC_ATTENTION, SVC_CACHE, SVC_SIKSASTAKAM, SVC_SYNAPSE_STORE
 
     result: dict[str, object] = {}
@@ -207,7 +268,6 @@ def _substrate() -> dict[str, object]:
     if synapse is not None and hasattr(synapse, "get_weights"):
         weights = synapse.get_weights()
         total = sum(len(v) for v in weights.values())
-        # Top 10 strongest connections
         flat: list[tuple[str, str, float]] = []
         for trigger, actions in weights.items():
             for action, w in actions.items():
@@ -245,56 +305,34 @@ def _substrate() -> dict[str, object]:
 
 
 def _health() -> dict[str, object]:
-    """Vedana health signal + cognitive pipeline state."""
-    from steward.services import SVC_PROVIDER
+    """Health: delegated to context_bridge + enriched with immune and cetana.
 
-    result: dict[str, object] = {}
+    context_bridge._read_health() provides vedana + provider basics.
+    We add immune stats and cetana stats which context_bridge reads
+    in separate functions.
+    """
+    # Base health from context_bridge (vedana, provider)
+    result: dict[str, object] = _cb_health()
 
-    # Try cetana's last vedana beat
-    try:
-        cetana = ServiceRegistry.get("cetana")
-        if cetana is not None:
-            beat = getattr(cetana, "last_beat", None)
-            if beat is not None and getattr(beat, "vedana", None) is not None:
-                v = beat.vedana
-                result["vedana"] = {
-                    "health": round(v.health, 3),
-                    "guna": v.guna,
-                    "provider_health": round(v.provider_health, 3),
-                    "error_pressure": round(v.error_pressure, 3),
-                    "context_pressure": round(v.context_pressure, 3),
-                    "synaptic_confidence": round(v.synaptic_confidence, 3),
-                    "tool_success_rate": round(v.tool_success_rate, 3),
-                }
-            cetana_stats = cetana.stats() if hasattr(cetana, "stats") else {}
-            if cetana_stats:
-                result["cetana"] = cetana_stats
-    except (ImportError, KeyError):
-        pass
+    # Enrich with cetana stats
+    cetana_data = _cb_cetana()
+    if cetana_data:
+        result["cetana"] = cetana_data
 
-    # Provider health
-    provider = ServiceRegistry.get(SVC_PROVIDER)
-    if provider is not None:
-        if hasattr(provider, "stats"):
-            result["provider"] = provider.stats()
-        elif hasattr(provider, "__len__"):
-            result["provider"] = {"alive_count": len(provider)}
-
-    # Immune system
-    try:
-        from steward.services import SVC_IMMUNE
-
-        immune = ServiceRegistry.get(SVC_IMMUNE)
-        if immune is not None and hasattr(immune, "stats"):
-            result["immune"] = immune.stats()
-    except ImportError:
-        pass
+    # Enrich with immune system
+    immune_data = _cb_immune()
+    if immune_data:
+        result["immune"] = immune_data
 
     return result
 
 
 def _marketplace() -> dict[str, object]:
-    """Active marketplace claims, contests, expirations."""
+    """Active marketplace claims, contests, expirations.
+
+    Extends context_bridge with per-claim detail (TTL, renewals)
+    that context_bridge omits.
+    """
     from steward.services import SVC_MARKETPLACE
 
     marketplace = ServiceRegistry.get(SVC_MARKETPLACE)
@@ -320,7 +358,11 @@ def _marketplace() -> dict[str, object]:
 
 
 def _federation() -> dict[str, object]:
-    """Full federation: bridge, transport, relay, A2A, discovery."""
+    """Full federation: bridge, transport, relay, A2A, discovery.
+
+    UNIQUE depth — context_bridge only reads Reaper+Marketplace stats.
+    This reads all 6 federation services + deep bridge internals.
+    """
     from steward.services import (
         SVC_A2A_ADAPTER,
         SVC_A2A_DISCOVERY,
@@ -366,7 +408,7 @@ def _federation() -> dict[str, object]:
     if discovery is not None and hasattr(discovery, "stats"):
         result["a2a_discovery"] = discovery.stats()
 
-    # Peers (from reaper)
+    # Peers — deep detail via _peers()
     result["peers"] = _peers()
 
     return result
@@ -405,7 +447,6 @@ def _format(data: dict[str, object]) -> str:
 
 
 # ── Dispatch ─────────────────────────────────────────────────────────
-
 _HANDLERS: dict[str, object] = {
     "status": _status,
     "peers": _peers,
