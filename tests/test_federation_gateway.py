@@ -402,3 +402,92 @@ class TestStats:
         assert stats["by_protocol"]["nadi"] == 1
         assert stats["by_protocol"]["a2a"] == 1
         assert stats["rejected_parse"] == 1
+
+
+# ── Integration: MOKSHA Hebbian Drain → SynapseStore ─────────────
+
+
+class TestMokshaHebbianDrainIntegration:
+    """End-to-end: gateway processes messages → MOKSHA drains signals → SynapseStore weights."""
+
+    def test_success_signals_increment_weight(self):
+        """Successful gateway processing → SynapseStore.increment_weight('gw:nadi', 'accept')."""
+        bridge = MagicMock()
+        bridge.ingest.return_value = True
+        gw = FederationGateway(bridge=bridge)
+
+        # Simulate DHARMA: gateway processes 2 successful NADI messages
+        gw.handle_federation_message({"operation": "heartbeat", "source": "p1", "payload": {}})
+        gw.handle_federation_message({"operation": "heartbeat", "source": "p2", "payload": {}})
+
+        # Simulate MOKSHA: drain signals and apply to mock SynapseStore
+        synapse_store = MagicMock()
+        signals = gw._stats.drain_signals()
+        for protocol, success in signals:
+            trigger = f"gw:{protocol}"
+            if success:
+                synapse_store.increment_weight(trigger, "accept")
+            else:
+                synapse_store.decrement_weight(trigger, "accept")
+
+        assert synapse_store.increment_weight.call_count == 2
+        synapse_store.increment_weight.assert_any_call("gw:nadi", "accept")
+        synapse_store.decrement_weight.assert_not_called()
+
+    def test_failure_signals_decrement_weight(self):
+        """Failed gateway processing → SynapseStore.decrement_weight('gw:nadi', 'accept')."""
+        bridge = MagicMock()
+        bridge.ingest.return_value = False  # Bridge rejects
+        gw = FederationGateway(bridge=bridge)
+
+        # Message passes PARSE and VALIDATE but fails at EXECUTE (bridge rejects)
+        gw.handle_federation_message({"operation": "heartbeat", "source": "p1", "payload": {}})
+
+        synapse_store = MagicMock()
+        signals = gw._stats.drain_signals()
+        for protocol, success in signals:
+            trigger = f"gw:{protocol}"
+            if success:
+                synapse_store.increment_weight(trigger, "accept")
+            else:
+                synapse_store.decrement_weight(trigger, "accept")
+
+        assert synapse_store.decrement_weight.call_count == 1
+        synapse_store.decrement_weight.assert_called_with("gw:nadi", "accept")
+        synapse_store.increment_weight.assert_not_called()
+
+    def test_mixed_signals_both_paths(self):
+        """Mix of success and failure → correct increment/decrement calls."""
+        bridge = MagicMock()
+        bridge.ingest.side_effect = [True, False, True]
+        gw = FederationGateway(bridge=bridge)
+
+        gw.handle_federation_message({"operation": "heartbeat", "source": "p1", "payload": {}})
+        gw.handle_federation_message({"operation": "unknown_op", "source": "p2", "payload": {}})
+        gw.handle_federation_message({"operation": "heartbeat", "source": "p3", "payload": {}})
+
+        synapse_store = MagicMock()
+        signals = gw._stats.drain_signals()
+        for protocol, success in signals:
+            trigger = f"gw:{protocol}"
+            if success:
+                synapse_store.increment_weight(trigger, "accept")
+            else:
+                synapse_store.decrement_weight(trigger, "accept")
+
+        assert synapse_store.increment_weight.call_count == 2
+        assert synapse_store.decrement_weight.call_count == 1
+
+    def test_drain_is_idempotent(self):
+        """Second drain returns empty — no double-counting."""
+        bridge = MagicMock()
+        bridge.ingest.return_value = True
+        gw = FederationGateway(bridge=bridge)
+
+        gw.handle_federation_message({"operation": "heartbeat", "source": "p1", "payload": {}})
+
+        first = gw._stats.drain_signals()
+        second = gw._stats.drain_signals()
+
+        assert len(first) == 1
+        assert len(second) == 0  # Drained — nothing left

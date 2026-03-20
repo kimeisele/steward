@@ -358,15 +358,16 @@ def _marketplace() -> dict[str, object]:
 
 
 def _federation() -> dict[str, object]:
-    """Full federation: bridge, transport, relay, A2A, discovery.
+    """Full federation: bridge, transport, relay, gateway, A2A, discovery.
 
     UNIQUE depth — context_bridge only reads Reaper+Marketplace stats.
-    This reads all 6 federation services + deep bridge internals.
+    This reads all 7 federation services + deep bridge internals.
     """
     from steward.services import (
         SVC_A2A_ADAPTER,
         SVC_A2A_DISCOVERY,
         SVC_FEDERATION,
+        SVC_FEDERATION_GATEWAY,
         SVC_FEDERATION_RELAY,
         SVC_FEDERATION_TRANSPORT,
         SVC_GIT_NADI_SYNC,
@@ -407,6 +408,11 @@ def _federation() -> dict[str, object]:
     discovery = ServiceRegistry.get(SVC_A2A_DISCOVERY)
     if discovery is not None and hasattr(discovery, "stats"):
         result["a2a_discovery"] = discovery.stats()
+
+    # Gateway (Five Tattva gates — protocol detection, trust validation, Hebbian signals)
+    gateway = ServiceRegistry.get(SVC_FEDERATION_GATEWAY)
+    if gateway is not None and hasattr(gateway, "stats"):
+        result["gateway"] = gateway.stats()
 
     # Peers — deep detail via _peers()
     result["peers"] = _peers()
