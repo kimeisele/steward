@@ -162,6 +162,10 @@ class SVC_A2A_DISCOVERY:
     """A2APeerDiscovery — discover peers via A2A Agent Cards on GitHub."""
 
 
+class SVC_FEDERATION_GATEWAY:
+    """FederationGateway — unified entry point for all federation protocols (A2A, NADI, MCP)."""
+
+
 class SVC_PR_VERDICT:
     """PRVerdictPoster — post federation PR review verdicts to GitHub."""
 
@@ -419,6 +423,12 @@ def boot(
 
     a2a_adapter = A2AProtocolAdapter(bridge=federation, agent_id="steward")
     ServiceRegistry.register(SVC_A2A_ADAPTER, a2a_adapter)
+
+    # 27b2. FederationGateway (unified entry — Five Tattva gates for all protocols)
+    from steward.federation_gateway import FederationGateway
+
+    fed_gateway = FederationGateway(bridge=federation, a2a=a2a_adapter, reaper=reaper)
+    ServiceRegistry.register(SVC_FEDERATION_GATEWAY, fed_gateway)
 
     # 27c. PRVerdictPoster (post federation PR verdicts to GitHub API)
     from steward.pr_verdict_poster import PRVerdictPoster
