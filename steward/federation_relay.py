@@ -149,11 +149,20 @@ class GitHubFederationRelay:
         except Exception as e:
             logger.debug("Per-peer mailbox scan failed: %s", e)
 
-        # 2. LEGACY: Read old shared outbox (migration period)
+        # 2. LEGACY: Read old shared outbox + inbox (migration period)
         legacy, _ = self._get_file("nadi_outbox.json")
         for m in legacy:
             if isinstance(m, dict) and m.get("target") in (self._agent_id, "*"):
                 all_messages.append(m)
+
+        # 3. LEGACY: Read hub inbox (agent-city convention — targets may use
+        #    repo names like "steward-protocol" instead of bare agent IDs)
+        inbox_legacy, _ = self._get_file("nadi_inbox.json")
+        for m in inbox_legacy:
+            if isinstance(m, dict):
+                target = m.get("target", "")
+                if target in (self._agent_id, "*") or self._agent_id in target:
+                    all_messages.append(m)
 
         if not all_messages:
             self._last_pull = time.monotonic()
