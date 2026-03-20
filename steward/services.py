@@ -153,7 +153,6 @@ class SVC_IMMUNE:
     """
 
 
-
 class SVC_A2A_ADAPTER:
     """A2AProtocolAdapter — bridge between A2A JSON-RPC and NADI."""
 
@@ -370,7 +369,7 @@ def boot(
     synapse_store.load()
     ServiceRegistry.register(SVC_SYNAPSE_STORE, synapse_store)
 
-# 20. TaskManager (persistent task tracking)
+    # 20. TaskManager (persistent task tracking)
     from vibe_core.task_management.task_manager import TaskManager
 
     task_manager = TaskManager(project_root=cwd_path)
@@ -577,6 +576,11 @@ def boot(
     checker.register_checker(
         "vajra_ouroboros_wired",
         lambda: _check_service_wired(SVC_OUROBOROS, "OuroborosLoopOrchestrator"),
+        IssueSeverity.HIGH,
+    )
+    checker.register_checker(
+        "vajra_federation_gateway_wired",
+        lambda: _check_service_wired(SVC_FEDERATION_GATEWAY, "FederationGateway"),
         IssueSeverity.HIGH,
     )
 
