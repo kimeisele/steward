@@ -596,19 +596,29 @@ class FixPipeline:
         try:
             r = subprocess.run(
                 [
-                    "gh", "issue", "create",
-                    "--repo", "kimeisele/steward",
-                    "--title", title,
-                    "--body", body,
-                    "--label", "steward-escalation",
+                    "gh",
+                    "issue",
+                    "create",
+                    "--repo",
+                    "kimeisele/steward",
+                    "--title",
+                    title,
+                    "--body",
+                    body,
+                    "--label",
+                    "steward-escalation",
                 ],
-                capture_output=True, text=True, timeout=15,
+                capture_output=True,
+                text=True,
+                timeout=15,
             )
             if r.returncode == 0:
                 issue_url = r.stdout.strip()
                 logger.info(
                     "Escalated to GitHub Issue: %s (confidence=%.2f) → %s",
-                    intent_name, confidence, issue_url,
+                    intent_name,
+                    confidence,
+                    issue_url,
                 )
                 return
             logger.warning("GitHub Issue creation failed: %s", r.stderr[:200])

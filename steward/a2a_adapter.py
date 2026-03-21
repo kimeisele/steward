@@ -283,6 +283,64 @@ class A2AProtocolAdapter:
         task.result = {"error": error}
         return True
 
+    # ── Persistence ───────────────────────────────────────────────
+
+    def save_tasks(self, path: Path | str) -> int:
+        """Persist in-flight tasks to disk (called by MOKSHA).
+
+        Returns number of tasks saved.
+        """
+        if not self._tasks:
+            return 0
+        data = []
+        for task in self._tasks.values():
+            data.append(
+                {
+                    "id": task.id,
+                    "state": task.state,
+                    "skill_id": task.skill_id,
+                    "source_agent": task.source_agent,
+                    "created_at": task.created_at,
+                    "payload": task.payload,
+                    "result": task.result,
+                }
+            )
+        try:
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            Path(path).write_text(json.dumps(data, indent=2, default=str))
+            return len(data)
+        except OSError as e:
+            logger.warning("A2A task save failed: %s", e)
+            return 0
+
+    def load_tasks(self, path: Path | str) -> int:
+        """Restore in-flight tasks from disk (called at boot/GENESIS).
+
+        Returns number of tasks loaded.
+        """
+        try:
+            raw = Path(path).read_text()
+            data = json.loads(raw)
+        except (OSError, json.JSONDecodeError):
+            return 0
+
+        loaded = 0
+        for entry in data:
+            task_id = entry.get("id", "")
+            if not task_id or task_id in self._tasks:
+                continue
+            self._tasks[task_id] = A2ATask(
+                id=task_id,
+                state=entry.get("state", A2A_STATE_FAILED),
+                skill_id=entry.get("skill_id", ""),
+                source_agent=entry.get("source_agent", "unknown"),
+                created_at=entry.get("created_at", 0.0),
+                payload=entry.get("payload", {}),
+                result=entry.get("result"),
+            )
+            loaded += 1
+        return loaded
+
     # ── Stats ──────────────────────────────────────────────────────
 
     def stats(self) -> dict:

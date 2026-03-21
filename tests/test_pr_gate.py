@@ -282,12 +282,12 @@ class TestPRReviewKirtan:
     """KirtanLoop tracks PR review lifecycle."""
 
     @patch("steward.pr_gate._check_ci_status", return_value="success")
-    def test_kirtan_call_opened_and_closed(self, mock_ci):
+    def test_kirtan_call_opened_and_closed(self, mock_ci, tmp_path):
         from steward.kirtan import KirtanLoop
         from steward.services import SVC_KIRTAN
         from vibe_core.di import ServiceRegistry
 
-        kirtan = KirtanLoop(ledger_path="/dev/null")
+        kirtan = KirtanLoop(ledger_path=str(tmp_path / "kirtan_ledger.json"))
         ServiceRegistry.register(SVC_KIRTAN, kirtan)
 
         reaper = HeartbeatReaper()

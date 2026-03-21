@@ -206,8 +206,7 @@ class BriefingStage(ABC):
 
     @property
     @abstractmethod
-    def name(self) -> str:
-        ...
+    def name(self) -> str: ...
 
     @property
     def priority(self) -> int:
@@ -505,9 +504,7 @@ class StatusStage(BriefingStage):
             alive = sum(1 for p in peers if p.get("status") == "alive")
             suspect = sum(1 for p in peers if p.get("status") == "suspect")
             dead = sum(1 for p in peers if p.get("status") in ("dead", "evicted"))
-            status_lines.append(
-                f"Federation: {len(peers)} peers ({alive} alive, {suspect} suspect, {dead} dead)"
-            )
+            status_lines.append(f"Federation: {len(peers)} peers ({alive} alive, {suspect} suspect, {dead} dead)")
 
         if not status_lines:
             return
@@ -742,10 +739,12 @@ class FederationInsightStage(BriefingStage):
                 op = msg.get("operation", "")
                 if op in ("research_result", "task_completed", "insight"):
                     payload = msg.get("payload", {})
-                    insights.append({
-                        "peer": msg.get("agent_id", msg.get("from", "unknown")),
-                        "summary": payload.get("summary", payload.get("title", str(payload)[:100])),
-                    })
+                    insights.append(
+                        {
+                            "peer": msg.get("agent_id", msg.get("from", "unknown")),
+                            "summary": payload.get("summary", payload.get("title", str(payload)[:100])),
+                        }
+                    )
             return insights
         except (json.JSONDecodeError, OSError):
             return []
@@ -868,9 +867,7 @@ class SessionsStage(BriefingStage):
         sessions = ctx.get("sessions", {})
         stats = sessions.get("stats", {})
         if stats and stats.get("total", 0) > 0:
-            parts.append(
-                f"\nSessions: {stats.get('total', 0)} total, success rate {stats.get('success_rate', 0):.0%}"
-            )
+            parts.append(f"\nSessions: {stats.get('total', 0)} total, success rate {stats.get('success_rate', 0):.0%}")
 
     def should_run(self, ctx: dict, arch: dict) -> bool:
         return bool(ctx.get("sessions", {}).get("stats", {}).get("total", 0))

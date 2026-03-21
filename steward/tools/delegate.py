@@ -21,7 +21,7 @@ import time
 from typing import Any
 
 from steward.federation import OP_DELEGATE_TASK
-from steward.services import SVC_FEDERATION, SVC_REAPER
+from steward.services import SVC_FEDERATION, SVC_KIRTAN, SVC_REAPER
 from vibe_core.di import ServiceRegistry
 from vibe_core.tools.tool_protocol import Tool, ToolResult
 
@@ -143,6 +143,15 @@ class DelegateToPeerTool(Tool):
             title,
             priority,
         )
+
+        # Register with KirtanLoop for verification — KARMA phase checks responses
+        kirtan = ServiceRegistry.get(SVC_KIRTAN)
+        if kirtan is not None and _current_task_id:
+            kirtan.call(
+                f"delegate:{_current_task_id}",
+                target=best.agent_id,
+                expected_outcome="task_completed",
+            )
 
         # Suspend current task if we know it — mark BLOCKED so KARMA skips it.
         # The task resumes when OP_TASK_COMPLETED arrives via federation.

@@ -92,7 +92,6 @@ class TestPullFromHub:
 
         assert count == 2  # steward + broadcast, not other-agent
 
-
     def test_pull_reads_both_outbox_and_inbox(self, tmp_path):
         """Messages from hub inbox (agent-city convention) are also pulled."""
         with patch.dict("os.environ", {"GITHUB_TOKEN": "tok"}):
