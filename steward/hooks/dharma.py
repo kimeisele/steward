@@ -13,6 +13,7 @@ import time
 from steward.phase_hook import DHARMA, BasePhaseHook, PhaseContext
 from steward.services import (
     SVC_FEDERATION,
+    SVC_FEDERATION_GATEWAY,
     SVC_FEDERATION_RELAY,
     SVC_FEDERATION_TRANSPORT,
     SVC_GIT_NADI_SYNC,
@@ -143,7 +144,9 @@ class DharmaReaperHook(BasePhaseHook):
         try:
             r = subprocess.run(
                 ["gh", "api", f"repos/kimeisele/{agent_id}", "--jq", ".pushed_at"],
-                capture_output=True, text=True, timeout=10,
+                capture_output=True,
+                text=True,
+                timeout=10,
             )
             if r.returncode == 0:
                 result["last_push"] = r.stdout.strip()
@@ -157,9 +160,10 @@ class DharmaReaperHook(BasePhaseHook):
             import json as _json
 
             r = subprocess.run(
-                ["gh", "run", "list", "-R", f"kimeisele/{agent_id}",
-                 "--limit", "1", "--json", "conclusion,name"],
-                capture_output=True, text=True, timeout=10,
+                ["gh", "run", "list", "-R", f"kimeisele/{agent_id}", "--limit", "1", "--json", "conclusion,name"],
+                capture_output=True,
+                text=True,
+                timeout=10,
             )
             if r.returncode == 0:
                 runs = _json.loads(r.stdout)
@@ -186,9 +190,22 @@ class DharmaReaperHook(BasePhaseHook):
         )
         try:
             r = subprocess.run(
-                ["gh", "issue", "create", "--repo", "kimeisele/steward",
-                 "--title", title, "--body", body, "--label", "federation-health"],
-                capture_output=True, text=True, timeout=15,
+                [
+                    "gh",
+                    "issue",
+                    "create",
+                    "--repo",
+                    "kimeisele/steward",
+                    "--title",
+                    title,
+                    "--body",
+                    body,
+                    "--label",
+                    "federation-health",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=15,
             )
             if r.returncode == 0:
                 logger.warning("KIRTAN ESCALATE: %s → GitHub Issue %s", target, r.stdout.strip())
@@ -316,4 +333,12 @@ class DharmaFederationHook(BasePhaseHook):
 
         transport = ServiceRegistry.get(SVC_FEDERATION_TRANSPORT)
         if transport is not None:
-            federation.process_inbound(transport)
+            # Route through FederationGateway (Five Tattva Gates) if available,
+            # fallback to direct bridge processing if gateway not wired.
+            gateway = ServiceRegistry.get(SVC_FEDERATION_GATEWAY)
+            if gateway is not None:
+                processed = gateway.process_inbound(transport)
+                if processed:
+                    logger.info("FEDERATION: gateway processed %d inbound messages", processed)
+            else:
+                federation.process_inbound(transport)

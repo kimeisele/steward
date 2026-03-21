@@ -1,0 +1,80 @@
+{
+  "name": "Steward",
+  "description": "Autonomous superagent — code analysis, task execution, CI automation, cross-repo healing, federation bridge",
+  "url": "https://github.com/kimeisele/steward",
+  "version": "1.0.0",
+  "documentationUrl": "https://github.com/kimeisele/steward#readme",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false
+  },
+  "defaultInputModes": ["application/json"],
+  "defaultOutputModes": ["application/json"],
+  "skills": [
+    {
+      "id": "code_analysis",
+      "name": "Code Analysis",
+      "description": "AST-based code analysis, cohesion metrics, dead code detection, dependency scanning",
+      "tags": ["code", "analysis", "ast"],
+      "examples": ["Analyze repository for structural issues", "Find low-cohesion classes"]
+    },
+    {
+      "id": "task_execution",
+      "name": "Task Execution",
+      "description": "Execute delegated tasks: bug fixes, refactoring, feature implementation with autonomous PR creation",
+      "tags": ["task", "execution", "pr"],
+      "examples": ["Fix failing CI in repo X", "Refactor god class Y"]
+    },
+    {
+      "id": "ci_automation",
+      "name": "CI Automation",
+      "description": "Monitor CI pipelines, diagnose failures, propose fixes",
+      "tags": ["ci", "automation", "github-actions"],
+      "examples": ["Check CI status for repo X", "Diagnose test failure"]
+    },
+    {
+      "id": "cross_repo_diagnostic",
+      "name": "Cross-Repo Diagnostic",
+      "description": "Diagnose health of federation peers across repositories",
+      "tags": ["federation", "diagnostic", "health"],
+      "examples": ["Run diagnostic on peer agent-city", "Check federation health"]
+    },
+    {
+      "id": "pr_review",
+      "name": "PR Review",
+      "description": "Review pull requests: blast radius analysis, CI check, author trust verification",
+      "tags": ["review", "pr", "security"],
+      "examples": ["Review PR #42 in repo X", "Check blast radius of changes"]
+    },
+    {
+      "id": "healing",
+      "name": "Self-Healing",
+      "description": "Diagnose and fix code issues via AST surgery with Hebbian learning",
+      "tags": ["healing", "immune", "fix"],
+      "examples": ["Heal silent except blocks", "Fix circular imports"]
+    }
+  ],
+  "provider": {
+    "organization": "kimeisele",
+    "url": "https://github.com/kimeisele"
+  },
+  "securitySchemes": {
+    "github_token": {
+      "type": "http",
+      "scheme": "bearer",
+      "description": "GitHub personal access token for API authentication"
+    }
+  },
+  "security": [
+    {"github_token": []}
+  ],
+  "supportsAuthenticatedExtendedCard": false,
+  "x-steward": {
+    "nadi_protocol": true,
+    "federation_version": "2.0",
+    "max_peers": 256,
+    "max_marketplace_slots": 512,
+    "heartbeat_interval_s": 900,
+    "transport": ["nadi_filesystem", "github_relay", "a2a_jsonrpc"]
+  }
+}

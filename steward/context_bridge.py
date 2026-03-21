@@ -375,9 +375,9 @@ def _read_tasks(cwd: str) -> dict[str, object]:
 
 
 def _read_federation() -> dict[str, object]:
-    """Read federation peer state from Reaper + Marketplace."""
+    """Read federation peer state from Reaper + Marketplace + Gateway."""
     try:
-        from steward.services import SVC_MARKETPLACE, SVC_REAPER
+        from steward.services import SVC_FEDERATION_GATEWAY, SVC_MARKETPLACE, SVC_REAPER
         from vibe_core.di import ServiceRegistry
 
         result: dict[str, object] = {}
@@ -402,6 +402,10 @@ def _read_federation() -> dict[str, object]:
         marketplace = ServiceRegistry.get(SVC_MARKETPLACE)
         if marketplace is not None:
             result["marketplace"] = marketplace.stats()
+
+        gateway = ServiceRegistry.get(SVC_FEDERATION_GATEWAY)
+        if gateway is not None and hasattr(gateway, "stats"):
+            result["gateway"] = gateway.stats()
 
         return result
     except Exception as e:
