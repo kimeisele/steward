@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 from steward.a2a_discovery import A2APeerDiscovery, DiscoveredPeer
 
 

@@ -22,7 +22,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 logger = logging.getLogger("STEWARD.KIRTAN")
@@ -135,40 +135,48 @@ class KirtanLoop:
 
             if met:
                 # SUCCESS — loop closed
-                results.append(KirtanResult(
-                    action_id=action_id,
-                    target=call.target,
-                    result="closed",
-                    attempts=call.attempts,
-                ))
+                results.append(
+                    KirtanResult(
+                        action_id=action_id,
+                        target=call.target,
+                        result="closed",
+                        attempts=call.attempts,
+                    )
+                )
                 to_remove.append(action_id)
                 logger.info(
                     "KIRTAN CLOSED: %s after %d attempt(s)",
-                    action_id, call.attempts,
+                    action_id,
+                    call.attempts,
                 )
 
             elif call.attempts >= call.max_retries:
                 # MAX RETRIES — escalate
-                results.append(KirtanResult(
-                    action_id=action_id,
-                    target=call.target,
-                    result="escalate",
-                    attempts=call.attempts,
-                ))
+                results.append(
+                    KirtanResult(
+                        action_id=action_id,
+                        target=call.target,
+                        result="escalate",
+                        attempts=call.attempts,
+                    )
+                )
                 to_remove.append(action_id)
                 logger.warning(
                     "KIRTAN ESCALATE: %s — no response after %d attempts",
-                    action_id, call.attempts,
+                    action_id,
+                    call.attempts,
                 )
 
             else:
                 # RETRY — still waiting
-                results.append(KirtanResult(
-                    action_id=action_id,
-                    target=call.target,
-                    result="retry",
-                    attempts=call.attempts,
-                ))
+                results.append(
+                    KirtanResult(
+                        action_id=action_id,
+                        target=call.target,
+                        result="retry",
+                        attempts=call.attempts,
+                    )
+                )
 
         for aid in to_remove:
             del self._calls[aid]
@@ -185,7 +193,9 @@ class KirtanLoop:
             self._save()
             logger.info(
                 "KIRTAN CLOSE: %s (success=%s, attempts=%d)",
-                action_id, success, call.attempts,
+                action_id,
+                success,
+                call.attempts,
             )
 
     def escalate(self, action_id: str) -> dict:

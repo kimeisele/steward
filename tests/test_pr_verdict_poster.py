@@ -5,10 +5,7 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, patch
 
-import pytest
-
-from steward.pr_verdict_poster import PRVerdictPoster, VERDICT_TO_GITHUB_EVENT
-
+from steward.pr_verdict_poster import VERDICT_TO_GITHUB_EVENT, PRVerdictPoster
 
 # ── Verdict Mapping ────────────────────────────────────────────────
 

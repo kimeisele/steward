@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 
 def test_svc_cetana_constant_exists():
     """SVC_CETANA must exist as a service marker class."""

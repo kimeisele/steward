@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 from steward.a2a_adapter import (
     A2A_STATE_CANCELED,
     A2A_STATE_COMPLETED,
@@ -211,9 +209,7 @@ def test_tasks_get():
 
 def test_tasks_get_not_found():
     adapter = A2AProtocolAdapter()
-    response = adapter.handle_jsonrpc(
-        {"jsonrpc": "2.0", "id": "g2", "method": A2A_TASKS_GET, "params": {"id": "nope"}}
-    )
+    response = adapter.handle_jsonrpc({"jsonrpc": "2.0", "id": "g2", "method": A2A_TASKS_GET, "params": {"id": "nope"}})
     assert "error" in response
     assert response["error"]["code"] == -32602
 
@@ -226,24 +222,28 @@ def test_tasks_cancel():
     adapter = A2AProtocolAdapter(bridge=bridge)
 
     # Create task
-    adapter.handle_jsonrpc({
-        "jsonrpc": "2.0",
-        "id": "s2",
-        "method": A2A_TASKS_SEND,
-        "params": {
-            "id": "task-200",
-            "message": {"role": "user", "parts": []},
-            "metadata": {"skill_id": "task_execution", "source_agent": "x"},
-        },
-    })
+    adapter.handle_jsonrpc(
+        {
+            "jsonrpc": "2.0",
+            "id": "s2",
+            "method": A2A_TASKS_SEND,
+            "params": {
+                "id": "task-200",
+                "message": {"role": "user", "parts": []},
+                "metadata": {"skill_id": "task_execution", "source_agent": "x"},
+            },
+        }
+    )
 
     # Cancel it
-    response = adapter.handle_jsonrpc({
-        "jsonrpc": "2.0",
-        "id": "c1",
-        "method": A2A_TASKS_CANCEL,
-        "params": {"id": "task-200"},
-    })
+    response = adapter.handle_jsonrpc(
+        {
+            "jsonrpc": "2.0",
+            "id": "c1",
+            "method": A2A_TASKS_CANCEL,
+            "params": {"id": "task-200"},
+        }
+    )
 
     assert response["result"]["status"]["state"] == A2A_STATE_CANCELED
 
@@ -253,9 +253,7 @@ def test_tasks_cancel():
 
 def test_unknown_method():
     adapter = A2AProtocolAdapter()
-    response = adapter.handle_jsonrpc(
-        {"jsonrpc": "2.0", "id": "u1", "method": "tasks/bogus", "params": {}}
-    )
+    response = adapter.handle_jsonrpc({"jsonrpc": "2.0", "id": "u1", "method": "tasks/bogus", "params": {}})
     assert "error" in response
     assert response["error"]["code"] == -32601
 
@@ -302,24 +300,28 @@ def test_complete_and_fail_task():
     bridge = FakeBridge()
     adapter = A2AProtocolAdapter(bridge=bridge)
 
-    adapter.handle_jsonrpc({
-        "jsonrpc": "2.0",
-        "id": "s3",
-        "method": A2A_TASKS_SEND,
-        "params": {
-            "id": "task-300",
-            "message": {"role": "user", "parts": []},
-            "metadata": {"skill_id": "task_execution", "source_agent": "x"},
-        },
-    })
+    adapter.handle_jsonrpc(
+        {
+            "jsonrpc": "2.0",
+            "id": "s3",
+            "method": A2A_TASKS_SEND,
+            "params": {
+                "id": "task-300",
+                "message": {"role": "user", "parts": []},
+                "metadata": {"skill_id": "task_execution", "source_agent": "x"},
+            },
+        }
+    )
 
     assert adapter.complete_task("task-300", {"pr_url": "http://example.com"})
-    response = adapter.handle_jsonrpc({
-        "jsonrpc": "2.0",
-        "id": "g3",
-        "method": A2A_TASKS_GET,
-        "params": {"id": "task-300"},
-    })
+    response = adapter.handle_jsonrpc(
+        {
+            "jsonrpc": "2.0",
+            "id": "g3",
+            "method": A2A_TASKS_GET,
+            "params": {"id": "task-300"},
+        }
+    )
     assert response["result"]["status"]["state"] == A2A_STATE_COMPLETED
     assert response["result"]["artifacts"][0]["parts"][0]["data"]["pr_url"] == "http://example.com"
 

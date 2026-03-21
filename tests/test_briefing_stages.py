@@ -106,8 +106,18 @@ class TestComputeFocus:
 
     def test_all_weights_clamped(self):
         focus = compute_focus({"health": {"context_pressure": 0.99}})
-        for attr in ("orientation", "status", "action", "knowledge", "environment",
-                      "gap_awareness", "federation_insight", "toolbox", "architecture", "sessions"):
+        for attr in (
+            "orientation",
+            "status",
+            "action",
+            "knowledge",
+            "environment",
+            "gap_awareness",
+            "federation_insight",
+            "toolbox",
+            "architecture",
+            "sessions",
+        ):
             val = getattr(focus, attr)
             assert 0.1 <= val <= 1.0, f"{attr}={val} out of [0.1, 1.0]"
 
@@ -147,9 +157,7 @@ class TestOrientationStage:
     def test_full_focus_includes_all(self, tmp_path):
         steward_dir = tmp_path / ".steward"
         steward_dir.mkdir()
-        (steward_dir / "conventions.md").write_text(
-            "## Identity\nYou are Steward.\n\n## Pipeline\nManas → Buddhi\n"
-        )
+        (steward_dir / "conventions.md").write_text("## Identity\nYou are Steward.\n\n## Pipeline\nManas → Buddhi\n")
         stage = OrientationStage()
         parts: list[str] = []
         stage.enrich(parts, {}, {}, str(tmp_path), 1.0)
@@ -160,9 +168,7 @@ class TestOrientationStage:
     def test_low_focus_only_headers(self, tmp_path):
         steward_dir = tmp_path / ".steward"
         steward_dir.mkdir()
-        (steward_dir / "conventions.md").write_text(
-            "## Identity\nYou are Steward.\n\n## Pipeline\nManas → Buddhi\n"
-        )
+        (steward_dir / "conventions.md").write_text("## Identity\nYou are Steward.\n\n## Pipeline\nManas → Buddhi\n")
         stage = OrientationStage()
         parts: list[str] = []
         stage.enrich(parts, {}, {}, str(tmp_path), 0.1)

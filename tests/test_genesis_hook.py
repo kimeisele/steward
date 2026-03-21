@@ -245,9 +245,7 @@ class TestOrgRepoDiscovery:
             return None  # steward-test has no descriptor
 
         with patch("steward.hooks.genesis._gh", side_effect=mock_gh):
-            peers = _discover_from_org_repos(
-                federation_members={"agent-city", "steward-test"}
-            )
+            peers = _discover_from_org_repos(federation_members={"agent-city", "steward-test"})
 
         assert "agent-city" in peers
         assert peers["agent-city"]["source"] == "federation_descriptor"
@@ -259,9 +257,7 @@ class TestOrgRepoDiscovery:
     def test_skips_self(self):
         """Steward repo is excluded even if in federation_members."""
         with patch("steward.hooks.genesis._gh", return_value=None):
-            peers = _discover_from_org_repos(
-                federation_members={"steward", "agent-city"}
-            )
+            peers = _discover_from_org_repos(federation_members={"steward", "agent-city"})
         assert "steward" not in peers
         assert "agent-city" in peers
 
