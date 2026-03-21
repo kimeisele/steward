@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-import pytest
-
 from steward.hooks.karma import (
     KarmaA2AProgressHook,
     KarmaFederationCallbackHook,
     KarmaTaskPrioritizationHook,
 )
 from steward.phase_hook import KARMA, PhaseContext
-
 
 # ── Hook Metadata ─────────────────────────────────────────────────
 

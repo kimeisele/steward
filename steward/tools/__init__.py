@@ -2,8 +2,8 @@
 
 from steward.tools.agent_internet import AgentInternetTool
 from steward.tools.annotate import AnnotateTool
-from steward.tools.buddy_bubble import BuddyBubbleTool
 from steward.tools.bash import BashTool
+from steward.tools.buddy_bubble import BuddyBubbleTool
 from steward.tools.edit import EditTool
 from steward.tools.glob import GlobTool
 from steward.tools.grep import GrepTool

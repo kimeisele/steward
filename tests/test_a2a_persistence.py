@@ -4,11 +4,8 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 from steward.a2a_adapter import (
     A2A_STATE_COMPLETED,
-    A2A_STATE_FAILED,
     A2A_STATE_WORKING,
     A2AProtocolAdapter,
     A2ATask,

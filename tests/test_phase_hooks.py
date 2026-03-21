@@ -346,7 +346,6 @@ class TestMokshaPersistenceHook:
         assert (steward_dir / "marketplace.json").exists()
 
 
-
 class TestMokshaFederationHook:
     def test_flush_without_transport_is_noop(self, fake_llm):
         from steward.agent import StewardAgent
