@@ -23,6 +23,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
+from vibe_core.mahamantra.federation.types import FederationMessage
+
 logger = logging.getLogger("STEWARD.FEDERATION")
 
 # ── Protocols ──────────────────────────────────────────────────────
@@ -103,6 +105,11 @@ OP_PR_REVIEW_VERDICT = "pr_review_verdict"
 OP_WORLD_STATE_UPDATE = "world_state_update"
 OP_POLICY_UPDATE = "policy_update"
 OP_CITY_REPORT = "city_report"
+
+# Mission name prefixes emitted by agent-city's create_brain_mission().
+# Verified from kimeisele/agent-city city/missions.py — Brain {verb}: {target[:50]}
+CITY_BOTTLENECK_PREFIX = "Brain bottleneck: "
+CITY_ESCALATION_PREFIX = "Brain escalation: "
 
 # Minimum trust level to accept inbound delegations
 DEFAULT_DELEGATION_TRUST_FLOOR: float = 0.3
@@ -212,6 +219,10 @@ class FederationBridge:
                 continue
             op = msg.get("operation", "")
             payload = msg.get("payload", {})
+            # Inject source from message envelope so handlers can identify the sender.
+            # agent-city's FederationNadi overrides source to city_id from peer.json.
+            if "source_agent" not in payload and "source" in msg:
+                payload["source_agent"] = msg["source"]
             if self.ingest(op, payload):
                 processed += 1
         return processed
@@ -235,18 +246,17 @@ class FederationBridge:
         for event in self._outbound:
             targets = peer_ids if peer_ids else ["*"]
             for target in targets:
-                messages.append(
-                    {
-                        "source": self.agent_id,
-                        "target": target,
-                        "operation": event.operation,
-                        "payload": event.payload,
-                        "timestamp": event.timestamp,
-                        "priority": 1,
-                        "correlation_id": "",
-                        "ttl_s": 900.0,
-                    }
+                msg = FederationMessage(
+                    source=self.agent_id,
+                    target=target,
+                    operation=event.operation,
+                    payload=event.payload,
+                    timestamp=event.timestamp,
+                    priority=1,
+                    correlation_id="",
+                    ttl_s=900.0,
                 )
+                messages.append(msg.to_dict())
 
         try:
             count = transport.append_to_inbox(messages)
@@ -493,6 +503,84 @@ class FederationBridge:
         )
         return True
 
+    def _handle_city_report(self, payload: dict) -> bool:
+        """Inbound city_report from agent-city (MOKSHA federation report).
+
+        Verified from kimeisele/agent-city city/hooks/moksha/outbound.py:
+            FederationReportHook emits operation="city_report" with payload:
+                heartbeat: int
+                population: int
+                alive: int
+                chain_valid: bool
+                pr_results: list[dict]
+                mission_results: list[dict]  — {id, name, status, owner}
+                active_campaigns: list[dict]
+
+        Bottleneck missions have name="Brain bottleneck: {target}"
+        (from city/missions.py create_brain_mission with verb="bottleneck").
+
+        This handler:
+        1. Records heartbeat as liveness signal for the reaper
+        2. Extracts "Brain bottleneck:" missions → delegate_task to TaskManager
+        """
+        source_agent = payload.get("source_agent", "agent-city")
+
+        # Liveness: the report itself is proof the peer is alive
+        if self.reaper is not None:
+            self.reaper.record_heartbeat(
+                source_agent,
+                timestamp=time.time(),
+                source="city_report",
+            )
+
+        mission_results = payload.get("mission_results", [])
+        if not isinstance(mission_results, list):
+            return True  # Valid report, just no missions
+
+        from steward.services import SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
+
+        task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
+        if task_mgr is None:
+            return True  # Report accepted, but no task manager to act on bottlenecks
+
+        from vibe_core.task_types import TaskStatus
+
+        delegated = 0
+        for mission in mission_results:
+            if not isinstance(mission, dict):
+                continue
+            name = mission.get("name", "")
+
+            # Only act on bottleneck missions — exact prefix from agent-city source
+            if not name.startswith(CITY_BOTTLENECK_PREFIX):
+                continue
+
+            target = name[len(CITY_BOTTLENECK_PREFIX) :].strip()
+            if not target:
+                continue
+
+            # Dedup: skip if an active task with same target already exists
+            active = task_mgr.list_tasks(status=TaskStatus.IN_PROGRESS) + task_mgr.list_tasks(status=TaskStatus.PENDING)
+            if any(f"[FED:{source_agent}]" in t.title and target in t.title for t in active):
+                logger.info("BRIDGE: city_report bottleneck dedup — '%s' already active", target)
+                continue
+
+            # Delegate as a standard federated task — KARMA phase will dispatch
+            title = f"[FED:{source_agent}] Fix bottleneck: {target}"
+            task_mgr.add_task(title=title, priority=70, description=f"city_report:{mission.get('id', '')}")
+            delegated += 1
+            logger.info("BRIDGE: city_report bottleneck → task '%s'", title)
+
+        if delegated:
+            logger.info("BRIDGE: city_report from %s — created %d bottleneck tasks", source_agent, delegated)
+
+        # Store latest report for other components to query
+        if source_agent:
+            _latest_city_reports[source_agent] = payload
+
+        return True
+
     def _handle_world_state_update(self, payload: dict) -> bool:
         """Inbound world state from agent-world.
 
@@ -560,43 +648,6 @@ class FederationBridge:
         )
 
         _latest_policies = payload
-        return True
-
-    def _handle_city_report(self, payload: dict) -> bool:
-        """Inbound city report from an agent-city instance.
-
-        Logs city metrics and refreshes reaper liveness for the source.
-
-        Payload:
-            source_agent: str — which city agent sent this
-            population: int — current city population
-            alive: int — alive agents in the city
-            heartbeat_count: int — heartbeats processed
-            timestamp: float — report timestamp
-        """
-        source = payload.get("source_agent", "")
-        population = payload.get("population", 0)
-        alive = payload.get("alive", 0)
-        hb_count = payload.get("heartbeat_count", 0)
-
-        logger.info(
-            "BRIDGE: city_report from %s (pop=%d, alive=%d, hb=%d)",
-            source or "unknown",
-            population,
-            alive,
-            hb_count,
-        )
-
-        if source:
-            _latest_city_reports[source] = payload
-
-        # Refresh reaper liveness for the reporting city agent
-        if self.reaper is not None and source:
-            self.reaper.record_heartbeat(
-                source,
-                timestamp=payload.get("timestamp"),
-                source="city_report",
-            )
 
         return True
 

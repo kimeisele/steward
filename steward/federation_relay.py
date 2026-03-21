@@ -37,16 +37,51 @@ MIN_RELAY_INTERVAL_S = 60
 NADI_BUFFER_SIZE = 144
 
 
+class DeliveryReceipt:
+    """Tracks a batch of messages pushed to the hub.
+
+    agent-internet defines DeliveryReceipt types for end-to-end confirmation.
+    This is steward's implementation: record what was sent, verify consumption.
+    """
+
+    __slots__ = ("batch_id", "target", "message_ids", "pushed_at", "confirmed")
+
+    def __init__(self, batch_id: str, target: str, message_ids: list[str], pushed_at: float) -> None:
+        self.batch_id = batch_id
+        self.target = target
+        self.message_ids = message_ids
+        self.pushed_at = pushed_at
+        self.confirmed = False
+
+    def to_dict(self) -> dict:
+        return {
+            "batch_id": self.batch_id,
+            "target": self.target,
+            "message_ids": self.message_ids,
+            "pushed_at": self.pushed_at,
+            "confirmed": self.confirmed,
+        }
+
+
+# Maximum pending receipts before oldest are pruned
+MAX_PENDING_RECEIPTS = 64
+
+
 class GitHubFederationRelay:
     """Relay messages between local federation transport and GitHub hub repo.
 
     Uses per-peer mailbox files: nadi/{sender}_to_{target}.json
     Each file has exactly one writer → zero merge conflicts.
 
+    Delivery receipts track what was pushed and whether peers consumed it.
+    Unconfirmed receipts older than RECEIPT_TTL_S are escalated via stats().
+
     Broadcast resolution: when target="*", resolves actual peers from
     the HeartbeatReaper registry (ALIVE + SUSPECT). Falls back to a
     minimal default list on cold start when the reaper has no peers.
     """
+
+    RECEIPT_TTL_S = 3600.0  # 1 hour before unconfirmed receipt is stale
 
     # Minimal fallback peers for cold start when reaper has no entries.
     _FALLBACK_BROADCAST_PEERS: tuple[str, ...] = ("agent-world", "agent-internet")
@@ -71,6 +106,7 @@ class GitHubFederationRelay:
         self._push_count: int = 0
         self._errors: int = 0
         self._seen_ids: set[str] = set()  # UUID dedup
+        self._pending_receipts: list[DeliveryReceipt] = []  # unconfirmed deliveries
 
     @property
     def available(self) -> bool:
@@ -200,6 +236,14 @@ class GitHubFederationRelay:
             self._write_local_inbox(local)
             logger.info("RELAY: pulled %d messages from hub → local inbox", len(new_msgs))
 
+            # Confirm delivery receipts: if we got a response from a peer,
+            # that peer consumed our messages (implicit ack)
+            responding_peers = {m.get("source", "") for m in new_msgs if m.get("source")}
+            for receipt in self._pending_receipts:
+                if not receipt.confirmed and receipt.target in responding_peers:
+                    receipt.confirmed = True
+                    logger.debug("RELAY: delivery confirmed for batch %s → %s", receipt.batch_id, receipt.target)
+
         self._last_pull = time.monotonic()
         self._pull_count += len(new_msgs)
         return len(new_msgs)
@@ -284,6 +328,23 @@ class GitHubFederationRelay:
             self._local_outbox.write_text("[]")
             self._push_count += len(local_msgs)
 
+            # Record delivery receipts for tracking
+            for target, msgs in by_target.items():
+                if target == "*":
+                    continue
+                msg_ids = [m.get("id", "") for m in msgs if m.get("id")]
+                if msg_ids:
+                    receipt = DeliveryReceipt(
+                        batch_id=str(uuid.uuid4()),
+                        target=target,
+                        message_ids=msg_ids,
+                        pushed_at=time.time(),
+                    )
+                    self._pending_receipts.append(receipt)
+            # Prune oldest receipts if over limit
+            if len(self._pending_receipts) > MAX_PENDING_RECEIPTS:
+                self._pending_receipts = self._pending_receipts[-MAX_PENDING_RECEIPTS:]
+
         self._last_push = time.monotonic()
         return pushed or len(local_msgs)
 
@@ -337,7 +398,19 @@ class GitHubFederationRelay:
         tmp.write_text(json.dumps(messages, indent=2))
         tmp.rename(self._local_inbox)
 
+    def pending_receipts(self) -> list[DeliveryReceipt]:
+        """Unconfirmed delivery receipts (for escalation by DHARMA phase)."""
+        now = time.time()
+        return [r for r in self._pending_receipts if not r.confirmed and (now - r.pushed_at) < self.RECEIPT_TTL_S]
+
+    def stale_receipts(self) -> list[DeliveryReceipt]:
+        """Receipts that exceeded TTL without confirmation (delivery failure signals)."""
+        now = time.time()
+        return [r for r in self._pending_receipts if not r.confirmed and (now - r.pushed_at) >= self.RECEIPT_TTL_S]
+
     def stats(self) -> dict:
+        pending = self.pending_receipts()
+        stale = self.stale_receipts()
         return {
             "available": self.available,
             "hub_repo": self._hub_repo,
@@ -345,4 +418,7 @@ class GitHubFederationRelay:
             "push_count": self._push_count,
             "errors": self._errors,
             "seen_ids": len(self._seen_ids),
+            "pending_receipts": len(pending),
+            "stale_receipts": len(stale),
+            "stale_targets": list({r.target for r in stale}),
         }

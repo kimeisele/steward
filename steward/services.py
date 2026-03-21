@@ -177,7 +177,6 @@ class SVC_CETANA:
     """
 
 
-
 class SVC_KIRTAN:
     """KirtanLoop — Call and Response primitive for action verification.
 

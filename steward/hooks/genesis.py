@@ -224,10 +224,14 @@ class GenesisDiscoveryHook(BasePhaseHook):
             logger.info("GENESIS: %d policy violations detected", len(violations))
 
         # Source 4: A2A Agent Card discovery (standard A2A protocol)
+        # Pass known repos to avoid duplicate org API call — GenesisDiscovery
+        # already scanned the org. A2A discovery reuses the repo list.
         a2a_discovery = ServiceRegistry.get(SVC_A2A_DISCOVERY)
         a2a_new = 0
         if a2a_discovery is not None:
-            a2a_peers = a2a_discovery.scan()
+            owner = _get_federation_owner()
+            known_repos = [f"{owner}/{name}" for name in discovered.keys() if name]
+            a2a_peers = a2a_discovery.scan(known_repos=known_repos)
             a2a_new = len(a2a_peers)
             if a2a_new:
                 logger.info("GENESIS: A2A discovery found %d new peers", a2a_new)
