@@ -50,9 +50,6 @@ class TaskIntent(enum.Enum):
     # Autonomous — federation architecture gaps
     FEDERATION_GAP_SCAN = "federation_gap_scan"
 
-    # Reactive — inbound federation bottleneck (from peer scope gate)
-    BOTTLENECK_ESCALATION = "bottleneck_escalation"
-
     @property
     def is_proactive(self) -> bool:
         """Proactive intents create PRs instead of direct fixes."""
