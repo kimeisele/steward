@@ -100,9 +100,33 @@ OP_PR_CREATED = "pr_created"
 OP_CI_STATUS = "ci_status"
 OP_PR_REVIEW_REQUEST = "pr_review_request"
 OP_PR_REVIEW_VERDICT = "pr_review_verdict"
+OP_WORLD_STATE_UPDATE = "world_state_update"
+OP_POLICY_UPDATE = "policy_update"
+OP_CITY_REPORT = "city_report"
 
 # Minimum trust level to accept inbound delegations
 DEFAULT_DELEGATION_TRUST_FLOOR: float = 0.3
+
+# Module-level stores for world authority messages.
+# Other components can query these for current world state and policies.
+_latest_world_state: dict | None = None
+_latest_policies: dict | None = None
+_latest_city_reports: dict[str, dict] = {}
+
+
+def get_world_state() -> dict | None:
+    """Return the latest world state received from agent-world."""
+    return _latest_world_state
+
+
+def get_policies() -> dict | None:
+    """Return the latest policies received from agent-world."""
+    return _latest_policies
+
+
+def get_city_reports() -> dict[str, dict]:
+    """Return the latest city reports keyed by source agent."""
+    return dict(_latest_city_reports)
 
 
 @dataclass(frozen=True)
@@ -156,6 +180,9 @@ class FederationBridge:
             OP_TASK_COMPLETED: self._handle_task_callback,
             OP_TASK_FAILED: self._handle_task_callback,
             OP_PR_REVIEW_REQUEST: self._handle_pr_review_request,
+            OP_WORLD_STATE_UPDATE: self._handle_world_state_update,
+            OP_POLICY_UPDATE: self._handle_policy_update,
+            OP_CITY_REPORT: self._handle_city_report,
         }
 
     def ingest(self, operation: str, payload: dict) -> bool:
@@ -464,6 +491,113 @@ class FederationBridge:
             verdict,
             reason,
         )
+        return True
+
+    def _handle_world_state_update(self, payload: dict) -> bool:
+        """Inbound world state from agent-world.
+
+        Refreshes peer liveness for any agents mentioned in the world state
+        and stores the latest state for other components to query.
+
+        Payload:
+            version: int — world state version number
+            timestamp: float — when the state was generated
+            cities: dict — city agent states (keyed by agent_id)
+            agents: dict — all agent states (optional, keyed by agent_id)
+        """
+        global _latest_world_state
+
+        version = payload.get("version", 0)
+        ts = payload.get("timestamp", 0)
+        logger.info(
+            "BRIDGE: world_state_update v%s (ts=%.0f)",
+            version,
+            ts,
+        )
+
+        _latest_world_state = payload
+
+        # Refresh reaper liveness for known peers mentioned in the world state
+        if self.reaper is not None:
+            agents = {}
+            agents.update(payload.get("cities", {}))
+            agents.update(payload.get("agents", {}))
+            for agent_id, agent_data in agents.items():
+                if agent_id == self.agent_id:
+                    continue
+                peer = self.reaper.get_peer(agent_id)
+                if peer is not None:
+                    # Known peer — refresh heartbeat from world authority
+                    self.reaper.record_heartbeat(
+                        agent_id,
+                        timestamp=ts or None,
+                        source="world_state",
+                    )
+
+        return True
+
+    def _handle_policy_update(self, payload: dict) -> bool:
+        """Inbound policy update from agent-world.
+
+        Stores policies for governance compliance checks by other components.
+
+        Payload:
+            policies: list[dict] — active policy definitions
+            version: int — policy version
+            timestamp: float — when policies were issued
+            issuer: str — who issued (usually agent-world)
+        """
+        global _latest_policies
+
+        version = payload.get("version", 0)
+        issuer = payload.get("issuer", "unknown")
+        policies = payload.get("policies", [])
+        logger.info(
+            "BRIDGE: policy_update v%s from %s (%d policies)",
+            version,
+            issuer,
+            len(policies),
+        )
+
+        _latest_policies = payload
+        return True
+
+    def _handle_city_report(self, payload: dict) -> bool:
+        """Inbound city report from an agent-city instance.
+
+        Logs city metrics and refreshes reaper liveness for the source.
+
+        Payload:
+            source_agent: str — which city agent sent this
+            population: int — current city population
+            alive: int — alive agents in the city
+            heartbeat_count: int — heartbeats processed
+            timestamp: float — report timestamp
+        """
+        source = payload.get("source_agent", "")
+        population = payload.get("population", 0)
+        alive = payload.get("alive", 0)
+        hb_count = payload.get("heartbeat_count", 0)
+
+        logger.info(
+            "BRIDGE: city_report from %s (pop=%d, alive=%d, hb=%d)",
+            source or "unknown",
+            population,
+            alive,
+            hb_count,
+        )
+
+        if source:
+            _latest_city_reports[source] = payload
+
+        # Refresh reaper liveness for the reporting city agent
+        if self.reaper is not None and source:
+            self.reaper.record_heartbeat(
+                source,
+                timestamp=payload.get("timestamp"),
+                source="city_report",
+            )
+
         return True
 
     def _handle_task_callback(self, payload: dict) -> bool:
