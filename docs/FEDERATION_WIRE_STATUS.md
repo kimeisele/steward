@@ -4,7 +4,7 @@ Last verified: 2026-03-21
 
 ## What Flows
 
-### agent-city → steward (WORKING)
+### agent-city → steward: `city_report` (WORKING)
 
 | Field | Value |
 |-------|-------|
@@ -12,134 +12,123 @@ Last verified: 2026-03-21
 | Operation | `city_report` |
 | Frequency | Every heartbeat (~75s cycle) |
 | First successful delivery | 2026-03-21, HB 53 |
-| Verified E2E | Yes — 4 messages received after routing fix |
 
-**Payload fields** (verified from agent-city source + live data):
-- `heartbeat`: int — monotonic counter
-- `population` / `alive`: int — agent census
-- `chain_valid`: bool — blockchain integrity
-- `mission_results`: list of `{id, name, status, owner}`
-- `pr_results`: list of PR outcomes
-- `active_campaigns`: list of campaign summaries
+**Payload**: heartbeat, population, alive, chain_valid, mission_results, pr_results, active_campaigns
 
-**Steward handler** (`_handle_city_report` in `federation.py`):
-1. Records heartbeat as reaper liveness signal
-2. Extracts missions matching `"Brain bottleneck: {target}"` prefix
-3. Creates `[FED:agent-city] Fix bottleneck: {target}` tasks (priority 70)
-4. Dedup: skips if active task with same target exists
-5. KARMA phase dispatches the task
+**Handler** (`_handle_city_report`): Records reaper liveness, extracts `Brain bottleneck:` missions → creates `[FED:agent-city]` tasks.
 
-**Mission types observed in production** (from 144 messages in old mailbox):
-- `Brain bottleneck: code_health` — handled
-- `Brain bottleneck: technical_debt_and_engagement` — handled
-- `IssueHeal: #NNN` (~185 unique) — ignored (not a bottleneck)
-- `Heal: ruff_clean`, `Heal: tests_pass` — ignored (not a bottleneck)
-- `Discussion: #0` — ignored
-
-### steward → all peers (WORKING)
+### agent-city → steward: `bottleneck_escalation` (WIRED)
 
 | Field | Value |
 |-------|-------|
-| Hub mailboxes | `steward_to_agent-city.json`, `steward_to_agent-internet.json`, `steward_to_agent-world.json`, `steward_to_steward-protocol.json` |
-| Operation | `heartbeat` |
-| Content | health score, capabilities, version, fingerprint |
+| Hub mailbox | `nadi/agent-city_to_steward.json` |
+| Operation | `bottleneck_escalation` |
+| Trigger | Brain scope gate rejects code-fix mission |
 
-Steward already emits heartbeats to all known peers via `flush_outbound()`.
-Outbound events also include: `claim_outcome`, `pr_review_verdict`, `merge_occurred`.
+**Payload**: target, source (brain_health|brain_critique), evidence, requested_action, heartbeat
 
-### agent-city `pr_review_request` → steward (ROUTING FIXED, NOT YET SEEN IN PROD)
+**Handler** (`_handle_bottleneck_escalation`): Creates `[BOTTLENECK_ESCALATION] {target}` task (priority 70), dedup by active tasks. KARMA dispatches to AutonomyEngine.
 
-agent-city's `PRScannerHook` emits `operation="pr_review_request"` when new PRs
-are detected. Previously routed to steward-protocol (wrong). Now routes to steward.
+### agent-city → steward: `pr_review_request` (WIRED)
+
+Previously routed to steward-protocol (wrong). Now routes to steward (PR #511).
 Handler exists in `FederationBridge._handle_pr_review_request`.
 
-Will appear in production next time agent-city detects a new PR.
+### steward → all peers: `heartbeat` (WORKING)
 
-## What Doesn't Flow
+| Field | Value |
+|-------|-------|
+| Hub mailboxes | `steward_to_{peer}.json` per-peer |
+| Operation | `heartbeat` |
+| Targets | Dynamic from reaper registry (ALIVE + SUSPECT peers) |
 
-### agent-world → steward
+Also emits: `claim_outcome`, `pr_review_verdict`, `diagnostic_report`.
 
-agent-world has **zero NADI code**. No federation emission. No `nadi_outbox`.
-Hub mailbox `agent-world_to_steward.json` is empty.
+### agent-world → all peers: `world_state_update` + `heartbeat` (NEW)
 
-### agent-internet → steward
+| Field | Value |
+|-------|-------|
+| Code | `agent_world/federation.py` + `nadi_kit.py` |
+| Trigger | After `run_world_heartbeat()` aggregation |
+| Operations | `world_state_update`, `heartbeat` |
 
-agent-internet has federation infrastructure (`steward_federation.py`,
-`git_federation.py`, `federation_descriptor.py`) but **no NADI outbox emission**.
-The code is about web content publishing, not inter-agent messaging.
-Hub mailbox `agent-internet_to_steward.json` is empty.
+**Payload**: version, cities, agents, policies_hash, federation_health.
+**Steward handler** (`_handle_world_state_update`): Refreshes reaper liveness, stores state.
+
+### agent-world → all peers: `policy_update` (NEW)
+
+Emitted on governance policy changes. Steward handler stores for compliance checks.
+
+### agent-internet → all peers: `heartbeat` (NEW)
+
+| Field | Value |
+|-------|-------|
+| Code | `agent_internet/own_heartbeat.py` + `nadi_kit.py` |
+| Trigger | End of relay pump cycle |
+
+Control plane now announces its own existence to the federation.
+
+## What Doesn't Flow Yet
+
+### `bottleneck_resolution` (steward → agent-city)
+
+Steward can FIX bottlenecks (AutonomyEngine) but has no way to tell agent-city
+"I fixed your bottleneck, unblock yourself." Agent-city's scope gate will keep
+escalating the same bottleneck until it resolves organically.
+
+**Needed**: `task_completed` or `bottleneck_resolution` message from steward → agent-city
+after AutonomyEngine successfully fixes the issue.
+
+### Cross-repo workspace isolation
+
+Steward can heal its own repo but cannot yet clone agent-city's repo, fix code
+there, and create PRs. The `[BOTTLENECK_ESCALATION]` tasks will create tasks
+but AutonomyEngine's `_execute_federated_task` needs cross-repo checkout support.
 
 ### steward-protocol → steward
 
-steward-protocol is the **upstream library provider** (`vibe_core` pip package).
-It defines `FederationMessage`, `CityReport`, `FederationDirective` types but
-has **zero inbound NADI handlers** and **zero outbound emission code**.
-Its MOKSHA hooks (`samskara_service.py`) don't emit federation messages.
-Hub mailbox `steward-protocol_to_steward.json` is empty.
+steward-protocol is the upstream library provider (vibe_core). It has zero NADI
+emission. Hub mailbox empty. Low priority — it's a library, not an agent.
 
-## Bugs Fixed This Session
+## Shared Infrastructure: nadi_kit
 
-### Routing Bug (Critical)
+`nadi_kit.py` is the shared NADI SDK vendored across federation repos.
+Canonical source: `kimeisele/steward-federation/nadi_kit.py`
 
-**agent-city PR #511** — merged 2026-03-21
+| Repo | Has nadi_kit | Emits | Receives |
+|------|-------------|-------|----------|
+| steward | No (own impl) | heartbeat, verdict, diagnostic | city_report, bottleneck_escalation, world_state_update, policy_update |
+| agent-city | No (own impl) | city_report, bottleneck_escalation, pr_review_request | heartbeat, pr_review_verdict |
+| agent-world | Yes | world_state_update, policy_update, heartbeat | city_report, heartbeat |
+| agent-internet | Yes | heartbeat | heartbeat |
+| agent-template | Yes | heartbeat | heartbeat |
 
-`city/federation_nadi.py` had `_default_target = "steward-protocol"` (hardcoded).
-All NADI messages went to `agent-city_to_steward-protocol.json` where nobody reads
-them. 144 city_reports accumulated at the wrong address.
-
-Fix: `_default_target = "steward"`. Verified E2E: heartbeat 53+ arrives in
-`agent-city_to_steward.json`.
-
-### Handler Gap (Fixed)
-
-steward had no `city_report` handler. Added `_handle_city_report` to
-`FederationBridge` with `Brain bottleneck:` mission extraction.
-
-## Architecture Notes
+## Architecture
 
 ```
 agent-city MOKSHA
-  → FederationNadi.emit(source="moksha", operation="city_report")
-  → FederationNadi.flush() → data/federation/nadi_outbox.json
-  → FederationRelayPushHook → FederationRelay.push_to_hub()
-  → GitHub API → steward-federation Hub
-  → nadi/agent-city_to_steward.json
+  → FederationNadi.emit("city_report" | "bottleneck_escalation")
+  → push_to_hub() → nadi/agent-city_to_steward.json
+
+agent-world heartbeat
+  → nadi_kit NadiNode.emit("world_state_update")
+  → node.sync() → nadi/agent-world_to_*.json
+
+agent-internet relay pump
+  → own_heartbeat.emit_control_plane_heartbeat()
+  → node.sync() → nadi/agent-internet_to_*.json
 
 steward DHARMA
-  → GitNadiSync reads steward-federation Hub
-  → FederationBridge.process_inbound(transport)
-  → _handle_city_report() → TaskManager.add_task()
+  → GitHubFederationRelay.pull_from_hub()
+  → FederationBridge.process_inbound()
+  → dispatch: city_report | bottleneck_escalation | world_state_update | ...
 
 steward KARMA
-  → TaskManager.get_next_task() → [FED:agent-city] Fix bottleneck: X
-  → AutonomyEngine._execute_federated_task()
-  → FixPipeline.guarded_llm_fix() or guarded_pr_fix()
-  → bridge.emit(OP_TASK_COMPLETED or OP_TASK_FAILED)
+  → TaskManager picks [BOTTLENECK_ESCALATION] or [FED:*] tasks
+  → AutonomyEngine dispatches fix pipeline
 
 steward MOKSHA
-  → FederationBridge.flush_outbound(transport)
-  → steward_to_agent-city.json on Hub
+  → FederationBridge.flush_outbound()
+  → GitHubFederationRelay.push_to_hub()
+  → Dynamic targets from reaper (not hardcoded)
 ```
-
-## What's Missing (Honest)
-
-1. **No bottleneck missions in current heartbeats.** The 4 verified messages
-   all contain `IssueHeal` missions. `Brain bottleneck:` was seen in historical
-   data (HB 382+) but not in HB 53-56. The handler is ready and tested — it
-   will activate when agent-city's Brain creates bottleneck missions.
-
-2. **Steward doesn't read from Hub yet in daemon mode.** The `GitNadiSync`
-   service needs to be wired into DHARMA phase to pull from the Hub. Currently
-   only works when triggered manually or via CI.
-
-3. **No bi-directional handshake.** Steward emits heartbeats but agent-city
-   doesn't yet consume steward's heartbeat from `steward_to_agent-city.json`.
-   Agent-city has `FederationRelayPullHook` in genesis phase but it reads from
-   the legacy `nadi_outbox.json`, not per-peer mailboxes.
-
-4. **IssueHeal missions are ignored.** ~185 unique `IssueHeal: #NNN` missions
-   flow through but steward doesn't act on them. Could be wired as federated
-   tasks if desired.
-
-5. **agent-world and agent-internet are passive.** They exist in the federation
-   registry but don't participate in NADI messaging.
