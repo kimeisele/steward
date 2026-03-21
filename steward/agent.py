@@ -268,6 +268,11 @@ class StewardAgent(GADBase):
         )
         self._cetana.start()
 
+        # Register Cetana as a service so tools/hooks can access heartbeat state
+        from steward.services import SVC_CETANA
+
+        ServiceRegistry.register(SVC_CETANA, self._cetana)
+
         # KsetraJna — meta-observer of the entire field (BG 13.1-2)
         # Watches all antahkarana components, produces BubbleSnapshots.
         # Zero LLM tokens. Foundation for BuddyBubble peer observation.

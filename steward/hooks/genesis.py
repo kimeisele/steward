@@ -234,8 +234,7 @@ class GenesisDiscoveryHook(BasePhaseHook):
 
         self._last_scan = time.time()
         ctx.operations.append(
-            f"genesis_discovery:peers={len(discovered)},new={new_count},"
-            f"a2a_new={a2a_new},violations={len(violations)}"
+            f"genesis_discovery:peers={len(discovered)},new={new_count},a2a_new={a2a_new},violations={len(violations)}"
         )
 
 

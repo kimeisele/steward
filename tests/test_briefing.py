@@ -55,10 +55,14 @@ class TestWriteClaudeMd:
         assert claude_md.exists()
 
     def test_hash_dedup(self, tmp_path):
-        write_claude_md(str(tmp_path), force=True)
-        # Second call with same content should be skipped
-        written = write_claude_md(str(tmp_path), force=False)
-        assert not written
+        from unittest.mock import patch
+
+        stable_content = "# steward\nStable content for dedup test"
+        with patch("steward.briefing.generate_briefing", return_value=stable_content):
+            write_claude_md(str(tmp_path), force=True)
+            # Second call with same content should be skipped
+            written = write_claude_md(str(tmp_path), force=False)
+            assert not written
 
     def test_force_bypasses_dedup(self, tmp_path):
         write_claude_md(str(tmp_path), force=True)

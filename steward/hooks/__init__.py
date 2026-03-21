@@ -26,6 +26,11 @@ def register_default_hooks(registry: PhaseHookRegistry) -> None:
         DharmaReaperHook,
     )
     from steward.hooks.genesis import GenesisDiscoveryHook
+    from steward.hooks.karma import (
+        KarmaA2AProgressHook,
+        KarmaFederationCallbackHook,
+        KarmaTaskPrioritizationHook,
+    )
     from steward.hooks.moksha import (
         MokshaFederationHook,
         MokshaPersistenceHook,
@@ -43,6 +48,11 @@ def register_default_hooks(registry: PhaseHookRegistry) -> None:
     registry.register(DharmaMarketplaceHook())
     registry.register(DharmaFederationHook())
     registry.register(DharmaImmuneHook())
+
+    # KARMA hooks (callback → prioritization → a2a progress)
+    registry.register(KarmaFederationCallbackHook())
+    registry.register(KarmaTaskPrioritizationHook())
+    registry.register(KarmaA2AProgressHook())
 
     from steward.hooks.moksha_bridge import MokshaContextBridgeHook
     from steward.hooks.moksha_health import MokshaHealthReportHook
