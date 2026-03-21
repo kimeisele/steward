@@ -205,7 +205,7 @@ class A2APeerDiscovery:
                     data = json.loads(resp.read())
                     content = json.loads(base64.b64decode(data["content"]).decode())
                     return self._parse_agent_card(repo, content, card_type)
-            except Exception:
+            except (OSError, json.JSONDecodeError, KeyError, ValueError):
                 continue
 
         return None
