@@ -105,6 +105,7 @@ OP_PR_REVIEW_VERDICT = "pr_review_verdict"
 OP_WORLD_STATE_UPDATE = "world_state_update"
 OP_POLICY_UPDATE = "policy_update"
 OP_CITY_REPORT = "city_report"
+OP_BOTTLENECK_ESCALATION = "bottleneck_escalation"
 
 # Mission name prefixes emitted by agent-city's create_brain_mission().
 # Verified from kimeisele/agent-city city/missions.py — Brain {verb}: {target[:50]}
@@ -190,6 +191,7 @@ class FederationBridge:
             OP_WORLD_STATE_UPDATE: self._handle_world_state_update,
             OP_POLICY_UPDATE: self._handle_policy_update,
             OP_CITY_REPORT: self._handle_city_report,
+            OP_BOTTLENECK_ESCALATION: self._handle_bottleneck_escalation,
         }
 
     def ingest(self, operation: str, payload: dict) -> bool:
@@ -648,6 +650,64 @@ class FederationBridge:
         )
 
         _latest_policies = payload
+
+        return True
+
+    def _handle_bottleneck_escalation(self, payload: dict) -> bool:
+        """Inbound bottleneck_escalation from agent-city.
+
+        Agent-city's scope gate rejects code-fix missions (ruff, tests, etc.)
+        and escalates them to steward via NADI. This handler creates a task
+        for the AutonomyEngine to dispatch in KARMA phase.
+
+        Payload (from agent-city brain_health.py _escalate_bottleneck_to_steward):
+            target: str — what needs fixing (e.g. "ruff_clean contract / tests_pass failing")
+            source: str — origin within agent-city (brain_health | brain_critique)
+            evidence: str — why this was escalated
+            requested_action: str — "fix"
+            heartbeat: int — agent-city's heartbeat count when escalated
+        """
+        target = payload.get("target", "unknown")
+        source = payload.get("source", "unknown")
+        heartbeat = payload.get("heartbeat", "?")
+        evidence = payload.get("evidence", "")
+
+        logger.info(
+            "BRIDGE: bottleneck_escalation from agent-city (hb=%s, source=%s): %s",
+            heartbeat,
+            source,
+            target[:80],
+        )
+
+        # Liveness: escalation is proof agent-city is alive
+        if self.reaper is not None:
+            self.reaper.record_heartbeat(
+                "agent-city",
+                timestamp=time.time(),
+                source="bottleneck_escalation",
+            )
+
+        # Create task for KARMA phase dispatch
+        from steward.services import SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
+
+        task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
+        if task_mgr is None:
+            logger.warning("BRIDGE: bottleneck_escalation — no TaskManager to create task")
+            return True
+
+        from vibe_core.task_types import TaskStatus
+
+        # Dedup: skip if active task already exists for this target
+        active = task_mgr.list_tasks(status=TaskStatus.IN_PROGRESS) + task_mgr.list_tasks(status=TaskStatus.PENDING)
+        if any("[BOTTLENECK_ESCALATION]" in t.title and target[:30] in t.title for t in active):
+            logger.info("BRIDGE: bottleneck_escalation dedup — '%s' already active", target[:50])
+            return True
+
+        title = f"[BOTTLENECK_ESCALATION] {target[:80]}"
+        description = f"Escalated from agent-city (hb={heartbeat}, source={source}): {evidence}"
+        task_mgr.add_task(title=title, priority=70, description=description)
+        logger.info("BRIDGE: bottleneck_escalation → task '%s'", title)
 
         return True
 
