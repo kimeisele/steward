@@ -3,6 +3,8 @@
 import time
 
 from steward.federation import (
+    CITY_BOTTLENECK_PREFIX,
+    OP_CITY_REPORT,
     OP_CLAIM_OUTCOME,
     OP_CLAIM_SLOT,
     OP_DELEGATE_TASK,
@@ -731,3 +733,232 @@ class TestCallbackEvents:
         assert bridge is not None
         callbacks = [e for e in bridge._outbound if e.operation in (OP_TASK_COMPLETED, OP_TASK_FAILED)]
         assert len(callbacks) >= 1
+
+
+# ── Inbound: City Report (agent-city) ──────────────────────────
+
+
+class TestInboundCityReport:
+    """OP_CITY_REPORT from agent-city creates bottleneck tasks.
+
+    Verified payload format from kimeisele/agent-city:
+    - city/hooks/moksha/outbound.py FederationReportHook
+    - city/missions.py create_brain_mission (verb="bottleneck")
+    - city/hooks/moksha/mission_lifecycle.py _collect_terminal_missions
+    """
+
+    @staticmethod
+    def _city_report_payload(mission_results=None, heartbeat=42):
+        """Build a city_report payload matching agent-city's verified format."""
+        return {
+            "heartbeat": heartbeat,
+            "population": 5,
+            "alive": 3,
+            "chain_valid": True,
+            "pr_results": [],
+            "mission_results": mission_results or [],
+            "active_campaigns": [],
+            "source_agent": "agent-city",
+        }
+
+    def test_city_report_creates_bottleneck_task(self, tmp_path):
+        """Bottleneck mission in city_report → [FED:agent-city] task."""
+        from steward.services import SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
+        from vibe_core.task_management.task_manager import TaskManager
+
+        task_mgr = TaskManager(project_root=tmp_path)
+        ServiceRegistry.register(SVC_TASK_MANAGER, task_mgr)
+
+        bridge = FederationBridge()
+        payload = self._city_report_payload(
+            mission_results=[
+                {
+                    "id": "brain_bottleneck_ruff_clean_42",
+                    "name": "Brain bottleneck: ruff_clean",
+                    "status": "completed",
+                    "owner": "mayor",
+                },
+            ]
+        )
+        assert bridge.ingest(OP_CITY_REPORT, payload)
+
+        tasks = task_mgr.list_tasks()
+        assert len(tasks) == 1
+        assert tasks[0].title == "[FED:agent-city] Fix bottleneck: ruff_clean"
+        assert tasks[0].priority == 70
+        assert "brain_bottleneck_ruff_clean_42" in tasks[0].description
+
+    def test_city_report_ignores_non_bottleneck_missions(self, tmp_path):
+        """Non-bottleneck missions (escalation, health, etc.) are ignored."""
+        from steward.services import SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
+        from vibe_core.task_management.task_manager import TaskManager
+
+        task_mgr = TaskManager(project_root=tmp_path)
+        ServiceRegistry.register(SVC_TASK_MANAGER, task_mgr)
+
+        bridge = FederationBridge()
+        payload = self._city_report_payload(
+            mission_results=[
+                {
+                    "id": "brain_escalation_auth_fix_42",
+                    "name": "Brain escalation: auth_fix",
+                    "status": "completed",
+                    "owner": "mayor",
+                },
+                {
+                    "id": "issue_123_42",
+                    "name": "Fix #123: broken import",
+                    "status": "completed",
+                    "owner": "agent-alpha",
+                },
+            ]
+        )
+        assert bridge.ingest(OP_CITY_REPORT, payload)
+        assert len(task_mgr.list_tasks()) == 0
+
+    def test_city_report_dedup_skips_active_bottleneck(self, tmp_path):
+        """Duplicate bottleneck target not created if already active."""
+        from steward.services import SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
+        from vibe_core.task_management.task_manager import TaskManager
+
+        task_mgr = TaskManager(project_root=tmp_path)
+        ServiceRegistry.register(SVC_TASK_MANAGER, task_mgr)
+
+        bridge = FederationBridge()
+        missions = [
+            {
+                "id": "brain_bottleneck_tests_pass_42",
+                "name": "Brain bottleneck: tests_pass",
+                "status": "completed",
+                "owner": "mayor",
+            },
+        ]
+        # First report creates task
+        bridge.ingest(OP_CITY_REPORT, self._city_report_payload(mission_results=missions, heartbeat=42))
+        assert len(task_mgr.list_tasks()) == 1
+
+        # Second report with same target — dedup
+        bridge.ingest(OP_CITY_REPORT, self._city_report_payload(mission_results=missions, heartbeat=43))
+        assert len(task_mgr.list_tasks()) == 1
+
+    def test_city_report_records_heartbeat(self):
+        """city_report acts as a liveness signal for the reaper."""
+        reaper = HeartbeatReaper()
+        bridge = FederationBridge(reaper=reaper)
+        payload = self._city_report_payload()
+        bridge.ingest(OP_CITY_REPORT, payload)
+
+        peer = reaper.get_peer("agent-city")
+        assert peer is not None
+        assert peer.source == "city_report"
+
+    def test_city_report_empty_missions_accepted(self):
+        """city_report with no missions is valid (just heartbeat)."""
+        bridge = FederationBridge()
+        assert bridge.ingest(OP_CITY_REPORT, self._city_report_payload())
+
+    def test_city_report_via_transport_injects_source(self, tmp_path):
+        """process_inbound injects source_agent from message envelope."""
+        from steward.services import SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
+        from vibe_core.task_management.task_manager import TaskManager
+
+        task_mgr = TaskManager(project_root=tmp_path)
+        ServiceRegistry.register(SVC_TASK_MANAGER, task_mgr)
+
+        transport = FakeTransport(
+            messages=[
+                {
+                    "source": "agent-city",
+                    "target": "steward",
+                    "operation": OP_CITY_REPORT,
+                    "payload": {
+                        "heartbeat": 99,
+                        "population": 2,
+                        "alive": 1,
+                        "chain_valid": True,
+                        "pr_results": [],
+                        "mission_results": [
+                            {
+                                "id": "brain_bottleneck_lint_99",
+                                "name": "Brain bottleneck: lint",
+                                "status": "completed",
+                                "owner": "mayor",
+                            },
+                        ],
+                        "active_campaigns": [],
+                    },
+                    "priority": 2,
+                    "timestamp": time.time(),
+                    "ttl_s": 7200.0,
+                },
+            ]
+        )
+        bridge = FederationBridge()
+        count = bridge.process_inbound(transport)
+        assert count == 1
+
+        tasks = task_mgr.list_tasks()
+        assert len(tasks) == 1
+        assert "[FED:agent-city]" in tasks[0].title
+        assert "lint" in tasks[0].title
+
+    def test_city_report_multiple_bottlenecks(self, tmp_path):
+        """Multiple bottleneck missions in one report create multiple tasks."""
+        from steward.services import SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
+        from vibe_core.task_management.task_manager import TaskManager
+
+        task_mgr = TaskManager(project_root=tmp_path)
+        ServiceRegistry.register(SVC_TASK_MANAGER, task_mgr)
+
+        bridge = FederationBridge()
+        payload = self._city_report_payload(
+            mission_results=[
+                {
+                    "id": "brain_bottleneck_ruff_clean_42",
+                    "name": "Brain bottleneck: ruff_clean",
+                    "status": "completed",
+                    "owner": "mayor",
+                },
+                {
+                    "id": "brain_bottleneck_tests_pass_42",
+                    "name": "Brain bottleneck: tests_pass",
+                    "status": "completed",
+                    "owner": "mayor",
+                },
+            ]
+        )
+        bridge.ingest(OP_CITY_REPORT, payload)
+        tasks = task_mgr.list_tasks()
+        assert len(tasks) == 2
+        titles = {t.title for t in tasks}
+        assert "[FED:agent-city] Fix bottleneck: ruff_clean" in titles
+        assert "[FED:agent-city] Fix bottleneck: tests_pass" in titles
+
+    def test_city_report_no_task_manager_still_accepted(self):
+        """Without TaskManager, city_report is accepted (heartbeat still works)."""
+        reaper = HeartbeatReaper()
+        bridge = FederationBridge(reaper=reaper)
+        payload = self._city_report_payload(
+            mission_results=[
+                {
+                    "id": "brain_bottleneck_x_1",
+                    "name": "Brain bottleneck: x",
+                    "status": "completed",
+                    "owner": "mayor",
+                },
+            ]
+        )
+        assert bridge.ingest(OP_CITY_REPORT, payload)
+        # Heartbeat still recorded
+        assert reaper.get_peer("agent-city") is not None
+
+    def test_bottleneck_prefix_constant_matches_agent_city(self):
+        """Verify constant matches agent-city's create_brain_mission format."""
+        # From city/missions.py: name=f"Brain {verb}: {target[:50]}"
+        # with verb="bottleneck"
+        assert CITY_BOTTLENECK_PREFIX == "Brain bottleneck: "
