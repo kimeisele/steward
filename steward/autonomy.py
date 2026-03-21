@@ -197,15 +197,12 @@ class AutonomyEngine:
         try:
             intent = parse_intent_from_title(task.title)
 
-            # Special dispatch for specific intents
+            # Heal repo: special dispatch — uses RepoHealer, not generic LLM fix
             if intent is not None:
                 from steward.intents import TaskIntent
 
                 if intent == TaskIntent.HEAL_REPO:
                     return await self._execute_heal_repo(task, task_mgr, TaskStatus)
-
-                if intent == TaskIntent.BOTTLENECK_ESCALATION:
-                    return await self._execute_bottleneck_escalation(task, task_mgr, TaskStatus)
 
             # Federated tasks from peers: [FED:source] title → isolated execution + callback
             if intent is None and task.title.startswith("[FED:"):
@@ -347,82 +344,6 @@ class AutonomyEngine:
                         "error": "Pipeline failed or produced no changes",
                     },
                 )
-
-        return result
-
-    async def _execute_bottleneck_escalation(self, task: object, task_mgr: object, TaskStatus: object) -> str | None:
-        """Execute BOTTLENECK_ESCALATION: detect + fix + respond via NADI.
-
-        Flow:
-        1. Run deterministic detection (IntentHandlers.execute_bottleneck_escalation)
-        2. If problem found → run fix pipeline (guarded_llm_fix)
-        3. Emit OP_BOTTLENECK_RESOLUTION back to the source peer
-        """
-        from steward.federation import OP_BOTTLENECK_RESOLUTION
-        from steward.services import SVC_FEDERATION
-
-        # Parse source agent from task description
-        desc = getattr(task, "description", "") or ""
-        parts = {}
-        for segment in desc.split("|"):
-            if ":" in segment:
-                key, _, value = segment.partition(":")
-                parts[key] = value
-
-        source_agent = parts.get("source", "unknown")
-
-        # 1. Detect problem (0 tokens)
-        problem = self.handlers.execute_bottleneck_escalation()
-        self._ledger.record_autonomous("BOTTLENECK_ESCALATION", problem is not None)
-
-        result = None
-        resolution_status = "no_issue_found"
-
-        if problem:
-            # 2. Confidence gate + fix pipeline
-            context = problem_fingerprint(problem)
-            granular_key = f"auto:BOTTLENECK_ESCALATION:{context}" if context else "auto:BOTTLENECK_ESCALATION"
-            auto_weight = self._synaptic.get_weight(granular_key, "fix")
-
-            if auto_weight < 0.2:
-                logger.warning(
-                    "Hebbian confidence too low (%.2f) for bottleneck fix — escalating",
-                    auto_weight,
-                )
-                self.pipeline.escalate_problem(problem, "BOTTLENECK_ESCALATION", auto_weight)
-                resolution_status = "escalated_to_human"
-            else:
-                logger.info(
-                    "BOTTLENECK_ESCALATION: problem found (confidence=%.2f), invoking fix pipeline",
-                    auto_weight,
-                )
-                try:
-                    result = await self.pipeline.guarded_llm_fix(problem, intent_name="BOTTLENECK_ESCALATION")
-                    resolution_status = "fixed" if result else "fix_failed"
-                except Exception as e:
-                    logger.error("Bottleneck fix failed: %s", e)
-                    resolution_status = "fix_failed"
-
-        task_mgr.update_task(task.id, status=TaskStatus.COMPLETED)
-
-        # 3. Emit resolution back to source peer via NADI
-        bridge = ServiceRegistry.get(SVC_FEDERATION)
-        if bridge is not None:
-            bridge.emit(
-                OP_BOTTLENECK_RESOLUTION,
-                {
-                    "source_agent": self.pipeline._cwd.split("/")[-1] if "/" in self.pipeline._cwd else "steward",
-                    "target_agent": source_agent,
-                    "resolution": resolution_status,
-                    "pr_url": result if result and result.startswith("Created PR:") else "",
-                    "original_task": task.title,
-                },
-            )
-            logger.info(
-                "BOTTLENECK_RESOLUTION → %s: %s",
-                source_agent,
-                resolution_status,
-            )
 
         return result
 

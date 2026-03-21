@@ -58,7 +58,6 @@ class IntentHandlers:
             TaskIntent.REMOVE_DEAD_CODE: self.execute_remove_dead_code,
             TaskIntent.SYNTHESIZE_BRIEFING: self.execute_synthesize_briefing,
             TaskIntent.FEDERATION_GAP_SCAN: self.execute_federation_gap_scan,
-            TaskIntent.BOTTLENECK_ESCALATION: self.execute_bottleneck_escalation,
         }
         handler = dispatch.get(intent)
         if handler is None:
@@ -430,108 +429,4 @@ class IntentHandlers:
 
         if gaps:
             return "Federation gaps detected: " + "; ".join(gaps)
-        return None
-
-    def execute_bottleneck_escalation(self) -> str | None:
-        """Handle inbound bottleneck escalation from a federation peer — 0 tokens.
-
-        The task description contains the escalation payload from agent-city:
-        source, action, repo, details. This handler extracts the target
-        (e.g. "ruff_clean,tests_pass") and checks if the problem is real
-        by running the relevant checks locally.
-
-        Returns the problem description for the fix pipeline, or None if
-        the bottleneck is already resolved.
-        """
-        import subprocess
-
-        from steward.services import SVC_TASK_MANAGER
-
-        task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
-        if task_mgr is None:
-            return None
-
-        # Find the current BOTTLENECK_ESCALATION task to extract payload
-        from vibe_core.task_types import TaskStatus
-
-        tasks = task_mgr.list_tasks(status=TaskStatus.IN_PROGRESS)
-        desc = ""
-        for t in tasks:
-            if "[BOTTLENECK_ESCALATION]" in t.title:
-                desc = getattr(t, "description", "") or ""
-                break
-
-        if not desc:
-            return None
-
-        # Parse description: "source:X|action:Y|repo:Z|details:W"
-        parts = {}
-        for segment in desc.split("|"):
-            if ":" in segment:
-                key, _, value = segment.partition(":")
-                parts[key] = value
-
-        repo = parts.get("repo", "")
-        action = parts.get("action", "fix")
-        details = parts.get("details", "")
-
-        # Determine what to check based on the target in the task title
-        # Title format: [BOTTLENECK_ESCALATION] scope_gate_block: ruff_clean,tests_pass
-        problems: list[str] = []
-        target_cwd = self._cwd
-
-        # If a repo is specified, resolve it locally
-        if repo:
-            from pathlib import Path
-
-            home = Path.home()
-            repo_name = repo.split("/")[-1] if "/" in repo else repo
-            candidates = [home / "projects" / repo_name, home / repo_name]
-            for c in candidates:
-                if c.is_dir() and (c / ".git").is_dir():
-                    target_cwd = str(c)
-                    break
-
-        # Run lint check
-        try:
-            r = subprocess.run(
-                ["ruff", "check", "--select", "E,F,I,W", "--quiet", "."],
-                capture_output=True,
-                text=True,
-                timeout=30,
-                cwd=target_cwd,
-            )
-            if r.returncode != 0:
-                lines = [ln for ln in r.stdout.strip().splitlines() if ln.strip()]
-                if lines:
-                    problems.append(f"ruff: {len(lines)} lint violation(s), first: {lines[0][:120]}")
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            pass
-
-        # Run test check
-        try:
-            r = subprocess.run(
-                ["python", "-m", "pytest", "-x", "-q", "--timeout=30", "--tb=line"],
-                capture_output=True,
-                text=True,
-                timeout=120,
-                cwd=target_cwd,
-            )
-            if r.returncode != 0:
-                summary = ""
-                for line in r.stdout.splitlines():
-                    if "failed" in line.lower() or "error" in line.lower():
-                        summary = line.strip()
-                        break
-                if not summary:
-                    summary = r.stdout.strip().splitlines()[-1] if r.stdout.strip() else "unknown failure"
-                problems.append(f"tests: {summary}")
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            pass
-
-        if problems:
-            context = f"Bottleneck escalation ({action}): {'; '.join(problems)}"
-            if details:
-                context += f" | peer context: {details[:200]}"
-            return context
         return None

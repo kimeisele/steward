@@ -102,8 +102,6 @@ OP_PR_CREATED = "pr_created"
 OP_CI_STATUS = "ci_status"
 OP_PR_REVIEW_REQUEST = "pr_review_request"
 OP_PR_REVIEW_VERDICT = "pr_review_verdict"
-OP_BOTTLENECK_ESCALATION = "bottleneck_escalation"
-OP_BOTTLENECK_RESOLUTION = "bottleneck_resolution"
 
 # Minimum trust level to accept inbound delegations
 DEFAULT_DELEGATION_TRUST_FLOOR: float = 0.3
@@ -160,7 +158,6 @@ class FederationBridge:
             OP_TASK_COMPLETED: self._handle_task_callback,
             OP_TASK_FAILED: self._handle_task_callback,
             OP_PR_REVIEW_REQUEST: self._handle_pr_review_request,
-            OP_BOTTLENECK_ESCALATION: self._handle_bottleneck_escalation,
         }
 
     def ingest(self, operation: str, payload: dict) -> bool:
@@ -467,72 +464,6 @@ class FederationBridge:
             pr_number,
             verdict,
             reason,
-        )
-        return True
-
-    def _handle_bottleneck_escalation(self, payload: dict) -> bool:
-        """Inbound bottleneck escalation from a federation peer (e.g. agent-city).
-
-        When a peer's scope gate intercepts a mission that requires a code fix
-        the peer can't handle, it escalates here. Steward creates a task that
-        the KARMA phase will pick up and route through the existing fix pipeline.
-
-        Payload (from agent-city brain_health.py):
-            source_agent: str — who sent the escalation
-            bottleneck_type: str — e.g. "scope_gate_block"
-            target: str — what needs fixing (e.g. "ruff_clean,tests_pass")
-            requested_action: str — e.g. "fix"
-            repo: str — target repo (optional, for cross-repo work)
-            details: str — human-readable context
-            severity: str — "low" | "medium" | "high" | "critical"
-        """
-        from steward.services import SVC_TASK_MANAGER
-        from vibe_core.di import ServiceRegistry
-
-        task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
-        if task_mgr is None:
-            logger.warning("BRIDGE: bottleneck_escalation but no TaskManager registered")
-            return False
-
-        source = payload.get("source_agent", "unknown")
-        bottleneck_type = payload.get("bottleneck_type", "unknown")
-        target = payload.get("target", "")
-        requested_action = payload.get("requested_action", "fix")
-        repo = payload.get("repo", "")
-        details = payload.get("details", "")
-        severity = payload.get("severity", "medium")
-
-        if not target:
-            logger.warning("BRIDGE: bottleneck_escalation missing target")
-            return False
-
-        # Trust gate: reject escalations from untrusted peers
-        if self.reaper is not None and source != "unknown":
-            peer = self.reaper.get_peer(source) if hasattr(self.reaper, "get_peer") else None
-            if peer is not None and peer.trust < self.delegation_trust_floor:
-                self._delegations_rejected += 1
-                logger.warning(
-                    "BRIDGE: bottleneck_escalation REJECTED from %s (trust=%.2f < floor=%.2f)",
-                    source,
-                    peer.trust,
-                    self.delegation_trust_floor,
-                )
-                return False
-
-        # Map severity to priority
-        priority_map = {"critical": 95, "high": 80, "medium": 60, "low": 40}
-        priority = priority_map.get(severity, 60)
-
-        # Create task with typed intent prefix for deterministic dispatch
-        title = f"[BOTTLENECK_ESCALATION] {bottleneck_type}: {target}"
-        description = f"source:{source}|action:{requested_action}|repo:{repo}|details:{details}"
-        task_mgr.add_task(title=title, priority=priority, description=description)
-        logger.info(
-            "BRIDGE: bottleneck_escalation from %s → '%s' (priority=%d, severity=%s)",
-            source,
-            title,
-            priority,
-            severity,
         )
         return True
 
