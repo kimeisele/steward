@@ -102,6 +102,12 @@ OP_PR_CREATED = "pr_created"
 OP_CI_STATUS = "ci_status"
 OP_PR_REVIEW_REQUEST = "pr_review_request"
 OP_PR_REVIEW_VERDICT = "pr_review_verdict"
+OP_CITY_REPORT = "city_report"
+
+# Mission name prefixes emitted by agent-city's create_brain_mission().
+# Verified from kimeisele/agent-city city/missions.py — Brain {verb}: {target[:50]}
+CITY_BOTTLENECK_PREFIX = "Brain bottleneck: "
+CITY_ESCALATION_PREFIX = "Brain escalation: "
 
 # Minimum trust level to accept inbound delegations
 DEFAULT_DELEGATION_TRUST_FLOOR: float = 0.3
@@ -158,6 +164,7 @@ class FederationBridge:
             OP_TASK_COMPLETED: self._handle_task_callback,
             OP_TASK_FAILED: self._handle_task_callback,
             OP_PR_REVIEW_REQUEST: self._handle_pr_review_request,
+            OP_CITY_REPORT: self._handle_city_report,
         }
 
     def ingest(self, operation: str, payload: dict) -> bool:
@@ -187,6 +194,10 @@ class FederationBridge:
                 continue
             op = msg.get("operation", "")
             payload = msg.get("payload", {})
+            # Inject source from message envelope so handlers can identify the sender.
+            # agent-city's FederationNadi overrides source to city_id from peer.json.
+            if "source_agent" not in payload and "source" in msg:
+                payload["source_agent"] = msg["source"]
             if self.ingest(op, payload):
                 processed += 1
         return processed
@@ -465,6 +476,80 @@ class FederationBridge:
             verdict,
             reason,
         )
+        return True
+
+    def _handle_city_report(self, payload: dict) -> bool:
+        """Inbound city_report from agent-city (MOKSHA federation report).
+
+        Verified from kimeisele/agent-city city/hooks/moksha/outbound.py:
+            FederationReportHook emits operation="city_report" with payload:
+                heartbeat: int
+                population: int
+                alive: int
+                chain_valid: bool
+                pr_results: list[dict]
+                mission_results: list[dict]  — {id, name, status, owner}
+                active_campaigns: list[dict]
+
+        Bottleneck missions have name="Brain bottleneck: {target}"
+        (from city/missions.py create_brain_mission with verb="bottleneck").
+
+        This handler:
+        1. Records heartbeat as liveness signal for the reaper
+        2. Extracts "Brain bottleneck:" missions → delegate_task to TaskManager
+        """
+        source_agent = payload.get("source_agent", "agent-city")
+
+        # Liveness: the report itself is proof the peer is alive
+        if self.reaper is not None:
+            self.reaper.record_heartbeat(
+                source_agent,
+                timestamp=time.time(),
+                source="city_report",
+            )
+
+        mission_results = payload.get("mission_results", [])
+        if not isinstance(mission_results, list):
+            return True  # Valid report, just no missions
+
+        from steward.services import SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
+
+        task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
+        if task_mgr is None:
+            return True  # Report accepted, but no task manager to act on bottlenecks
+
+        from vibe_core.task_types import TaskStatus
+
+        delegated = 0
+        for mission in mission_results:
+            if not isinstance(mission, dict):
+                continue
+            name = mission.get("name", "")
+
+            # Only act on bottleneck missions — exact prefix from agent-city source
+            if not name.startswith(CITY_BOTTLENECK_PREFIX):
+                continue
+
+            target = name[len(CITY_BOTTLENECK_PREFIX) :].strip()
+            if not target:
+                continue
+
+            # Dedup: skip if an active task with same target already exists
+            active = task_mgr.list_tasks(status=TaskStatus.IN_PROGRESS) + task_mgr.list_tasks(status=TaskStatus.PENDING)
+            if any(f"[FED:{source_agent}]" in t.title and target in t.title for t in active):
+                logger.info("BRIDGE: city_report bottleneck dedup — '%s' already active", target)
+                continue
+
+            # Delegate as a standard federated task — KARMA phase will dispatch
+            title = f"[FED:{source_agent}] Fix bottleneck: {target}"
+            task_mgr.add_task(title=title, priority=70, description=f"city_report:{mission.get('id', '')}")
+            delegated += 1
+            logger.info("BRIDGE: city_report bottleneck → task '%s'", title)
+
+        if delegated:
+            logger.info("BRIDGE: city_report from %s — created %d bottleneck tasks", source_agent, delegated)
+
         return True
 
     def _handle_task_callback(self, payload: dict) -> bool:
