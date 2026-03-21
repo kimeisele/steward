@@ -93,10 +93,16 @@ class A2APeerDiscovery:
 
     # ── Main Scan ──────────────────────────────────────────────────
 
-    def scan(self) -> list[DiscoveredPeer]:
+    def scan(self, known_repos: list[str] | None = None) -> list[DiscoveredPeer]:
         """Scan for new federation peers. Returns newly discovered peers.
 
         Throttled to DISCOVERY_INTERVAL_S between scans.
+
+        Args:
+            known_repos: Optional pre-fetched repo list from GenesisDiscoveryHook.
+                When provided, skips the expensive org API call and only checks
+                these repos for agent cards. This prevents duplicate API calls
+                since GenesisDiscovery already scanned the org.
         """
         if not self._token:
             return []
@@ -115,11 +121,21 @@ class A2APeerDiscovery:
                 self._discovered[peer.agent_id] = peer
                 new_peers.append(peer)
 
-        # 2. Scan GitHub org for repos with agent cards
-        for peer in self._scan_org_repos():
-            if peer.agent_id not in self._discovered:
-                self._discovered[peer.agent_id] = peer
-                new_peers.append(peer)
+        # 2. Scan for agent cards — use pre-fetched repo list if available
+        #    (avoids duplicate org API call when GenesisDiscovery already scanned)
+        if known_repos is not None:
+            for repo in known_repos:
+                if not repo or repo == f"{self._org}/steward":
+                    continue
+                peer = self._fetch_agent_card(repo)
+                if peer is not None and peer.agent_id not in self._discovered:
+                    self._discovered[peer.agent_id] = peer
+                    new_peers.append(peer)
+        else:
+            for peer in self._scan_org_repos():
+                if peer.agent_id not in self._discovered:
+                    self._discovered[peer.agent_id] = peer
+                    new_peers.append(peer)
 
         # 3. Register new peers with Reaper
         for peer in new_peers:

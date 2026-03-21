@@ -198,3 +198,69 @@ def test_scan_throttled_by_interval():
     discovery._last_scan = 999999999999.0  # Far in the future
     result = discovery.scan()
     assert result == []
+
+
+# ── Known Repos Consolidation ──────────────────────────────────────
+
+
+def test_scan_with_known_repos_skips_org_scan():
+    """When known_repos is provided, the org API call is skipped."""
+    reaper = FakeReaper()
+    discovery = A2APeerDiscovery(reaper=reaper)
+    discovery._token = "fake-token"
+    discovery._last_scan = 0  # Allow scan
+
+    # Provide known repos — should NOT call _scan_org_repos
+    from unittest.mock import patch
+
+    with patch.object(discovery, "_scan_org_repos") as mock_org:
+        with patch.object(discovery, "_scan_known_peers", return_value=[]):
+            with patch.object(discovery, "_fetch_agent_card", return_value=None):
+                discovery.scan(known_repos=["kimeisele/agent-city"])
+
+    # _scan_org_repos should NOT have been called
+    mock_org.assert_not_called()
+
+
+def test_scan_without_known_repos_calls_org_scan():
+    """When known_repos is None, the org API is called (default behavior)."""
+    discovery = A2APeerDiscovery()
+    discovery._token = "fake-token"
+    discovery._last_scan = 0
+
+    from unittest.mock import patch
+
+    with patch.object(discovery, "_scan_org_repos", return_value=[]) as mock_org:
+        with patch.object(discovery, "_scan_known_peers", return_value=[]):
+            discovery.scan(known_repos=None)
+
+    mock_org.assert_called_once()
+
+
+def test_scan_with_known_repos_fetches_cards():
+    """Known repos are checked for agent cards."""
+    reaper = FakeReaper()
+    discovery = A2APeerDiscovery(reaper=reaper)
+    discovery._token = "fake-token"
+    discovery._last_scan = 0
+
+    test_peer = DiscoveredPeer(
+        agent_id="agent-city",
+        repo="kimeisele/agent-city",
+        name="Agent City",
+        description="",
+        skills=["governance"],
+        url="",
+        card_type="a2a",
+        capabilities=("governance",),
+    )
+
+    from unittest.mock import patch
+
+    with patch.object(discovery, "_scan_known_peers", return_value=[]):
+        with patch.object(discovery, "_fetch_agent_card", return_value=test_peer):
+            result = discovery.scan(known_repos=["kimeisele/agent-city"])
+
+    assert len(result) == 1
+    assert result[0].agent_id == "agent-city"
+    assert len(reaper.heartbeats) == 1
