@@ -120,7 +120,7 @@ class TestPullFromHub:
             },
         )()
 
-        # _get_file calls: first for per-peer mailbox, second for legacy outbox
+        # _get_file calls: per-peer mailbox, legacy outbox, legacy inbox
         with patch("urllib.request.urlopen", return_value=mock_resp):
             with patch.object(
                 relay,
@@ -128,6 +128,7 @@ class TestPullFromHub:
                 side_effect=[
                     (per_peer_msgs, "sha1"),  # nadi/agent-city_to_steward.json
                     (legacy_msgs, "sha2"),  # nadi_outbox.json
+                    ([], "sha3"),  # nadi_inbox.json (empty)
                 ],
             ):
                 count = relay.pull_from_hub()

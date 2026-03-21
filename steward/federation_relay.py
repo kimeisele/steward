@@ -269,16 +269,18 @@ class GitHubFederationRelay:
                 logger.info("RELAY: pushed %d messages → %s", len(msgs), mailbox)
 
         # 2. LEGACY: Also write to shared outbox (migration period)
+        legacy_pushed = False
         hub_outbox, sha = self._get_file("nadi_outbox.json")
         if sha:
             hub_outbox.extend(local_msgs)
             if len(hub_outbox) > NADI_BUFFER_SIZE:
                 hub_outbox = hub_outbox[-NADI_BUFFER_SIZE:]
             if self._put_file("nadi_outbox.json", hub_outbox, sha, f"steward: relay {len(local_msgs)} messages"):
+                legacy_pushed = True
                 logger.info("RELAY: pushed %d messages to legacy hub outbox", len(local_msgs))
 
-        # Clear local outbox on success
-        if pushed > 0 or sha:
+        # Clear local outbox only if at least one transport succeeded
+        if pushed > 0 or legacy_pushed:
             self._local_outbox.write_text("[]")
             self._push_count += len(local_msgs)
 
