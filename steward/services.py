@@ -177,6 +177,7 @@ class SVC_CETANA:
     """
 
 
+
 class SVC_KIRTAN:
     """KirtanLoop — Call and Response primitive for action verification.
 
@@ -476,6 +477,7 @@ def boot(
             agent_id="steward",
             local_outbox=Path(fed_dir) / "nadi_outbox.json",
             local_inbox=Path(fed_dir) / "nadi_inbox.json",
+            reaper=ServiceRegistry.get(SVC_REAPER),
         )
         if relay.available:
             ServiceRegistry.register(SVC_FEDERATION_RELAY, relay)
