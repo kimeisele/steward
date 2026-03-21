@@ -22,7 +22,7 @@ import time
 from pathlib import Path
 
 from steward.phase_hook import GENESIS, BasePhaseHook, PhaseContext
-from steward.services import SVC_REAPER
+from steward.services import SVC_A2A_DISCOVERY, SVC_REAPER
 from vibe_core.di import ServiceRegistry
 
 logger = logging.getLogger("STEWARD.HOOKS.GENESIS")
@@ -223,8 +223,20 @@ class GenesisDiscoveryHook(BasePhaseHook):
         if violations:
             logger.info("GENESIS: %d policy violations detected", len(violations))
 
+        # Source 4: A2A Agent Card discovery (standard A2A protocol)
+        a2a_discovery = ServiceRegistry.get(SVC_A2A_DISCOVERY)
+        a2a_new = 0
+        if a2a_discovery is not None:
+            a2a_peers = a2a_discovery.scan()
+            a2a_new = len(a2a_peers)
+            if a2a_new:
+                logger.info("GENESIS: A2A discovery found %d new peers", a2a_new)
+
         self._last_scan = time.time()
-        ctx.operations.append(f"genesis_discovery:peers={len(discovered)},new={new_count},violations={len(violations)}")
+        ctx.operations.append(
+            f"genesis_discovery:peers={len(discovered)},new={new_count},"
+            f"a2a_new={a2a_new},violations={len(violations)}"
+        )
 
 
 def _check_policy_compliance(

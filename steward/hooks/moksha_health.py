@@ -15,7 +15,7 @@ import time
 from pathlib import Path
 
 from steward.phase_hook import MOKSHA, BasePhaseHook, PhaseContext
-from steward.services import SVC_IMMUNE, SVC_REAPER
+from steward.services import SVC_FEDERATION_GATEWAY, SVC_IMMUNE, SVC_REAPER
 from vibe_core.di import ServiceRegistry
 
 logger = logging.getLogger("STEWARD.HOOKS.MOKSHA_HEALTH")
@@ -60,14 +60,16 @@ class MokshaHealthReportHook(BasePhaseHook):
 
 
 def _build_health_report() -> dict:
-    """Aggregate health data from reaper + immune."""
+    """Aggregate health data from reaper + immune + gateway."""
     reaper = ServiceRegistry.get(SVC_REAPER)
     immune = ServiceRegistry.get(SVC_IMMUNE)
+    gateway = ServiceRegistry.get(SVC_FEDERATION_GATEWAY)
 
     report: dict = {
         "timestamp": time.time(),
         "peers": {"alive": 0, "suspect": 0, "dead": 0, "total": 0},
         "immune": {},
+        "gateway": {},
     }
 
     if reaper is not None:
@@ -85,5 +87,8 @@ def _build_health_report() -> dict:
 
     if immune is not None:
         report["immune"] = immune.stats()
+
+    if gateway is not None:
+        report["gateway"] = gateway.stats()
 
     return report

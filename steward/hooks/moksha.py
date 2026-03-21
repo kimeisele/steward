@@ -12,11 +12,14 @@ from pathlib import Path
 
 from steward.phase_hook import MOKSHA, BasePhaseHook, PhaseContext
 from steward.services import (
+    SVC_A2A_DISCOVERY,
     SVC_FEDERATION,
+    SVC_FEDERATION_GATEWAY,
     SVC_FEDERATION_RELAY,
     SVC_FEDERATION_TRANSPORT,
     SVC_GIT_NADI_SYNC,
     SVC_MARKETPLACE,
+    SVC_PR_VERDICT,
     SVC_REAPER,
     SVC_SYNAPSE_STORE,
 )
@@ -87,7 +90,6 @@ class MokshaPersistenceHook(BasePhaseHook):
             marketplace.save(steward_dir / "marketplace.json")
 
 
-
 class MokshaFederationHook(BasePhaseHook):
     """Flush outbound federation events via transport."""
 
@@ -107,6 +109,15 @@ class MokshaFederationHook(BasePhaseHook):
         federation = ServiceRegistry.get(SVC_FEDERATION)
         transport = ServiceRegistry.get(SVC_FEDERATION_TRANSPORT)
         if federation is not None and transport is not None:
+            # Intercept PR verdict events before flushing — post them to GitHub
+            pr_verdict_poster = ServiceRegistry.get(SVC_PR_VERDICT)
+            if pr_verdict_poster is not None:
+                from steward.federation import OP_PR_REVIEW_VERDICT
+
+                for event in federation._outbound:
+                    if event.operation == OP_PR_REVIEW_VERDICT:
+                        pr_verdict_poster.post_from_nadi_event(event.payload)
+
             flushed = federation.flush_outbound(transport)
             if flushed:
                 logger.info("FEDERATION: flushed %d outbound events to transport", flushed)
@@ -122,3 +133,21 @@ class MokshaFederationHook(BasePhaseHook):
                 git_sync = ServiceRegistry.get(SVC_GIT_NADI_SYNC)
                 if git_sync is not None:
                     git_sync.push()
+
+        # Drain gateway Hebbian signals → SynapseStore
+        # Fire-and-forget: gateway queues signals during DHARMA, we flush here.
+        gateway = ServiceRegistry.get(SVC_FEDERATION_GATEWAY)
+        synapse_store = ServiceRegistry.get(SVC_SYNAPSE_STORE)
+        if gateway is not None and synapse_store is not None:
+            signals = gateway._stats.drain_signals()
+            for protocol, success in signals:
+                trigger = f"gw:{protocol}"
+                if success:
+                    synapse_store.increment_weight(trigger, "accept")
+                else:
+                    synapse_store.decrement_weight(trigger, "accept")
+
+        # Persist A2A discovery state
+        a2a_discovery = ServiceRegistry.get(SVC_A2A_DISCOVERY)
+        if a2a_discovery is not None:
+            a2a_discovery.save_discovered()
