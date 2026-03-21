@@ -75,9 +75,16 @@ class GitHubFederationRelay:
 
     Delivery receipts track what was pushed and whether peers consumed it.
     Unconfirmed receipts older than RECEIPT_TTL_S are escalated via stats().
+
+    Broadcast resolution: when target="*", resolves actual peers from
+    the HeartbeatReaper registry (ALIVE + SUSPECT). Falls back to a
+    minimal default list on cold start when the reaper has no peers.
     """
 
     RECEIPT_TTL_S = 3600.0  # 1 hour before unconfirmed receipt is stale
+
+    # Minimal fallback peers for cold start when reaper has no entries.
+    _FALLBACK_BROADCAST_PEERS: tuple[str, ...] = ("agent-world", "agent-internet")
 
     def __init__(
         self,
@@ -85,11 +92,13 @@ class GitHubFederationRelay:
         hub_repo: str = DEFAULT_HUB_REPO,
         local_outbox: Path | None = None,
         local_inbox: Path | None = None,
+        reaper: object | None = None,
     ) -> None:
         self._agent_id = agent_id
         self._hub_repo = hub_repo
         self._local_outbox = local_outbox or Path("data/federation/nadi_outbox.json")
         self._local_inbox = local_inbox or Path("data/federation/nadi_inbox.json")
+        self._reaper = reaper
         self._token = self._load_token()
         self._last_pull: float = 0.0
         self._last_push: float = 0.0
@@ -273,18 +282,23 @@ class GitHubFederationRelay:
             if not m.get("id"):
                 m["id"] = str(uuid.uuid4())
 
-        # Group by target
+        # Resolve broadcast targets from reaper peer registry
+        broadcast_peers = self._resolve_broadcast_peers()
+
+        # Group by target, expanding "*" → actual peer IDs
         by_target: dict[str, list[dict]] = {}
         for m in local_msgs:
             target = m.get("target", "*")
-            by_target.setdefault(target, []).append(m)
+            if target == "*":
+                for peer_id in broadcast_peers:
+                    by_target.setdefault(peer_id, []).append(m)
+            else:
+                by_target.setdefault(target, []).append(m)
 
         pushed = 0
 
         # 1. NEW: Write per-peer mailboxes
         for target, msgs in by_target.items():
-            if target == "*":
-                continue  # Broadcast handled by legacy path
             mailbox = f"nadi/{self._agent_id}_to_{target}.json"
             existing, sha = self._get_file(mailbox)
             if not sha:
@@ -299,16 +313,18 @@ class GitHubFederationRelay:
                 logger.info("RELAY: pushed %d messages → %s", len(msgs), mailbox)
 
         # 2. LEGACY: Also write to shared outbox (migration period)
+        legacy_pushed = False
         hub_outbox, sha = self._get_file("nadi_outbox.json")
         if sha:
             hub_outbox.extend(local_msgs)
             if len(hub_outbox) > NADI_BUFFER_SIZE:
                 hub_outbox = hub_outbox[-NADI_BUFFER_SIZE:]
             if self._put_file("nadi_outbox.json", hub_outbox, sha, f"steward: relay {len(local_msgs)} messages"):
+                legacy_pushed = True
                 logger.info("RELAY: pushed %d messages to legacy hub outbox", len(local_msgs))
 
-        # Clear local outbox on success
-        if pushed > 0 or sha:
+        # Clear local outbox only if at least one transport succeeded
+        if pushed > 0 or legacy_pushed:
             self._local_outbox.write_text("[]")
             self._push_count += len(local_msgs)
 
@@ -333,6 +349,39 @@ class GitHubFederationRelay:
         return pushed or len(local_msgs)
 
     # ── Helpers ───────────────────────────────────────────────────────
+
+    def _resolve_broadcast_peers(self) -> list[str]:
+        """Resolve broadcast targets from reaper peer registry.
+
+        Returns ALIVE + SUSPECT peer IDs (excluding self). Falls back to
+        _FALLBACK_BROADCAST_PEERS on cold start when the reaper is empty
+        or unavailable.
+        """
+        reaper = self._reaper
+
+        # Try to get reaper from ServiceRegistry if not injected
+        if reaper is None:
+            try:
+                from steward.services import SVC_REAPER
+                from vibe_core.di import ServiceRegistry
+
+                reaper = ServiceRegistry.get(SVC_REAPER)
+            except Exception:
+                pass
+
+        if reaper is not None:
+            try:
+                peers = []
+                for p in reaper.alive_peers() + reaper.suspect_peers():
+                    if p.agent_id != self._agent_id:
+                        peers.append(p.agent_id)
+                if peers:
+                    return peers
+            except Exception as e:
+                logger.debug("Broadcast peer resolution failed: %s", e)
+
+        # Cold start fallback — minimal known peers
+        return [p for p in self._FALLBACK_BROADCAST_PEERS if p != self._agent_id]
 
     def _read_local_inbox(self) -> list[dict]:
         if not self._local_inbox.exists():
