@@ -354,15 +354,14 @@ class AutonomyEngine:
         """Execute BOTTLENECK_ESCALATION: detect + fix + respond via NADI.
 
         Flow:
-        1. Parse source/repo from task description
-        2. If repo URL → cross-repo workspace isolation (clone + fix there)
-        3. If local or no repo → run detection + fix in local cwd
-        4. Emit OP_BOTTLENECK_RESOLUTION back to the source peer
+        1. Run deterministic detection (IntentHandlers.execute_bottleneck_escalation)
+        2. If problem found → run fix pipeline (guarded_llm_fix)
+        3. Emit OP_BOTTLENECK_RESOLUTION back to the source peer
         """
         from steward.federation import OP_BOTTLENECK_RESOLUTION
         from steward.services import SVC_FEDERATION
 
-        # Parse source agent and repo from task description
+        # Parse source agent from task description
         desc = getattr(task, "description", "") or ""
         parts = {}
         for segment in desc.split("|"):
@@ -371,90 +370,42 @@ class AutonomyEngine:
                 parts[key] = value
 
         source_agent = parts.get("source", "unknown")
-        repo = parts.get("repo", "")
+
+        # 1. Detect problem (0 tokens)
+        problem = self.handlers.execute_bottleneck_escalation()
+        self._ledger.record_autonomous("BOTTLENECK_ESCALATION", problem is not None)
 
         result = None
         resolution_status = "no_issue_found"
 
-        # Cross-repo: the bottleneck is in a DIFFERENT repo
-        if repo and ("github.com" in repo or repo.startswith("https://") or repo.startswith("git@")):
-            logger.info(
-                "BOTTLENECK_ESCALATION: cross-repo from %s, repo=%s — using workspace isolation",
-                source_agent,
-                repo,
-            )
-            try:
-                with self._cross_repo_workspace(repo, task.id) as workspace:
-                    logger.info("Cross-repo workspace: %s → %s", repo, workspace)
-                    # Detect in the workspace
-                    problem = self.handlers.execute_bottleneck_escalation()
-                    self._ledger.record_autonomous("BOTTLENECK_ESCALATION", problem is not None)
+        if problem:
+            # 2. Confidence gate + fix pipeline
+            context = problem_fingerprint(problem)
+            granular_key = f"auto:BOTTLENECK_ESCALATION:{context}" if context else "auto:BOTTLENECK_ESCALATION"
+            auto_weight = self._synaptic.get_weight(granular_key, "fix")
 
-                    if problem:
-                        context = problem_fingerprint(problem)
-                        granular_key = (
-                            f"auto:BOTTLENECK_ESCALATION:{context}" if context else "auto:BOTTLENECK_ESCALATION"
-                        )
-                        auto_weight = self._synaptic.get_weight(granular_key, "fix")
-
-                        if auto_weight < 0.2:
-                            logger.warning(
-                                "Hebbian confidence too low (%.2f) for cross-repo bottleneck fix — escalating",
-                                auto_weight,
-                            )
-                            self.pipeline.escalate_problem(problem, "BOTTLENECK_ESCALATION", auto_weight)
-                            resolution_status = "escalated_to_human"
-                        else:
-                            result = await self.pipeline.guarded_pr_fix(
-                                problem, intent_name="BOTTLENECK_ESCALATION"
-                            )
-                            resolution_status = "fixed" if result else "fix_failed"
-            except Exception as e:
-                logger.error("Cross-repo bottleneck fix failed: %s", e)
-                resolution_status = "fix_failed"
-        elif repo:
-            # Repo specified but not a clone-able URL — cannot fix remotely
-            logger.warning(
-                "CROSS_REPO_ESCALATION: cannot fix '%s' remotely yet (repo=%s, not a clone-able URL)",
-                task.title,
-                repo,
-            )
-            self._ledger.record_autonomous("BOTTLENECK_ESCALATION", False)
-            resolution_status = "cross_repo_not_supported"
-        else:
-            # Local: detect + fix in our own cwd
-            problem = self.handlers.execute_bottleneck_escalation()
-            self._ledger.record_autonomous("BOTTLENECK_ESCALATION", problem is not None)
-
-            if problem:
-                context = problem_fingerprint(problem)
-                granular_key = (
-                    f"auto:BOTTLENECK_ESCALATION:{context}" if context else "auto:BOTTLENECK_ESCALATION"
+            if auto_weight < 0.2:
+                logger.warning(
+                    "Hebbian confidence too low (%.2f) for bottleneck fix — escalating",
+                    auto_weight,
                 )
-                auto_weight = self._synaptic.get_weight(granular_key, "fix")
-
-                if auto_weight < 0.2:
-                    logger.warning(
-                        "Hebbian confidence too low (%.2f) for bottleneck fix — escalating",
-                        auto_weight,
-                    )
-                    self.pipeline.escalate_problem(problem, "BOTTLENECK_ESCALATION", auto_weight)
-                    resolution_status = "escalated_to_human"
-                else:
-                    logger.info(
-                        "BOTTLENECK_ESCALATION: problem found (confidence=%.2f), invoking fix pipeline",
-                        auto_weight,
-                    )
-                    try:
-                        result = await self.pipeline.guarded_llm_fix(problem, intent_name="BOTTLENECK_ESCALATION")
-                        resolution_status = "fixed" if result else "fix_failed"
-                    except Exception as e:
-                        logger.error("Bottleneck fix failed: %s", e)
-                        resolution_status = "fix_failed"
+                self.pipeline.escalate_problem(problem, "BOTTLENECK_ESCALATION", auto_weight)
+                resolution_status = "escalated_to_human"
+            else:
+                logger.info(
+                    "BOTTLENECK_ESCALATION: problem found (confidence=%.2f), invoking fix pipeline",
+                    auto_weight,
+                )
+                try:
+                    result = await self.pipeline.guarded_llm_fix(problem, intent_name="BOTTLENECK_ESCALATION")
+                    resolution_status = "fixed" if result else "fix_failed"
+                except Exception as e:
+                    logger.error("Bottleneck fix failed: %s", e)
+                    resolution_status = "fix_failed"
 
         task_mgr.update_task(task.id, status=TaskStatus.COMPLETED)
 
-        # Emit resolution back to source peer via NADI
+        # 3. Emit resolution back to source peer via NADI
         bridge = ServiceRegistry.get(SVC_FEDERATION)
         if bridge is not None:
             bridge.emit(
