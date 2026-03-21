@@ -104,6 +104,7 @@ OP_PR_REVIEW_REQUEST = "pr_review_request"
 OP_PR_REVIEW_VERDICT = "pr_review_verdict"
 OP_BOTTLENECK_ESCALATION = "bottleneck_escalation"
 OP_BOTTLENECK_RESOLUTION = "bottleneck_resolution"
+OP_CITY_REPORT = "city_report"
 
 # Minimum trust level to accept inbound delegations
 DEFAULT_DELEGATION_TRUST_FLOOR: float = 0.3
@@ -161,6 +162,7 @@ class FederationBridge:
             OP_TASK_FAILED: self._handle_task_callback,
             OP_PR_REVIEW_REQUEST: self._handle_pr_review_request,
             OP_BOTTLENECK_ESCALATION: self._handle_bottleneck_escalation,
+            OP_CITY_REPORT: self._handle_city_report,
         }
 
     def ingest(self, operation: str, payload: dict) -> bool:
@@ -190,6 +192,9 @@ class FederationBridge:
                 continue
             op = msg.get("operation", "")
             payload = msg.get("payload", {})
+            # Inject source from message envelope so handlers can identify the sender
+            if "source_agent" not in payload and "source" in msg:
+                payload["source_agent"] = msg["source"]
             if self.ingest(op, payload):
                 processed += 1
         return processed
@@ -506,6 +511,15 @@ class FederationBridge:
             logger.warning("BRIDGE: bottleneck_escalation missing target")
             return False
 
+        # Dedup: skip if an active BOTTLENECK_ESCALATION task with same target already exists
+        from vibe_core.task_types import TaskStatus
+
+        existing = task_mgr.list_tasks(status=TaskStatus.IN_PROGRESS) + task_mgr.list_tasks(status=TaskStatus.PENDING)
+        for t in existing:
+            if "[BOTTLENECK_ESCALATION]" in t.title and target in t.title:
+                logger.info("BRIDGE: bottleneck_escalation dedup — '%s' already active, skipping", target)
+                return True
+
         # Trust gate: reject escalations from untrusted peers
         if self.reaper is not None and source != "unknown":
             peer = self.reaper.get_peer(source) if hasattr(self.reaper, "get_peer") else None
@@ -534,6 +548,68 @@ class FederationBridge:
             priority,
             severity,
         )
+        return True
+
+    def _handle_city_report(self, payload: dict) -> bool:
+        """Inbound city_report from agent-city (MOKSHA federation report).
+
+        Agent-city sends periodic reports with operation="city_report" containing:
+            heartbeat: int — city heartbeat count
+            mission_results: list[dict] — terminal missions with {id, name, status, owner}
+            population, alive, chain_valid, pr_results, active_campaigns
+
+        Bottleneck missions appear in mission_results with names like "bottleneck: ruff_clean".
+        This handler extracts them and creates BOTTLENECK_ESCALATION tasks via the existing
+        ingest path, adapting the sender's format to the receiver's protocol.
+        """
+        # Extract source agent from the message envelope (set by process_inbound caller)
+        source_agent = payload.get("source_agent", "agent-city")
+
+        # Record heartbeat if reaper is available (the report is also a liveness signal)
+        if self.reaper is not None:
+            self.reaper.record_heartbeat(
+                source_agent,
+                timestamp=time.time(),
+                source="city_report",
+            )
+
+        # Extract bottleneck missions from mission_results
+        mission_results = payload.get("mission_results", [])
+        if not isinstance(mission_results, list):
+            return True  # Valid report, just no missions
+
+        bottleneck_count = 0
+        for mission in mission_results:
+            if not isinstance(mission, dict):
+                continue
+            name = mission.get("name", "")
+            if not name.startswith("bottleneck:"):
+                continue
+
+            # Extract target from "bottleneck: ruff_clean,tests_pass"
+            target = name.split(":", 1)[1].strip() if ":" in name else name
+            if not target:
+                continue
+
+            # Convert city_report mission → bottleneck_escalation via existing handler
+            escalation_payload = {
+                "source_agent": source_agent,
+                "bottleneck_type": "scope_gate_block",
+                "target": target,
+                "requested_action": "fix",
+                "repo": payload.get("repo", ""),
+                "details": f"city_report mission {mission.get('id', '?')} status={mission.get('status', '?')}",
+                "severity": "high",
+            }
+            if self._handle_bottleneck_escalation(escalation_payload):
+                bottleneck_count += 1
+
+        if bottleneck_count > 0:
+            logger.info(
+                "BRIDGE: city_report from %s — extracted %d bottleneck escalation(s)",
+                source_agent,
+                bottleneck_count,
+            )
         return True
 
     def _handle_task_callback(self, payload: dict) -> bool:
