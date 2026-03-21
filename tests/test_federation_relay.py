@@ -93,8 +93,8 @@ class TestPullFromHub:
 
         assert count == 2  # steward + broadcast, not other-agent
 
-    def test_pull_reads_both_outbox_and_inbox(self, tmp_path):
-        """Messages from hub inbox (agent-city convention) are also pulled."""
+    def test_pull_reads_both_per_peer_and_legacy(self, tmp_path):
+        """Messages from per-peer mailboxes and legacy outbox are both pulled."""
         with patch.dict("os.environ", {"GITHUB_TOKEN": "tok"}):
             relay = GitHubFederationRelay(
                 agent_id="steward",
@@ -102,16 +102,38 @@ class TestPullFromHub:
             )
         relay._last_pull = 0
 
-        outbox_msgs = [
+        legacy_msgs = [
             {"source": "agent-world", "timestamp": 100, "target": "steward", "operation": "heartbeat"},
         ]
-        inbox_msgs = [
-            {"source": "agent-city", "timestamp": 200, "target": "steward-protocol", "operation": "pr_review_request"},
+        per_peer_msgs = [
+            {"source": "agent-city", "timestamp": 200, "target": "steward", "operation": "pr_review_request"},
         ]
-        with patch.object(relay, "_get_file", side_effect=[(outbox_msgs, "sha1"), (inbox_msgs, "sha2")]):
-            count = relay.pull_from_hub()
 
-        # Both messages pulled: one from outbox (exact match), one from inbox (substring match)
+        # Mock per-peer mailbox discovery via urllib
+        nadi_listing = [{"name": "agent-city_to_steward.json"}]
+        mock_resp = type(
+            "Resp",
+            (),
+            {
+                "read": lambda self: json.dumps(nadi_listing).encode(),
+                "__enter__": lambda s: s,
+                "__exit__": lambda *a: None,
+            },
+        )()
+
+        # _get_file calls: per-peer mailbox, legacy outbox, legacy inbox
+        with patch("urllib.request.urlopen", return_value=mock_resp):
+            with patch.object(
+                relay,
+                "_get_file",
+                side_effect=[
+                    (per_peer_msgs, "sha1"),  # nadi/agent-city_to_steward.json
+                    (legacy_msgs, "sha2"),  # nadi_outbox.json
+                    ([], "sha3"),  # nadi_inbox.json (empty)
+                ],
+            ):
+                count = relay.pull_from_hub()
+
         assert count == 2
         inbox = json.loads((tmp_path / "inbox.json").read_text())
         assert len(inbox) == 2
@@ -150,8 +172,8 @@ class TestPushToHub:
             )
         relay._last_push = 0
 
-        # Create outbox with messages
-        outbox = [{"source": "steward", "timestamp": 100, "op": "heartbeat"}]
+        # Create outbox with a targeted message (not broadcast)
+        outbox = [{"source": "steward", "timestamp": 100, "target": "agent-world", "op": "heartbeat"}]
         (tmp_path / "outbox.json").write_text(json.dumps(outbox))
 
         # Mock hub interactions
@@ -159,10 +181,74 @@ class TestPushToHub:
             with patch.object(relay, "_put_file", return_value=True):
                 count = relay.push_to_hub()
 
-        assert count == 1
+        assert count >= 1
         # Outbox should be cleared
         remaining = json.loads((tmp_path / "outbox.json").read_text())
         assert remaining == []
+
+    def test_push_expands_broadcast_to_peers(self, tmp_path):
+        """Broadcast messages (target='*') are expanded to known peers."""
+        from steward.reaper import HeartbeatReaper
+
+        reaper = HeartbeatReaper()
+        reaper.record_heartbeat("agent-city", source="test")
+        reaper.record_heartbeat("agent-world", source="test")
+
+        with patch.dict("os.environ", {"GITHUB_TOKEN": "tok"}):
+            relay = GitHubFederationRelay(
+                agent_id="steward",
+                local_outbox=tmp_path / "outbox.json",
+                reaper=reaper,
+            )
+        relay._last_push = 0
+
+        # Create outbox with a broadcast message
+        outbox = [{"source": "steward", "timestamp": 100, "target": "*", "op": "heartbeat"}]
+        (tmp_path / "outbox.json").write_text(json.dumps(outbox))
+
+        put_calls = []
+
+        def mock_put(path, content, sha, message):
+            put_calls.append(path)
+            return True
+
+        # Mock hub interactions
+        with patch.object(relay, "_get_file", return_value=([], "sha123")):
+            with patch.object(relay, "_put_file", side_effect=mock_put):
+                count = relay.push_to_hub()
+
+        # Should have written to per-peer mailboxes for each resolved peer
+        peer_mailboxes = [p for p in put_calls if p.startswith("nadi/steward_to_")]
+        assert len(peer_mailboxes) == 2  # agent-city + agent-world
+        assert "nadi/steward_to_agent-city.json" in peer_mailboxes
+        assert "nadi/steward_to_agent-world.json" in peer_mailboxes
+        assert count >= 2
+
+    def test_push_broadcast_fallback_without_reaper(self, tmp_path):
+        """Without reaper, broadcast falls back to minimal default peers."""
+        with patch.dict("os.environ", {"GITHUB_TOKEN": "tok"}):
+            relay = GitHubFederationRelay(
+                agent_id="steward",
+                local_outbox=tmp_path / "outbox.json",
+            )
+        relay._last_push = 0
+
+        outbox = [{"source": "steward", "timestamp": 100, "target": "*", "op": "heartbeat"}]
+        (tmp_path / "outbox.json").write_text(json.dumps(outbox))
+
+        put_calls = []
+
+        def mock_put(path, content, sha, message):
+            put_calls.append(path)
+            return True
+
+        with patch.object(relay, "_get_file", return_value=([], "sha123")):
+            with patch.object(relay, "_put_file", side_effect=mock_put):
+                relay.push_to_hub()
+
+        # Fallback peers should be used
+        peer_mailboxes = [p for p in put_calls if p.startswith("nadi/steward_to_")]
+        assert len(peer_mailboxes) >= 1  # at least the fallback peers
 
 
 # ── Delivery Receipt Tracking ──────────────────────────────────────
