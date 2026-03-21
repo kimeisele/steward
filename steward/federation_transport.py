@@ -24,6 +24,8 @@ import logging
 import time
 from pathlib import Path
 
+from vibe_core.mahamantra.federation.types import FederationMessage
+
 logger = logging.getLogger("STEWARD.FEDERATION.TRANSPORT")
 
 NADI_BUFFER_SIZE = 144  # Max messages per file (matches steward-protocol)
@@ -108,8 +110,13 @@ class NadiFederationTransport:
                     logger.warning("Nadi outbox corrupt, starting fresh: %s", e)
 
             for msg in messages:
-                payload = msg if isinstance(msg, dict) else (msg.to_dict() if hasattr(msg, "to_dict") else None)
-                if payload is None:
+                if isinstance(msg, FederationMessage):
+                    payload = msg.to_dict()
+                elif isinstance(msg, dict):
+                    payload = msg
+                elif hasattr(msg, "to_dict"):
+                    payload = msg.to_dict()
+                else:
                     logger.warning("Nadi: dropping non-serializable message: %s", type(msg))
                     continue
                 # Strict validation: required fields

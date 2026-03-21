@@ -23,6 +23,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
+from vibe_core.mahamantra.federation.types import FederationMessage
+
 logger = logging.getLogger("STEWARD.FEDERATION")
 
 # ── Protocols ──────────────────────────────────────────────────────
@@ -208,18 +210,17 @@ class FederationBridge:
         for event in self._outbound:
             targets = peer_ids if peer_ids else ["*"]
             for target in targets:
-                messages.append(
-                    {
-                        "source": self.agent_id,
-                        "target": target,
-                        "operation": event.operation,
-                        "payload": event.payload,
-                        "timestamp": event.timestamp,
-                        "priority": 1,
-                        "correlation_id": "",
-                        "ttl_s": 900.0,
-                    }
+                msg = FederationMessage(
+                    source=self.agent_id,
+                    target=target,
+                    operation=event.operation,
+                    payload=event.payload,
+                    timestamp=event.timestamp,
+                    priority=1,
+                    correlation_id="",
+                    ttl_s=900.0,
                 )
+                messages.append(msg.to_dict())
 
         try:
             count = transport.append_to_inbox(messages)
