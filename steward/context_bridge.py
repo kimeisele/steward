@@ -486,12 +486,12 @@ def _get_cetana() -> object | None:
     """Get Cetana instance from ServiceRegistry if available.
 
     Returns None when no agent is running (CLI mode, tests, hooks).
-    TODO: Wire via SVC_CETANA constant once Cetana is registered as a service.
     """
     try:
+        from steward.services import SVC_CETANA
         from vibe_core.di import ServiceRegistry
 
-        return ServiceRegistry.get("cetana")
+        return ServiceRegistry.get(SVC_CETANA)
     except (ImportError, KeyError):
         return None
 

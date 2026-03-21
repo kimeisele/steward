@@ -151,3 +151,13 @@ class MokshaFederationHook(BasePhaseHook):
         a2a_discovery = ServiceRegistry.get(SVC_A2A_DISCOVERY)
         if a2a_discovery is not None:
             a2a_discovery.save_discovered()
+
+        # Persist A2A in-flight task state (survives reboots)
+        from steward.services import SVC_A2A_ADAPTER
+
+        a2a_adapter = ServiceRegistry.get(SVC_A2A_ADAPTER)
+        if a2a_adapter is not None and hasattr(a2a_adapter, "save_tasks"):
+            tasks_path = Path(ctx.cwd) / ".steward" / "a2a_tasks.json"
+            saved = a2a_adapter.save_tasks(tasks_path)
+            if saved:
+                logger.debug("MOKSHA: persisted %d A2A tasks", saved)

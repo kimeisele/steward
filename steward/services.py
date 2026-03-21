@@ -169,6 +169,14 @@ class SVC_PR_VERDICT:
     """PRVerdictPoster — post federation PR review verdicts to GitHub."""
 
 
+class SVC_CETANA:
+    """Cetana — Autonomous heartbeat daemon (life symptoms).
+
+    Background thread running 4-phase MURALI cycle at adaptive frequency.
+    Exposes beat history, phase, frequency, anomaly count for tools/hooks.
+    """
+
+
 class SVC_KIRTAN:
     """KirtanLoop — Call and Response primitive for action verification.
 
@@ -421,6 +429,11 @@ def boot(
     from steward.a2a_adapter import A2AProtocolAdapter
 
     a2a_adapter = A2AProtocolAdapter(bridge=federation, agent_id="steward")
+    # Restore in-flight A2A tasks from previous session
+    a2a_tasks_path = cwd_path / ".steward" / "a2a_tasks.json"
+    restored = a2a_adapter.load_tasks(a2a_tasks_path)
+    if restored:
+        logger.info("A2A adapter: restored %d in-flight tasks", restored)
     ServiceRegistry.register(SVC_A2A_ADAPTER, a2a_adapter)
 
     # 27b2. FederationGateway (unified entry — Five Tattva gates for all protocols)
