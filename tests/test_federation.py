@@ -424,6 +424,31 @@ class TestMokshaFlush:
         bridge.emit("test", {"x": 1})
         assert bridge.stats()["outbound_pending"] == 1
 
+    def test_flush_uses_federation_message_format(self):
+        """Flushed messages use vibe_core FederationMessage schema.
+
+        Verifies alignment with steward-protocol's FederationMessage type
+        rather than ad-hoc raw dicts (cross-repo consistency).
+        """
+        from vibe_core.mahamantra.federation.types import FederationMessage
+
+        reaper = HeartbeatReaper()
+        reaper.record_heartbeat("agent-city")
+        bridge = FederationBridge(reaper=reaper, agent_id="steward")
+        bridge.emit("heartbeat", {"agent_id": "steward", "health": 0.9})
+        transport = FakeTransport()
+        bridge.flush_outbound(transport)
+
+        assert len(transport.inbox) >= 1
+        msg = transport.inbox[0]
+        # Verify the dict has all FederationMessage fields
+        parsed = FederationMessage.from_dict(msg)
+        assert parsed.source == "steward"
+        assert parsed.target == "agent-city"
+        assert parsed.operation == "heartbeat"
+        assert parsed.ttl_s == 900.0
+        assert isinstance(parsed.payload, dict)
+
 
 # ── Inbound: Delegate Task ─────────────────────────────────────
 

@@ -331,6 +331,30 @@ class DharmaFederationHook(BasePhaseHook):
         if git_sync is not None:
             git_sync.pull()
 
+        # Check for stale delivery receipts — messages that were pushed
+        # but never implicitly confirmed by a response from the target.
+        # This closes the fire-and-forget gap: agent-internet defines
+        # DeliveryReceipt types; steward now implements the tracking.
+        relay = ServiceRegistry.get(SVC_FEDERATION_RELAY)
+        if relay is not None and hasattr(relay, "stale_receipts"):
+            stale = relay.stale_receipts()
+            if stale:
+                targets = {r.target for r in stale}
+                logger.warning(
+                    "FEDERATION: %d stale delivery receipts (targets: %s) — messages may not have been consumed",
+                    len(stale),
+                    ", ".join(sorted(targets)),
+                )
+                # Register stale targets with KirtanLoop for escalation
+                kirtan = ServiceRegistry.get(SVC_KIRTAN)
+                if kirtan is not None:
+                    for target in targets:
+                        kirtan.call(
+                            f"delivery:{target}",
+                            target=target,
+                            expected_outcome="delivery_confirmed",
+                        )
+
         transport = ServiceRegistry.get(SVC_FEDERATION_TRANSPORT)
         if transport is not None:
             # Route through FederationGateway (Five Tattva Gates) if available,
