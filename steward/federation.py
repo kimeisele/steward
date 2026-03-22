@@ -18,10 +18,12 @@ Integration:
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from vibe_core.mahamantra.federation.types import FederationMessage
@@ -109,6 +111,8 @@ OP_CITY_REPORT = "city_report"
 OP_BOTTLENECK_ESCALATION = "bottleneck_escalation"
 OP_COMPLIANCE_REPORT = "compliance_report"
 OP_GOVERNANCE_BOUNTY = "governance_bounty"
+OP_FEDERATION_NODE_HEALTH = "federation.node_health"
+NODE_HEALTH_PROTOCOL_VERSION = "1.0"
 
 # Mission name prefixes emitted by agent-city's create_brain_mission().
 # Verified from kimeisele/agent-city city/missions.py — Brain {verb}: {target[:50]}
@@ -243,6 +247,7 @@ class FederationBridge:
     marketplace: MarketplaceLike | None = None
     agent_id: str = "steward"  # our identity in federation messages
     delegation_trust_floor: float = DEFAULT_DELEGATION_TRUST_FLOOR
+    peer_registry_path: str | Path | None = None
 
     _outbound: list[BridgeEvent] = field(default_factory=list)
     _inbound_count: int = field(default=0, init=False)
@@ -266,7 +271,53 @@ class FederationBridge:
             OP_BOTTLENECK_ESCALATION: self._handle_bottleneck_escalation,
             OP_COMPLIANCE_REPORT: self._handle_compliance_report,
             OP_GOVERNANCE_BOUNTY: self._handle_governance_bounty,
+            OP_FEDERATION_NODE_HEALTH: self._handle_node_health,
         }
+
+    def _peer_registry_file(self) -> Path:
+        if self.peer_registry_path is not None:
+            return Path(self.peer_registry_path)
+        return Path("data") / "federation" / "peer_registry.json"
+
+    def _load_peer_registry(self) -> dict[str, dict]:
+        path = self._peer_registry_file()
+        if not path.exists():
+            return {}
+        try:
+            raw = json.loads(path.read_text())
+        except (json.JSONDecodeError, OSError):
+            return {}
+        return raw if isinstance(raw, dict) else {}
+
+    def _save_peer_registry(self, registry: dict[str, dict]) -> None:
+        path = self._peer_registry_file()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(registry, indent=2, sort_keys=True))
+        tmp.replace(path)
+
+    def _protocol_major(self, value: object) -> int | None:
+        raw = str(value or "").strip()
+        if not raw:
+            return None
+        token = raw[1:] if raw.lower().startswith("v") else raw
+        major = token.split(".", 1)[0].strip()
+        return int(major) if major.isdigit() else None
+
+    def _circuit_breaker_reason(self, target: str, operation: str, registry: dict[str, dict]) -> str:
+        if operation == OP_FEDERATION_NODE_HEALTH:
+            return ""
+        peer = registry.get(target)
+        if not isinstance(peer, dict):
+            return ""
+        status = str(peer.get("status", "")).strip().upper()
+        if status == "CRITICAL":
+            return "circuit_breaker_peer_critical"
+        peer_major = self._protocol_major(peer.get("protocol_version", ""))
+        local_major = self._protocol_major(NODE_HEALTH_PROTOCOL_VERSION)
+        if peer_major is not None and local_major is not None and peer_major != local_major:
+            return "circuit_breaker_protocol_mismatch"
+        return ""
 
     def ingest(self, operation: str, payload: dict) -> bool:
         """Route inbound message via O(1) dispatch table."""
@@ -319,6 +370,8 @@ class FederationBridge:
                     peer_ids.append(p.agent_id)
 
         messages = []
+        blocked_messages = []
+        registry = self._load_peer_registry()
         for event in self._outbound:
             targets = peer_ids if peer_ids else ["*"]
             for target in targets:
@@ -332,7 +385,21 @@ class FederationBridge:
                     correlation_id="",
                     ttl_s=900.0,
                 )
-                messages.append(msg.to_dict())
+                payload = msg.to_dict()
+                reason = self._circuit_breaker_reason(target, event.operation, registry)
+                if reason:
+                    blocked_messages.append((payload, reason))
+                    continue
+                messages.append(payload)
+
+        if blocked_messages and hasattr(transport, "quarantine_messages"):
+            for payload, reason in blocked_messages:
+                transport.quarantine_messages(
+                    [payload],
+                    reason=reason,
+                    stage="routing_outbound",
+                    metadata={"target": payload.get("target", ""), "operation": payload.get("operation", "")},
+                )
 
         try:
             count = transport.append_to_inbox(messages)
@@ -868,6 +935,36 @@ class FederationBridge:
                     "compliant" if compliant else f"{len(violations)} violations",
                 )
 
+        return True
+
+    def _handle_node_health(self, payload: dict) -> bool:
+        node_id = str(payload.get("node_id", "")).strip()
+        protocol_version = str(payload.get("protocol_version", "")).strip()
+        status = str(payload.get("status", "")).strip()
+        timestamp = payload.get("timestamp", 0.0)
+        quarantine_metrics = payload.get("quarantine_metrics", {})
+
+        if not node_id or not protocol_version or not status:
+            return False
+        if not isinstance(quarantine_metrics, dict):
+            return False
+
+        registry = self._load_peer_registry()
+        registry[node_id] = {
+            "node_id": node_id,
+            "protocol_version": protocol_version,
+            "status": status,
+            "timestamp": timestamp,
+            "quarantine_metrics": quarantine_metrics,
+            "updated_at": time.time(),
+        }
+        self._save_peer_registry(registry)
+        logger.info(
+            "BRIDGE: node_health upsert node_id=%s status=%s protocol=%s",
+            node_id,
+            status,
+            protocol_version,
+        )
         return True
 
     def _handle_governance_bounty(self, payload: dict) -> bool:

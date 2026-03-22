@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock
 
+from steward.federation import FederationBridge
 from steward.federation_transport import NadiFederationTransport
 from steward.federation_gateway import FederationGateway, _is_a2a, _is_nadi
 
@@ -429,6 +430,40 @@ class TestProcessInbound:
 
         assert processed == 0
         assert gw.stats()["errors"] == 1
+
+    def test_node_health_broadcast_round_trip_updates_peer_registry(self, tmp_path):
+        node_a = tmp_path / "node-a"
+        node_b = tmp_path / "node-b"
+        node_a.mkdir()
+        node_b.mkdir()
+
+        transport_a = NadiFederationTransport(str(node_a))
+        transport_b = NadiFederationTransport(str(node_b))
+        bridge_b = FederationBridge(agent_id="node-b", peer_registry_path=node_b / "peer_registry.json")
+        gw_b = FederationGateway(bridge=bridge_b)
+
+        message = {
+            "source": "node-a",
+            "target": "*",
+            "operation": "federation.node_health",
+            "payload": {
+                "node_id": "node-a",
+                "protocol_version": "1.0",
+                "timestamp": 123.0,
+                "status": "DEGRADED",
+                "quarantine_metrics": {"total": 1, "by_reason": {}, "by_stage": {}},
+            },
+        }
+        assert transport_a.append_to_inbox([message]) == 1
+        outbox_messages = json.loads((node_a / "nadi_outbox.json").read_text())
+        (node_b / "nadi_inbox.json").write_text(json.dumps(outbox_messages))
+
+        processed = gw_b.process_inbound(transport_b)
+
+        assert processed == 1
+        registry = json.loads((node_b / "peer_registry.json").read_text())
+        assert registry["node-a"]["status"] == "DEGRADED"
+        assert registry["node-a"]["protocol_version"] == "1.0"
 
     def test_signals_queued_for_moksha(self):
         """All processed messages queue Hebbian signals for MOKSHA drain."""
