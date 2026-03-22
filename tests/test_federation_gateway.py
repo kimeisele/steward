@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock
 
+from steward.federation_transport import NadiFederationTransport
 from steward.federation_gateway import FederationGateway, _is_a2a, _is_nadi
 
 # ── Protocol Detection ─────────────────────────────────────────────
@@ -374,6 +375,49 @@ class TestProcessInbound:
 
         assert processed == 1
         assert gw.stats()["errors"] == 1
+
+    def test_unknown_protocol_message_is_quarantined(self, tmp_path):
+        transport = NadiFederationTransport(str(tmp_path))
+        (tmp_path / "nadi_inbox.json").write_text(
+            json.dumps(
+                [
+                    {"source": "peer-1", "operation": 7, "payload": {}},
+                ]
+            )
+        )
+        gw = FederationGateway(bridge=MagicMock())
+
+        processed = gw.process_inbound(transport)
+
+        assert processed == 0
+        quarantine_files = [path for path in (tmp_path / "quarantine").glob("*.json") if path.name != "index.json"]
+        assert len(quarantine_files) == 1
+        record = json.loads(quarantine_files[0].read_text())
+        assert record["stage"] == "gateway_reject"
+        assert record["metadata"]["code"] == 400
+
+    def test_bridge_reject_message_is_quarantined(self, tmp_path):
+        transport = NadiFederationTransport(str(tmp_path))
+        (tmp_path / "nadi_inbox.json").write_text(
+            json.dumps(
+                [
+                    {"source": "peer-1", "operation": "unknown_op", "payload": {}},
+                ]
+            )
+        )
+        bridge = MagicMock()
+        bridge.ingest.return_value = False
+        gw = FederationGateway(bridge=bridge)
+
+        processed = gw.process_inbound(transport)
+
+        assert processed == 0
+        quarantine_files = [path for path in (tmp_path / "quarantine").glob("*.json") if path.name != "index.json"]
+        assert len(quarantine_files) == 1
+        record = json.loads(quarantine_files[0].read_text())
+        assert record["stage"] == "gateway_reject"
+        assert record["metadata"]["code"] == 422
+        assert "Bridge rejected operation 'unknown_op'" == record["reason"]
 
     def test_transport_read_failure(self):
         """Transport read error is caught and counted."""
