@@ -170,6 +170,44 @@ class TestNadiFederationTransport:
         assert messages[0]["operation"] == "task_completed"
         assert messages[0]["payload"]["pr_url"] == "https://github.com/test/pr/1"
 
+    def test_read_outbox_quarantines_malformed_items(self, tmp_path):
+        transport = NadiFederationTransport(str(tmp_path))
+        inbox_path = tmp_path / "nadi_inbox.json"
+        inbox_path.write_text(
+            json.dumps(
+                [
+                    {"source": "agent-city", "operation": "heartbeat", "payload": {}},
+                    {"source": "agent-city", "payload": {}},
+                    "not-a-dict",
+                ]
+            )
+        )
+
+        messages = transport.read_outbox()
+
+        assert len(messages) == 1
+        assert messages[0]["operation"] == "heartbeat"
+        quarantine_files = sorted((tmp_path / "quarantine").glob("*.json"))
+        assert len([path for path in quarantine_files if path.name != "index.json"]) == 2
+        records = [json.loads(path.read_text()) for path in quarantine_files if path.name != "index.json"]
+        reasons = {record["reason"] for record in records}
+        assert "NADI message missing required source/operation fields" in reasons
+        assert "NADI inbox item must be a JSON object" in reasons
+
+    def test_read_outbox_quarantines_corrupt_json_payload(self, tmp_path):
+        transport = NadiFederationTransport(str(tmp_path))
+        inbox_path = tmp_path / "nadi_inbox.json"
+        inbox_path.write_text("{broken json")
+
+        messages = transport.read_outbox()
+
+        assert messages == []
+        quarantine_files = [path for path in (tmp_path / "quarantine").glob("*.json") if path.name != "index.json"]
+        assert len(quarantine_files) == 1
+        record = json.loads(quarantine_files[0].read_text())
+        assert record["stage"] == "transport_read"
+        assert "JSON decode failed" in record["reason"]
+
     def test_append_handles_federation_message_fields(self, tmp_path):
         """Full FederationMessage dict round-trips correctly."""
         transport = NadiFederationTransport(str(tmp_path))

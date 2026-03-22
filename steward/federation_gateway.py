@@ -318,6 +318,22 @@ class FederationGateway(GatewayProtocol):
 
     # ── Transport Integration ────────────────────────────────────
 
+    def _quarantine_transport_messages(
+        self,
+        transport: object,
+        messages: list[object],
+        *,
+        reason: str,
+        stage: str,
+        metadata: dict[str, object] | None = None,
+    ) -> None:
+        if not messages or not hasattr(transport, "quarantine_messages"):
+            return
+        try:
+            transport.quarantine_messages(messages, reason=reason, stage=stage, metadata=metadata)
+        except Exception:
+            logger.exception("GATEWAY QUARANTINE: failed to quarantine rejected messages")
+
     def process_inbound(self, transport: object) -> int:
         """Process all pending inbound messages from a FederationTransport.
 
@@ -340,6 +356,12 @@ class FederationGateway(GatewayProtocol):
                 self._stats.rejected_parse += 1
                 self._stats.errors += 1
                 logger.warning("GATEWAY INBOUND: dropped non-dict message (%r)", type(msg).__name__)
+                self._quarantine_transport_messages(
+                    transport,
+                    [msg],
+                    reason="Gateway inbound payload must be a JSON object",
+                    stage="gateway_parse",
+                )
                 continue
             result = self.handle_federation_message(msg)
             if result.get("success"):
@@ -347,12 +369,25 @@ class FederationGateway(GatewayProtocol):
                 continue
 
             self._stats.errors += 1
+            error = result.get("error") or result.get("data", {}).get("error", "gateway rejected message")
             logger.warning(
                 "GATEWAY INBOUND: dropped message protocol=%s source=%s operation=%s error=%s",
                 result.get("protocol", "unknown"),
                 msg.get("source", ""),
                 msg.get("operation", ""),
-                result.get("error") or result.get("data", {}).get("error", "gateway rejected message"),
+                error,
+            )
+            self._quarantine_transport_messages(
+                transport,
+                [msg],
+                reason=str(error),
+                stage="gateway_reject",
+                metadata={
+                    "protocol": result.get("protocol", "unknown"),
+                    "code": result.get("code", 0),
+                    "source": msg.get("source", ""),
+                    "operation": msg.get("operation", ""),
+                },
             )
         return processed
 

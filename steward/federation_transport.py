@@ -19,6 +19,7 @@ for self-hosted federation — the file paths would be swapped.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import time
@@ -55,7 +56,73 @@ class NadiFederationTransport:
         self._dir = Path(federation_dir)
         self._inbox = self._dir / "nadi_inbox.json"
         self._outbox = self._dir / "nadi_outbox.json"
-        self._seen: set[tuple] = set()
+        self._quarantine_dir = self._dir / "quarantine"
+        self._quarantine_index = self._quarantine_dir / "index.json"
+        self._seen: set[str] = set()
+        self._quarantined = self._load_quarantine_index()
+
+    def _serialize_message(self, message: object) -> object:
+        if isinstance(message, (dict, list, str, int, float, bool)) or message is None:
+            return message
+        if hasattr(message, "to_dict"):
+            return message.to_dict()
+        return {"repr": repr(message), "type": type(message).__name__}
+
+    def _fingerprint(self, message: object) -> str:
+        payload = self._serialize_message(message)
+        encoded = json.dumps(payload, sort_keys=True, default=str)
+        return hashlib.sha256(encoded.encode()).hexdigest()
+
+    def _load_quarantine_index(self) -> set[str]:
+        if not self._quarantine_index.exists():
+            return set()
+        try:
+            raw = json.loads(self._quarantine_index.read_text())
+            if isinstance(raw, list):
+                return {str(item) for item in raw}
+        except (json.JSONDecodeError, OSError):
+            logger.warning("Failed to read quarantine index: %s", self._quarantine_index)
+        return set()
+
+    def _persist_quarantine_index(self) -> None:
+        self._quarantine_dir.mkdir(parents=True, exist_ok=True)
+        tmp = self._quarantine_index.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(sorted(self._quarantined), indent=2))
+        tmp.replace(self._quarantine_index)
+
+    def quarantine_messages(
+        self,
+        messages: list[object],
+        *,
+        reason: str,
+        stage: str = "gateway",
+        metadata: dict[str, object] | None = None,
+    ) -> int:
+        if not messages:
+            return 0
+
+        self._quarantine_dir.mkdir(parents=True, exist_ok=True)
+        quarantined = 0
+        for message in messages:
+            fingerprint = self._fingerprint(message)
+            if fingerprint in self._quarantined:
+                continue
+            record = {
+                "quarantined_at": time.time(),
+                "stage": stage,
+                "reason": reason,
+                "metadata": metadata or {},
+                "fingerprint": fingerprint,
+                "message": self._serialize_message(message),
+            }
+            path = self._quarantine_dir / f"{time.time_ns()}_{fingerprint[:12]}.json"
+            path.write_text(json.dumps(record, indent=2, default=str))
+            self._quarantined.add(fingerprint)
+            quarantined += 1
+
+        if quarantined:
+            self._persist_quarantine_index()
+        return quarantined
 
     def read_outbox(self) -> list[dict]:
         """FederationTransport protocol: read_outbox().
@@ -68,24 +135,52 @@ class NadiFederationTransport:
         if not self._inbox.exists():
             return []
         try:
-            data = json.loads(self._inbox.read_text())
+            raw_text = self._inbox.read_text()
+            data = json.loads(raw_text)
             if not isinstance(data, list):
+                self.quarantine_messages(
+                    [{"raw_text": raw_text, "path": str(self._inbox)}],
+                    reason="NADI inbox payload must be a JSON list",
+                    stage="transport_read",
+                )
                 return []
             messages = []
             for item in data:
+                fingerprint = self._fingerprint(item)
+                if fingerprint in self._quarantined or fingerprint in self._seen:
+                    continue
                 if not isinstance(item, dict):
+                    self.quarantine_messages(
+                        [item],
+                        reason="NADI inbox item must be a JSON object",
+                        stage="transport_parse",
+                    )
                     continue
                 # Validate required nadi protocol fields
                 if not all(k in item for k in ("source", "operation")):
                     logger.warning("Nadi inbox: dropping malformed message: %s", list(item.keys())[:5])
+                    self.quarantine_messages(
+                        [item],
+                        reason="NADI message missing required source/operation fields",
+                        stage="transport_parse",
+                    )
                     continue
-                key = (item.get("source", ""), item.get("timestamp", 0))
-                if key in self._seen:
-                    continue
-                self._seen.add(key)
+                self._seen.add(fingerprint)
                 messages.append(item)
             return messages
-        except (json.JSONDecodeError, OSError) as e:
+        except json.JSONDecodeError as e:
+            logger.warning("Failed to read inbox: %s", e)
+            try:
+                raw_text = self._inbox.read_text()
+            except OSError:
+                raw_text = ""
+            self.quarantine_messages(
+                [{"raw_text": raw_text, "path": str(self._inbox)}],
+                reason=f"NADI inbox JSON decode failed: {e}",
+                stage="transport_read",
+            )
+            return []
+        except OSError as e:
             logger.warning("Failed to read inbox: %s", e)
             return []
 
