@@ -455,8 +455,10 @@ def boot(
 
     fed_dir = os.environ.get("STEWARD_FEDERATION_DIR") or (str(Path(cwd) / "data" / "federation") if cwd else "")
     if Path(fed_dir).is_dir():
+        from steward.federation_crypto import NodeKeyStore
         from steward.federation_transport import create_transport
 
+        NodeKeyStore(Path(fed_dir) / ".node_keys.json").ensure_keys()
         transport = create_transport(fed_dir)
         ServiceRegistry.register(SVC_FEDERATION_TRANSPORT, transport)
         logger.info("Federation transport: %s → %s", type(transport).__name__, fed_dir)

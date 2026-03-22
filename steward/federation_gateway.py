@@ -26,7 +26,8 @@ import logging
 import time
 from dataclasses import dataclass, field
 
-from steward.federation import PUBLIC_OPERATIONS
+from steward.federation import PROTECTED_OPERATIONS, PUBLIC_OPERATIONS
+from steward.federation_crypto import verify_payload_signature
 from vibe_core.protocols.gateway import EntryType, GatewayProtocol, GatewayRequest, GatewayResponse
 
 logger = logging.getLogger("STEWARD.FEDERATION_GATEWAY")
@@ -348,6 +349,28 @@ class FederationGateway(GatewayProtocol):
                 return True, "", ""
         return False, "unauthorized_unverified_sender", "gateway_authorization"
 
+    def _verify_inbound_signature(self, msg: dict) -> tuple[bool, str, str]:
+        protocol = self._detect_protocol(msg)
+        if protocol != "nadi":
+            return True, "", ""
+        operation = str(msg.get("operation", "")).strip()
+        if operation not in PROTECTED_OPERATIONS:
+            return True, "", ""
+        if self._bridge is None or not hasattr(self._bridge, "get_verified_agent"):
+            return True, "", ""
+        sender = str(msg.get("source", "")).strip()
+        record = self._bridge.get_verified_agent(sender) if sender else None
+        if not isinstance(record, dict):
+            return True, "", ""
+        public_key = str(record.get("public_key", "")).strip()
+        payload_hash = str(msg.get("payload_hash", "")).strip()
+        signature = str(msg.get("signature", "")).strip()
+        if not public_key or not payload_hash or not signature:
+            return False, "invalid_signature", "crypto_verification"
+        if not verify_payload_signature(public_key, payload_hash, signature):
+            return False, "invalid_signature", "crypto_verification"
+        return True, "", ""
+
     def process_inbound(self, transport: object) -> int:
         """Process all pending inbound messages from a FederationTransport.
 
@@ -375,6 +398,28 @@ class FederationGateway(GatewayProtocol):
                     [msg],
                     reason="Gateway inbound payload must be a JSON object",
                     stage="gateway_parse",
+                )
+                continue
+            verified, verify_reason, verify_stage = self._verify_inbound_signature(msg)
+            if not verified:
+                self._stats.errors += 1
+                logger.warning(
+                    "GATEWAY CRYPTO: blocked message source=%s operation=%s reason=%s",
+                    msg.get("source", ""),
+                    msg.get("operation", ""),
+                    verify_reason,
+                )
+                self._quarantine_transport_messages(
+                    transport,
+                    [msg],
+                    reason=verify_reason,
+                    stage=verify_stage,
+                    metadata={
+                        "protocol": self._detect_protocol(msg),
+                        "code": 401,
+                        "source": msg.get("source", ""),
+                        "operation": msg.get("operation", ""),
+                    },
                 )
                 continue
             authorized, auth_reason, auth_stage = self._authorize_inbound_message(msg)

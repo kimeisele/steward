@@ -356,6 +356,14 @@ class FederationBridge:
         registry = self._load_verified_agents()
         return isinstance(registry.get(agent_id), dict)
 
+    def get_verified_agent(self, agent_name: str) -> dict[str, object] | None:
+        agent_id = str(agent_name or "").strip()
+        if not agent_id:
+            return None
+        registry = self._load_verified_agents()
+        record = registry.get(agent_id)
+        return record if isinstance(record, dict) else None
+
     def _protocol_major(self, value: object) -> int | None:
         raw = str(value or "").strip()
         if not raw:
