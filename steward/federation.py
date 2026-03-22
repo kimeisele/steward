@@ -613,9 +613,17 @@ class FederationBridge:
 
         # Refresh reaper liveness for known peers mentioned in the world state
         if self.reaper is not None:
-            agents = {}
-            agents.update(payload.get("cities", {}))
-            agents.update(payload.get("agents", {}))
+            # cities/agents may be lists of dicts or dicts — normalize to {id: data}
+            agents: dict = {}
+            for collection in (payload.get("cities", []), payload.get("agents", [])):
+                if isinstance(collection, dict):
+                    agents.update(collection)
+                elif isinstance(collection, list):
+                    for item in collection:
+                        if isinstance(item, dict):
+                            aid = item.get("agent_id", item.get("node_id", ""))
+                            if aid:
+                                agents[aid] = item
             for agent_id, agent_data in agents.items():
                 if agent_id == self.agent_id:
                     continue
