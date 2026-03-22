@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 from steward.federation import FederationBridge
 from steward.federation_transport import NadiFederationTransport
 from steward.federation_gateway import FederationGateway, _is_a2a, _is_nadi
+from steward.services import SVC_TASK_MANAGER
 
 # ── Protocol Detection ─────────────────────────────────────────────
 
@@ -269,6 +270,7 @@ class TestProcessInbound:
         """Valid NADI messages reach the bridge through all gates."""
         bridge = MagicMock()
         bridge.ingest.return_value = True
+        bridge.is_verified_agent.return_value = True
         gw = FederationGateway(bridge=bridge)
         transport = self._make_transport(
             [
@@ -343,6 +345,7 @@ class TestProcessInbound:
         reaper.get_peer.side_effect = lambda aid: peer if aid == "bad-peer" else None
         bridge = MagicMock()
         bridge.ingest.return_value = True
+        bridge.is_verified_agent.return_value = True
         gw = FederationGateway(bridge=bridge, reaper=reaper)
         transport = self._make_transport(
             [
@@ -364,6 +367,7 @@ class TestProcessInbound:
     def test_bridge_reject_is_counted_and_surfaced(self):
         bridge = MagicMock()
         bridge.ingest.side_effect = [True, False]
+        bridge.is_verified_agent.return_value = True
         gw = FederationGateway(bridge=bridge)
         transport = self._make_transport(
             [
@@ -408,6 +412,7 @@ class TestProcessInbound:
         )
         bridge = MagicMock()
         bridge.ingest.return_value = False
+        bridge.is_verified_agent.return_value = True
         gw = FederationGateway(bridge=bridge)
 
         processed = gw.process_inbound(transport)
@@ -430,6 +435,123 @@ class TestProcessInbound:
 
         assert processed == 0
         assert gw.stats()["errors"] == 1
+
+    def test_unverified_sender_protected_operation_is_quarantined(self, tmp_path):
+        transport = NadiFederationTransport(str(tmp_path))
+        payload = {"target": "fix:federation_ci_required:agent-internet", "severity": "high", "reward": 108, "description": "Fix CI"}
+        (tmp_path / "nadi_inbox.json").write_text(
+            json.dumps(
+                [
+                    {
+                        "source": "node-x",
+                        "target": "steward",
+                        "operation": "governance_bounty",
+                        "payload": payload,
+                        "message_id": "gov-1",
+                        "payload_hash": __import__("hashlib").sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest(),
+                    }
+                ]
+            )
+        )
+        bridge = FederationBridge(agent_id="steward", verified_agents_path=tmp_path / "verified_agents.json")
+        gw = FederationGateway(bridge=bridge)
+
+        processed = gw.process_inbound(transport)
+
+        assert processed == 0
+        quarantine_files = [path for path in (tmp_path / "quarantine").glob("*.json") if path.name != "index.json"]
+        assert len(quarantine_files) == 1
+        record = json.loads(quarantine_files[0].read_text())
+        assert record["stage"] == "gateway_authorization"
+        assert record["reason"] == "unauthorized_unverified_sender"
+
+    def test_unverified_sender_public_operation_is_allowed(self, tmp_path):
+        transport = NadiFederationTransport(str(tmp_path))
+        payload = {"agent_name": "node-x", "public_key": "ecdsa-pub-placeholder", "capabilities": ["infra"]}
+        (tmp_path / "nadi_inbox.json").write_text(
+            json.dumps(
+                [
+                    {
+                        "source": "node-x",
+                        "target": "steward",
+                        "operation": "federation.agent_claim",
+                        "payload": payload,
+                        "message_id": "claim-1",
+                        "payload_hash": __import__("hashlib").sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest(),
+                    }
+                ]
+            )
+        )
+        bridge = FederationBridge(agent_id="steward", verified_agents_path=tmp_path / "verified_agents.json")
+        gw = FederationGateway(bridge=bridge)
+
+        processed = gw.process_inbound(transport)
+
+        assert processed == 1
+        registry = json.loads((tmp_path / "verified_agents.json").read_text())
+        assert registry["node-x"]["public_key"] == "ecdsa-pub-placeholder"
+
+    def test_immigration_flow_blocks_then_claims_then_allows(self, tmp_path):
+        from vibe_core.di import ServiceRegistry
+        from vibe_core.task_management.task_manager import TaskManager
+
+        task_mgr = TaskManager(project_root=tmp_path)
+        ServiceRegistry.register(SVC_TASK_MANAGER, task_mgr)
+
+        transport = NadiFederationTransport(str(tmp_path))
+        bridge = FederationBridge(agent_id="steward", verified_agents_path=tmp_path / "verified_agents.json")
+        gw = FederationGateway(bridge=bridge)
+        gov_payload = {"target": "fix:federation_ci_required:agent-internet", "severity": "high", "reward": 108, "description": "Fix CI"}
+        claim_payload = {"agent_name": "node-x", "public_key": "ecdsa-pub-placeholder", "capabilities": ["bounty_hunter"]}
+
+        (tmp_path / "nadi_inbox.json").write_text(
+            json.dumps(
+                [
+                    {
+                        "source": "node-x",
+                        "target": "steward",
+                        "operation": "governance_bounty",
+                        "payload": gov_payload,
+                        "message_id": "gov-a",
+                        "payload_hash": __import__("hashlib").sha256(json.dumps(gov_payload, sort_keys=True).encode()).hexdigest(),
+                    }
+                ]
+            )
+        )
+        assert gw.process_inbound(transport) == 0
+
+        (tmp_path / "nadi_inbox.json").write_text(
+            json.dumps(
+                [
+                    {
+                        "source": "node-x",
+                        "target": "steward",
+                        "operation": "federation.agent_claim",
+                        "payload": claim_payload,
+                        "message_id": "claim-b",
+                        "payload_hash": __import__("hashlib").sha256(json.dumps(claim_payload, sort_keys=True).encode()).hexdigest(),
+                    }
+                ]
+            )
+        )
+        assert gw.process_inbound(transport) == 1
+
+        (tmp_path / "nadi_inbox.json").write_text(
+            json.dumps(
+                [
+                    {
+                        "source": "node-x",
+                        "target": "steward",
+                        "operation": "governance_bounty",
+                        "payload": gov_payload,
+                        "message_id": "gov-c",
+                        "payload_hash": __import__("hashlib").sha256(json.dumps(gov_payload, sort_keys=True).encode()).hexdigest(),
+                    }
+                ]
+            )
+        )
+        assert gw.process_inbound(transport) == 1
+        assert len(task_mgr.list_tasks()) == 1
 
     def test_node_health_broadcast_round_trip_updates_peer_registry(self, tmp_path):
         node_a = tmp_path / "node-a"

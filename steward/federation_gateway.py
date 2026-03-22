@@ -26,6 +26,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 
+from steward.federation import PUBLIC_OPERATIONS
 from vibe_core.protocols.gateway import EntryType, GatewayProtocol, GatewayRequest, GatewayResponse
 
 logger = logging.getLogger("STEWARD.FEDERATION_GATEWAY")
@@ -334,6 +335,19 @@ class FederationGateway(GatewayProtocol):
         except Exception:
             logger.exception("GATEWAY QUARANTINE: failed to quarantine rejected messages")
 
+    def _authorize_inbound_message(self, msg: dict) -> tuple[bool, str, str]:
+        protocol = self._detect_protocol(msg)
+        if protocol != "nadi":
+            return True, "", ""
+        operation = str(msg.get("operation", "")).strip()
+        if operation in PUBLIC_OPERATIONS:
+            return True, "", ""
+        if self._bridge is not None and hasattr(self._bridge, "is_verified_agent"):
+            sender = str(msg.get("source", "")).strip()
+            if sender and self._bridge.is_verified_agent(sender):
+                return True, "", ""
+        return False, "unauthorized_unverified_sender", "gateway_authorization"
+
     def process_inbound(self, transport: object) -> int:
         """Process all pending inbound messages from a FederationTransport.
 
@@ -361,6 +375,28 @@ class FederationGateway(GatewayProtocol):
                     [msg],
                     reason="Gateway inbound payload must be a JSON object",
                     stage="gateway_parse",
+                )
+                continue
+            authorized, auth_reason, auth_stage = self._authorize_inbound_message(msg)
+            if not authorized:
+                self._stats.errors += 1
+                logger.warning(
+                    "GATEWAY AUTHZ: blocked message source=%s operation=%s reason=%s",
+                    msg.get("source", ""),
+                    msg.get("operation", ""),
+                    auth_reason,
+                )
+                self._quarantine_transport_messages(
+                    transport,
+                    [msg],
+                    reason=auth_reason,
+                    stage=auth_stage,
+                    metadata={
+                        "protocol": self._detect_protocol(msg),
+                        "code": 401,
+                        "source": msg.get("source", ""),
+                        "operation": msg.get("operation", ""),
+                    },
                 )
                 continue
             result = self.handle_federation_message(msg)
