@@ -128,6 +128,7 @@ def test_register_peer():
         url="",
         card_type="a2a",
         capabilities=("healing",),
+        node_role="city_runtime",
     )
 
     discovery._register_peer(peer)
@@ -153,6 +154,27 @@ def test_register_peer_no_reaper():
     )
     # Should not crash
     discovery._register_peer(peer)
+
+
+def test_register_peer_skips_template_role():
+    reaper = FakeReaper()
+    discovery = A2APeerDiscovery(reaper=reaper)
+    peer = DiscoveredPeer(
+        agent_id="template-peer",
+        repo="org/template-peer",
+        name="Template Peer",
+        description="",
+        skills=["authority-publishing"],
+        url="",
+        card_type="a2a",
+        capabilities=("authority-publishing",),
+        node_role="template",
+        layer="agent-federation-template",
+    )
+
+    discovery._register_peer(peer)
+
+    assert reaper.heartbeats == []
 
 
 # ── Stats ──────────────────────────────────────────────────────────
@@ -253,6 +275,7 @@ def test_scan_with_known_repos_fetches_cards():
         url="",
         card_type="a2a",
         capabilities=("governance",),
+        node_role="city_runtime",
     )
 
     from unittest.mock import patch

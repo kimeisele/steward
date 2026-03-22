@@ -45,6 +45,8 @@ class DiscoveredPeer:
     card_type: str  # "a2a" or "steward"
     discovered_at: float = field(default_factory=time.time)
     capabilities: tuple[str, ...] = ()
+    node_role: str = ""
+    layer: str = ""
 
 
 class A2APeerDiscovery:
@@ -229,9 +231,9 @@ class A2APeerDiscovery:
     def _parse_agent_card(self, repo: str, card: dict, card_type: str) -> DiscoveredPeer:
         """Parse an agent card (A2A or Steward format) into DiscoveredPeer."""
         agent_id = repo.split("/")[-1] if "/" in repo else repo
-
         if card_type == "a2a":
             skills = [s.get("id", "") for s in card.get("skills", [])]
+            federation = card.get("federation", {})
             return DiscoveredPeer(
                 agent_id=agent_id,
                 repo=repo,
@@ -241,6 +243,8 @@ class A2APeerDiscovery:
                 url=card.get("url", f"https://github.com/{repo}"),
                 card_type="a2a",
                 capabilities=tuple(skills),
+                node_role=str(federation.get("node_role", card.get("role", ""))),
+                layer=str(card.get("layer", federation.get("node_topic", ""))),
             )
         else:
             # Steward format
@@ -254,13 +258,35 @@ class A2APeerDiscovery:
                 url=f"https://github.com/{repo}",
                 card_type="steward",
                 capabilities=tuple(capabilities),
+                node_role=str(card.get("role", "")),
+                layer=str(card.get("layer", "")),
             )
+
+    def _is_liveness_monitored(self, peer: DiscoveredPeer) -> bool:
+        role = (peer.node_role or "").strip().lower()
+        layer = (peer.layer or "").strip().lower()
+        if role == "city_runtime":
+            return True
+        if role in {"hub", "internet", "operator", "template", "agent_template_relay"}:
+            return False
+        if layer in {"internet", "agent-federation-template"}:
+            return False
+        return False
 
     # ── Register with Reaper ───────────────────────────────────────
 
     def _register_peer(self, peer: DiscoveredPeer) -> None:
         """Register a discovered peer with the HeartbeatReaper."""
         if self._reaper is None:
+            return
+
+        if not self._is_liveness_monitored(peer):
+            logger.info(
+                "A2A DISCOVERY: skipped liveness registration for %s (role=%s layer=%s)",
+                peer.agent_id,
+                peer.node_role or "?",
+                peer.layer or "?",
+            )
             return
 
         try:
