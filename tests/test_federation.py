@@ -3,6 +3,7 @@
 import json
 import time
 
+from steward.services import SVC_TASK_MANAGER
 from steward.federation import (
     CITY_BOTTLENECK_PREFIX,
     OP_AGENT_CLAIM,

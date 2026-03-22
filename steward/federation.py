@@ -115,6 +115,34 @@ OP_AGENT_CLAIM = "federation.agent_claim"
 OP_FEDERATION_NODE_HEALTH = "federation.node_health"
 NODE_HEALTH_PROTOCOL_VERSION = "1.0"
 
+ALL_OPERATIONS = {
+    OP_HEARTBEAT,
+    OP_CLAIM_SLOT,
+    OP_RELEASE_SLOT,
+    OP_EVICTION,
+    OP_CLAIM_OUTCOME,
+    OP_DELEGATE_TASK,
+    OP_TASK_COMPLETED,
+    OP_TASK_FAILED,
+    OP_DIAGNOSTIC_REQUEST,
+    OP_DIAGNOSTIC_REPORT,
+    OP_MERGE_OCCURRED,
+    OP_PR_CREATED,
+    OP_CI_STATUS,
+    OP_PR_REVIEW_REQUEST,
+    OP_PR_REVIEW_VERDICT,
+    OP_WORLD_STATE_UPDATE,
+    OP_POLICY_UPDATE,
+    OP_CITY_REPORT,
+    OP_BOTTLENECK_ESCALATION,
+    OP_COMPLIANCE_REPORT,
+    OP_GOVERNANCE_BOUNTY,
+    OP_AGENT_CLAIM,
+    OP_FEDERATION_NODE_HEALTH,
+}
+PUBLIC_OPERATIONS = {OP_AGENT_CLAIM, OP_FEDERATION_NODE_HEALTH}
+PROTECTED_OPERATIONS = ALL_OPERATIONS - PUBLIC_OPERATIONS
+
 # Mission name prefixes emitted by agent-city's create_brain_mission().
 # Verified from kimeisele/agent-city city/missions.py — Brain {verb}: {target[:50]}
 CITY_BOTTLENECK_PREFIX = "Brain bottleneck: "
@@ -320,6 +348,13 @@ class FederationBridge:
         tmp = path.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(registry, indent=2, sort_keys=True))
         tmp.replace(path)
+
+    def is_verified_agent(self, agent_name: str) -> bool:
+        agent_id = str(agent_name or "").strip()
+        if not agent_id:
+            return False
+        registry = self._load_verified_agents()
+        return isinstance(registry.get(agent_id), dict)
 
     def _protocol_major(self, value: object) -> int | None:
         raw = str(value or "").strip()
