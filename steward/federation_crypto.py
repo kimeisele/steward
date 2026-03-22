@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 from pathlib import Path
 
@@ -8,11 +9,17 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 
 
+def derive_node_id(public_key_hex: str, length: int = 16) -> str:
+    digest = hashlib.sha256(str(public_key_hex).encode()).hexdigest()
+    return f"ag_{digest[:length]}"
+
+
 class NodeKeyStore:
     def __init__(self, path: str | Path) -> None:
         self._path = Path(path)
         self.private_key = ""
         self.public_key = ""
+        self.node_id = ""
 
     def ensure_keys(self) -> None:
         if self._path.exists():
@@ -28,6 +35,9 @@ class NodeKeyStore:
             payload = {}
         self.private_key = str(payload.get("private_key", "")).strip()
         self.public_key = str(payload.get("public_key", "")).strip()
+        self.node_id = str(payload.get("node_id", "")).strip()
+        if self.public_key and not self.node_id:
+            self.node_id = derive_node_id(self.public_key)
 
     def _generate(self) -> None:
         private_key = Ed25519PrivateKey.generate()
@@ -43,8 +53,14 @@ class NodeKeyStore:
         )
         self.private_key = private_bytes.hex()
         self.public_key = public_bytes.hex()
+        self.node_id = derive_node_id(self.public_key)
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(json.dumps({"private_key": self.private_key, "public_key": self.public_key}, indent=2))
+        self._path.write_text(
+            json.dumps(
+                {"private_key": self.private_key, "public_key": self.public_key, "node_id": self.node_id},
+                indent=2,
+            )
+        )
 
 
 def sign_payload_hash(private_key_hex: str, payload_hash: str) -> str:

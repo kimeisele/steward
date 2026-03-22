@@ -3,6 +3,7 @@
 import json
 import time
 
+from steward.federation_crypto import derive_node_id
 from steward.services import SVC_TASK_MANAGER
 from steward.federation import (
     CITY_BOTTLENECK_PREFIX,
@@ -133,19 +134,23 @@ class TestInboundNodeHealth:
 class TestInboundAgentClaim:
     def test_agent_claim_upserts_verified_agents_registry(self, tmp_path):
         bridge = FederationBridge(agent_id="steward", verified_agents_path=tmp_path / "verified_agents.json")
+        public_key = "ecdsa-pub-placeholder"
+        node_id = derive_node_id(public_key)
 
         assert bridge.ingest(
             OP_AGENT_CLAIM,
             {
                 "agent_name": "agent-city",
-                "public_key": "ecdsa-pub-placeholder",
+                "node_id": node_id,
+                "public_key": public_key,
                 "capabilities": ["bounty_hunter", "infrastructure"],
             },
         )
 
         registry = json.loads((tmp_path / "verified_agents.json").read_text())
-        assert registry["agent-city"]["public_key"] == "ecdsa-pub-placeholder"
-        assert registry["agent-city"]["capabilities"] == ["bounty_hunter", "infrastructure"]
+        assert registry[node_id]["public_key"] == public_key
+        assert registry[node_id]["node_id"] == node_id
+        assert registry[node_id]["capabilities"] == ["bounty_hunter", "infrastructure"]
 
     def test_agent_claim_requires_agent_name_and_public_key(self, tmp_path):
         bridge = FederationBridge(agent_id="steward", verified_agents_path=tmp_path / "verified_agents.json")

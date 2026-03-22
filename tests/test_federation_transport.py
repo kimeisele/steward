@@ -114,6 +114,8 @@ class TestNadiFederationTransport:
         assert (tmp_path / ".node_keys.json").exists()
         keys = json.loads((tmp_path / ".node_keys.json").read_text())
         assert keys["public_key"] == transport.public_key
+        assert keys["node_id"] == transport.node_id
+        assert transport.node_id.startswith("ag_")
 
     def test_read_outbox_empty(self, tmp_path):
         transport = NadiFederationTransport(str(tmp_path))
@@ -140,7 +142,7 @@ class TestNadiFederationTransport:
         assert isinstance(data, list)
         assert len(data) == 1
         assert data[0]["operation"] == "heartbeat"
-        assert data[0]["source"] == "steward"
+        assert data[0]["source"] == transport.node_id
         assert isinstance(data[0]["message_id"], str)
         assert len(data[0]["payload_hash"]) == 64
         assert isinstance(data[0]["signature"], str)

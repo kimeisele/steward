@@ -468,12 +468,18 @@ class TestProcessInbound:
 
     def test_unverified_sender_public_operation_is_allowed(self, tmp_path):
         transport = NadiFederationTransport(str(tmp_path))
-        payload = {"agent_name": "node-x", "public_key": "ecdsa-pub-placeholder", "capabilities": ["infra"]}
+        node_x_keys = NodeKeyStore(tmp_path / "node-x" / ".node_keys.json")
+        node_x_keys.ensure_keys()
+        payload = {
+            "agent_name": "node-x",
+            "public_key": node_x_keys.public_key,
+            "capabilities": ["infra"],
+        }
         (tmp_path / "nadi_inbox.json").write_text(
             json.dumps(
                 [
                     {
-                        "source": "node-x",
+                        "source": node_x_keys.node_id,
                         "target": "steward",
                         "operation": "federation.agent_claim",
                         "payload": payload,
@@ -490,7 +496,7 @@ class TestProcessInbound:
 
         assert processed == 1
         registry = json.loads((tmp_path / "verified_agents.json").read_text())
-        assert registry["node-x"]["public_key"] == "ecdsa-pub-placeholder"
+        assert registry[node_x_keys.node_id]["public_key"] == node_x_keys.public_key
 
     def test_immigration_flow_blocks_then_claims_then_allows(self, tmp_path):
         from vibe_core.di import ServiceRegistry
@@ -511,7 +517,7 @@ class TestProcessInbound:
             json.dumps(
                 [
                     {
-                        "source": "node-x",
+                        "source": node_x_keys.node_id,
                         "target": "steward",
                         "operation": "governance_bounty",
                         "payload": gov_payload,
@@ -527,7 +533,7 @@ class TestProcessInbound:
             json.dumps(
                 [
                     {
-                        "source": "node-x",
+                        "source": node_x_keys.node_id,
                         "target": "steward",
                         "operation": "federation.agent_claim",
                         "payload": claim_payload,
@@ -543,7 +549,7 @@ class TestProcessInbound:
             json.dumps(
                 [
                     {
-                        "source": "node-x",
+                        "source": node_x_keys.node_id,
                         "target": "steward",
                         "operation": "governance_bounty",
                         "payload": gov_payload,
@@ -639,14 +645,16 @@ class TestProcessInbound:
         transport_b = NadiFederationTransport(str(node_b))
         bridge_b = FederationBridge(agent_id="node-b", verified_agents_path=node_b / "verified_agents.json")
         gw_b = FederationGateway(bridge=bridge_b)
+        node_a_keys = NodeKeyStore(tmp_path / "node-a" / ".node_keys.json")
+        node_a_keys.ensure_keys()
 
         payload = {
             "agent_name": "node-a",
-            "public_key": "ecdsa-pub-placeholder",
+            "public_key": node_a_keys.public_key,
             "capabilities": ["bounty_hunter", "infrastructure"],
         }
         message = {
-            "source": "node-a",
+            "source": node_a_keys.node_id,
             "target": "node-b",
             "operation": "federation.agent_claim",
             "payload": payload,
@@ -659,8 +667,40 @@ class TestProcessInbound:
 
         assert processed == 1
         registry = json.loads((node_b / "verified_agents.json").read_text())
-        assert registry["node-a"]["public_key"] == "ecdsa-pub-placeholder"
-        assert registry["node-a"]["capabilities"] == ["bounty_hunter", "infrastructure"]
+        assert registry[node_a_keys.node_id]["public_key"] == node_a_keys.public_key
+        assert registry[node_a_keys.node_id]["capabilities"] == ["bounty_hunter", "infrastructure"]
+
+    def test_spoofed_agent_claim_is_quarantined_for_identity_spoofing(self, tmp_path):
+        node_b = tmp_path / "node-b"
+        node_b.mkdir()
+
+        transport_b = NadiFederationTransport(str(node_b))
+        bridge_b = FederationBridge(agent_id="node-b", verified_agents_path=node_b / "verified_agents.json")
+        gw_b = FederationGateway(bridge=bridge_b)
+        attacker_keys = NodeKeyStore(tmp_path / "attacker" / ".node_keys.json")
+        attacker_keys.ensure_keys()
+        payload = {
+            "agent_name": "World_Government_Main_Node",
+            "public_key": attacker_keys.public_key,
+            "capabilities": ["governance"],
+        }
+        message = {
+            "source": "ag_world_gov",
+            "target": "node-b",
+            "operation": "federation.agent_claim",
+            "payload": payload,
+            "message_id": "claim-spoof",
+            "payload_hash": __import__("hashlib").sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest(),
+            "signature": sign_payload_hash(attacker_keys.private_key, __import__("hashlib").sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()),
+        }
+        (node_b / "nadi_inbox.json").write_text(json.dumps([message]))
+
+        assert gw_b.process_inbound(transport_b) == 0
+        quarantine_files = [path for path in (node_b / "quarantine").glob("*.json") if path.name != "index.json"]
+        assert len(quarantine_files) == 1
+        record = json.loads(quarantine_files[0].read_text())
+        assert record["stage"] == "gateway_authorization"
+        assert record["reason"] == "identity_spoofing_attempt"
 
     def test_signals_queued_for_moksha(self):
         """All processed messages queue Hebbian signals for MOKSHA drain."""

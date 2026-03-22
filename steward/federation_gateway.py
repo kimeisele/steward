@@ -27,7 +27,7 @@ import time
 from dataclasses import dataclass, field
 
 from steward.federation import PROTECTED_OPERATIONS, PUBLIC_OPERATIONS
-from steward.federation_crypto import verify_payload_signature
+from steward.federation_crypto import derive_node_id, verify_payload_signature
 from vibe_core.protocols.gateway import EntryType, GatewayProtocol, GatewayRequest, GatewayResponse
 
 logger = logging.getLogger("STEWARD.FEDERATION_GATEWAY")
@@ -290,6 +290,9 @@ class FederationGateway(GatewayProtocol):
 
         operation = msg.get("operation", "")
         payload = msg.get("payload", {})
+        if isinstance(payload, dict) and operation == "federation.agent_claim":
+            payload = dict(payload)
+            payload["node_id"] = str(msg.get("source", "")).strip()
 
         if not operation:
             return {"success": False, "error": "NADI message missing 'operation' field", "code": 400}
@@ -313,7 +316,7 @@ class FederationGateway(GatewayProtocol):
             return {
                 "operation": result.get("operation", ""),
                 "success": result.get("success", False),
-                "source": "steward",
+                "source": getattr(self._bridge, "agent_id", "steward") if self._bridge is not None else "steward",
                 "timestamp": time.time(),
             }
         return result
@@ -341,6 +344,12 @@ class FederationGateway(GatewayProtocol):
         if protocol != "nadi":
             return True, "", ""
         operation = str(msg.get("operation", "")).strip()
+        if operation == "federation.agent_claim":
+            payload = msg.get("payload", {})
+            public_key = str(payload.get("public_key", "")).strip() if isinstance(payload, dict) else ""
+            sender = str(msg.get("source", "")).strip()
+            if not public_key or not sender or derive_node_id(public_key) != sender:
+                return False, "identity_spoofing_attempt", "gateway_authorization"
         if operation in PUBLIC_OPERATIONS:
             return True, "", ""
         if self._bridge is not None and hasattr(self._bridge, "is_verified_agent"):
