@@ -158,12 +158,15 @@ class TestExecuteNADI:
         gw = FederationGateway(bridge=bridge)
         result = gw.handle_federation_message({"operation": "unknown_op", "source": "peer-1", "payload": {}})
         assert result["success"] is False
+        assert result["code"] == 422
+        assert "Bridge rejected operation" in result["error"]
 
     def test_nadi_no_bridge(self):
         """NADI message without bridge configured."""
         gw = FederationGateway()
         result = gw.handle_federation_message({"operation": "heartbeat", "source": "peer-1", "payload": {}})
         assert result["success"] is False
+        assert result["code"] == 503
 
     def test_nadi_missing_operation(self):
         """NADI message with empty operation string."""
@@ -172,6 +175,7 @@ class TestExecuteNADI:
         result = gw.handle_federation_message({"operation": "", "source": "peer-1", "payload": {}})
         # Empty operation: _is_nadi returns True (string), but _execute_nadi rejects
         assert result["success"] is False
+        assert result["code"] == 400
 
 
 # ── SYNC Gate — Hebbian Learning ─────────────────────────────────
@@ -307,6 +311,7 @@ class TestProcessInbound:
         assert processed == 0
         bridge.ingest.assert_not_called()
         assert gw.stats()["rejected_parse"] == 2
+        assert gw.stats()["errors"] == 2
 
     def test_non_dict_messages_skipped(self):
         """Non-dict items in transport are silently skipped."""
@@ -326,6 +331,7 @@ class TestProcessInbound:
 
         assert processed == 1
         assert gw.stats()["rejected_parse"] == 3  # 3 non-dicts
+        assert gw.stats()["errors"] == 3
 
     def test_mixed_valid_and_invalid(self):
         """Mix of valid, invalid, and evicted — only valid messages pass."""
@@ -351,6 +357,23 @@ class TestProcessInbound:
         assert bridge.ingest.call_count == 2
         assert gw.stats()["rejected_validate"] == 1
         assert gw.stats()["rejected_parse"] == 1
+        assert gw.stats()["errors"] == 2
+
+    def test_bridge_reject_is_counted_and_surfaced(self):
+        bridge = MagicMock()
+        bridge.ingest.side_effect = [True, False]
+        gw = FederationGateway(bridge=bridge)
+        transport = self._make_transport(
+            [
+                {"operation": "heartbeat", "source": "good-peer", "payload": {}},
+                {"operation": "unknown_op", "source": "good-peer", "payload": {}},
+            ]
+        )
+
+        processed = gw.process_inbound(transport)
+
+        assert processed == 1
+        assert gw.stats()["errors"] == 1
 
     def test_transport_read_failure(self):
         """Transport read error is caught and counted."""

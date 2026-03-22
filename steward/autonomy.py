@@ -81,6 +81,18 @@ def _resolve_peer_repo(agent_id: str) -> Path | None:
     return None
 
 
+def _parse_federated_task_description(description: str) -> dict[str, str]:
+    """Parse persisted metadata lines from a federated task description."""
+    metadata: dict[str, str] = {}
+    for raw_line in description.splitlines():
+        line = raw_line.strip()
+        if not line or ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        metadata[key.strip()] = value.strip()
+    return metadata
+
+
 def _resolve_peer_git_url(agent_id: str, reaper: object) -> str | None:
     """Derive a cloneable Git URL for a federation peer.
 
@@ -295,8 +307,14 @@ class AutonomyEngine:
         result = None
         success = False
         pr_url = ""
+        failure_reason = "Pipeline failed or produced no changes"
 
         try:
+            metadata = _parse_federated_task_description(desc)
+            target_repo = metadata.get("target_repo", "")
+            if not repo_url and "/" in target_repo:
+                repo_url = f"https://github.com/{target_repo}.git"
+
             if repo_url:
                 # Cross-repo: isolated workspace
                 with self._cross_repo_workspace(repo_url, task.id) as workspace:
@@ -322,6 +340,7 @@ class AutonomyEngine:
             logger.error("Federated task '%s' failed: %s", task.title, e)
             task_mgr.update_task(task.id, status=TaskStatus.FAILED)
             result = None
+            failure_reason = str(e)
 
         # Emit callback to federation — close the loop
         bridge = ServiceRegistry.get(SVC_FEDERATION)
@@ -341,7 +360,7 @@ class AutonomyEngine:
                     {
                         "task_title": problem,
                         "source_agent": source_agent,
-                        "error": "Pipeline failed or produced no changes",
+                        "error": failure_reason,
                     },
                 )
 
