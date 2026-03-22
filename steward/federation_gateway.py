@@ -205,8 +205,13 @@ class FederationGateway(GatewayProtocol):
         # ── GATE 5: SYNC — fire-and-forget Hebbian signal ────────
         success = result.get("success", False)
         self._stats.record(protocol, success)
-
-        return {"success": success, "protocol": protocol, "data": response_data}
+        response = {"success": success, "protocol": protocol, "data": response_data}
+        if not success:
+            if "error" in result:
+                response["error"] = result["error"]
+            if "code" in result:
+                response["code"] = result["code"]
+        return response
 
     # ── Gate Implementations ──────────────────────────────────────
 
@@ -279,16 +284,23 @@ class FederationGateway(GatewayProtocol):
     def _execute_nadi(self, msg: dict) -> dict[str, object]:
         """Route raw NADI message through FederationBridge.ingest()."""
         if self._bridge is None:
-            return {"success": False, "error": "Federation bridge not available"}
+            return {"success": False, "error": "Federation bridge not available", "code": 503}
 
         operation = msg.get("operation", "")
         payload = msg.get("payload", {})
 
         if not operation:
-            return {"success": False, "error": "NADI message missing 'operation' field"}
+            return {"success": False, "error": "NADI message missing 'operation' field", "code": 400}
 
         success = self._bridge.ingest(operation, payload)
-        return {"success": success, "operation": operation}
+        if not success:
+            return {
+                "success": False,
+                "operation": operation,
+                "error": f"Bridge rejected operation '{operation}'",
+                "code": 422,
+            }
+        return {"success": True, "operation": operation}
 
     def _format_result(self, result: dict, protocol: str) -> dict:
         """RESULT gate: format response in sender's protocol."""
@@ -326,10 +338,22 @@ class FederationGateway(GatewayProtocol):
         for msg in messages:
             if not isinstance(msg, dict):
                 self._stats.rejected_parse += 1
+                self._stats.errors += 1
+                logger.warning("GATEWAY INBOUND: dropped non-dict message (%r)", type(msg).__name__)
                 continue
             result = self.handle_federation_message(msg)
             if result.get("success"):
                 processed += 1
+                continue
+
+            self._stats.errors += 1
+            logger.warning(
+                "GATEWAY INBOUND: dropped message protocol=%s source=%s operation=%s error=%s",
+                result.get("protocol", "unknown"),
+                msg.get("source", ""),
+                msg.get("operation", ""),
+                result.get("error") or result.get("data", {}).get("error", "gateway rejected message"),
+            )
         return processed
 
     # ── Observability ─────────────────────────────────────────────

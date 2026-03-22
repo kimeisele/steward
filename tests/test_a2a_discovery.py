@@ -81,6 +81,10 @@ def test_parse_a2a_card():
         "name": "AgentCity",
         "description": "Multi-agent simulation",
         "url": "https://github.com/org/agent-city",
+        "federation": {
+            "node_role": "city_runtime",
+            "node_topic": "agent-city-runtime",
+        },
         "skills": [
             {"id": "simulation", "name": "Simulation"},
             {"id": "analysis", "name": "Analysis"},
@@ -95,6 +99,8 @@ def test_parse_a2a_card():
     assert peer.card_type == "a2a"
     assert peer.skills == ["simulation", "analysis"]
     assert peer.capabilities == ("simulation", "analysis")
+    assert peer.node_role == "city_runtime"
+    assert peer.layer == "agent-city-runtime"
 
 
 def test_parse_steward_card():
@@ -141,24 +147,10 @@ def test_register_peer():
     assert hb["fingerprint"] == "a2a:org/test-peer"
 
 
-def test_register_peer_no_reaper():
-    discovery = A2APeerDiscovery(reaper=None)
-    peer = DiscoveredPeer(
-        agent_id="x",
-        repo="org/x",
-        name="X",
-        description="",
-        skills=[],
-        url="",
-        card_type="a2a",
-    )
-    # Should not crash
-    discovery._register_peer(peer)
-
-
 def test_register_peer_skips_template_role():
     reaper = FakeReaper()
     discovery = A2APeerDiscovery(reaper=reaper)
+
     peer = DiscoveredPeer(
         agent_id="template-peer",
         repo="org/template-peer",
@@ -175,6 +167,21 @@ def test_register_peer_skips_template_role():
     discovery._register_peer(peer)
 
     assert reaper.heartbeats == []
+
+
+def test_register_peer_no_reaper():
+    discovery = A2APeerDiscovery(reaper=None)
+    peer = DiscoveredPeer(
+        agent_id="x",
+        repo="org/x",
+        name="X",
+        description="",
+        skills=[],
+        url="",
+        card_type="a2a",
+    )
+    # Should not crash
+    discovery._register_peer(peer)
 
 
 # ── Stats ──────────────────────────────────────────────────────────

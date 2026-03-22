@@ -4,6 +4,7 @@ import time
 
 from steward.federation import (
     CITY_BOTTLENECK_PREFIX,
+    OP_BOTTLENECK_ESCALATION,
     OP_CITY_REPORT,
     OP_CLAIM_OUTCOME,
     OP_CLAIM_SLOT,
@@ -710,6 +711,54 @@ class TestCallbackEvents:
         assert cb.payload["source_agent"] == "agent-internet"
         assert cb.payload["task_title"] == "Fix failing tests"
 
+    def test_federated_task_derives_repo_url_from_target_repo_metadata(self, fake_llm, tmp_path, monkeypatch):
+        import asyncio
+
+        from steward.agent import StewardAgent
+        from steward.services import SVC_TASK_MANAGER
+        from tests.conftest import track_agent
+        from vibe_core.di import ServiceRegistry
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+        task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
+
+        task_mgr.add_task(
+            title="[FED:agent-city] Fix bottleneck: ruff_clean",
+            priority=70,
+            description="target_repo:kimeisele/agent-city\ndedup_key:kimeisele/agent-city#ruff_clean",
+        )
+
+        seen: dict[str, str] = {}
+
+        class _Workspace:
+            def __init__(self, path):
+                self._path = path
+
+            def __enter__(self):
+                return self._path
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        def fake_workspace(repo_url, task_id):
+            seen["repo_url"] = repo_url
+            seen["task_id"] = task_id
+            return _Workspace(tmp_path / "fed-ws")
+
+        async def fake_guarded_pr_fix(problem, intent_name=""):
+            seen["problem"] = problem
+            seen["intent_name"] = intent_name
+            return "Created PR: https://example.com/pr/1"
+
+        monkeypatch.setattr(agent._autonomy, "_cross_repo_workspace", fake_workspace)
+        monkeypatch.setattr(agent._autonomy.pipeline, "guarded_pr_fix", fake_guarded_pr_fix)
+
+        asyncio.run(agent.run_autonomous())
+
+        assert seen["repo_url"] == "https://github.com/kimeisele/agent-city.git"
+        assert seen["problem"] == "Fix bottleneck: ruff_clean"
+        assert seen["intent_name"] == "DELEGATED_TASK"
+
     def test_callback_contains_task_completed_on_success(self, fake_llm):
         """Successful federated task emits OP_TASK_COMPLETED."""
         import asyncio
@@ -844,6 +893,55 @@ class TestInboundCityReport:
         bridge.ingest(OP_CITY_REPORT, self._city_report_payload(mission_results=missions, heartbeat=43))
         assert len(task_mgr.list_tasks()) == 1
 
+    def test_city_report_dedup_uses_issue_key_not_title_poetry(self, tmp_path):
+        from steward.services import SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
+        from vibe_core.task_management.task_manager import TaskManager
+
+        task_mgr = TaskManager(project_root=tmp_path)
+        ServiceRegistry.register(SVC_TASK_MANAGER, task_mgr)
+
+        bridge = FederationBridge()
+        bridge.ingest(
+            OP_CITY_REPORT,
+            self._city_report_payload(
+                mission_results=[
+                    {
+                        "id": "brain_bottleneck_ruff_clean_42",
+                        "name": "Brain bottleneck: ruff_clean contract",
+                        "status": "completed",
+                        "owner": "mayor",
+                        "issue_key": "kimeisele/agent-city#ruff_clean",
+                        "target_repo": "kimeisele/agent-city",
+                        "contract_name": "ruff_clean",
+                    },
+                ],
+                heartbeat=42,
+            ),
+        )
+        bridge.ingest(
+            OP_CITY_REPORT,
+            self._city_report_payload(
+                mission_results=[
+                    {
+                        "id": "brain_bottleneck_ruff_clean_43",
+                        "name": "Brain bottleneck: poetry about lint storms",
+                        "status": "completed",
+                        "owner": "mayor",
+                        "issue_key": "kimeisele/agent-city#ruff_clean",
+                        "target_repo": "kimeisele/agent-city",
+                        "contract_name": "ruff_clean",
+                    },
+                ],
+                heartbeat=43,
+            ),
+        )
+
+        tasks = task_mgr.list_tasks()
+        assert len(tasks) == 1
+        assert "dedup_key:kimeisele/agent-city#ruff_clean" in tasks[0].description
+        assert "target_repo:kimeisele/agent-city" in tasks[0].description
+
     def test_city_report_records_heartbeat(self):
         """city_report acts as a liveness signal for the reaper."""
         reaper = HeartbeatReaper()
@@ -962,3 +1060,40 @@ class TestInboundCityReport:
         # From city/missions.py: name=f"Brain {verb}: {target[:50]}"
         # with verb="bottleneck"
         assert CITY_BOTTLENECK_PREFIX == "Brain bottleneck: "
+
+
+class TestInboundBottleneckEscalation:
+    def test_bottleneck_escalation_dedup_uses_deterministic_key(self, tmp_path):
+        from steward.services import SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
+        from vibe_core.task_management.task_manager import TaskManager
+
+        task_mgr = TaskManager(project_root=tmp_path)
+        ServiceRegistry.register(SVC_TASK_MANAGER, task_mgr)
+
+        bridge = FederationBridge()
+        payload = {
+            "target": "ruff contract broken",
+            "source": "brain_health",
+            "evidence": "first",
+            "heartbeat": 10,
+            "issue_key": "kimeisele/agent-city#ruff_clean",
+            "target_repo": "kimeisele/agent-city",
+            "contract_name": "ruff_clean",
+        }
+        assert bridge.ingest(OP_BOTTLENECK_ESCALATION, payload)
+        payload_2 = {
+            "target": "completely different poetic wording",
+            "source": "brain_critique",
+            "evidence": "second",
+            "heartbeat": 11,
+            "issue_key": "kimeisele/agent-city#ruff_clean",
+            "target_repo": "kimeisele/agent-city",
+            "contract_name": "ruff_clean",
+        }
+        assert bridge.ingest(OP_BOTTLENECK_ESCALATION, payload_2)
+
+        tasks = task_mgr.list_tasks()
+        assert len(tasks) == 1
+        assert "dedup_key:kimeisele/agent-city#ruff_clean" in tasks[0].description
+        assert "target_repo:kimeisele/agent-city" in tasks[0].description
