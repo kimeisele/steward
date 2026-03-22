@@ -10,6 +10,7 @@ Validates:
 import hashlib
 import json
 
+from steward.federation_crypto import verify_payload_signature
 from steward.federation_transport import (
     FilesystemFederationTransport,
     NadiFederationTransport,
@@ -107,6 +108,13 @@ class TestNadiFederationTransport:
         assert hasattr(transport, "_inbox")
         assert hasattr(transport, "_outbox")
 
+    def test_init_generates_local_keypair(self, tmp_path):
+        transport = NadiFederationTransport(str(tmp_path))
+
+        assert (tmp_path / ".node_keys.json").exists()
+        keys = json.loads((tmp_path / ".node_keys.json").read_text())
+        assert keys["public_key"] == transport.public_key
+
     def test_read_outbox_empty(self, tmp_path):
         transport = NadiFederationTransport(str(tmp_path))
         assert transport.read_outbox() == []
@@ -135,6 +143,26 @@ class TestNadiFederationTransport:
         assert data[0]["source"] == "steward"
         assert isinstance(data[0]["message_id"], str)
         assert len(data[0]["payload_hash"]) == 64
+        assert isinstance(data[0]["signature"], str)
+
+    def test_append_to_inbox_signs_payload_hash(self, tmp_path):
+        transport = NadiFederationTransport(str(tmp_path))
+        payload = {"health": 0.9}
+
+        transport.append_to_inbox(
+            [
+                {
+                    "source": "steward",
+                    "target": "agent-city",
+                    "operation": "heartbeat",
+                    "payload": payload,
+                }
+            ]
+        )
+
+        data = json.loads((tmp_path / "nadi_outbox.json").read_text())
+        msg = data[0]
+        assert verify_payload_signature(transport.public_key, msg["payload_hash"], msg["signature"])
 
     def test_read_outbox_quarantines_integrity_mismatch(self, tmp_path):
         transport = NadiFederationTransport(str(tmp_path))

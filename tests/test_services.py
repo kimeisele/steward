@@ -168,6 +168,19 @@ class TestBoot:
 
         assert any(record.levelname == "CRITICAL" for record in caplog.records)
 
+    def test_boot_generates_genesis_node_keys_when_missing(self, tmp_path, monkeypatch):
+        fed_dir = tmp_path / "data" / "federation"
+        fed_dir.mkdir(parents=True)
+        monkeypatch.setenv("STEWARD_FEDERATION_DIR", str(fed_dir))
+
+        boot(tools=[_DummyTool()], cwd=str(tmp_path))
+
+        key_path = fed_dir / ".node_keys.json"
+        assert key_path.exists()
+        payload = json.loads(key_path.read_text())
+        assert payload["public_key"]
+        assert payload["private_key"]
+
 
 class TestIntegrity:
     """Test integrity check functions."""

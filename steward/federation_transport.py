@@ -26,6 +26,7 @@ import time
 import uuid
 from pathlib import Path
 
+from steward.federation_crypto import NodeKeyStore, sign_payload_hash
 from vibe_core.mahamantra.federation.types import FederationMessage
 
 logger = logging.getLogger("STEWARD.FEDERATION.TRANSPORT")
@@ -59,6 +60,10 @@ class NadiFederationTransport:
         self._outbox = self._dir / "nadi_outbox.json"
         self._quarantine_dir = self._dir / "quarantine"
         self._quarantine_index = self._quarantine_dir / "index.json"
+        self._key_store = NodeKeyStore(self._dir / ".node_keys.json")
+        self._key_store.ensure_keys()
+        self.public_key = self._key_store.public_key
+        self.private_key = self._key_store.private_key
         self._seen: set[str] = set()
         self._quarantined = self._load_quarantine_index()
 
@@ -83,6 +88,7 @@ class NadiFederationTransport:
         enriched = dict(payload)
         enriched["message_id"] = str(uuid.uuid4())
         enriched["payload_hash"] = self._payload_hash(enriched.get("payload", {}))
+        enriched["signature"] = sign_payload_hash(self.private_key, enriched["payload_hash"])
         return enriched
 
     def _load_quarantine_index(self) -> set[str]:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock
 
+from steward.federation_crypto import NodeKeyStore, sign_payload_hash
 from steward.federation import FederationBridge
 from steward.federation_transport import NadiFederationTransport
 from steward.federation_gateway import FederationGateway, _is_a2a, _is_nadi
@@ -499,10 +500,12 @@ class TestProcessInbound:
         ServiceRegistry.register(SVC_TASK_MANAGER, task_mgr)
 
         transport = NadiFederationTransport(str(tmp_path))
+        node_x_keys = NodeKeyStore(tmp_path / "node-x" / ".node_keys.json")
+        node_x_keys.ensure_keys()
         bridge = FederationBridge(agent_id="steward", verified_agents_path=tmp_path / "verified_agents.json")
         gw = FederationGateway(bridge=bridge)
         gov_payload = {"target": "fix:federation_ci_required:agent-internet", "severity": "high", "reward": 108, "description": "Fix CI"}
-        claim_payload = {"agent_name": "node-x", "public_key": "ecdsa-pub-placeholder", "capabilities": ["bounty_hunter"]}
+        claim_payload = {"agent_name": "node-x", "public_key": node_x_keys.public_key, "capabilities": ["bounty_hunter"]}
 
         (tmp_path / "nadi_inbox.json").write_text(
             json.dumps(
@@ -546,12 +549,54 @@ class TestProcessInbound:
                         "payload": gov_payload,
                         "message_id": "gov-c",
                         "payload_hash": __import__("hashlib").sha256(json.dumps(gov_payload, sort_keys=True).encode()).hexdigest(),
+                        "signature": sign_payload_hash(node_x_keys.private_key, __import__("hashlib").sha256(json.dumps(gov_payload, sort_keys=True).encode()).hexdigest()),
                     }
                 ]
             )
         )
         assert gw.process_inbound(transport) == 1
         assert len(task_mgr.list_tasks()) == 1
+
+    def test_verified_sender_invalid_signature_is_quarantined(self, tmp_path):
+        transport = NadiFederationTransport(str(tmp_path))
+        node_x_keys = NodeKeyStore(tmp_path / "node-x" / ".node_keys.json")
+        node_x_keys.ensure_keys()
+        (tmp_path / "verified_agents.json").write_text(
+            json.dumps(
+                {
+                    "node-x": {
+                        "agent_name": "node-x",
+                        "public_key": node_x_keys.public_key,
+                        "capabilities": ["bounty_hunter"],
+                    }
+                }
+            )
+        )
+        gov_payload = {"target": "fix:federation_ci_required:agent-internet", "severity": "high", "reward": 108, "description": "Fix CI"}
+        (tmp_path / "nadi_inbox.json").write_text(
+            json.dumps(
+                [
+                    {
+                        "source": "node-x",
+                        "target": "steward",
+                        "operation": "governance_bounty",
+                        "payload": gov_payload,
+                        "message_id": "gov-bad",
+                        "payload_hash": __import__("hashlib").sha256(json.dumps(gov_payload, sort_keys=True).encode()).hexdigest(),
+                        "signature": "deadbeef",
+                    }
+                ]
+            )
+        )
+        bridge = FederationBridge(agent_id="steward", verified_agents_path=tmp_path / "verified_agents.json")
+        gw = FederationGateway(bridge=bridge)
+
+        assert gw.process_inbound(transport) == 0
+        quarantine_files = [path for path in (tmp_path / "quarantine").glob("*.json") if path.name != "index.json"]
+        assert len(quarantine_files) == 1
+        record = json.loads(quarantine_files[0].read_text())
+        assert record["stage"] == "crypto_verification"
+        assert record["reason"] == "invalid_signature"
 
     def test_node_health_broadcast_round_trip_updates_peer_registry(self, tmp_path):
         node_a = tmp_path / "node-a"
