@@ -23,6 +23,7 @@ import hashlib
 import json
 import logging
 import time
+import uuid
 from pathlib import Path
 
 from vibe_core.mahamantra.federation.types import FederationMessage
@@ -72,6 +73,17 @@ class NadiFederationTransport:
         payload = self._serialize_message(message)
         encoded = json.dumps(payload, sort_keys=True, default=str)
         return hashlib.sha256(encoded.encode()).hexdigest()
+
+    def _payload_hash(self, payload: object) -> str:
+        serialized = self._serialize_message(payload)
+        encoded = json.dumps(serialized, sort_keys=True, default=str)
+        return hashlib.sha256(encoded.encode()).hexdigest()
+
+    def _with_integrity_fields(self, payload: dict) -> dict:
+        enriched = dict(payload)
+        enriched["message_id"] = str(uuid.uuid4())
+        enriched["payload_hash"] = self._payload_hash(enriched.get("payload", {}))
+        return enriched
 
     def _load_quarantine_index(self) -> set[str]:
         if not self._quarantine_index.exists():
@@ -245,6 +257,16 @@ class NadiFederationTransport:
                         stage="transport_parse",
                     )
                     continue
+                expected_hash = str(item.get("payload_hash", "")).strip()
+                if expected_hash:
+                    actual_hash = self._payload_hash(item.get("payload", {}))
+                    if actual_hash != expected_hash:
+                        self.quarantine_messages(
+                            [item],
+                            reason="integrity_check_failed",
+                            stage="transport_inbound_verify",
+                        )
+                        continue
                 self._seen.add(fingerprint)
                 messages.append(item)
             return messages
@@ -300,7 +322,7 @@ class NadiFederationTransport:
                         "Nadi: dropping malformed message (missing source/operation): %s", list(payload.keys())
                     )
                     continue
-                existing.append(payload)
+                existing.append(self._with_integrity_fields(payload))
 
             if len(existing) > NADI_BUFFER_SIZE:
                 existing = existing[-NADI_BUFFER_SIZE:]
