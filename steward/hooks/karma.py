@@ -179,3 +179,95 @@ class KarmaA2AProgressHook(BasePhaseHook):
                     task_id,
                     {"status": "completed", "completed_at": time.time()},
                 )
+
+
+class KarmaBottleneckResolutionHook(BasePhaseHook):
+    """Emit bottleneck_resolution to agent-city when escalation tasks complete.
+
+    When agent-city escalates a bottleneck via NADI, steward creates a
+    [BOTTLENECK_ESCALATION] task. Once that task completes, this hook
+    emits a bottleneck_resolution message back so agent-city can unblock
+    its scope gate and stop re-escalating.
+
+    Priority 85: cleanup band, after task execution (80) and A2A progress.
+    """
+
+    @property
+    def name(self) -> str:
+        return "karma_bottleneck_resolution"
+
+    @property
+    def phase(self) -> str:
+        return KARMA
+
+    @property
+    def priority(self) -> int:
+        return 85  # Cleanup band — after A2A progress (80)
+
+    def execute(self, ctx: PhaseContext) -> None:
+        task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
+        federation = ServiceRegistry.get(SVC_FEDERATION)
+        if task_mgr is None or federation is None:
+            return
+
+        from vibe_core.task_types import TaskStatus
+
+        completed = task_mgr.list_tasks(status=TaskStatus.COMPLETED)
+        if not completed:
+            return
+
+        emitted = 0
+        for task in completed:
+            title = getattr(task, "title", "") or ""
+            if not title.startswith("[BOTTLENECK_ESCALATION]"):
+                continue
+
+            desc = getattr(task, "description", "") or ""
+
+            # Skip if we already emitted resolution for this task
+            if "resolution_emitted:true" in desc:
+                continue
+
+            # Extract dedup_key from description (format: "dedup_key:{value}")
+            dedup_key = ""
+            for line in desc.split("\n"):
+                line = line.strip()
+                if line.startswith("dedup_key:"):
+                    dedup_key = line[len("dedup_key:"):]
+                    break
+
+            if not dedup_key:
+                logger.debug(
+                    "KARMA: completed bottleneck task '%s' has no dedup_key, skipping resolution",
+                    title[:60],
+                )
+                continue
+
+            # Emit resolution via federation bridge
+            federation.emit(
+                "bottleneck_resolution",
+                {
+                    "dedup_key": dedup_key,
+                    "task_title": title,
+                    "source_agent": "steward",
+                },
+            )
+            emitted += 1
+
+            # Mark as emitted to prevent re-emission on subsequent cycles
+            task_id = getattr(task, "id", None)
+            if task_id and hasattr(task_mgr, "update_task"):
+                task_mgr.update_task(
+                    task_id,
+                    description=desc + "\nresolution_emitted:true",
+                )
+
+            logger.info(
+                "KARMA: emitted bottleneck_resolution for '%s' (dedup_key=%s)",
+                title[:60],
+                dedup_key,
+            )
+
+        if emitted:
+            ctx.operations.append(f"karma_bottleneck_resolution:emitted={emitted}")
+

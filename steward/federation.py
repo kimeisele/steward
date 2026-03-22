@@ -109,6 +109,7 @@ OP_WORLD_STATE_UPDATE = "world_state_update"
 OP_POLICY_UPDATE = "policy_update"
 OP_CITY_REPORT = "city_report"
 OP_BOTTLENECK_ESCALATION = "bottleneck_escalation"
+OP_BOTTLENECK_RESOLUTION = "bottleneck_resolution"
 OP_COMPLIANCE_REPORT = "compliance_report"
 OP_GOVERNANCE_BOUNTY = "governance_bounty"
 OP_AGENT_CLAIM = "federation.agent_claim"
@@ -135,6 +136,7 @@ ALL_OPERATIONS = {
     OP_POLICY_UPDATE,
     OP_CITY_REPORT,
     OP_BOTTLENECK_ESCALATION,
+    OP_BOTTLENECK_RESOLUTION,
     OP_COMPLIANCE_REPORT,
     OP_GOVERNANCE_BOUNTY,
     OP_AGENT_CLAIM,
