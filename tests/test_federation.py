@@ -8,6 +8,7 @@ from steward.federation import (
     OP_CITY_REPORT,
     OP_CLAIM_OUTCOME,
     OP_CLAIM_SLOT,
+    OP_GOVERNANCE_BOUNTY,
     OP_DELEGATE_TASK,
     OP_HEARTBEAT,
     OP_RELEASE_SLOT,
@@ -942,6 +943,83 @@ class TestInboundCityReport:
         assert "dedup_key:kimeisele/agent-city#ruff_clean" in tasks[0].description
         assert "target_repo:kimeisele/agent-city" in tasks[0].description
 
+
+class TestInboundGovernanceBounty:
+    def test_governance_bounty_dedup_uses_violation_id(self, tmp_path):
+        from steward.services import SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
+        from vibe_core.task_management.task_manager import TaskManager
+
+        task_mgr = TaskManager(project_root=tmp_path)
+        ServiceRegistry.register(SVC_TASK_MANAGER, task_mgr)
+
+        bridge = FederationBridge()
+        payload = {
+            "target": "fix:federation_ci_required:agent-internet",
+            "severity": "high",
+            "reward": 108,
+            "description": "CI required policy violated",
+            "issuer": "legislator",
+            "violation_id": "gov:ci_required:agent-internet:42",
+            "policy_name": "federation_ci_required",
+            "target_repo": "kimeisele/agent-internet",
+        }
+        assert bridge.ingest(OP_GOVERNANCE_BOUNTY, payload)
+        payload_2 = {
+            "target": "fix:totally different prose that should not matter",
+            "severity": "high",
+            "reward": 108,
+            "description": "duplicate emission",
+            "issuer": "legislator",
+            "violation_id": "gov:ci_required:agent-internet:42",
+            "policy_name": "different_but_ignored_when_violation_id_present",
+            "target_repo": "kimeisele/another-repo",
+        }
+        assert bridge.ingest(OP_GOVERNANCE_BOUNTY, payload_2)
+
+        tasks = task_mgr.list_tasks()
+        assert len(tasks) == 1
+        assert "dedup_key:gov:ci_required:agent-internet:42" in tasks[0].description
+        assert "violation_id:gov:ci_required:agent-internet:42" in tasks[0].description
+
+    def test_governance_bounty_dedup_falls_back_to_target_repo_and_policy(self, tmp_path):
+        from steward.services import SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
+        from vibe_core.task_management.task_manager import TaskManager
+
+        task_mgr = TaskManager(project_root=tmp_path)
+        ServiceRegistry.register(SVC_TASK_MANAGER, task_mgr)
+
+        bridge = FederationBridge()
+        payload = {
+            "target": "fix:federation_ci_required:agent-internet",
+            "severity": "medium",
+            "reward": 54,
+            "description": "first emission",
+            "issuer": "legislator",
+            "policy_name": "federation_ci_required",
+            "target_repo": "kimeisele/agent-internet",
+        }
+        assert bridge.ingest(OP_GOVERNANCE_BOUNTY, payload)
+        payload_2 = {
+            "target": "violation:federation ci required:agent-internet",
+            "severity": "medium",
+            "reward": 54,
+            "description": "duplicate emission",
+            "issuer": "legislator",
+            "policy_name": "federation_ci_required",
+            "target_repo": "kimeisele/agent-internet",
+        }
+        assert bridge.ingest(OP_GOVERNANCE_BOUNTY, payload_2)
+
+        tasks = task_mgr.list_tasks()
+        assert len(tasks) == 1
+        assert "dedup_key:kimeisele/agent-internet:federation_ci_required" in tasks[0].description
+        assert "policy_name:federation_ci_required" in tasks[0].description
+        assert "target_repo:kimeisele/agent-internet" in tasks[0].description
+
+
+class TestInboundCityReportMore(TestInboundCityReport):
     def test_city_report_records_heartbeat(self):
         """city_report acts as a liveness signal for the reaper."""
         reaper = HeartbeatReaper()
