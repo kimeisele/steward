@@ -106,6 +106,8 @@ OP_WORLD_STATE_UPDATE = "world_state_update"
 OP_POLICY_UPDATE = "policy_update"
 OP_CITY_REPORT = "city_report"
 OP_BOTTLENECK_ESCALATION = "bottleneck_escalation"
+OP_COMPLIANCE_REPORT = "compliance_report"
+OP_GOVERNANCE_BOUNTY = "governance_bounty"
 
 # Mission name prefixes emitted by agent-city's create_brain_mission().
 # Verified from kimeisele/agent-city city/missions.py — Brain {verb}: {target[:50]}
@@ -192,6 +194,8 @@ class FederationBridge:
             OP_POLICY_UPDATE: self._handle_policy_update,
             OP_CITY_REPORT: self._handle_city_report,
             OP_BOTTLENECK_ESCALATION: self._handle_bottleneck_escalation,
+            OP_COMPLIANCE_REPORT: self._handle_compliance_report,
+            OP_GOVERNANCE_BOUNTY: self._handle_governance_bounty,
         }
 
     def ingest(self, operation: str, payload: dict) -> bool:
@@ -708,6 +712,110 @@ class FederationBridge:
         description = f"Escalated from agent-city (hb={heartbeat}, source={source}): {evidence}"
         task_mgr.add_task(title=title, priority=70, description=description)
         logger.info("BRIDGE: bottleneck_escalation → task '%s'", title)
+
+        return True
+
+    def _handle_compliance_report(self, payload: dict) -> bool:
+        """Inbound compliance report from agent-world Legislator.
+
+        Updates reaper trust based on compliance status.
+        Compliant nodes get a trust bonus (+0.05, capped at 1.0).
+        Non-compliant nodes get a trust penalty (-0.1 per violation).
+
+        Payload:
+            node_id: str — the peer being evaluated
+            compliant: bool — whether the node is compliant
+            violations: list[str] — policy IDs violated
+            trust_score: float — Legislator-computed trust score
+            compliance_ratio: float — federation-wide compliance ratio
+            issuer: str — who issued (legislator)
+        """
+        node_id = payload.get("node_id", "")
+        compliant = payload.get("compliant", True)
+        violations = payload.get("violations", [])
+
+        if not node_id:
+            return True
+
+        logger.info(
+            "BRIDGE: compliance_report for %s: compliant=%s violations=%s",
+            node_id,
+            compliant,
+            violations,
+        )
+
+        # Update reaper trust directly on PeerRecord
+        if self.reaper is not None:
+            peer = self.reaper.get_peer(node_id)
+            if peer is not None:
+                old_trust = peer.trust
+                if compliant:
+                    # Trust bonus for compliance (+0.05, capped at 1.0)
+                    peer.trust = min(1.0, peer.trust + 0.05)
+                else:
+                    # Trust penalty per violation (-0.1 each)
+                    penalty = len(violations) * 0.1
+                    peer.trust = max(0.0, peer.trust - penalty)
+                logger.info(
+                    "BRIDGE: trust update for %s: %.2f → %.2f (%s)",
+                    node_id,
+                    old_trust,
+                    peer.trust,
+                    "compliant" if compliant else f"{len(violations)} violations",
+                )
+
+        return True
+
+    def _handle_governance_bounty(self, payload: dict) -> bool:
+        """Inbound governance bounty from agent-world Legislator.
+
+        Violations become economic incentives: the Legislator emits a bounty
+        for each policy violation, and steward creates a task for AutonomyEngine
+        to dispatch in KARMA phase.
+
+        Payload:
+            target: str — bounty target (e.g. "fix:federation_ci_required:agent-internet")
+            severity: str — "low", "medium", "high"
+            reward: int — prana reward (108 = MALA for high severity)
+            description: str — human-readable description
+            issuer: str — who issued (legislator)
+        """
+        target = payload.get("target", "")
+        severity = payload.get("severity", "medium")
+        reward = payload.get("reward", 0)
+        description = payload.get("description", "")
+
+        if not target:
+            return True
+
+        logger.info(
+            "BRIDGE: governance_bounty target='%s' severity=%s reward=%d",
+            target[:80],
+            severity,
+            reward,
+        )
+
+        # Create task for KARMA phase dispatch
+        from steward.services import SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
+
+        task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
+        if task_mgr is None:
+            logger.warning("BRIDGE: governance_bounty — no TaskManager to create task")
+            return True
+
+        from vibe_core.task_types import TaskStatus
+
+        # Dedup: skip if active task already exists for this target
+        active = task_mgr.list_tasks(status=TaskStatus.IN_PROGRESS) + task_mgr.list_tasks(status=TaskStatus.PENDING)
+        if any("[GOV_BOUNTY]" in t.title and target[:30] in t.title for t in active):
+            logger.info("BRIDGE: governance_bounty dedup — '%s' already active", target[:50])
+            return True
+
+        title = f"[GOV_BOUNTY] {target[:80]}"
+        task_desc = f"governance_bounty: {description} (severity={severity}, reward={reward})"
+        task_mgr.add_task(title=title, priority=75, description=task_desc)
+        logger.info("BRIDGE: governance_bounty → task '%s'", title)
 
         return True
 
