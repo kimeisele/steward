@@ -5,6 +5,7 @@ import time
 
 from steward.federation import (
     CITY_BOTTLENECK_PREFIX,
+    OP_AGENT_CLAIM,
     OP_BOTTLENECK_ESCALATION,
     OP_CITY_REPORT,
     OP_CLAIM_OUTCOME,
@@ -126,6 +127,30 @@ class TestInboundNodeHealth:
             },
         )
         assert not (tmp_path / "peer_registry.json").exists()
+
+
+class TestInboundAgentClaim:
+    def test_agent_claim_upserts_verified_agents_registry(self, tmp_path):
+        bridge = FederationBridge(agent_id="steward", verified_agents_path=tmp_path / "verified_agents.json")
+
+        assert bridge.ingest(
+            OP_AGENT_CLAIM,
+            {
+                "agent_name": "agent-city",
+                "public_key": "ecdsa-pub-placeholder",
+                "capabilities": ["bounty_hunter", "infrastructure"],
+            },
+        )
+
+        registry = json.loads((tmp_path / "verified_agents.json").read_text())
+        assert registry["agent-city"]["public_key"] == "ecdsa-pub-placeholder"
+        assert registry["agent-city"]["capabilities"] == ["bounty_hunter", "infrastructure"]
+
+    def test_agent_claim_requires_agent_name_and_public_key(self, tmp_path):
+        bridge = FederationBridge(agent_id="steward", verified_agents_path=tmp_path / "verified_agents.json")
+
+        assert not bridge.ingest(OP_AGENT_CLAIM, {"agent_name": "agent-city", "capabilities": ["infra"]})
+        assert not (tmp_path / "verified_agents.json").exists()
 
 
 # ── Inbound: Claim Slot ─────────────────────────────────────────

@@ -7,6 +7,7 @@ Validates:
   - Both satisfy FederationTransport protocol (read_outbox, append_to_inbox)
 """
 
+import hashlib
 import json
 
 from steward.federation_transport import (
@@ -132,6 +133,36 @@ class TestNadiFederationTransport:
         assert len(data) == 1
         assert data[0]["operation"] == "heartbeat"
         assert data[0]["source"] == "steward"
+        assert isinstance(data[0]["message_id"], str)
+        assert len(data[0]["payload_hash"]) == 64
+
+    def test_read_outbox_quarantines_integrity_mismatch(self, tmp_path):
+        transport = NadiFederationTransport(str(tmp_path))
+        inbox_path = tmp_path / "nadi_inbox.json"
+        payload = {"task_title": "fix tests"}
+        inbox_path.write_text(
+            json.dumps(
+                [
+                    {
+                        "source": "agent-city",
+                        "target": "steward",
+                        "operation": "task_completed",
+                        "payload": payload,
+                        "message_id": "msg-1",
+                        "payload_hash": "bad-hash",
+                    }
+                ]
+            )
+        )
+
+        messages = transport.read_outbox()
+
+        assert messages == []
+        quarantine_files = [path for path in (tmp_path / "quarantine").glob("*.json") if path.name != "index.json"]
+        assert len(quarantine_files) == 1
+        record = json.loads(quarantine_files[0].read_text())
+        assert record["stage"] == "transport_inbound_verify"
+        assert record["reason"] == "integrity_check_failed"
 
     def test_round_trip_via_nadi_files(self, tmp_path):
         """Write outbound, simulate inbound, read back."""
@@ -151,6 +182,7 @@ class TestNadiFederationTransport:
 
         # Simulate another agent delivering messages to our inbox
         inbox_path = tmp_path / "nadi_inbox.json"
+        payload = {"task_title": "fix tests", "pr_url": "https://github.com/test/pr/1"}
         inbox_path.write_text(
             json.dumps(
                 [
@@ -158,7 +190,9 @@ class TestNadiFederationTransport:
                         "source": "agent-city",
                         "target": "steward",
                         "operation": "task_completed",
-                        "payload": {"task_title": "fix tests", "pr_url": "https://github.com/test/pr/1"},
+                        "payload": payload,
+                        "message_id": "msg-1",
+                        "payload_hash": hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest(),
                     }
                 ]
             )
@@ -173,10 +207,17 @@ class TestNadiFederationTransport:
     def test_read_outbox_quarantines_malformed_items(self, tmp_path):
         transport = NadiFederationTransport(str(tmp_path))
         inbox_path = tmp_path / "nadi_inbox.json"
+        heartbeat_payload = {}
         inbox_path.write_text(
             json.dumps(
                 [
-                    {"source": "agent-city", "operation": "heartbeat", "payload": {}},
+                    {
+                        "source": "agent-city",
+                        "operation": "heartbeat",
+                        "payload": heartbeat_payload,
+                        "message_id": "msg-1",
+                        "payload_hash": hashlib.sha256(json.dumps(heartbeat_payload, sort_keys=True).encode()).hexdigest(),
+                    },
                     {"source": "agent-city", "payload": {}},
                     "not-a-dict",
                 ]

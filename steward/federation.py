@@ -111,6 +111,7 @@ OP_CITY_REPORT = "city_report"
 OP_BOTTLENECK_ESCALATION = "bottleneck_escalation"
 OP_COMPLIANCE_REPORT = "compliance_report"
 OP_GOVERNANCE_BOUNTY = "governance_bounty"
+OP_AGENT_CLAIM = "federation.agent_claim"
 OP_FEDERATION_NODE_HEALTH = "federation.node_health"
 NODE_HEALTH_PROTOCOL_VERSION = "1.0"
 
@@ -248,6 +249,7 @@ class FederationBridge:
     agent_id: str = "steward"  # our identity in federation messages
     delegation_trust_floor: float = DEFAULT_DELEGATION_TRUST_FLOOR
     peer_registry_path: str | Path | None = None
+    verified_agents_path: str | Path | None = None
 
     _outbound: list[BridgeEvent] = field(default_factory=list)
     _inbound_count: int = field(default=0, init=False)
@@ -271,6 +273,7 @@ class FederationBridge:
             OP_BOTTLENECK_ESCALATION: self._handle_bottleneck_escalation,
             OP_COMPLIANCE_REPORT: self._handle_compliance_report,
             OP_GOVERNANCE_BOUNTY: self._handle_governance_bounty,
+            OP_AGENT_CLAIM: self._handle_agent_claim,
             OP_FEDERATION_NODE_HEALTH: self._handle_node_health,
         }
 
@@ -278,6 +281,11 @@ class FederationBridge:
         if self.peer_registry_path is not None:
             return Path(self.peer_registry_path)
         return Path("data") / "federation" / "peer_registry.json"
+
+    def _verified_agents_file(self) -> Path:
+        if self.verified_agents_path is not None:
+            return Path(self.verified_agents_path)
+        return Path("data") / "federation" / "verified_agents.json"
 
     def _load_peer_registry(self) -> dict[str, dict]:
         path = self._peer_registry_file()
@@ -291,6 +299,23 @@ class FederationBridge:
 
     def _save_peer_registry(self, registry: dict[str, dict]) -> None:
         path = self._peer_registry_file()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(registry, indent=2, sort_keys=True))
+        tmp.replace(path)
+
+    def _load_verified_agents(self) -> dict[str, dict]:
+        path = self._verified_agents_file()
+        if not path.exists():
+            return {}
+        try:
+            raw = json.loads(path.read_text())
+        except (json.JSONDecodeError, OSError):
+            return {}
+        return raw if isinstance(raw, dict) else {}
+
+    def _save_verified_agents(self, registry: dict[str, dict]) -> None:
+        path = self._verified_agents_file()
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(registry, indent=2, sort_keys=True))
@@ -964,6 +989,31 @@ class FederationBridge:
             node_id,
             status,
             protocol_version,
+        )
+        return True
+
+    def _handle_agent_claim(self, payload: dict) -> bool:
+        agent_name = str(payload.get("agent_name", "")).strip()
+        public_key = str(payload.get("public_key", "")).strip()
+        capabilities = payload.get("capabilities", [])
+
+        if not agent_name or not public_key:
+            return False
+        if not isinstance(capabilities, list):
+            return False
+
+        registry = self._load_verified_agents()
+        registry[agent_name] = {
+            "agent_name": agent_name,
+            "public_key": public_key,
+            "capabilities": [str(item) for item in capabilities],
+            "updated_at": time.time(),
+        }
+        self._save_verified_agents(registry)
+        logger.info(
+            "BRIDGE: agent_claim upsert agent_name=%s capabilities=%d",
+            agent_name,
+            len(capabilities),
         )
         return True
 

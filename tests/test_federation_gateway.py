@@ -465,6 +465,36 @@ class TestProcessInbound:
         assert registry["node-a"]["status"] == "DEGRADED"
         assert registry["node-a"]["protocol_version"] == "1.0"
 
+    def test_agent_claim_round_trip_updates_verified_agents_registry(self, tmp_path):
+        node_b = tmp_path / "node-b"
+        node_b.mkdir()
+
+        transport_b = NadiFederationTransport(str(node_b))
+        bridge_b = FederationBridge(agent_id="node-b", verified_agents_path=node_b / "verified_agents.json")
+        gw_b = FederationGateway(bridge=bridge_b)
+
+        payload = {
+            "agent_name": "node-a",
+            "public_key": "ecdsa-pub-placeholder",
+            "capabilities": ["bounty_hunter", "infrastructure"],
+        }
+        message = {
+            "source": "node-a",
+            "target": "node-b",
+            "operation": "federation.agent_claim",
+            "payload": payload,
+            "message_id": "claim-1",
+            "payload_hash": __import__("hashlib").sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest(),
+        }
+        (node_b / "nadi_inbox.json").write_text(json.dumps([message]))
+
+        processed = gw_b.process_inbound(transport_b)
+
+        assert processed == 1
+        registry = json.loads((node_b / "verified_agents.json").read_text())
+        assert registry["node-a"]["public_key"] == "ecdsa-pub-placeholder"
+        assert registry["node-a"]["capabilities"] == ["bounty_hunter", "infrastructure"]
+
     def test_signals_queued_for_moksha(self):
         """All processed messages queue Hebbian signals for MOKSHA drain."""
         bridge = MagicMock()
