@@ -173,6 +173,36 @@ def _bottleneck_dedup_key(
     return f"{target_repo}:{contract_name}"[:160]
 
 
+def _normalize_governance_policy(value: str) -> str:
+    lowered = value.lower().strip()
+    if not lowered:
+        return ""
+    segments = [segment.strip() for segment in lowered.split(":") if segment.strip()]
+    if len(segments) >= 2 and segments[0] in {"fix", "policy", "violation"}:
+        lowered = segments[1]
+    token = re.sub(r"[^a-z0-9]+", "_", lowered).strip("_")
+    return token[:80]
+
+
+def _governance_dedup_key(payload: dict) -> str:
+    violation_id = str(payload.get("violation_id", "")).strip()
+    if violation_id:
+        return violation_id[:160]
+
+    policy_name = str(payload.get("policy_name", "")).strip()
+    if not policy_name:
+        policy_name = _normalize_governance_policy(str(payload.get("target", "")))
+    target_repo = str(payload.get("target_repo", "")).strip()
+
+    if target_repo and policy_name:
+        return f"{target_repo}:{policy_name}"[:160]
+    if target_repo:
+        return target_repo[:160]
+    if policy_name:
+        return policy_name[:160]
+    return "governance:unknown"
+
+
 def _task_has_dedup_key(task: object, dedup_key: str) -> bool:
     title = getattr(task, "title", "") or ""
     description = getattr(task, "description", "") or ""
@@ -858,9 +888,16 @@ class FederationBridge:
         severity = payload.get("severity", "medium")
         reward = payload.get("reward", 0)
         description = payload.get("description", "")
+        violation_id = str(payload.get("violation_id", "")).strip()
+        policy_name = str(payload.get("policy_name", "")).strip()
+        target_repo = str(payload.get("target_repo", "")).strip()
 
         if not target:
             return True
+
+        dedup_key = _governance_dedup_key(payload)
+        if not policy_name:
+            policy_name = _normalize_governance_policy(target)
 
         logger.info(
             "BRIDGE: governance_bounty target='%s' severity=%s reward=%d",
@@ -882,12 +919,22 @@ class FederationBridge:
 
         # Dedup: skip if active task already exists for this target
         active = task_mgr.list_tasks(status=TaskStatus.IN_PROGRESS) + task_mgr.list_tasks(status=TaskStatus.PENDING)
-        if any("[GOV_BOUNTY]" in t.title and target[:30] in t.title for t in active):
-            logger.info("BRIDGE: governance_bounty dedup — '%s' already active", target[:50])
+        if any(_task_has_dedup_key(t, dedup_key) for t in active):
+            logger.info("BRIDGE: governance_bounty dedup — '%s' already active", dedup_key)
             return True
 
         title = f"[GOV_BOUNTY] {target[:80]}"
-        task_desc = f"governance_bounty: {description} (severity={severity}, reward={reward})"
+        task_desc_lines = [
+            f"governance_bounty: {description} (severity={severity}, reward={reward})",
+            f"dedup_key:{dedup_key}",
+        ]
+        if violation_id:
+            task_desc_lines.append(f"violation_id:{violation_id}")
+        if policy_name:
+            task_desc_lines.append(f"policy_name:{policy_name}")
+        if "/" in target_repo:
+            task_desc_lines.append(f"target_repo:{target_repo}")
+        task_desc = "\n".join(task_desc_lines)
         task_mgr.add_task(title=title, priority=75, description=task_desc)
         logger.info("BRIDGE: governance_bounty → task '%s'", title)
 
