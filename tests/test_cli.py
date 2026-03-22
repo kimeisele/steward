@@ -3,8 +3,17 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
+from unittest.mock import MagicMock
 
-from steward.__main__ import _format_event, _format_event_json, _tool_display
+from steward.__main__ import (
+    _format_event,
+    _format_event_json,
+    _handle_broadcast_health,
+    _handle_list_quarantine,
+    _handle_replay_quarantine,
+    _tool_display,
+)
 from steward.types import AgentEvent, AgentUsage, EventType, ToolUse
 from vibe_core.tools.tool_protocol import ToolResult
 
@@ -119,3 +128,100 @@ class TestJSONOutput:
         obj = json.loads(line)
         assert obj["type"] == "error"
         assert obj["content"] == "fail"
+
+
+class TestReplayCLI:
+    def test_handle_replay_quarantine_dry_run_outputs_summary(self, capsys):
+        engine = MagicMock()
+        engine.dry_run.return_value = {"would_accept": 5, "still_invalid": 2, "files": []}
+        args = MagicMock(dry_run=True, replay_all=False, file_name="", reject_reason="", output="human", replay_limit=None)
+
+        exit_code = _handle_replay_quarantine(args, engine=engine)
+
+        captured = capsys.readouterr()
+        assert exit_code == 0
+        assert "Would accept: 5 | Still invalid: 2" in captured.out
+
+    def test_handle_replay_quarantine_reinjects_targeted_reason(self, capsys):
+        engine = MagicMock()
+        engine.reinject.return_value = {"replayed": 1, "failed": 0, "files": ["abc.json"]}
+        args = MagicMock(dry_run=False, replay_all=False, file_name="", reject_reason="Gateway Validate Reject", output="json", replay_limit=7)
+
+        exit_code = _handle_replay_quarantine(args, engine=engine)
+
+        captured = capsys.readouterr()
+        assert exit_code == 0
+        payload = json.loads(captured.out.strip())
+        assert payload["replayed"] == 1
+        engine.reinject.assert_called_once_with(file_name="", reject_reason="Gateway Validate Reject", limit=7)
+
+    def test_handle_list_quarantine_outputs_grouped_summary(self, capsys):
+        engine = MagicMock()
+        engine.analytics.return_value = {
+            "total": 3,
+            "by_reason": {"Gateway Validate Reject": 2, "NADI inbox JSON decode failed": 1},
+            "by_stage": {"gateway_validate_reject": 2, "transport_malformed": 1},
+            "files": [],
+        }
+        args = MagicMock(replay_all=True, file_name="", reject_reason="", output="human", export_report="")
+
+        exit_code = _handle_list_quarantine(args, engine=engine)
+
+        captured = capsys.readouterr()
+        assert exit_code == 0
+        assert "Quarantine records: 3" in captured.out
+        assert "Gateway Validate Reject: 2" in captured.out
+        assert "gateway_validate_reject: 2" in captured.out
+
+    def test_handle_list_quarantine_exports_nadi_ready_report(self, tmp_path, capsys):
+        engine = MagicMock()
+        engine.analytics.return_value = {
+            "total": 1,
+            "by_reason": {"Gateway Validate Reject": 1},
+            "by_stage": {"gateway_validate_reject": 1},
+            "files": [],
+        }
+        engine.build_node_health_report.return_value = {
+            "node_id": "steward-node",
+            "timestamp": 123.0,
+            "quarantine_metrics": {"total": 1, "by_reason": {"Gateway Validate Reject": 1}, "by_stage": {"gateway_validate_reject": 1}},
+            "recommended_action": "dry_run_then_replay",
+        }
+        export_path = tmp_path / "node_health.json"
+        args = MagicMock(replay_all=True, file_name="", reject_reason="", output="json", export_report=str(export_path))
+
+        exit_code = _handle_list_quarantine(args, engine=engine)
+
+        captured = capsys.readouterr()
+        assert exit_code == 0
+        payload = json.loads(captured.out.strip())
+        assert payload["total"] == 1
+        report = json.loads(Path(export_path).read_text())
+        assert report["node_id"] == "steward-node"
+        assert report["quarantine_metrics"]["total"] == 1
+
+
+class TestBroadcastHealthCLI:
+    def test_handle_broadcast_health_writes_nadi_message_to_outbox(self, tmp_path, capsys):
+        engine = MagicMock()
+        engine.build_node_health_report.return_value = {
+            "node_id": "steward-node",
+            "protocol_version": "1.0",
+            "timestamp": 123.0,
+            "status": "DEGRADED",
+            "quarantine_metrics": {"total": 1, "by_reason": {}, "by_stage": {}, "files": []},
+            "recommended_action": "dry_run_then_replay",
+        }
+        transport = MagicMock()
+        transport.append_to_inbox.return_value = 1
+        args = MagicMock(output="json", cwd=str(tmp_path))
+
+        exit_code = _handle_broadcast_health(args, engine=engine, transport=transport)
+
+        captured = capsys.readouterr()
+        assert exit_code == 0
+        payload = json.loads(captured.out.strip())
+        assert payload["operation"] == "federation.node_health"
+        appended = transport.append_to_inbox.call_args.args[0][0]
+        assert appended["operation"] == "federation.node_health"
+        assert appended["payload"]["status"] == "DEGRADED"

@@ -15,6 +15,7 @@ import argparse
 import asyncio
 import json
 import sys
+from pathlib import Path
 
 from rich.console import Console
 from rich.markup import escape
@@ -22,6 +23,10 @@ from rich.theme import Theme
 
 from steward import __version__
 from steward.agent import StewardAgent
+from steward.federation import OP_FEDERATION_NODE_HEALTH
+from steward.federation_gateway import FederationGateway
+from steward.federation_quarantine import QuarantineReplayEngine, format_quarantine_summary, summary_to_json
+from steward.federation_transport import create_transport
 from steward.provider import build_chamber
 from steward.state import clear_state, load_conversation, save_conversation
 from steward.types import AgentEvent, AgentUsage, EventType, ToolResult
@@ -136,6 +141,77 @@ def _print_usage(u: AgentUsage) -> None:
         f"{u.llm_calls} calls, {u.tool_calls} tools, "
         f"{u.rounds} rounds{buddhi}][/]"
     )
+
+
+def _build_quarantine_engine(cwd: str | None = None) -> QuarantineReplayEngine:
+    from steward.services import SVC_FEDERATION_GATEWAY, SVC_FEDERATION_TRANSPORT, boot
+    from vibe_core.di import ServiceRegistry
+
+    workspace = Path(cwd or ".")
+    boot(tools=[], cwd=str(workspace))
+    fed_dir = workspace / "data" / "federation"
+    transport = ServiceRegistry.get(SVC_FEDERATION_TRANSPORT) or create_transport(str(fed_dir))
+    gateway = ServiceRegistry.get(SVC_FEDERATION_GATEWAY) or FederationGateway(bridge=None)
+    return QuarantineReplayEngine(transport=transport, gateway=gateway)
+
+
+def _handle_replay_quarantine(args: argparse.Namespace, engine: QuarantineReplayEngine | None = None) -> int:
+    replay_engine = engine or _build_quarantine_engine(args.cwd)
+    file_name = "" if args.replay_all else (args.file_name or "")
+    reject_reason = "" if args.replay_all else (args.reject_reason or "")
+    if args.dry_run:
+        summary = replay_engine.dry_run(file_name=file_name, reject_reason=reject_reason, limit=args.replay_limit)
+    else:
+        summary = replay_engine.reinject(file_name=file_name, reject_reason=reject_reason, limit=args.replay_limit)
+    if args.output == "json":
+        print(summary_to_json(summary))
+    else:
+        print(format_quarantine_summary(summary))
+    return 0
+
+
+def _handle_broadcast_health(
+    args: argparse.Namespace,
+    engine: QuarantineReplayEngine | None = None,
+    transport: object | None = None,
+) -> int:
+    replay_engine = engine or _build_quarantine_engine(args.cwd)
+    fed_dir = Path(args.cwd or ".") / "data" / "federation"
+    out_transport = transport or create_transport(str(fed_dir))
+    report = replay_engine.build_node_health_report()
+    message = {
+        "source": report.get("node_id", "steward"),
+        "target": "*",
+        "operation": OP_FEDERATION_NODE_HEALTH,
+        "payload": report,
+    }
+    out_transport.append_to_inbox([message])
+    if args.output == "json":
+        print(summary_to_json(message))
+    else:
+        print(f"Broadcasted {OP_FEDERATION_NODE_HEALTH} for {report.get('node_id', 'steward')}")
+    return 0
+
+
+def _handle_list_quarantine(args: argparse.Namespace, engine: QuarantineReplayEngine | None = None) -> int:
+    replay_engine = engine or _build_quarantine_engine(args.cwd)
+    file_name = "" if args.replay_all else (args.file_name or "")
+    reject_reason = "" if args.replay_all else (args.reject_reason or "")
+    summary = replay_engine.analytics(file_name=file_name, reject_reason=reject_reason, limit=args.replay_limit)
+    if args.export_report:
+        report = replay_engine.build_node_health_report(
+            file_name=file_name,
+            reject_reason=reject_reason,
+            limit=args.replay_limit,
+        )
+        export_path = Path(args.export_report)
+        export_path.parent.mkdir(parents=True, exist_ok=True)
+        export_path.write_text(summary_to_json(report))
+    if args.output == "json":
+        print(summary_to_json(summary))
+    else:
+        print(format_quarantine_summary(summary))
+    return 0
 
 
 # ── JSON Event Rendering ────────────────────────────────────────────
@@ -304,13 +380,59 @@ def main() -> None:
         action="store_true",
         help="Output dynamic context briefing (senses + gaps + sessions) to stdout. No LLM needed.",
     )
+    parser.add_argument(
+        "--replay-quarantine",
+        action="store_true",
+        help="Replay or dry-run quarantined federation messages.",
+    )
+    parser.add_argument(
+        "--broadcast-health",
+        action="store_true",
+        help="Emit a native federation.node_health message to the federation outbox.",
+    )
+    parser.add_argument(
+        "--list-quarantine",
+        action="store_true",
+        help="List and group quarantined federation messages without replaying them.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="With --replay-quarantine: validate quarantined messages without reinjecting them.",
+    )
+    parser.add_argument("--file-name", help="With --replay-quarantine: replay a single quarantine file by name.")
+    parser.add_argument(
+        "--reject-reason",
+        help="With --replay-quarantine: replay only quarantine records matching this reject reason.",
+    )
+    parser.add_argument(
+        "--all",
+        dest="replay_all",
+        action="store_true",
+        help="With --replay-quarantine: target all quarantine records.",
+    )
+    parser.add_argument(
+        "--replay-limit",
+        type=int,
+        help="With quarantine commands: limit the number of selected records processed.",
+    )
+    parser.add_argument(
+        "--export-report",
+        help="With --list-quarantine: write a NADI-ready node health report JSON to this path.",
+    )
 
     args = parser.parse_args()
+
+    if args.replay_quarantine:
+        sys.exit(_handle_replay_quarantine(args))
+    if args.broadcast_health:
+        sys.exit(_handle_broadcast_health(args))
+    if args.list_quarantine:
+        sys.exit(_handle_list_quarantine(args))
 
     # Briefing mode — show committed CLAUDE.md if fresh, regenerate if stale
     if args.briefing:
         import time
-        from pathlib import Path
 
         cwd = args.cwd or "."
         committed = Path(cwd) / "CLAUDE.md"

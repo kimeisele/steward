@@ -460,6 +460,19 @@ def boot(
         transport = create_transport(fed_dir)
         ServiceRegistry.register(SVC_FEDERATION_TRANSPORT, transport)
         logger.info("Federation transport: %s → %s", type(transport).__name__, fed_dir)
+        if hasattr(transport, "quarantine_size"):
+            quarantine_size = transport.quarantine_size()
+            if quarantine_size > 0:
+                if quarantine_size > 50:
+                    logger.critical(
+                        "System Boot: NADI Queue Active. CRITICAL: %d messages in quarantine requiring attention.",
+                        quarantine_size,
+                    )
+                else:
+                    logger.warning(
+                        "System Boot: NADI Queue Active. WARNING: %d messages in quarantine requiring attention.",
+                        quarantine_size,
+                    )
 
         # 28b. GitNadiSync (git network layer for federation — only if git checkout)
         from steward.git_nadi_sync import GitNadiSync

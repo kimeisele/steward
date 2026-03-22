@@ -90,6 +90,86 @@ class NadiFederationTransport:
         tmp.write_text(json.dumps(sorted(self._quarantined), indent=2))
         tmp.replace(self._quarantine_index)
 
+    def _load_quarantine_record(self, path: Path) -> dict | None:
+        try:
+            raw = json.loads(path.read_text())
+        except (json.JSONDecodeError, OSError):
+            logger.warning("Failed to read quarantine record: %s", path)
+            return None
+        if not isinstance(raw, dict):
+            return None
+        raw["file_name"] = path.name
+        raw["path"] = str(path)
+        return raw
+
+    def list_quarantine_records(self) -> list[dict]:
+        if not self._quarantine_dir.exists():
+            return []
+        records: list[dict] = []
+        for path in sorted(self._quarantine_dir.glob("*.json")):
+            if path.name == "index.json":
+                continue
+            record = self._load_quarantine_record(path)
+            if record is not None:
+                records.append(record)
+        return records
+
+    def quarantine_size(self) -> int:
+        return max(len(self._quarantined), len(self.list_quarantine_records()))
+
+    def _load_inbox_messages(self) -> list[object]:
+        if not self._inbox.exists():
+            return []
+        try:
+            raw = json.loads(self._inbox.read_text())
+        except (json.JSONDecodeError, OSError):
+            return []
+        return raw if isinstance(raw, list) else []
+
+    def stage_replay_messages(self, messages: list[dict]) -> int:
+        if not messages:
+            return 0
+        existing = self._load_inbox_messages()
+        combined = list(existing) + [self._serialize_message(message) for message in messages]
+        tmp = self._inbox.with_suffix(".json.tmp")
+        tmp.parent.mkdir(parents=True, exist_ok=True)
+        tmp.write_text(json.dumps(combined, indent=2, default=str))
+        tmp.replace(self._inbox)
+        return len(messages)
+
+    def clear_seen_message(self, message: object) -> None:
+        self._seen.discard(self._fingerprint(message))
+
+    def remove_inbox_messages(self, messages: list[object]) -> int:
+        if not messages:
+            return 0
+        existing = self._load_inbox_messages()
+        if not existing:
+            return 0
+        removal = {self._fingerprint(message) for message in messages}
+        kept = [item for item in existing if self._fingerprint(item) not in removal]
+        tmp = self._inbox.with_suffix(".json.tmp")
+        tmp.parent.mkdir(parents=True, exist_ok=True)
+        tmp.write_text(json.dumps(kept, indent=2, default=str))
+        tmp.replace(self._inbox)
+        return len(existing) - len(kept)
+
+    def delete_quarantine_records(self, records: list[dict]) -> int:
+        deleted = 0
+        for record in records:
+            fingerprint = str(record.get("fingerprint", ""))
+            path_str = str(record.get("path", ""))
+            if path_str:
+                path = Path(path_str)
+                if path.exists():
+                    path.unlink()
+                    deleted += 1
+            if fingerprint:
+                self._quarantined.discard(fingerprint)
+        if deleted or records:
+            self._persist_quarantine_index()
+        return deleted
+
     def quarantine_messages(
         self,
         messages: list[object],
@@ -299,7 +379,11 @@ def create_transport(federation_dir: str) -> object:
     """
     fed_path = Path(federation_dir)
     # Self-hosted nadi format: nadi_inbox.json + nadi_outbox.json in dir root
-    if (fed_path / "nadi_inbox.json").exists() or (fed_path / "nadi_outbox.json").exists():
+    if (
+        (fed_path / "nadi_inbox.json").exists()
+        or (fed_path / "nadi_outbox.json").exists()
+        or (fed_path / "quarantine").exists()
+    ):
         return NadiFederationTransport(federation_dir)
     # Legacy format: outbox/ and inbox/ subdirectories
     return FilesystemFederationTransport(federation_dir)

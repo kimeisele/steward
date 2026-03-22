@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from unittest.mock import MagicMock
 
 from steward.services import (
@@ -140,6 +141,32 @@ class TestBoot:
     def test_boot_no_tools(self):
         """Boot with no tools should work but integrity check warns."""
         boot(tools=[])  # Should not raise
+
+    def test_boot_logs_quarantine_warning_when_messages_pending(self, tmp_path, caplog, monkeypatch):
+        fed_dir = tmp_path / "data" / "federation"
+        fed_dir.mkdir(parents=True)
+        quarantine_dir = fed_dir / "quarantine"
+        quarantine_dir.mkdir()
+        (quarantine_dir / "index.json").write_text(json.dumps(["a", "b"]))
+        monkeypatch.setenv("STEWARD_FEDERATION_DIR", str(fed_dir))
+
+        caplog.set_level("WARNING")
+        boot(tools=[_DummyTool()], cwd=str(tmp_path))
+
+        assert "System Boot: NADI Queue Active. WARNING: 2 messages in quarantine requiring attention." in caplog.text
+
+    def test_boot_logs_quarantine_critical_when_backlog_exceeds_threshold(self, tmp_path, caplog, monkeypatch):
+        fed_dir = tmp_path / "data" / "federation"
+        fed_dir.mkdir(parents=True)
+        quarantine_dir = fed_dir / "quarantine"
+        quarantine_dir.mkdir()
+        (quarantine_dir / "index.json").write_text(json.dumps([str(i) for i in range(51)]))
+        monkeypatch.setenv("STEWARD_FEDERATION_DIR", str(fed_dir))
+
+        caplog.set_level("WARNING")
+        boot(tools=[_DummyTool()], cwd=str(tmp_path))
+
+        assert any(record.levelname == "CRITICAL" for record in caplog.records)
 
 
 class TestIntegrity:

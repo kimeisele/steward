@@ -1,5 +1,6 @@
 """Tests for Federation Bridge — cross-agent message routing."""
 
+import json
 import time
 
 from steward.federation import (
@@ -8,6 +9,7 @@ from steward.federation import (
     OP_CITY_REPORT,
     OP_CLAIM_OUTCOME,
     OP_CLAIM_SLOT,
+    OP_FEDERATION_NODE_HEALTH,
     OP_GOVERNANCE_BOUNTY,
     OP_DELEGATE_TASK,
     OP_HEARTBEAT,
@@ -16,6 +18,7 @@ from steward.federation import (
     OP_TASK_FAILED,
     FederationBridge,
 )
+from steward.federation_transport import NadiFederationTransport
 from steward.marketplace import Marketplace
 from steward.reaper import HeartbeatReaper
 
@@ -86,6 +89,43 @@ class TestInboundHeartbeat:
         )
         peer = reaper.get_peer("peer-1")
         assert peer.source == "wiki"
+
+
+class TestInboundNodeHealth:
+    def test_node_health_upserts_peer_registry(self, tmp_path):
+        bridge = FederationBridge(agent_id="steward", peer_registry_path=tmp_path / "peer_registry.json")
+
+        assert bridge.ingest(
+            OP_FEDERATION_NODE_HEALTH,
+            {
+                "node_id": "peer-a",
+                "protocol_version": "1.0",
+                "timestamp": 123.0,
+                "status": "DEGRADED",
+                "quarantine_metrics": {"total": 2, "by_reason": {}, "by_stage": {}},
+            },
+        )
+
+        import json
+
+        registry = json.loads((tmp_path / "peer_registry.json").read_text())
+        assert registry["peer-a"]["status"] == "DEGRADED"
+        assert registry["peer-a"]["protocol_version"] == "1.0"
+        assert registry["peer-a"]["timestamp"] == 123.0
+
+    def test_node_health_missing_node_id_is_rejected(self, tmp_path):
+        bridge = FederationBridge(agent_id="steward", peer_registry_path=tmp_path / "peer_registry.json")
+
+        assert not bridge.ingest(
+            OP_FEDERATION_NODE_HEALTH,
+            {
+                "protocol_version": "1.0",
+                "timestamp": 123.0,
+                "status": "HEALTHY",
+                "quarantine_metrics": {"total": 0, "by_reason": {}, "by_stage": {}},
+            },
+        )
+        assert not (tmp_path / "peer_registry.json").exists()
 
 
 # ── Inbound: Claim Slot ─────────────────────────────────────────
@@ -294,6 +334,102 @@ class TestFlushOutbound:
         assert bridge.stats()["errors"] == 1
         # Events NOT lost on failure — still in queue
         assert len(bridge._outbound) == 1
+
+    def test_unknown_peer_is_allowed_optimistically(self, tmp_path):
+        reaper = HeartbeatReaper()
+        reaper.record_heartbeat("peer-z", timestamp=time.time())
+        transport = NadiFederationTransport(str(tmp_path))
+        bridge = FederationBridge(reaper=reaper, agent_id="steward", peer_registry_path=tmp_path / "peer_registry.json")
+        bridge.emit(OP_DELEGATE_TASK, {"title": "Fix tests"})
+
+        assert bridge.flush_outbound(transport) == 1
+        outbox = json.loads((tmp_path / "nadi_outbox.json").read_text())
+        assert outbox[0]["target"] == "peer-z"
+        assert outbox[0]["operation"] == OP_DELEGATE_TASK
+
+    def test_critical_peer_is_quarantined(self, tmp_path):
+        reaper = HeartbeatReaper()
+        reaper.record_heartbeat("peer-critical", timestamp=time.time())
+        (tmp_path / "peer_registry.json").write_text(
+            json.dumps(
+                {
+                    "peer-critical": {
+                        "node_id": "peer-critical",
+                        "protocol_version": "1.0",
+                        "status": "CRITICAL",
+                        "timestamp": 123.0,
+                    }
+                }
+            )
+        )
+        transport = NadiFederationTransport(str(tmp_path))
+        bridge = FederationBridge(reaper=reaper, agent_id="steward", peer_registry_path=tmp_path / "peer_registry.json")
+        bridge.emit(OP_DELEGATE_TASK, {"title": "Fix tests"})
+
+        assert bridge.flush_outbound(transport) == 0
+        records = [json.loads(path.read_text()) for path in (tmp_path / "quarantine").glob("*.json") if path.name != "index.json"]
+        assert len(records) == 1
+        assert records[0]["stage"] == "routing_outbound"
+        assert records[0]["reason"] == "circuit_breaker_peer_critical"
+        assert records[0]["message"]["target"] == "peer-critical"
+
+    def test_protocol_mismatch_peer_is_quarantined(self, tmp_path):
+        reaper = HeartbeatReaper()
+        reaper.record_heartbeat("peer-old", timestamp=time.time())
+        (tmp_path / "peer_registry.json").write_text(
+            json.dumps(
+                {
+                    "peer-old": {
+                        "node_id": "peer-old",
+                        "protocol_version": "2.1",
+                        "status": "HEALTHY",
+                        "timestamp": 123.0,
+                    }
+                }
+            )
+        )
+        transport = NadiFederationTransport(str(tmp_path))
+        bridge = FederationBridge(reaper=reaper, agent_id="steward", peer_registry_path=tmp_path / "peer_registry.json")
+        bridge.emit(OP_DELEGATE_TASK, {"title": "Fix tests"})
+
+        assert bridge.flush_outbound(transport) == 0
+        records = [json.loads(path.read_text()) for path in (tmp_path / "quarantine").glob("*.json") if path.name != "index.json"]
+        assert len(records) == 1
+        assert records[0]["reason"] == "circuit_breaker_protocol_mismatch"
+        assert records[0]["message"]["target"] == "peer-old"
+
+    def test_node_health_bypasses_critical_peer_breaker(self, tmp_path):
+        reaper = HeartbeatReaper()
+        reaper.record_heartbeat("peer-critical", timestamp=time.time())
+        (tmp_path / "peer_registry.json").write_text(
+            json.dumps(
+                {
+                    "peer-critical": {
+                        "node_id": "peer-critical",
+                        "protocol_version": "1.0",
+                        "status": "CRITICAL",
+                        "timestamp": 123.0,
+                    }
+                }
+            )
+        )
+        transport = NadiFederationTransport(str(tmp_path))
+        bridge = FederationBridge(reaper=reaper, agent_id="steward", peer_registry_path=tmp_path / "peer_registry.json")
+        bridge.emit(
+            OP_FEDERATION_NODE_HEALTH,
+            {
+                "node_id": "steward",
+                "protocol_version": "1.0",
+                "timestamp": 123.0,
+                "status": "HEALTHY",
+                "quarantine_metrics": {"total": 0, "by_reason": {}, "by_stage": {}},
+            },
+        )
+
+        assert bridge.flush_outbound(transport) == 1
+        outbox = json.loads((tmp_path / "nadi_outbox.json").read_text())
+        assert outbox[0]["operation"] == OP_FEDERATION_NODE_HEALTH
+        assert outbox[0]["target"] == "peer-critical"
 
 
 # ── Stats ────────────────────────────────────────────────────────
