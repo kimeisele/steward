@@ -1342,3 +1342,113 @@ class TestInboundBottleneckEscalation:
         assert len(tasks) == 1
         assert "dedup_key:kimeisele/agent-city#ruff_clean" in tasks[0].description
         assert "target_repo:kimeisele/agent-city" in tasks[0].description
+
+
+class TestBottleneckResolutionEmitter:
+    """KarmaBottleneckResolutionHook emits resolution when escalation tasks complete."""
+
+    def test_completed_bottleneck_task_emits_resolution(self, tmp_path):
+        """Completed [BOTTLENECK_ESCALATION] task → bottleneck_resolution in outbox."""
+        from steward.services import SVC_FEDERATION, SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
+        from vibe_core.task_management.task_manager import TaskManager
+        from vibe_core.task_types import TaskStatus
+
+        task_mgr = TaskManager(project_root=tmp_path)
+        ServiceRegistry.register(SVC_TASK_MANAGER, task_mgr)
+
+        bridge = FederationBridge(agent_id="steward-test")
+        ServiceRegistry.register(SVC_FEDERATION, bridge)
+
+        # Create and complete a bottleneck escalation task
+        task_mgr.add_task(
+            title="[BOTTLENECK_ESCALATION] ruff_clean contract failing",
+            priority=70,
+            description="Escalated from agent-city\ndedup_key:kimeisele/agent-city:ruff_clean",
+        )
+        tasks = task_mgr.list_tasks()
+        task_mgr.update_task(tasks[0].id, status=TaskStatus.COMPLETED)
+
+        # Run the hook
+        from steward.hooks.karma import KarmaBottleneckResolutionHook
+        from steward.phase_hook import PhaseContext
+
+        ctx = PhaseContext(cwd=str(tmp_path), operations=[])
+        hook = KarmaBottleneckResolutionHook()
+        hook.execute(ctx)
+
+        # Verify resolution emitted
+        assert len(bridge._outbound) == 1
+        event = bridge._outbound[0]
+        assert event.operation == "bottleneck_resolution"
+        assert event.payload["dedup_key"] == "kimeisele/agent-city:ruff_clean"
+        assert event.payload["source_agent"] == "steward"
+
+        # Verify task marked to prevent re-emission
+        updated = task_mgr.list_tasks(status=TaskStatus.COMPLETED)
+        assert "resolution_emitted:true" in updated[0].description
+
+        # Verify operations log
+        assert any("karma_bottleneck_resolution:emitted=1" in op for op in ctx.operations)
+
+    def test_resolution_not_emitted_twice(self, tmp_path):
+        """Task already marked resolution_emitted:true is skipped."""
+        from steward.services import SVC_FEDERATION, SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
+        from vibe_core.task_management.task_manager import TaskManager
+        from vibe_core.task_types import TaskStatus
+
+        task_mgr = TaskManager(project_root=tmp_path)
+        ServiceRegistry.register(SVC_TASK_MANAGER, task_mgr)
+
+        bridge = FederationBridge(agent_id="steward-test")
+        ServiceRegistry.register(SVC_FEDERATION, bridge)
+
+        task_mgr.add_task(
+            title="[BOTTLENECK_ESCALATION] tests_pass failing",
+            priority=70,
+            description="dedup_key:kimeisele/agent-city:tests_pass\nresolution_emitted:true",
+        )
+        tasks = task_mgr.list_tasks()
+        task_mgr.update_task(tasks[0].id, status=TaskStatus.COMPLETED)
+
+        from steward.hooks.karma import KarmaBottleneckResolutionHook
+        from steward.phase_hook import PhaseContext
+
+        ctx = PhaseContext(cwd=str(tmp_path), operations=[])
+        hook = KarmaBottleneckResolutionHook()
+        hook.execute(ctx)
+
+        assert len(bridge._outbound) == 0
+        assert not ctx.operations
+
+    def test_non_bottleneck_completed_task_ignored(self, tmp_path):
+        """Completed [FED:*] task does NOT emit bottleneck_resolution."""
+        from steward.services import SVC_FEDERATION, SVC_TASK_MANAGER
+        from vibe_core.di import ServiceRegistry
+        from vibe_core.task_management.task_manager import TaskManager
+        from vibe_core.task_types import TaskStatus
+
+        task_mgr = TaskManager(project_root=tmp_path)
+        ServiceRegistry.register(SVC_TASK_MANAGER, task_mgr)
+
+        bridge = FederationBridge(agent_id="steward-test")
+        ServiceRegistry.register(SVC_FEDERATION, bridge)
+
+        task_mgr.add_task(
+            title="[FED:agent-city] Fix failing tests",
+            priority=70,
+            description="dedup_key:some_key",
+        )
+        tasks = task_mgr.list_tasks()
+        task_mgr.update_task(tasks[0].id, status=TaskStatus.COMPLETED)
+
+        from steward.hooks.karma import KarmaBottleneckResolutionHook
+        from steward.phase_hook import PhaseContext
+
+        ctx = PhaseContext(cwd=str(tmp_path), operations=[])
+        hook = KarmaBottleneckResolutionHook()
+        hook.execute(ctx)
+
+        assert len(bridge._outbound) == 0
+
