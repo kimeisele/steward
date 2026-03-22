@@ -14,15 +14,18 @@ wiki sync, HTTP, MCP) can plug in. No hardcoded repos.
 Integration:
     DHARMA phase: bridge.process_inbound(transport)
     MOKSHA phase: bridge.flush_outbound(transport)
+
+The bridge is stateless except for the outbound queue. It doesn't
+care where messages come from — any FederationTransport works.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
-
 from vibe_core.mahamantra.federation.types import FederationMessage
 
 logger = logging.getLogger("STEWARD.FEDERATION")
@@ -137,6 +140,45 @@ def get_policies() -> dict | None:
 def get_city_reports() -> dict[str, dict]:
     """Return the latest city reports keyed by source agent."""
     return dict(_latest_city_reports)
+
+
+def _normalize_bottleneck_contract(value: str) -> str:
+    lowered = value.lower().strip()
+    if "ruff" in lowered:
+        return "ruff_clean"
+    if "tests_pass" in lowered or "test_pass" in lowered or "tests" in lowered:
+        return "tests_pass"
+    if "integrity" in lowered:
+        return "integrity"
+    if "code_health" in lowered:
+        return "code_health"
+    token = re.sub(r"[^a-z0-9]+", "_", lowered).strip("_")
+    return token[:80] or "unknown"
+
+
+def _bottleneck_dedup_key(
+    payload: dict,
+    *,
+    source_agent: str = "agent-city",
+    fallback_target: str = "",
+) -> str:
+    issue_key = str(payload.get("issue_key", "")).strip()
+    if issue_key:
+        return issue_key[:160]
+
+    target_repo = str(payload.get("target_repo", source_agent)).strip() or source_agent
+    contract_name = str(payload.get("contract_name", "")).strip()
+    if not contract_name:
+        contract_name = _normalize_bottleneck_contract(
+            str(payload.get("target", fallback_target))
+        )
+    return f"{target_repo}:{contract_name}"[:160]
+
+
+def _task_has_dedup_key(task: object, dedup_key: str) -> bool:
+    title = getattr(task, "title", "") or ""
+    description = getattr(task, "description", "") or ""
+    return dedup_key in title or dedup_key in description
 
 
 @dataclass(frozen=True)
@@ -566,15 +608,30 @@ class FederationBridge:
             if not target:
                 continue
 
+            dedup_key = _bottleneck_dedup_key(
+                {
+                    "target_repo": source_agent,
+                    "contract_name": _normalize_bottleneck_contract(
+                        f"{mission.get('id', '')} {target}"
+                    ),
+                },
+                source_agent=source_agent,
+                fallback_target=target,
+            )
+
             # Dedup: skip if an active task with same target already exists
             active = task_mgr.list_tasks(status=TaskStatus.IN_PROGRESS) + task_mgr.list_tasks(status=TaskStatus.PENDING)
-            if any(f"[FED:{source_agent}]" in t.title and target in t.title for t in active):
-                logger.info("BRIDGE: city_report bottleneck dedup — '%s' already active", target)
+            if any(_task_has_dedup_key(t, dedup_key) for t in active):
+                logger.info("BRIDGE: city_report bottleneck dedup — '%s' already active", dedup_key)
                 continue
 
             # Delegate as a standard federated task — KARMA phase will dispatch
             title = f"[FED:{source_agent}] Fix bottleneck: {target}"
-            task_mgr.add_task(title=title, priority=70, description=f"city_report:{mission.get('id', '')}")
+            task_mgr.add_task(
+                title=title,
+                priority=70,
+                description=f"city_report:{mission.get('id', '')} dedup_key={dedup_key}",
+            )
             delegated += 1
             logger.info("BRIDGE: city_report bottleneck → task '%s'", title)
 
@@ -683,7 +740,7 @@ class FederationBridge:
         source = payload.get("source", "unknown")
         heartbeat = payload.get("heartbeat", "?")
         evidence = payload.get("evidence", "")
-
+        dedup_key = _bottleneck_dedup_key(payload, fallback_target=target)
         logger.info(
             "BRIDGE: bottleneck_escalation from agent-city (hb=%s, source=%s): %s",
             heartbeat,
@@ -712,12 +769,15 @@ class FederationBridge:
 
         # Dedup: skip if active task already exists for this target
         active = task_mgr.list_tasks(status=TaskStatus.IN_PROGRESS) + task_mgr.list_tasks(status=TaskStatus.PENDING)
-        if any("[BOTTLENECK_ESCALATION]" in t.title and target[:30] in t.title for t in active):
-            logger.info("BRIDGE: bottleneck_escalation dedup — '%s' already active", target[:50])
+        if any(_task_has_dedup_key(t, dedup_key) for t in active):
+            logger.info("BRIDGE: bottleneck_escalation dedup — '%s' already active", dedup_key)
             return True
 
         title = f"[BOTTLENECK_ESCALATION] {target[:80]}"
-        description = f"Escalated from agent-city (hb={heartbeat}, source={source}): {evidence}"
+        description = (
+            f"Escalated from agent-city (hb={heartbeat}, source={source}): {evidence} "
+            f"dedup_key={dedup_key}"
+        )
         task_mgr.add_task(title=title, priority=70, description=description)
         logger.info("BRIDGE: bottleneck_escalation → task '%s'", title)
 
