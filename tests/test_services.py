@@ -178,6 +178,7 @@ class TestBoot:
         key_path = fed_dir / ".node_keys.json"
         assert key_path.exists()
         payload = json.loads(key_path.read_text())
+        assert payload["node_id"].startswith("ag_")
         assert payload["public_key"]
         assert payload["private_key"]
 

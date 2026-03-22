@@ -64,6 +64,7 @@ class NadiFederationTransport:
         self._key_store.ensure_keys()
         self.public_key = self._key_store.public_key
         self.private_key = self._key_store.private_key
+        self.node_id = self._key_store.node_id
         self._seen: set[str] = set()
         self._quarantined = self._load_quarantine_index()
 
@@ -86,6 +87,7 @@ class NadiFederationTransport:
 
     def _with_integrity_fields(self, payload: dict) -> dict:
         enriched = dict(payload)
+        enriched["source"] = self.node_id
         enriched["message_id"] = str(uuid.uuid4())
         enriched["payload_hash"] = self._payload_hash(enriched.get("payload", {}))
         enriched["signature"] = sign_payload_hash(self.private_key, enriched["payload_hash"])

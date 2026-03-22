@@ -1038,15 +1038,17 @@ class FederationBridge:
     def _handle_agent_claim(self, payload: dict) -> bool:
         agent_name = str(payload.get("agent_name", "")).strip()
         public_key = str(payload.get("public_key", "")).strip()
+        node_id = str(payload.get("node_id", "")).strip()
         capabilities = payload.get("capabilities", [])
 
-        if not agent_name or not public_key:
+        if not agent_name or not public_key or not node_id:
             return False
         if not isinstance(capabilities, list):
             return False
 
         registry = self._load_verified_agents()
-        registry[agent_name] = {
+        registry[node_id] = {
+            "node_id": node_id,
             "agent_name": agent_name,
             "public_key": public_key,
             "capabilities": [str(item) for item in capabilities],
@@ -1054,8 +1056,8 @@ class FederationBridge:
         }
         self._save_verified_agents(registry)
         logger.info(
-            "BRIDGE: agent_claim upsert agent_name=%s capabilities=%d",
-            agent_name,
+            "BRIDGE: agent_claim upsert node_id=%s capabilities=%d",
+            node_id,
             len(capabilities),
         )
         return True

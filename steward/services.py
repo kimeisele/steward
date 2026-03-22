@@ -458,7 +458,10 @@ def boot(
         from steward.federation_crypto import NodeKeyStore
         from steward.federation_transport import create_transport
 
-        NodeKeyStore(Path(fed_dir) / ".node_keys.json").ensure_keys()
+        key_store = NodeKeyStore(Path(fed_dir) / ".node_keys.json")
+        key_store.ensure_keys()
+        federation.agent_id = key_store.node_id
+        a2a_adapter.agent_id = key_store.node_id
         transport = create_transport(fed_dir)
         ServiceRegistry.register(SVC_FEDERATION_TRANSPORT, transport)
         logger.info("Federation transport: %s → %s", type(transport).__name__, fed_dir)
