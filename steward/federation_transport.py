@@ -256,6 +256,11 @@ class NadiFederationTransport:
                         stage="transport_parse",
                     )
                     continue
+                # Normalize: some agents (e.g. agent-city) use 'type' instead of 'operation'
+                if "operation" not in item and "type" in item:
+                    item = dict(item)
+                    item["operation"] = item["type"]
+
                 # Validate required nadi protocol fields
                 if not all(k in item for k in ("source", "operation")):
                     logger.warning("Nadi inbox: dropping malformed message: %s", list(item.keys())[:5])
