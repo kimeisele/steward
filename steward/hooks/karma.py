@@ -134,12 +134,18 @@ class KarmaTaskPrioritizationHook(BasePhaseHook):
         if not pending:
             return
 
-        # Count federation tasks for observability
-        fed_tasks = [
-            t for t in pending if any(tag in (getattr(t, "title", "") or "") for tag in ("[FEDERATION", "[POST_MERGE]"))
-        ]
-        if fed_tasks:
-            ctx.operations.append(f"karma_prioritization:fed_tasks={len(fed_tasks)},total={len(pending)}")
+        # Elevate federation and heal tasks to priority 90 if below that threshold
+        elevated = 0
+        for t in pending:
+            title = getattr(t, "title", "") or ""
+            if any(tag in title for tag in ("[FEDERATION", "[HEAL_REPO]", "[POST_MERGE]")):
+                if int(getattr(t, "priority", 0) or 0) < 90 and hasattr(task_mgr, "update_task"):
+                    task_mgr.update_task(getattr(t, "id", None), priority=90)
+                    elevated += 1
+        if elevated or pending:
+            ctx.operations.append(
+                f"karma_prioritization:elevated={elevated},fed_tasks={sum(1 for t in pending if any(tag in (getattr(t, 'title', '') or '') for tag in ('[FEDERATION', '[HEAL_REPO]', '[POST_MERGE]')))},total={len(pending)}"
+            )
 
 
 class KarmaA2AProgressHook(BasePhaseHook):

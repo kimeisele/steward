@@ -80,7 +80,7 @@ def test_task_prioritization_no_task_manager(tmp_path):
     assert not ctx.operations
 
 
-def test_task_prioritization_counts_federation_tasks(tmp_path):
+def test_task_prioritization_elevates_federation_tasks(tmp_path):
     from unittest.mock import MagicMock
 
     from steward.services import SVC_TASK_MANAGER
@@ -89,11 +89,17 @@ def test_task_prioritization_counts_federation_tasks(tmp_path):
     ServiceRegistry.reset_all()
 
     task1 = MagicMock()
-    task1.title = "[FEDERATION_HEALTH] Peer foo — Kirtan escalation"
+    task1.title = "[HEAL_REPO] Peer foo — Kirtan escalation"
+    task1.priority = 50  # below threshold — should be elevated
+    task1.id = "t1"
     task2 = MagicMock()
     task2.title = "Regular task"
+    task2.priority = 50
+    task2.id = "t2"
     task3 = MagicMock()
     task3.title = "[POST_MERGE] Verify merge abc12345"
+    task3.priority = 95  # already above threshold — no update
+    task3.id = "t3"
 
     task_mgr = MagicMock()
     task_mgr.list_tasks.return_value = [task1, task2, task3]
@@ -105,6 +111,9 @@ def test_task_prioritization_counts_federation_tasks(tmp_path):
     assert len(ctx.operations) == 1
     assert "fed_tasks=2" in ctx.operations[0]
     assert "total=3" in ctx.operations[0]
+    assert "elevated=1" in ctx.operations[0]
+    # task1 elevated, task3 already >=90, task2 is regular
+    task_mgr.update_task.assert_called_once_with("t1", priority=90)
 
 
 def test_task_prioritization_no_pending(tmp_path):

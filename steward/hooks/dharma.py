@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import time
 
+from steward.hooks.genesis import _get_federation_owner
 from steward.phase_hook import DHARMA, BasePhaseHook, PhaseContext
 from steward.services import (
     SVC_FEDERATION,
@@ -140,10 +141,11 @@ class DharmaReaperHook(BasePhaseHook):
         """Quick diagnostic on a suspect peer."""
         import subprocess
 
+        owner = _get_federation_owner()
         result: dict = {"agent_id": agent_id, "checks": []}
         try:
             r = subprocess.run(
-                ["gh", "api", f"repos/kimeisele/{agent_id}", "--jq", ".pushed_at"],
+                ["gh", "api", f"repos/{owner}/{agent_id}", "--jq", ".pushed_at"],
                 capture_output=True,
                 text=True,
                 timeout=10,
@@ -160,7 +162,7 @@ class DharmaReaperHook(BasePhaseHook):
             import json as _json
 
             r = subprocess.run(
-                ["gh", "run", "list", "-R", f"kimeisele/{agent_id}", "--limit", "1", "--json", "conclusion,name"],
+                ["gh", "run", "list", "-R", f"{owner}/{agent_id}", "--limit", "1", "--json", "conclusion,name"],
                 capture_output=True,
                 text=True,
                 timeout=10,
@@ -195,7 +197,7 @@ class DharmaReaperHook(BasePhaseHook):
                     "issue",
                     "create",
                     "--repo",
-                    "kimeisele/steward",
+                    f"{_get_federation_owner()}/steward",
                     "--title",
                     title,
                     "--body",
@@ -222,12 +224,12 @@ class DharmaReaperHook(BasePhaseHook):
         from vibe_core.task_types import TaskStatus
 
         active = task_mgr.list_tasks(status=TaskStatus.PENDING) + task_mgr.list_tasks(status=TaskStatus.IN_PROGRESS)
-        task_title = f"[FEDERATION_HEALTH] Peer {target} — Kirtan escalation"
+        task_title = f"[HEAL_REPO] Peer {target} — Kirtan escalation"
         if any(t.title == task_title for t in active):
             return
 
         task_mgr.add_task(title=task_title, priority=90, description=str(payload))
-        logger.warning("KIRTAN ESCALATE: %s — task created (pri=90)", target)
+        logger.warning("KIRTAN ESCALATE: %s — [HEAL_REPO] task created (pri=90)", target)
 
 
 class DharmaMarketplaceHook(BasePhaseHook):
