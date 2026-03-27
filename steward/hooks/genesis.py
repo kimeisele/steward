@@ -22,7 +22,7 @@ import time
 from pathlib import Path
 
 from steward.phase_hook import GENESIS, BasePhaseHook, PhaseContext
-from steward.services import SVC_A2A_DISCOVERY, SVC_REAPER
+from steward.services import SVC_A2A_DISCOVERY, SVC_REAPER, SVC_TASK_MANAGER
 from vibe_core.di import ServiceRegistry
 
 logger = logging.getLogger("STEWARD.HOOKS.GENESIS")
@@ -217,6 +217,28 @@ class GenesisDiscoveryHook(BasePhaseHook):
 
         if new_count:
             logger.info("GENESIS: discovered %d new peers (%d total)", new_count, len(discovered))
+
+        # Schedule immediate healing for unregistered peers (missing federation descriptor).
+        # Don't wait for heartbeat TTL decay — heal on first discovery.
+        task_mgr = ServiceRegistry.get(SVC_TASK_MANAGER)
+        if task_mgr is not None:
+            from vibe_core.task_types import TaskStatus
+
+            active_titles = {
+                getattr(t, "title", "")
+                for s in (TaskStatus.PENDING, TaskStatus.IN_PROGRESS)
+                for t in task_mgr.list_tasks(status=s)
+            }
+            heal_scheduled = 0
+            for repo_id, info in discovered.items():
+                if info.get("source") != "org_scan_unregistered":
+                    continue
+                task_title = f"[HEAL_REPO] Onboard {repo_id} — missing federation descriptor"
+                if task_title not in active_titles:
+                    task_mgr.add_task(title=task_title, priority=70, description=info.get("repo", repo_id))
+                    heal_scheduled += 1
+            if heal_scheduled:
+                logger.info("GENESIS: scheduled %d [HEAL_REPO] tasks for unregistered peers", heal_scheduled)
 
         # Apply world policy compliance checks (trust penalties)
         violations = _check_policy_compliance(discovered, reaper)

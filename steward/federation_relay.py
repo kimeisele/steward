@@ -187,10 +187,27 @@ class GitHubFederationRelay:
             with urllib.request.urlopen(req, timeout=15) as resp:
                 files = json.loads(resp.read())
                 suffix = f"_to_{self._agent_id}.json"
-                for f in files:
-                    if f.get("name", "").endswith(suffix):
-                        msgs, _ = self._get_file(f"nadi/{f['name']}")
-                        all_messages.extend(msgs)
+                matching_files = [f for f in files if f.get("name", "").endswith(suffix)]
+                logger.info(
+                    "RELAY: scanning %d mailboxes for target %s", 
+                    len(matching_files), 
+                    self._agent_id
+                )
+                
+                for f in matching_files:
+                    msgs, _ = self._get_file(f"nadi/{f['name']}")
+                    if msgs:
+                        logger.info(
+                            "RELAY: mailbox %s has %d messages", 
+                            f['name'], 
+                            len(msgs)
+                        )
+                    else:
+                        logger.debug(
+                            "RELAY: mailbox %s exists but empty", 
+                            f['name']
+                        )
+                    all_messages.extend(msgs)
         except Exception as e:
             logger.debug("Per-peer mailbox scan failed: %s", e)
 
