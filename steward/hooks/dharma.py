@@ -359,6 +359,24 @@ class DharmaFederationHook(BasePhaseHook):
 
         transport = ServiceRegistry.get(SVC_FEDERATION_TRANSPORT)
         if transport is not None:
+            # Self-register steward's crypto node_id on first contact.
+            # The transport signs outbound messages with its NodeKeyStore node_id
+            # (e.g. ag_e3331b...). Without this, steward's own signed heartbeats
+            # come back via the legacy outbox and get blocked by the zero-trust gate.
+            node_id = getattr(transport, "node_id", None)
+            pub_key = getattr(transport, "public_key", None)
+            if node_id and pub_key and not federation.is_verified_agent(node_id):
+                federation.ingest(
+                    "federation.agent_claim",
+                    {
+                        "node_id": node_id,
+                        "agent_name": federation.agent_id,
+                        "public_key": pub_key,
+                        "capabilities": list(self._get_capabilities()),
+                    },
+                )
+                logger.info("FEDERATION: self-registered crypto identity node_id=%s", node_id)
+
             # Route through FederationGateway (Five Tattva Gates) if available,
             # fallback to direct bridge processing if gateway not wired.
             gateway = ServiceRegistry.get(SVC_FEDERATION_GATEWAY)
