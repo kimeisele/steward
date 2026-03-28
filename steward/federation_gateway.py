@@ -453,6 +453,20 @@ class FederationGateway(GatewayProtocol):
                     },
                 )
                 continue
+
+            # Record heartbeat for peer — ANY message that passes auth proves peer is alive
+            source_agent = msg.get("source")
+            if source_agent:
+                from steward.services import SVC_REAPER
+                from vibe_core.di import ServiceRegistry
+
+                reaper = ServiceRegistry.get(SVC_REAPER)
+                if reaper is not None:
+                    reaper.record_heartbeat(
+                        agent_id=source_agent,
+                        source="federation_gateway",
+                    )
+
             result = self.handle_federation_message(msg)
             if result.get("success"):
                 processed += 1
