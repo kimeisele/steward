@@ -420,6 +420,15 @@ class FederationBridge:
             # agent-city's FederationNadi overrides source to city_id from peer.json.
             if "source_agent" not in payload and "source" in msg:
                 payload["source_agent"] = msg["source"]
+
+            # Record heartbeat for peer — ANY inbound message proves peer is alive
+            source_agent = payload.get("source_agent") or msg.get("source")
+            if source_agent and self.reaper is not None:
+                self.reaper.record_heartbeat(
+                    agent_id=source_agent,
+                    source="federation_inbound",
+                )
+
             if self.ingest(op, payload):
                 processed += 1
         return processed
