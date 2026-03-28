@@ -407,7 +407,7 @@ def boot(
     from steward.reaper import HeartbeatReaper
 
     reaper = HeartbeatReaper()
-    peers_path = cwd_path / ".steward" / "peers.json"
+    peers_path = cwd_path / "data" / "federation" / "peers.json"
     reaper.load(peers_path)
     ServiceRegistry.register(SVC_REAPER, reaper)
 
