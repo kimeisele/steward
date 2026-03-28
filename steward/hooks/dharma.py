@@ -257,7 +257,12 @@ class DharmaMarketplaceHook(BasePhaseHook):
 
 
 class DharmaFederationHook(BasePhaseHook):
-    """Broadcast heartbeat and process inbound federation messages."""
+    """Broadcast heartbeat and process inbound federation messages.
+
+    Runs BEFORE reaper (priority 10 < 30) so inbound heartbeats are recorded
+    before peer liveness is assessed. This prevents false evictions of peers
+    that sent messages in the previous heartbeat cycle.
+    """
 
     @property
     def name(self) -> str:
@@ -269,7 +274,7 @@ class DharmaFederationHook(BasePhaseHook):
 
     @property
     def priority(self) -> int:
-        return 50
+        return 10
 
     _capabilities: tuple[str, ...] | None = None
     _identity: object | None = None
