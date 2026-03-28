@@ -232,10 +232,10 @@ class TestResurrection:
         reaper.reap(now=1400.0)
         reaper.reap(now=1600.0)  # EVICTED, but kept in registry
 
-        # When EVICTED peer heartbeats again, it resurrects (not fresh)
+        # When EVICTED peer heartbeats again, it resurrects with fresh INITIAL_TRUST
         peer = reaper.record_heartbeat("agent-a", timestamp=2000.0)
         assert peer.status == PeerStatus.ALIVE
-        assert peer.trust < INITIAL_TRUST  # Preserved trust from previous run
+        assert peer.trust == INITIAL_TRUST  # Reset to INITIAL_TRUST, not full 1.0
         assert peer.heartbeat_count > 1  # Continues from previous heartbeat count
 
 

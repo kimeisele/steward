@@ -348,11 +348,17 @@ class DharmaFederationHook(BasePhaseHook):
                 messages = json.loads(inbox_path.read_text())
                 sources = {msg.get("source") for msg in messages if msg.get("source")}
                 reaper = ServiceRegistry.get(SVC_REAPER)
-                for source in sources:
-                    if reaper is not None:
+                if reaper is not None:
+                    recorded = []
+                    for source in sources:
+                        # Crypto IDs (ag_xxxxx) are node signatures, not identities.
+                        # Skip unless already a known peer (prevents false identity injection).
+                        if source.startswith("ag_") and source not in reaper._peers:
+                            continue
                         reaper.record_heartbeat(agent_id=source, source="nadi_inbox")
-                if sources:
-                    logger.info("FEDERATION: recorded heartbeats for %d inbox sources: %s", len(sources), ", ".join(sorted(sources)))
+                        recorded.append(source)
+                    if recorded:
+                        logger.info("FEDERATION: recorded heartbeats for %d inbox sources: %s", len(recorded), ", ".join(sorted(recorded)))
             except (json.JSONDecodeError, OSError):
                 pass
 
