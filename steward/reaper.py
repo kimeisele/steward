@@ -225,8 +225,8 @@ class HeartbeatReaper:
                         peer.trust = min(1.0, peer.trust + FINGERPRINT_TRUST_BONUS)
                 peer.fingerprint = fingerprint
 
-            # Resurrect: SUSPECT/DEAD → ALIVE (but trust stays degraded)
-            if peer.status in (PeerStatus.SUSPECT, PeerStatus.DEAD):
+            # Resurrect: SUSPECT/DEAD/EVICTED → ALIVE (but trust stays degraded)
+            if peer.status in (PeerStatus.SUSPECT, PeerStatus.DEAD, PeerStatus.EVICTED):
                 old = peer.status.value
                 peer.status = PeerStatus.ALIVE
                 # Small trust recovery on comeback (slower than decay)
@@ -304,9 +304,9 @@ class HeartbeatReaper:
                 )
             )
 
-        # Remove evicted peers from active tracking
-        for agent_id in to_evict:
-            del self._peers[agent_id]
+        # Keep evicted peers in registry for persistence across runs.
+        # They are marked EVICTED but remain recoverable if they heartbeat again.
+        # Deleting them prevents load() from recovering trust scores next session.
 
         self._total_reaps += 1
 
@@ -396,10 +396,9 @@ class HeartbeatReaper:
         for entry in peers:
             try:
                 peer = PeerRecord.from_dict(entry)
-                # Don't restore evicted peers
-                if peer.status != PeerStatus.EVICTED:
-                    self._peers[peer.agent_id] = peer
-                    loaded += 1
+                # Load all peers including EVICTED — they may heartbeat again next run
+                self._peers[peer.agent_id] = peer
+                loaded += 1
             except (KeyError, TypeError, ValueError) as e:
                 logger.debug("REAPER: skipped corrupt peer entry: %s", e)
 
