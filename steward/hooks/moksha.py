@@ -83,7 +83,7 @@ class MokshaPersistenceHook(BasePhaseHook):
 
         reaper = ServiceRegistry.get(SVC_REAPER)
         if reaper is not None:
-            reaper.save(steward_dir / "peers.json")
+            reaper.save(Path(ctx.cwd) / "data" / "federation" / "peers.json")
 
         marketplace = ServiceRegistry.get(SVC_MARKETPLACE)
         if marketplace is not None:
