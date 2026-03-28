@@ -51,7 +51,7 @@ jobs:
           path: |
             .steward/
             data/federation/
-          key: steward-state-${{ github.run_id }}
+          key: steward-state-main
           restore-keys: |
             steward-state-
 
@@ -94,10 +94,11 @@ jobs:
           git config user.name "steward-bot"
           git config user.email "bot@steward"
           git add .steward/ data/federation/ || true
-          git diff --cached --quiet || \
+          git diff --cached --quiet || {
             git commit -m "chore: heartbeat #${{ github.run_number }} state sync"
-          git pull --rebase origin main || true
-          git push || true
+            git pull --rebase origin main --autostash || git reset --hard origin/main
+            git push
+          }
 
       - name: Save state
         if: always()
@@ -106,4 +107,4 @@ jobs:
           path: |
             .steward/
             data/federation/
-          key: steward-state-${{ github.run_id }}
+          key: steward-state-main
