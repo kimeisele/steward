@@ -116,9 +116,11 @@ class TestReaping:
         c = consequences[0]
         assert c.action == "evict"
         assert c.new_trust == 0.0
-        # Evicted peer removed from registry
-        assert reaper.get_peer("agent-a") is None
-        assert reaper.peer_count() == 0
+        # Evicted peer kept in registry for persistence
+        peer = reaper.get_peer("agent-a")
+        assert peer is not None
+        assert peer.status == PeerStatus.EVICTED
+        assert reaper.peer_count() == 1
 
     def test_evicted_peer_not_reaped_again(self):
         reaper = HeartbeatReaper(lease_ttl_s=100)
@@ -228,13 +230,13 @@ class TestResurrection:
         reaper.record_heartbeat("agent-a", timestamp=1000.0)
         reaper.reap(now=1200.0)
         reaper.reap(now=1400.0)
-        reaper.reap(now=1600.0)  # EVICTED, removed
+        reaper.reap(now=1600.0)  # EVICTED, but kept in registry
 
-        # Re-register as new peer
+        # When EVICTED peer heartbeats again, it resurrects (not fresh)
         peer = reaper.record_heartbeat("agent-a", timestamp=2000.0)
         assert peer.status == PeerStatus.ALIVE
-        assert peer.trust == INITIAL_TRUST  # Fresh start
-        assert peer.heartbeat_count == 1
+        assert peer.trust < INITIAL_TRUST  # Preserved trust from previous run
+        assert peer.heartbeat_count > 1  # Continues from previous heartbeat count
 
 
 class TestPersistence:
@@ -257,7 +259,7 @@ class TestPersistence:
         assert reaper2.get_peer("agent-b") is not None
         assert reaper2.stats()["total_reaps"] == 1
 
-    def test_evicted_peers_not_restored(self, tmp_path):
+    def test_evicted_peers_restored(self, tmp_path):
         path = tmp_path / "peers.json"
         reaper = HeartbeatReaper(lease_ttl_s=100)
         reaper.record_heartbeat("agent-a", timestamp=1000.0)
@@ -265,7 +267,7 @@ class TestPersistence:
         reaper.reap(now=1400.0)
         reaper.reap(now=1600.0)  # EVICTED
 
-        # Manually save a record with evicted status to verify load skips it
+        # Manually save a record with evicted status to verify load restores it
         data = {
             "version": 1,
             "saved_at": time.time(),
@@ -278,8 +280,8 @@ class TestPersistence:
 
         reaper2 = HeartbeatReaper()
         loaded = reaper2.load(path)
-        assert loaded == 1  # Only alive-one
-        assert reaper2.get_peer("ghost") is None
+        assert loaded == 2  # Both evicted and alive
+        assert reaper2.get_peer("ghost") is not None  # EVICTED peers are now restored
         assert reaper2.get_peer("alive-one") is not None
 
     def test_load_missing_file_returns_zero(self, tmp_path):
