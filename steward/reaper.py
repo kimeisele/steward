@@ -229,8 +229,12 @@ class HeartbeatReaper:
             if peer.status in (PeerStatus.SUSPECT, PeerStatus.DEAD, PeerStatus.EVICTED):
                 old = peer.status.value
                 peer.status = PeerStatus.ALIVE
-                # Small trust recovery on comeback (slower than decay)
-                peer.trust = min(1.0, peer.trust + self.trust_decay * 0.5)
+                # EVICTED peers reset to 0.50; others get incremental recovery
+                if old == "evicted":
+                    peer.trust = 0.50
+                else:
+                    # Small trust recovery on comeback (slower than decay)
+                    peer.trust = min(1.0, peer.trust + self.trust_decay * 0.5)
                 logger.info(
                     "REAPER: peer '%s' resurrected (%s → ALIVE, trust=%.2f)",
                     agent_id,
