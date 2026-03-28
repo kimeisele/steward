@@ -337,12 +337,14 @@ class TestMokshaPersistenceHook:
         track_agent(StewardAgent(provider=fake_llm))
         steward_dir = tmp_path / ".steward"
         steward_dir.mkdir()
+        federation_dir = tmp_path / "data" / "federation"
+        federation_dir.mkdir(parents=True)
 
         hook = MokshaPersistenceHook()
         ctx = PhaseContext(cwd=str(tmp_path))
         hook.execute(ctx)
-        # Files should be created
-        assert (steward_dir / "peers.json").exists()
+        # Files should be created in new locations
+        assert (federation_dir / "peers.json").exists()
         assert (steward_dir / "marketplace.json").exists()
 
 
