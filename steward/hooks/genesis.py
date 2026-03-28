@@ -205,9 +205,17 @@ class GenesisDiscoveryHook(BasePhaseHook):
 
             caps = tuple(info.get("capabilities", []))
             fingerprint = info.get("repo", repo_id)
+
+            # World registry agents are unseen (haven't sent heartbeats yet).
+            # Mark them with timestamp=0.0 to immediately mark as suspect.
+            # Agents from other sources (GitHub topics, org) use current time.
+            source_type = info.get("source", "")
+            is_world_registry = source_type in ("world_registry_agent", "world_registry_city")
+            heartbeat_timestamp = 0.0 if is_world_registry else time.time()
+
             reaper.record_heartbeat(
                 agent_id=repo_id,
-                timestamp=time.time(),
+                timestamp=heartbeat_timestamp,
                 source="genesis_discovery",
                 capabilities=caps,
                 fingerprint=fingerprint,

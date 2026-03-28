@@ -1,0 +1,25 @@
+
+# 2026-03-27 12:22:10.097288
++You are operating on the steward repo. Do NOT edit any Python files unless explicitly stated.
++
++RECON FIRST: Before proposing any changes, read these files in order:
++1. steward/federation_relay.py
++2. steward/hooks/dharma.py  
++3. steward/hooks/moksha.py
++4. .github/workflows/steward-heartbeat.yml
++
++TASK: The NADI return path from agent-city to steward is broken.
++agent-city now writes heartbeat messages to data/federation/nadi_outbox.json
++and the agent-city heartbeat workflow copies that file to
++nadi/agent-city_to_steward.json in kimeisele/steward-federation.
++
++steward's federation_relay.py already has pull_from_hub() which reads
++nadi/*_to_steward.json files from steward-federation. Verify this is
++actually wired and being called in the DHARMA phase hook.
++
++If it is already wired correctly, report that clearly and stop.
++If it is NOT wired or has a gap, describe exactly what is missing
++before touching anything. Then fix only the gap — no rewrites.
+
+# 2026-03-27 12:22:13.452809
++a
