@@ -194,22 +194,34 @@ class GenesisDiscoveryHook(BasePhaseHook):
             if repo_id not in discovered:
                 discovered[repo_id] = info
 
-        # Register only NEW peers — never refresh existing heartbeats.
-        # Existing peers must send their OWN heartbeats via federation.
-        # If we refresh timestamps here, the reaper can never detect
-        # dead peers and the healer will never trigger.
+        # Discover and resurrect peers. Two paths:
+        # 1. NEW peers: register with expired lease so they trigger ALIVE→SUSPECT on first reap()
+        # 2. LOADED peers (already in reaper._peers): record heartbeat to resurrect them to ALIVE
+        #    This prevents false evictions while honoring the federation-first principle
+        #    (inbound messages remain the primary heartbeat source).
         new_count = 0
+        resurrected_count = 0
+
         for repo_id, info in discovered.items():
-            if repo_id in self._known_repos or repo_id in reaper._peers:
-                continue  # Already known or loaded from persistent state — don't overwrite
+            if repo_id in self._known_repos:
+                continue  # Discovered within THIS session — skip duplicate
 
             caps = tuple(info.get("capabilities", []))
             fingerprint = info.get("repo", repo_id)
 
-            # World registry agents are unseen (haven't sent heartbeats yet).
-            # Seed with expired lease (now - TTL - 1s) so they trigger ALIVE→SUSPECT
-            # on first reap() call. This gives ONE Kirtan diagnosis window.
-            # Agents from other sources (GitHub topics, org) use current time (fresh ALIVE).
+            # Path 2: LOADED peer — resurrect to ALIVE if discovered again
+            if repo_id in reaper._peers:
+                reaper.record_heartbeat(
+                    agent_id=repo_id,
+                    source="genesis_discovery_resurrection",
+                    capabilities=caps,
+                    fingerprint=fingerprint,
+                )
+                resurrected_count += 1
+                self._known_repos.add(repo_id)
+                continue
+
+            # Path 1: NEW peer — register with expired lease for controlled ALIVE→SUSPECT
             from steward.reaper import DEFAULT_LEASE_TTL_S
 
             source_type = info.get("source", "")
@@ -226,8 +238,13 @@ class GenesisDiscoveryHook(BasePhaseHook):
             new_count += 1
             self._known_repos.add(repo_id)
 
-        if new_count:
-            logger.info("GENESIS: discovered %d new peers (%d total)", new_count, len(discovered))
+        if new_count or resurrected_count:
+            logger.info(
+                "GENESIS: discovered %d new, resurrected %d loaded peers (%d total)",
+                new_count,
+                resurrected_count,
+                len(discovered),
+            )
 
         # Schedule immediate healing for unregistered peers (missing federation descriptor).
         # Don't wait for heartbeat TTL decay — heal on first discovery.
