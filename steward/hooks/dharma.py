@@ -338,6 +338,24 @@ class DharmaFederationHook(BasePhaseHook):
         if git_sync is not None:
             git_sync.pull()
 
+        # Record heartbeats for unique sources in pulled messages
+        import json
+        from pathlib import Path
+
+        inbox_path = Path("data/federation/nadi_inbox.json")
+        if inbox_path.exists():
+            try:
+                messages = json.loads(inbox_path.read_text())
+                sources = {msg.get("source") for msg in messages if msg.get("source")}
+                reaper = ServiceRegistry.get(SVC_REAPER)
+                for source in sources:
+                    if reaper is not None:
+                        reaper.record_heartbeat(agent_id=source, source="nadi_inbox")
+                if sources:
+                    logger.info("FEDERATION: recorded heartbeats for %d inbox sources: %s", len(sources), ", ".join(sorted(sources)))
+            except (json.JSONDecodeError, OSError):
+                pass
+
         # Check for stale delivery receipts — messages that were pushed
         # but never implicitly confirmed by a response from the target.
         # This closes the fire-and-forget gap: agent-internet defines
