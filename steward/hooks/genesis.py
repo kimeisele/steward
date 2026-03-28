@@ -207,11 +207,14 @@ class GenesisDiscoveryHook(BasePhaseHook):
             fingerprint = info.get("repo", repo_id)
 
             # World registry agents are unseen (haven't sent heartbeats yet).
-            # Mark them with timestamp=0.0 to immediately mark as suspect.
+            # Start them as suspect (half-expired lease) to avoid aggressive
+            # suspect→dead→Kirtan cascade in a single DHARMA cycle.
             # Agents from other sources (GitHub topics, org) use current time.
+            from steward.reaper import DEFAULT_LEASE_TTL_S
+
             source_type = info.get("source", "")
             is_world_registry = source_type in ("world_registry_agent", "world_registry_city")
-            heartbeat_timestamp = 0.0 if is_world_registry else time.time()
+            heartbeat_timestamp = time.time() - (DEFAULT_LEASE_TTL_S * 0.5) if is_world_registry else time.time()
 
             reaper.record_heartbeat(
                 agent_id=repo_id,
