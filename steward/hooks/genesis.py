@@ -200,8 +200,8 @@ class GenesisDiscoveryHook(BasePhaseHook):
         # dead peers and the healer will never trigger.
         new_count = 0
         for repo_id, info in discovered.items():
-            if repo_id in self._known_repos:
-                continue  # Already known — don't touch its heartbeat
+            if repo_id in self._known_repos or repo_id in reaper._peers:
+                continue  # Already known or loaded from persistent state — don't overwrite
 
             caps = tuple(info.get("capabilities", []))
             fingerprint = info.get("repo", repo_id)
