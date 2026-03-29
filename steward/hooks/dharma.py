@@ -346,7 +346,8 @@ class DharmaFederationHook(BasePhaseHook):
         if inbox_path.exists():
             try:
                 messages = json.loads(inbox_path.read_text())
-                sources = {msg.get("source") for msg in messages if msg.get("source")}
+                # Prefer agent_id (human-readable) over source (node crypto ID)
+                sources = {msg.get("agent_id") or msg.get("source") for msg in messages if msg.get("agent_id") or msg.get("source")}
                 reaper = ServiceRegistry.get(SVC_REAPER)
                 if reaper is not None:
                     recorded = []
