@@ -349,6 +349,7 @@ class DharmaFederationHook(BasePhaseHook):
                 reaper = ServiceRegistry.get(SVC_REAPER)
                 if reaper is not None:
                     recorded = set()
+                    federation = ServiceRegistry.get(SVC_FEDERATION)
                     for msg in messages:
                         # Prefer agent_id (human-readable identity) over source (node crypto ID)
                         peer_id = msg.get("agent_id") or msg.get("source")
@@ -358,6 +359,44 @@ class DharmaFederationHook(BasePhaseHook):
                         # Skip unless already a known peer (prevents false identity injection).
                         if peer_id.startswith("ag_") and peer_id not in reaper._peers:
                             continue
+                        # SIGNATURE VALIDATION (Path 1 — nadi_inbox relay)
+                        signature = str(msg.get("signature", "")).strip()
+                        payload_hash = str(msg.get("payload_hash", "")).strip()
+                        if signature and payload_hash:
+                            # Message is signed — validate Ed25519
+                            source_node = msg.get("source", peer_id)
+                            verified = False
+                            if federation is not None and hasattr(federation, "get_verified_agent"):
+                                record = federation.get_verified_agent(source_node)
+                                if isinstance(record, dict):
+                                    pub_key = str(record.get("public_key", "")).strip()
+                                    if pub_key:
+                                        try:
+                                            from steward.federation_crypto import verify_payload_signature
+                                            verified = verify_payload_signature(pub_key, payload_hash, signature)
+                                        except Exception:
+                                            verified = False
+                                    if not verified:
+                                        logger.warning(
+                                            "FEDERATION: REJECTED signed heartbeat from %s — invalid Ed25519 signature",
+                                            peer_id,
+                                        )
+                                        continue
+                                else:
+                                    # Signed but unknown sender — reject
+                                    logger.warning(
+                                        "FEDERATION: REJECTED signed heartbeat from unknown sender %s — no public key on record",
+                                        peer_id,
+                                    )
+                                    continue
+                        else:
+                            # Unsigned message — tolerate only known peers (Path 3 agents)
+                            if peer_id not in reaper._peers:
+                                logger.debug(
+                                    "FEDERATION: SKIPPED unsigned heartbeat from unknown %s — no crypto proof",
+                                    peer_id,
+                                )
+                                continue
                         reaper.record_heartbeat(agent_id=peer_id, source="nadi_inbox")
                         recorded.add(peer_id)
                     if recorded:
