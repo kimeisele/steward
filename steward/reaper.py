@@ -289,7 +289,7 @@ class HeartbeatReaper:
             old_trust = peer.trust
 
             peer.status = transition.next_status
-            peer.trust = max(0.0, peer.trust - self.trust_decay) if transition.decay else 0.0
+            peer.trust = max(0.0, peer.trust - self.trust_decay) if transition.decay else peer.trust  # preserve trust on eviction — CI statelessness ≠ defect
             detail = transition.detail_fn(age, self.lease_ttl_s)
 
             if transition.evict:
