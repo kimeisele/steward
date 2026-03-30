@@ -347,8 +347,11 @@ class FederationGateway(GatewayProtocol):
         if operation == "federation.agent_claim":
             payload = msg.get("payload", {})
             public_key = str(payload.get("public_key", "")).strip() if isinstance(payload, dict) else ""
-            sender = str(msg.get("source", "")).strip()
-            if not public_key or not sender or derive_node_id(public_key) != sender:
+            node_id = str(payload.get("node_id", "")).strip() if isinstance(payload, dict) else ""
+            if not public_key or not node_id:
+                return False, "identity_spoofing_attempt", "gateway_authorization"
+            # Verify node_id matches derived ID from public_key (prevent tampering)
+            if derive_node_id(public_key) != node_id:
                 return False, "identity_spoofing_attempt", "gateway_authorization"
         if operation in PUBLIC_OPERATIONS:
             return True, "", ""
