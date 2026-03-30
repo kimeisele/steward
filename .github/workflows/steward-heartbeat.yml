@@ -27,6 +27,8 @@ jobs:
     steps:
       - name: Checkout steward
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.FEDERATION_PAT }}
 
       - name: Checkout steward-protocol
         uses: actions/checkout@v4
@@ -97,6 +99,7 @@ jobs:
           git diff --cached --quiet || {
             git commit -m "chore: heartbeat #${{ github.run_number }} state sync"
             git pull --rebase origin main --autostash || git reset --hard origin/main
+            git remote set-url origin https://x-access-token:${{ secrets.FEDERATION_PAT }}@github.com/kimeisele/steward.git
             git push || true
           }
 
