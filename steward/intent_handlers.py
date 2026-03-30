@@ -274,7 +274,10 @@ class IntentHandlers:
             # Only relevant when peers exist — empty federation is not degraded
             alive = reaper.alive_peers()
             if alive:
-                critical_capabilities = ("code_analysis", "task_execution", "ci_automation")
+                # Federation-critical capabilities — derived from actual peer declarations.
+            # Only capabilities essential for federation operation, not node-specific ones.
+            # A federation is degraded if NO alive peer can relay or observe heartbeats.
+            critical_capabilities = ("federation_relay", "heartbeat_observer")
                 for cap in critical_capabilities:
                     if not any(cap in getattr(p, "capabilities", ()) for p in alive):
                         problems.append(f"no alive peer with capability '{cap}'")
