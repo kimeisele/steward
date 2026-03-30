@@ -338,7 +338,7 @@ class DharmaFederationHook(BasePhaseHook):
         if git_sync is not None:
             git_sync.pull()
 
-        # Record heartbeats for unique sources in pulled messages
+        # Process inbound messages: agent_claim + heartbeats
         import json
         from pathlib import Path
 
@@ -347,9 +347,14 @@ class DharmaFederationHook(BasePhaseHook):
             try:
                 messages = json.loads(inbox_path.read_text())
                 reaper = ServiceRegistry.get(SVC_REAPER)
-                if reaper is not None:
+                federation = ServiceRegistry.get(SVC_FEDERATION)
+                if reaper is not None and federation is not None:
                     recorded = set()
-                    federation = ServiceRegistry.get(SVC_FEDERATION)
+                    # Process agent_claim messages first (cryptographic identity)
+                    for msg in messages:
+                        if msg.get("operation") == "federation.agent_claim":
+                            federation.ingest("federation.agent_claim", msg.get("payload", msg))
+                    # Then record heartbeats
                     for msg in messages:
                         # Prefer agent_id (human-readable identity) over source (node crypto ID)
                         peer_id = msg.get("agent_id") or msg.get("source")
