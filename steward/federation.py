@@ -348,8 +348,10 @@ class FederationBridge:
         path = self._verified_agents_file()
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(registry, indent=2, sort_keys=True))
+        content = json.dumps(registry, indent=2, sort_keys=True)
+        tmp.write_text(content)
         tmp.replace(path)
+        logger.info("FEDERATION: saved verified_agents (%d entries) to %s", len(registry), path.resolve())
 
     def is_verified_agent(self, agent_name: str) -> bool:
         agent_id = str(agent_name or "").strip()
