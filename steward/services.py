@@ -10,7 +10,9 @@ All services registered at boot time with SVC_ constants.
 
 from __future__ import annotations
 
+import json
 import logging
+from pathlib import Path
 
 from steward.types import ChamberProvider, LLMProvider
 from vibe_core.di import ServiceRegistry
@@ -203,31 +205,47 @@ class SVC_NORTH_STAR:
 # Change the text = change the seed = change the attractor.
 #
 # Single source of truth: campaigns/default.json → north_star field.
-# Fallback: hardcoded string (safety net if JSON is missing/broken).
-_FALLBACK_NORTH_STAR = "execute tasks with minimal tokens by making the architecture itself intelligent"
+_CAMPAIGN_CONFIG_CACHE: dict[str, object] | None = None
+
+
+def _load_campaign_config() -> dict[str, object]:
+    """Return the first campaign config from campaigns/default.json (cached)."""
+    global _CAMPAIGN_CONFIG_CACHE
+    if _CAMPAIGN_CONFIG_CACHE is not None:
+        return _CAMPAIGN_CONFIG_CACHE
+
+    # Try project-relative path first, then absolute (helpful in tests)
+    seen_paths: set[Path] = set()
+    for base in [Path(__file__).parent.parent, Path.cwd()]:
+        path = base / "campaigns" / "default.json"
+        if path in seen_paths:
+            continue
+        seen_paths.add(path)
+        if not path.exists():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            campaigns = data.get("campaigns", [])
+            if campaigns:
+                _CAMPAIGN_CONFIG_CACHE = campaigns[0]
+                return _CAMPAIGN_CONFIG_CACHE
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.warning("Failed to load campaign config from %s: %s", path, exc)
+
+    _CAMPAIGN_CONFIG_CACHE = {}
+    return _CAMPAIGN_CONFIG_CACHE
 
 
 def _load_north_star() -> str:
     """Load North Star text from campaigns/default.json (single source of truth).
 
-    Falls back to hardcoded string if the file is missing or malformed.
-    This ensures campaigns/default.json is the canonical config source.
+    Raises RuntimeError if the north_star key is missing or empty.
     """
-    import json
-    from pathlib import Path
-
-    # Try project-relative path first, then absolute
-    for base in [Path(__file__).parent.parent, Path.cwd()]:
-        path = base / "campaigns" / "default.json"
-        if path.exists():
-            try:
-                data = json.loads(path.read_text(encoding="utf-8"))
-                campaigns = data.get("campaigns", [])
-                if campaigns and campaigns[0].get("north_star"):
-                    return campaigns[0]["north_star"]
-            except (json.JSONDecodeError, OSError, IndexError):
-                pass
-    return _FALLBACK_NORTH_STAR
+    campaign = _load_campaign_config()
+    north_star = campaign.get("north_star")
+    if isinstance(north_star, str) and north_star.strip():
+        return north_star
+    raise RuntimeError("north_star missing in campaigns/default.json")
 
 
 NORTH_STAR_TEXT = _load_north_star()
@@ -319,8 +337,6 @@ def boot(
     ServiceRegistry.register(SVC_NARASIMHA, narasimha)
 
     # 10. PromptContext (dynamic system prompt resolvers)
-    from pathlib import Path
-
     from vibe_core.runtime.prompt_context import PromptContext
 
     cwd_path = Path(cwd) if cwd else Path.cwd()
@@ -671,175 +687,129 @@ def _check_service_wired(svc_key: type, name: str) -> None:
 
 
 def _add_steward_missions(sankalpa: object) -> None:
-    """Add steward-specific missions with 10-minute triggers for cron autonomy.
+    """Add steward-specific missions defined in campaigns/default.json."""
+    campaign = _load_campaign_config()
+    missions_config = campaign.get("missions") or []
+    if not isinstance(missions_config, list) or not missions_config:
+        logger.debug("No missions configured in campaigns/default.json")
+        return
 
-    The default Sankalpa mission requires 60 min idle. Steward runs every 15 min,
-    so we need shorter triggers. This adds a "Steward Autonomy" mission that fires
-    after 10 minutes idle with no pending tasks.
-    """
+    registry = getattr(sankalpa, "registry", None)
+    if registry is None:
+        logger.warning("Sankalpa registry missing — cannot register missions")
+        return
+
+    existing_ids = {
+        getattr(mission, "id")
+        for mission in registry.get_all_missions()
+        if getattr(mission, "id", None)
+    }
+
+    for mission_cfg in missions_config:
+        mission_id = mission_cfg.get("id")
+        if not mission_id:
+            logger.warning("Skipping mission with no 'id' field in campaigns/default.json")
+            continue
+        if mission_id in existing_ids:
+            continue
+
+        try:
+            mission = _mission_from_config(mission_cfg)
+        except Exception as exc:  # noqa: BLE001 — configuration errors should log and continue
+            logger.warning("Failed to build mission '%s' from campaigns/default.json: %s", mission_id, exc)
+            continue
+
+        registry.add_mission(mission)
+        existing_ids.add(mission_id)
+        logger.info("Sankalpa: added mission '%s' from campaigns/default.json", mission_id)
+
+
+def _mission_from_config(mission_cfg: dict[str, object]) -> object:
+    """Convert mission configuration dict into a SankalpaMission instance."""
     from vibe_core.mahamantra.protocols.sankalpa.types import (
         MissionPriority,
         MissionStatus,
         SankalpaMission,
+    )
+
+    if "id" not in mission_cfg:
+        raise ValueError("Mission config missing required field 'id'")
+
+    strategies_cfg = mission_cfg.get("strategies") or []
+    if not isinstance(strategies_cfg, list):
+        raise ValueError(f"Mission '{mission_cfg.get('id')}' strategies must be a list")
+
+    strategies = tuple(_strategy_from_config(strategy) for strategy in strategies_cfg)
+
+    mission_kwargs = {k: v for k, v in mission_cfg.items() if k not in {"strategies", "priority", "status"}}
+
+    priority_name = mission_cfg.get("priority", "MEDIUM")
+    status_name = mission_cfg.get("status", "INACTIVE")
+
+    try:
+        mission_kwargs["priority"] = MissionPriority[priority_name]
+    except KeyError as exc:
+        raise ValueError(f"Unknown mission priority '{priority_name}'") from exc
+
+    try:
+        mission_kwargs["status"] = MissionStatus[status_name]
+    except KeyError as exc:
+        raise ValueError(f"Unknown mission status '{status_name}'") from exc
+
+    mission_kwargs["strategies"] = strategies
+    return SankalpaMission(**mission_kwargs)
+
+
+def _strategy_from_config(strategy_cfg: dict[str, object]) -> object:
+    """Convert a strategy configuration dict into a SankalpaStrategy instance."""
+    from vibe_core.mahamantra.protocols.sankalpa.types import (
         SankalpaStrategy,
-        SankalpaTrigger,
         StrategyFrequency,
+    )
+
+    if "id" not in strategy_cfg:
+        raise ValueError("Strategy config missing required field 'id'")
+
+    strategy_kwargs = {k: v for k, v in strategy_cfg.items() if k not in {"trigger", "frequency"}}
+
+    frequency_name = strategy_cfg.get("frequency", "DAILY")
+    try:
+        strategy_kwargs["frequency"] = StrategyFrequency[frequency_name]
+    except KeyError as exc:
+        raise ValueError(f"Unknown strategy frequency '{frequency_name}'") from exc
+
+    strategy_kwargs.setdefault("intent_template", {})
+    strategy_kwargs.setdefault("enabled", True)
+    strategy_kwargs.setdefault("requires_ci_green", False)
+    strategy_kwargs.setdefault("requires_no_pending_intents", False)
+
+    if strategy_kwargs.get("max_executions_per_day") is None:
+        strategy_kwargs.pop("max_executions_per_day", None)
+
+    strategy_kwargs["trigger"] = _trigger_from_config(strategy_cfg.get("trigger") or {})
+
+    return SankalpaStrategy(**strategy_kwargs)
+
+
+def _trigger_from_config(trigger_cfg: dict[str, object]) -> object:
+    """Convert a trigger configuration dict into a SankalpaTrigger instance."""
+    from vibe_core.mahamantra.protocols.sankalpa.types import (
+        SankalpaTrigger,
         TriggerType,
     )
 
-    mission_id = "mission_steward_autonomy"
-    # Don't add if already exists (persisted from previous boot)
-    existing = sankalpa.registry.get_all_missions()
-    if any(m.id == mission_id for m in existing):
-        return
+    if not isinstance(trigger_cfg, dict):
+        raise ValueError("Strategy trigger config must be an object")
 
-    mission = SankalpaMission(
-        id=mission_id,
-        name="Steward Autonomy",
-        description="Autonomous codebase maintenance every 15 minutes",
-        priority=MissionPriority.HIGH,
-        status=MissionStatus.ACTIVE,
-        strategies=[
-            SankalpaStrategy(
-                id="strategy_quick_check",
-                name="Quick Health Check",
-                description="Run senses, check CI status, scan for issues",
-                trigger=SankalpaTrigger(
-                    trigger_type=TriggerType.IDLE_BASED,
-                    idle_minutes=10,
-                ),
-                frequency=StrategyFrequency.DAILY,
-                intent_type="health_check",
-                intent_template={"actions": ["sense_scan", "ci_check"]},
-                requires_ci_green=False,
-                requires_no_pending_intents=True,
-                max_executions_per_day=6,
-                enabled=True,
-            ),
-            SankalpaStrategy(
-                id="strategy_update_deps",
-                name="Update Dependencies",
-                description="Check for outdated packages, create PR to update",
-                trigger=SankalpaTrigger(
-                    trigger_type=TriggerType.IDLE_BASED,
-                    idle_minutes=30,
-                ),
-                frequency=StrategyFrequency.WEEKLY,
-                intent_type="update_deps",
-                intent_template={},
-                requires_ci_green=True,
-                requires_no_pending_intents=True,
-                max_executions_per_day=1,
-                enabled=True,
-            ),
-            SankalpaStrategy(
-                id="strategy_remove_dead_code",
-                name="Remove Dead Code",
-                description="Detect low-cohesion modules, create PR to refactor",
-                trigger=SankalpaTrigger(
-                    trigger_type=TriggerType.IDLE_BASED,
-                    idle_minutes=30,
-                ),
-                frequency=StrategyFrequency.WEEKLY,
-                intent_type="remove_dead_code",
-                intent_template={},
-                requires_ci_green=True,
-                requires_no_pending_intents=True,
-                max_executions_per_day=1,
-                enabled=True,
-            ),
-            SankalpaStrategy(
-                id="strategy_federation_health",
-                name="Federation Health Check",
-                description="Monitor peer liveness, outbox queue, transport health",
-                trigger=SankalpaTrigger(
-                    trigger_type=TriggerType.IDLE_BASED,
-                    idle_minutes=10,
-                ),
-                frequency=StrategyFrequency.DAILY,
-                intent_type="federation_health",
-                intent_template={},
-                requires_ci_green=False,
-                requires_no_pending_intents=True,
-                max_executions_per_day=12,
-                enabled=True,
-            ),
-            SankalpaStrategy(
-                id="strategy_heal_repo",
-                name="Heal Federation Repos",
-                description="Diagnose and fix degraded federation peers via PR",
-                trigger=SankalpaTrigger(
-                    trigger_type=TriggerType.IDLE_BASED,
-                    idle_minutes=15,
-                ),
-                frequency=StrategyFrequency.DAILY,
-                intent_type="heal_repo",
-                intent_template={},
-                requires_ci_green=False,
-                requires_no_pending_intents=True,
-                max_executions_per_day=4,
-                enabled=True,
-            ),
-            SankalpaStrategy(
-                id="strategy_cross_repo_diagnostic",
-                name="Cross-Repo Diagnostic",
-                description="Scan federation repos for structural issues",
-                trigger=SankalpaTrigger(
-                    trigger_type=TriggerType.IDLE_BASED,
-                    idle_minutes=15,
-                ),
-                frequency=StrategyFrequency.DAILY,
-                intent_type="cross_repo_diagnostic",
-                intent_template={},
-                requires_ci_green=False,
-                requires_no_pending_intents=True,
-                max_executions_per_day=4,
-                enabled=True,
-            ),
-            SankalpaStrategy(
-                id="strategy_synthesize_briefing",
-                name="Synthesize Context Briefing",
-                description=(
-                    "Use synthesize_briefing tool to update .steward/CLAUDE.md "
-                    "from steward's living state and architecture metadata"
-                ),
-                trigger=SankalpaTrigger(
-                    trigger_type=TriggerType.IDLE_BASED,
-                    idle_minutes=15,
-                ),
-                frequency=StrategyFrequency.DAILY,
-                intent_type="synthesize_briefing",
-                intent_template={},
-                requires_ci_green=False,
-                requires_no_pending_intents=True,
-                max_executions_per_day=6,
-                enabled=True,
-            ),
-            SankalpaStrategy(
-                id="strategy_federation_gap_scan",
-                name="Federation Gap Scan",
-                description=(
-                    "Scan federation architecture for gaps: delivery reliability, "
-                    "agent card coverage, trust erosion, capability holes. "
-                    "Proposes healing actions for detected gaps."
-                ),
-                trigger=SankalpaTrigger(
-                    trigger_type=TriggerType.IDLE_BASED,
-                    idle_minutes=20,
-                ),
-                frequency=StrategyFrequency.DAILY,
-                intent_type="federation_gap_scan",
-                intent_template={},
-                requires_ci_green=False,
-                requires_no_pending_intents=True,
-                max_executions_per_day=3,
-                enabled=True,
-            ),
-        ],
-        owner="steward",
-    )
-    sankalpa.registry.add_mission(mission)
-    logger.info("Sankalpa: added steward autonomy mission (10min trigger)")
+    trigger_kwargs = {k: v for k, v in trigger_cfg.items() if k != "trigger_type"}
+
+    trigger_type_name = trigger_cfg.get("trigger_type", "IDLE_BASED")
+    try:
+        trigger_kwargs["trigger_type"] = TriggerType[trigger_type_name]
+    except KeyError as exc:
+        raise ValueError(f"Unknown trigger_type '{trigger_type_name}'") from exc
+
+    return SankalpaTrigger(**trigger_kwargs)
 
 
 class _LazyKnowledgeGraph:
