@@ -53,4 +53,4 @@ Health: 211 source files, 1 smells (1 large, 0 stale)
 ## Architecture
 38 services · 25 tattvas
 MURALI: **genesis**(1) → **dharma**(5) → **karma**(4) → **moksha**(5)
-<!-- briefing v3.0.0 | 620 tokens | budget: standard (2000) | focus: sattva, git_pain=0.8, ctx_pressure=1.0 | 2026-04-02T07:45:10 -->
+<!-- briefing v3.0.0 | 620 tokens | budget: standard (2000) | focus: sattva, git_pain=0.8, ctx_pressure=1.0 | 2026-04-02T17:46:58 -->
