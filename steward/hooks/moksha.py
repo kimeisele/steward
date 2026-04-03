@@ -161,3 +161,66 @@ class MokshaFederationHook(BasePhaseHook):
             saved = a2a_adapter.save_tasks(tasks_path)
             if saved:
                 logger.debug("MOKSHA: persisted %d A2A tasks", saved)
+
+
+class MokshaQuarantineCleanupHook(BasePhaseHook):
+    """TTL-based quarantine cleanup — deletes expired quarantine files.
+
+    Runs in MOKSHA (priority 90) after FederationHook (80).
+    Files older than QUARANTINE_TTL_HOURS are deleted automatically.
+    This is NOT a replay — expired messages are discarded, not retried.
+    Replay remains a manual operator action via steward --replay-quarantine.
+    """
+
+    QUARANTINE_TTL_HOURS: int = 24
+
+    @property
+    def name(self) -> str:
+        return "moksha_quarantine_cleanup"
+
+    @property
+    def phase(self) -> str:
+        return MOKSHA
+
+    @property
+    def priority(self) -> int:
+        return 90
+
+    def execute(self, ctx: PhaseContext) -> None:
+        import time
+
+        quarantine_dir = Path(ctx.cwd) / "data" / "federation" / "quarantine"
+        if not quarantine_dir.exists():
+            return
+
+        cutoff = time.time() - (self.QUARANTINE_TTL_HOURS * 3600)
+        deleted = 0
+        errors = 0
+
+        for f in quarantine_dir.glob("*.json"):
+            try:
+                # Filename starts with nanosecond timestamp
+                ts_ns = int(f.stem.split("_")[0])
+                ts_s = ts_ns / 1_000_000_000
+                if ts_s < cutoff:
+                    f.unlink()
+                    deleted += 1
+            except Exception:
+                errors += 1
+
+        if deleted > 0:
+            logger.info(
+                "MOKSHA QUARANTINE: deleted %d expired files (TTL=%dh, errors=%d)",
+                deleted,
+                self.QUARANTINE_TTL_HOURS,
+                errors,
+            )
+
+        # Warn if quarantine is still large after cleanup
+        remaining = sum(1 for _ in quarantine_dir.glob("*.json"))
+        if remaining > 100:
+            logger.warning(
+                "MOKSHA QUARANTINE: %d files remain after cleanup — "
+                "investigate with steward --replay-quarantine",
+                remaining,
+            )

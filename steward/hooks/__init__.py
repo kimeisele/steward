@@ -36,6 +36,7 @@ def register_default_hooks(registry: PhaseHookRegistry) -> None:
         MokshaFederationHook,
         MokshaPersistenceHook,
         MokshaSynapseHook,
+        MokshaQuarantineCleanupHook,
     )
 
     # GENESIS hooks
@@ -59,9 +60,10 @@ def register_default_hooks(registry: PhaseHookRegistry) -> None:
     from steward.hooks.moksha_bridge import MokshaContextBridgeHook
     from steward.hooks.moksha_health import MokshaHealthReportHook
 
-    # MOKSHA hooks (synapse → health → persistence → federation → context bridge)
+    # MOKSHA hooks (synapse → health → persistence → federation → cleanup → context bridge)
     registry.register(MokshaSynapseHook())
     registry.register(MokshaHealthReportHook())
     registry.register(MokshaPersistenceHook())
     registry.register(MokshaFederationHook())
+    registry.register(MokshaQuarantineCleanupHook())  # priority 90 — TTL-based cleanup
     registry.register(MokshaContextBridgeHook())
