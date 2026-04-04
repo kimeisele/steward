@@ -3,8 +3,6 @@
 import json
 import time
 
-from steward.federation_crypto import derive_node_id
-from steward.services import SVC_TASK_MANAGER
 from steward.federation import (
     CITY_BOTTLENECK_PREFIX,
     OP_AGENT_CLAIM,
