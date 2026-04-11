@@ -548,14 +548,17 @@ class GenesisProvisioningHook(BasePhaseHook):
         return 40
 
     def execute(self, ctx: PhaseContext) -> None:
+        logger.info("PROVISIONER: execute() called")
         reaper = ServiceRegistry.get(SVC_REAPER)
         if reaper is None:
+            logger.warning("PROVISIONER: reaper service not available, skipping")
             return
 
         owner = _get_federation_owner()
         if not owner:
-            logger.debug("PROVISIONER: no federation owner configured, skipping")
+            logger.warning("PROVISIONER: no federation owner configured, skipping")
             return
+        logger.info("PROVISIONER: owner=%s, checking peers...", owner)
 
         # Provision all peers under owner/ that lack NODE_PRIVATE_KEY
         # Skip crypto IDs (ag_xxxx) — those are transport signatures not repos
