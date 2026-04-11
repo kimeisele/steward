@@ -557,20 +557,18 @@ class GenesisProvisioningHook(BasePhaseHook):
             logger.debug("PROVISIONER: no federation owner configured, skipping")
             return
 
-        # Only provision peers discovered via github_topics (new nodes)
-        candidates = []
-        for p in list(reaper.alive_peers()) + list(reaper.suspect_peers()):
-            source = getattr(p, "source", "")
-            if source == "github_topic":
-                agent_id = str(getattr(p, "agent_id", p))
-                if "/" not in agent_id or agent_id.startswith(f"{owner}/"):
-                    candidates.append((agent_id, owner))
-
-        for agent_id, owner in candidates:
-            if "/" in agent_id:
-                repo = agent_id
-            else:
-                repo = f"{owner}/{agent_id}"
+        # Provision all peers under owner/ that lack NODE_PRIVATE_KEY
+        # Skip crypto IDs (ag_xxxx) — those are transport signatures not repos
+        all_peers = (list(reaper.alive_peers()) +
+                     list(reaper.suspect_peers()) +
+                     list(reaper.dead_peers()))
+        seen = set()
+        for peer in all_peers:
+            agent_id = str(getattr(peer, "agent_id", ""))
+            if not agent_id or agent_id.startswith("ag_") or agent_id in seen:
+                continue
+            seen.add(agent_id)
+            repo = f"{owner}/{agent_id}"
             self._provision_if_needed(repo, agent_id)
 
     def _provision_if_needed(self, repo: str, agent_id: str) -> None:
