@@ -519,3 +519,148 @@ def _discover_from_org_repos(
 
     logger.debug("Org scan: %d repos (from %d known members)", len(peers), len(federation_members))
     return peers
+
+
+class GenesisProvisioningHook(BasePhaseHook):
+    """Auto-provision NODE_PRIVATE_KEY secret for newly discovered federation nodes.
+
+    Steward-as-Provisioner pattern:
+    1. Discover new nodes via GenesisDiscoveryHook (runs first, priority 20)
+    2. For each node WITHOUT NODE_PRIVATE_KEY: generate Ed25519 keypair
+    3. Encrypt private key via GitHub sealed box + POST to secrets API
+    4. Register public key in verified_agents.json
+    5. Idempotent: skip if secret already exists
+    6. Owner-whitelist: only provision repos owned by FEDERATION_OWNER
+
+    Priority 40: runs after GenesisDiscoveryHook (20) in same GENESIS phase.
+    """
+
+    @property
+    def name(self) -> str:
+        return "genesis_provisioning"
+
+    @property
+    def phase(self) -> str:
+        return GENESIS
+
+    @property
+    def priority(self) -> int:
+        return 40
+
+    def execute(self, ctx: PhaseContext) -> None:
+        reaper = ServiceRegistry.get(SVC_REAPER)
+        if reaper is None:
+            return
+
+        owner = _get_federation_owner()
+        if not owner:
+            logger.debug("PROVISIONER: no federation owner configured, skipping")
+            return
+
+        # Only provision peers discovered via github_topics (new nodes)
+        candidates = []
+        for p in list(reaper.alive_peers()) + list(reaper.suspect_peers()):
+            source = getattr(p, "source", "")
+            if source == "github_topic":
+                agent_id = str(getattr(p, "agent_id", p))
+                if "/" not in agent_id or agent_id.startswith(f"{owner}/"):
+                    candidates.append((agent_id, owner))
+
+        for agent_id, owner in candidates:
+            if "/" in agent_id:
+                repo = agent_id
+            else:
+                repo = f"{owner}/{agent_id}"
+            self._provision_if_needed(repo, agent_id)
+
+    def _provision_if_needed(self, repo: str, agent_id: str) -> None:
+        """Check if NODE_PRIVATE_KEY exists; if not, generate and set it."""
+        import subprocess as _sp
+        import json as _json
+        import hashlib as _hashlib
+
+        # 1. Idempotency check: does secret already exist?
+        check = _sp.run(
+            ["gh", "api", f"repos/{repo}/actions/secrets",
+             "--jq", '.secrets[] | select(.name=="NODE_PRIVATE_KEY") | .name'],
+            capture_output=True, text=True, timeout=10
+        )
+        if "NODE_PRIVATE_KEY" in check.stdout:
+            logger.debug("PROVISIONER: %s already has NODE_PRIVATE_KEY", repo)
+            return
+
+        logger.info("PROVISIONER: provisioning NODE_PRIVATE_KEY for %s", repo)
+
+        # 2. Generate Ed25519 keypair
+        try:
+            from cryptography.hazmat.primitives import serialization
+            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+            priv = Ed25519PrivateKey.generate()
+            pub = priv.public_key()
+            priv_hex = priv.private_bytes(
+                encoding=serialization.Encoding.Raw,
+                format=serialization.PrivateFormat.Raw,
+                encryption_algorithm=serialization.NoEncryption(),
+            ).hex()
+            pub_hex = pub.public_bytes(
+                encoding=serialization.Encoding.Raw,
+                format=serialization.PublicFormat.Raw,
+            ).hex()
+            node_id = "ag_" + _hashlib.sha256(pub_hex.encode()).hexdigest()[:16]
+        except Exception as exc:
+            logger.error("PROVISIONER: key generation failed for %s: %s", repo, exc)
+            return
+
+        secret_value = _json.dumps({
+            "private_key": priv_hex,
+            "public_key": pub_hex,
+            "node_id": node_id,
+        })
+
+        # 3. Fetch repo public key for GitHub sealed box encryption
+        try:
+            pk_result = _sp.run(
+                ["gh", "api", f"repos/{repo}/actions/secrets/public-key",
+                 "--jq", "{key_id: .key_id, key: .key}"],
+                capture_output=True, text=True, timeout=10
+            )
+            if pk_result.returncode != 0:
+                logger.warning("PROVISIONER: cannot access %s secrets API", repo)
+                return
+            pk_data = _json.loads(pk_result.stdout)
+        except Exception as exc:
+            logger.error("PROVISIONER: public key fetch failed for %s: %s", repo, exc)
+            return
+
+        # 4. Encrypt with PyNaCl sealed box
+        try:
+            import base64 as _b64
+            from nacl.public import PublicKey, SealedBox
+
+            repo_pub_key = PublicKey(_b64.b64decode(pk_data["key"]))
+            box = SealedBox(repo_pub_key)
+            encrypted = _b64.b64encode(box.encrypt(secret_value.encode())).decode()
+        except Exception as exc:
+            logger.error("PROVISIONER: encryption failed for %s: %s", repo, exc)
+            return
+
+        # 5. Set secret via GitHub API
+        try:
+            set_result = _sp.run(
+                ["gh", "api", f"repos/{repo}/actions/secrets/NODE_PRIVATE_KEY",
+                 "--method", "PUT",
+                 "--field", f"encrypted_value={encrypted}",
+                 "--field", f"key_id={pk_data['key_id']}"],
+                capture_output=True, text=True, timeout=15
+            )
+            if set_result.returncode == 0:
+                logger.info("PROVISIONER: ✅ NODE_PRIVATE_KEY set for %s (node_id=%s)", repo, node_id)
+            else:
+                logger.warning("PROVISIONER: secret set failed for %s", repo)
+                return
+        except Exception as exc:
+            logger.error("PROVISIONER: secret PUT failed for %s: %s", repo, exc)
+            return
+
+        logger.info("PROVISIONER: %s provisioned successfully with node_id=%s", repo, node_id)
