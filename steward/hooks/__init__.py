@@ -25,7 +25,7 @@ def register_default_hooks(registry: PhaseHookRegistry) -> None:
         DharmaMarketplaceHook,
         DharmaReaperHook,
     )
-    from steward.hooks.genesis import GenesisDiscoveryHook
+    from steward.hooks.genesis import GenesisDiscoveryHook, GenesisProvisioningHook
     from steward.hooks.karma import (
         KarmaA2AProgressHook,
         KarmaBottleneckResolutionHook,
@@ -41,6 +41,7 @@ def register_default_hooks(registry: PhaseHookRegistry) -> None:
 
     # GENESIS hooks
     registry.register(GenesisDiscoveryHook())
+    registry.register(GenesisProvisioningHook())  # priority 40 — auto-provision NODE_PRIVATE_KEY
 
     from steward.hooks.dharma_immune import DharmaImmuneHook
 
