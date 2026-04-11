@@ -645,11 +645,15 @@ class GenesisProvisioningHook(BasePhaseHook):
 
         # 5. Set secret via GitHub API
         try:
+            api_input = _json.dumps({
+                "encrypted_value": encrypted,
+                "key_id": pk_data['key_id']
+            })
             set_result = _sp.run(
-                ["gh", "api", f"repos/{repo}/actions/secrets/NODE_PRIVATE_KEY",
-                 "--method", "PUT",
-                 "--field", f"encrypted_value={encrypted}",
-                 "--field", f"key_id={pk_data['key_id']}"],
+                ["gh", "api", "-X", "PUT",
+                 f"repos/{repo}/actions/secrets/NODE_PRIVATE_KEY",
+                 "--input", "-"],
+                input=api_input,
                 capture_output=True, text=True, timeout=15
             )
             if set_result.returncode == 0:
