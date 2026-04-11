@@ -565,14 +565,24 @@ class GenesisProvisioningHook(BasePhaseHook):
         all_peers = (list(reaper.alive_peers()) +
                      list(reaper.suspect_peers()) +
                      list(reaper.dead_peers()))
+        logger.info("PROVISIONER: found %d total peers", len(all_peers))
         seen = set()
+        provision_count = 0
         for peer in all_peers:
             agent_id = str(getattr(peer, "agent_id", ""))
-            if not agent_id or agent_id.startswith("ag_") or agent_id in seen:
+            if not agent_id:
+                continue
+            if agent_id.startswith("ag_"):
+                logger.debug("PROVISIONER: skipping crypto ID %s", agent_id)
+                continue
+            if agent_id in seen:
                 continue
             seen.add(agent_id)
+            logger.info("PROVISIONER: attempting to provision %s", agent_id)
             repo = f"{owner}/{agent_id}"
             self._provision_if_needed(repo, agent_id)
+            provision_count += 1
+        logger.info("PROVISIONER: attempted provisioning for %d repos", provision_count)
 
     def _provision_if_needed(self, repo: str, agent_id: str) -> None:
         """Check if NODE_PRIVATE_KEY exists; if not, generate and set it."""
