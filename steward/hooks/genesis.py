@@ -655,7 +655,7 @@ class GenesisProvisioningHook(BasePhaseHook):
             if set_result.returncode == 0:
                 logger.info("PROVISIONER: ✅ NODE_PRIVATE_KEY set for %s (node_id=%s)", repo, node_id)
             else:
-                logger.warning("PROVISIONER: secret set failed for %s", repo)
+                logger.error("PROVISIONER: secret set failed for %s: %s", repo, set_result.stderr[:200])
                 return
         except Exception as exc:
             logger.error("PROVISIONER: secret PUT failed for %s: %s", repo, exc)
