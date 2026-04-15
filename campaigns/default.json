@@ -27,6 +27,151 @@
           "target": 3,
           "description": "bounded execution — no thrashing"
         }
+      ],
+      "missions": [
+        {
+          "id": "mission_steward_autonomy",
+          "name": "Steward Autonomy",
+          "description": "Autonomous codebase maintenance every 15 minutes",
+          "priority": "HIGH",
+          "status": "ACTIVE",
+          "owner": "steward",
+          "strategies": [
+            {
+              "id": "strategy_quick_check",
+              "name": "Quick Health Check",
+              "description": "Run senses, check CI status, scan for issues",
+              "frequency": "DAILY",
+              "intent_type": "health_check",
+              "intent_template": {
+                "actions": [
+                  "sense_scan",
+                  "ci_check"
+                ]
+              },
+              "requires_ci_green": false,
+              "requires_no_pending_intents": true,
+              "max_executions_per_day": 6,
+              "enabled": true,
+              "trigger": {
+                "trigger_type": "IDLE_BASED",
+                "idle_minutes": 10
+              }
+            },
+            {
+              "id": "strategy_update_deps",
+              "name": "Update Dependencies",
+              "description": "Check for outdated packages, create PR to update",
+              "frequency": "WEEKLY",
+              "intent_type": "update_deps",
+              "intent_template": {},
+              "requires_ci_green": true,
+              "requires_no_pending_intents": true,
+              "max_executions_per_day": 1,
+              "enabled": true,
+              "trigger": {
+                "trigger_type": "IDLE_BASED",
+                "idle_minutes": 30
+              }
+            },
+            {
+              "id": "strategy_remove_dead_code",
+              "name": "Remove Dead Code",
+              "description": "Detect low-cohesion modules, create PR to refactor",
+              "frequency": "WEEKLY",
+              "intent_type": "remove_dead_code",
+              "intent_template": {},
+              "requires_ci_green": true,
+              "requires_no_pending_intents": true,
+              "max_executions_per_day": 1,
+              "enabled": true,
+              "trigger": {
+                "trigger_type": "IDLE_BASED",
+                "idle_minutes": 30
+              }
+            },
+            {
+              "id": "strategy_federation_health",
+              "name": "Federation Health Check",
+              "description": "Monitor peer liveness, outbox queue, transport health",
+              "frequency": "DAILY",
+              "intent_type": "federation_health",
+              "intent_template": {},
+              "requires_ci_green": false,
+              "requires_no_pending_intents": true,
+              "max_executions_per_day": 12,
+              "enabled": true,
+              "trigger": {
+                "trigger_type": "IDLE_BASED",
+                "idle_minutes": 10
+              }
+            },
+            {
+              "id": "strategy_heal_repo",
+              "name": "Heal Federation Repos",
+              "description": "Diagnose and fix degraded federation peers via PR",
+              "frequency": "DAILY",
+              "intent_type": "heal_repo",
+              "intent_template": {},
+              "requires_ci_green": false,
+              "requires_no_pending_intents": true,
+              "max_executions_per_day": 4,
+              "enabled": true,
+              "trigger": {
+                "trigger_type": "IDLE_BASED",
+                "idle_minutes": 15
+              }
+            },
+            {
+              "id": "strategy_cross_repo_diagnostic",
+              "name": "Cross-Repo Diagnostic",
+              "description": "Scan federation repos for structural issues",
+              "frequency": "DAILY",
+              "intent_type": "cross_repo_diagnostic",
+              "intent_template": {},
+              "requires_ci_green": false,
+              "requires_no_pending_intents": true,
+              "max_executions_per_day": 4,
+              "enabled": true,
+              "trigger": {
+                "trigger_type": "IDLE_BASED",
+                "idle_minutes": 15
+              }
+            },
+            {
+              "id": "strategy_synthesize_briefing",
+              "name": "Synthesize Context Briefing",
+              "description": "Use synthesize_briefing tool to update .steward/CLAUDE.md from steward's living state and architecture metadata",
+              "frequency": "DAILY",
+              "intent_type": "synthesize_briefing",
+              "intent_template": {},
+              "requires_ci_green": false,
+              "requires_no_pending_intents": true,
+              "max_executions_per_day": 6,
+              "enabled": true,
+              "trigger": {
+                "trigger_type": "IDLE_BASED",
+                "idle_minutes": 15
+              }
+            },
+            {
+              "id": "strategy_federation_gap_scan",
+              "name": "Federation Gap Scan",
+              "description": "Scan federation architecture for gaps: delivery reliability, agent card coverage, trust erosion, capability holes. Proposes healing actions for detected gaps.",
+              "frequency": "DAILY",
+              "intent_type": "federation_gap_scan",
+              "intent_template": {},
+              "requires_ci_green": false,
+              "requires_no_pending_intents": true,
+              "max_executions_per_day": 3,
+              "enabled": true,
+              "trigger": {
+                "trigger_type": "IDLE_BASED",
+                "idle_minutes": 20
+              }
+            }
+          ]
+        }
       ]
     }
   ]
