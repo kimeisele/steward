@@ -1,8 +1,8 @@
-from pathlib import Path
 """Tests for A2A Peer Discovery — Agent Card scanning."""
 
 from __future__ import annotations
 
+from pathlib import Path
 import json
 
 from steward.a2a_discovery import A2APeerDiscovery, DiscoveredPeer
