@@ -1,3 +1,4 @@
+from pathlib import Path
 """Tests for A2A Peer Discovery — Agent Card scanning."""
 
 from __future__ import annotations
@@ -51,7 +52,7 @@ def test_save_and_load_discovered(tmp_path):
 
 def test_load_nonexistent():
     discovery = A2APeerDiscovery()
-    assert discovery.load_discovered(path=None) == 0
+    assert discovery.load_discovered(path=Path("/tmp/nonexistent_peers_xyz.json")) == 0
 
 
 # ── Known Peers ────────────────────────────────────────────────────
