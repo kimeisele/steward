@@ -29,7 +29,7 @@
 ## Development
 
 ## Status
-Health: 0.74 (sattva) · Immune: 0/0 heals, breaker OK · Federation: 12 peers (12 alive, 0 suspect, 0 dead)
+Health: 0.858 (sattva) · Immune: 0/0 heals, breaker OK · Federation: 12 peers (12 alive, 0 suspect, 0 dead)
 
 ## Action
 - #28: [Federation Brief] agent-city scaling — discussions quality + onboarding coordination
@@ -44,7 +44,7 @@ Health: 0.74 (sattva) · Immune: 0/0 heals, breaker OK · Federation: 12 peers (
 Git: main, 127 dirty, ci=, 1 open PRs
 Project: python
 Code: 0 files, 0 cls, 0 fn
-Tests: pytest, 91 files, last=failed
+Tests: pytest, 91 files, last=unknown
 Health: 211 source files, 1 smells (1 large, 0 stale)
 
 ## Toolbox
@@ -53,4 +53,4 @@ Health: 211 source files, 1 smells (1 large, 0 stale)
 ## Architecture
 38 services · 25 tattvas
 MURALI: **genesis**(2) → **dharma**(5) → **karma**(4) → **moksha**(6)
-<!-- briefing v3.0.0 | 619 tokens | budget: standard (2000) | focus: rajas, git_pain=0.8, test_pain=0.7, ctx_pressure=1.0 | 2026-04-17T22:02:06 -->
+<!-- briefing v3.0.0 | 620 tokens | budget: standard (2000) | focus: sattva, git_pain=0.8, ctx_pressure=1.0 | 2026-04-17T22:45:10 -->
