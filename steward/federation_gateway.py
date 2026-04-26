@@ -362,23 +362,50 @@ class FederationGateway(GatewayProtocol):
         return False, "unauthorized_unverified_sender", "gateway_authorization"
 
     def _verify_inbound_signature(self, msg: dict) -> tuple[bool, str, str]:
+        """Cryptographic gate for PROTECTED operations — fail-CLOSED.
+
+        Returns (ok, reason, stage). All paths that previously returned True
+        on missing infrastructure or unknown sender now reject with a
+        descriptive reason. The only legitimate True returns are:
+          - non-NADI protocols (handled by their own validators)
+          - PUBLIC_OPERATIONS (validated in _authorize_inbound_message)
+          - successful Ed25519 verification against verified_agents.json
+        """
         protocol = self._detect_protocol(msg)
         if protocol != "nadi":
             return True, "", ""
         operation = str(msg.get("operation", "")).strip()
         if operation not in PROTECTED_OPERATIONS:
             return True, "", ""
+
+        # Fail-closed: no verifier infrastructure → reject. We never accept
+        # a PROTECTED message in a state where we cannot verify it.
         if self._bridge is None or not hasattr(self._bridge, "get_verified_agent"):
-            return True, "", ""
+            return False, "verifier_unavailable", "crypto_verification"
+
         sender = str(msg.get("source", "")).strip()
-        record = self._bridge.get_verified_agent(sender) if sender else None
+        if not sender:
+            return False, "missing_source", "crypto_verification"
+        record = self._bridge.get_verified_agent(sender)
+
+        # Fail-closed: unknown sender → reject. PROTECTED operations require a
+        # registered identity. The bootstrap path is federation.agent_claim
+        # (a PUBLIC operation) — that's how unknown nodes become known.
         if not isinstance(record, dict):
-            return True, "", ""
+            return False, "unknown_sender", "crypto_verification"
+
         public_key = str(record.get("public_key", "")).strip()
         payload_hash = str(msg.get("payload_hash", "")).strip()
         signature = str(msg.get("signature", "")).strip()
         if not public_key or not payload_hash or not signature:
             return False, "invalid_signature", "crypto_verification"
+
+        # Anti-spoofing invariant: verified_agents.json entries must satisfy
+        # derive_node_id(public_key) == node_id (enforced on registration).
+        # We re-check here so a corrupted registry can never bypass the check.
+        if derive_node_id(public_key) != sender:
+            return False, "registry_inconsistent", "crypto_verification"
+
         if not verify_payload_signature(public_key, payload_hash, signature):
             return False, "invalid_signature", "crypto_verification"
         return True, "", ""

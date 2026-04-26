@@ -2,14 +2,44 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from unittest.mock import MagicMock
 
-from steward.federation_crypto import NodeKeyStore, sign_payload_hash
+from steward.federation_crypto import NodeKeyStore, derive_node_id, sign_payload_hash
 from steward.federation import FederationBridge
 from steward.federation_transport import NadiFederationTransport
 from steward.federation_gateway import FederationGateway, _is_a2a, _is_nadi
 from steward.services import SVC_TASK_MANAGER
+
+
+def _sign_outbound(msg: dict, keys: NodeKeyStore) -> dict:
+    """Helper: produce a NADI message with canonical payload_hash + signature.
+
+    Same hash convention as agent-city's FederationRelay._sign_payload —
+    sha256 over sorted-keys JSON of the message minus signing fields.
+    """
+    canonical = {k: v for k, v in msg.items() if k not in ("payload_hash", "signature")}
+    payload_hash = hashlib.sha256(json.dumps(canonical, sort_keys=True).encode()).hexdigest()
+    return {
+        **canonical,
+        "payload_hash": payload_hash,
+        "signature": sign_payload_hash(keys.private_key, payload_hash),
+    }
+
+
+def _verified_mock_bridge(keys: NodeKeyStore, agent_name: str = "verified-peer") -> MagicMock:
+    """Mock bridge that exposes get_verified_agent for the given identity."""
+    bridge = MagicMock()
+    bridge.ingest.return_value = True
+    bridge.is_verified_agent.return_value = True
+    bridge.get_verified_agent.return_value = {
+        "node_id": keys.node_id,
+        "agent_name": agent_name,
+        "public_key": keys.public_key,
+        "capabilities": [],
+    }
+    return bridge
 
 # ── Protocol Detection ─────────────────────────────────────────────
 
@@ -267,16 +297,25 @@ class TestProcessInbound:
         transport.read_outbox.return_value = messages
         return transport
 
-    def test_processes_valid_nadi_messages(self):
-        """Valid NADI messages reach the bridge through all gates."""
+    def test_processes_valid_nadi_messages(self, tmp_path):
+        """Valid signed NADI messages from verified peers reach the bridge."""
+        keys_a = NodeKeyStore(tmp_path / "a" / ".node_keys.json")
+        keys_a.ensure_keys()
+        keys_b = NodeKeyStore(tmp_path / "b" / ".node_keys.json")
+        keys_b.ensure_keys()
         bridge = MagicMock()
         bridge.ingest.return_value = True
         bridge.is_verified_agent.return_value = True
+        bridge.get_verified_agent.side_effect = lambda nid: (
+            {"node_id": keys_a.node_id, "public_key": keys_a.public_key} if nid == keys_a.node_id
+            else {"node_id": keys_b.node_id, "public_key": keys_b.public_key} if nid == keys_b.node_id
+            else None
+        )
         gw = FederationGateway(bridge=bridge)
         transport = self._make_transport(
             [
-                {"operation": "heartbeat", "source": "peer-a", "payload": {"agent_id": "peer-a"}},
-                {"operation": "claim_slot", "source": "peer-b", "payload": {"slot_id": "s1", "agent_id": "peer-b"}},
+                _sign_outbound({"operation": "heartbeat", "source": keys_a.node_id, "payload": {"agent_id": "a"}}, keys_a),
+                _sign_outbound({"operation": "claim_slot", "source": keys_b.node_id, "payload": {"slot_id": "s1", "agent_id": "b"}}, keys_b),
             ]
         )
 
@@ -287,16 +326,21 @@ class TestProcessInbound:
         assert gw.stats()["total_requests"] == 2
         assert gw.stats()["by_protocol"]["nadi"] == 2
 
-    def test_evicted_peer_blocked_at_validate(self):
-        """Evicted peer messages are rejected — NEVER reach the bridge."""
+    def test_evicted_peer_blocked_at_validate(self, tmp_path):
+        """Evicted peer messages are rejected at VALIDATE — even when sig is valid."""
+        evicted_keys = NodeKeyStore(tmp_path / "evicted" / ".node_keys.json")
+        evicted_keys.ensure_keys()
         peer = MagicMock()
         peer.status.value = "evicted"
         reaper = MagicMock()
         reaper.get_peer.return_value = peer
-        bridge = MagicMock()
+        bridge = _verified_mock_bridge(evicted_keys, agent_name="evicted-peer")
         gw = FederationGateway(bridge=bridge, reaper=reaper)
         transport = self._make_transport(
-            [{"operation": "heartbeat", "source": "evicted-peer", "payload": {"agent_id": "evicted-peer"}}]
+            [_sign_outbound(
+                {"operation": "heartbeat", "source": evicted_keys.node_id, "payload": {"agent_id": "evicted-peer"}},
+                evicted_keys,
+            )]
         )
 
         processed = gw.process_inbound(transport)
@@ -318,17 +362,18 @@ class TestProcessInbound:
         assert gw.stats()["rejected_parse"] == 2
         assert gw.stats()["errors"] == 2
 
-    def test_non_dict_messages_skipped(self):
+    def test_non_dict_messages_skipped(self, tmp_path):
         """Non-dict items in transport are silently skipped."""
-        bridge = MagicMock()
-        bridge.ingest.return_value = True
+        keys = NodeKeyStore(tmp_path / "v" / ".node_keys.json")
+        keys.ensure_keys()
+        bridge = _verified_mock_bridge(keys)
         gw = FederationGateway(bridge=bridge)
         transport = self._make_transport(
             [
                 "not a dict",
                 42,
                 None,
-                {"operation": "heartbeat", "source": "valid-peer", "payload": {}},
+                _sign_outbound({"operation": "heartbeat", "source": keys.node_id, "payload": {}}, keys),
             ]
         )
 
@@ -338,22 +383,31 @@ class TestProcessInbound:
         assert gw.stats()["rejected_parse"] == 3  # 3 non-dicts
         assert gw.stats()["errors"] == 3
 
-    def test_mixed_valid_and_invalid(self):
+    def test_mixed_valid_and_invalid(self, tmp_path):
         """Mix of valid, invalid, and evicted — only valid messages pass."""
+        good_keys = NodeKeyStore(tmp_path / "good" / ".node_keys.json")
+        good_keys.ensure_keys()
+        bad_keys = NodeKeyStore(tmp_path / "bad" / ".node_keys.json")
+        bad_keys.ensure_keys()
         peer = MagicMock()
         peer.status.value = "evicted"
         reaper = MagicMock()
-        reaper.get_peer.side_effect = lambda aid: peer if aid == "bad-peer" else None
+        reaper.get_peer.side_effect = lambda aid: peer if aid == bad_keys.node_id else None
         bridge = MagicMock()
         bridge.ingest.return_value = True
         bridge.is_verified_agent.return_value = True
+        bridge.get_verified_agent.side_effect = lambda nid: (
+            {"node_id": good_keys.node_id, "public_key": good_keys.public_key} if nid == good_keys.node_id
+            else {"node_id": bad_keys.node_id, "public_key": bad_keys.public_key} if nid == bad_keys.node_id
+            else None
+        )
         gw = FederationGateway(bridge=bridge, reaper=reaper)
         transport = self._make_transport(
             [
-                {"operation": "heartbeat", "source": "good-peer", "payload": {}},  # PASS: unknown peer
-                {"operation": "heartbeat", "source": "bad-peer", "payload": {}},  # REJECT: evicted
+                _sign_outbound({"operation": "heartbeat", "source": good_keys.node_id, "payload": {}}, good_keys),
+                _sign_outbound({"operation": "heartbeat", "source": bad_keys.node_id, "payload": {}}, bad_keys),  # REJECT: evicted
                 {"garbage": True},  # REJECT: unknown protocol
-                {"operation": "claim_slot", "source": "good-peer", "payload": {"slot_id": "s1"}},  # PASS
+                _sign_outbound({"operation": "claim_slot", "source": good_keys.node_id, "payload": {"slot_id": "s1"}}, good_keys),
             ]
         )
 
@@ -365,15 +419,16 @@ class TestProcessInbound:
         assert gw.stats()["rejected_parse"] == 1
         assert gw.stats()["errors"] == 2
 
-    def test_bridge_reject_is_counted_and_surfaced(self):
-        bridge = MagicMock()
+    def test_bridge_reject_is_counted_and_surfaced(self, tmp_path):
+        keys = NodeKeyStore(tmp_path / "g" / ".node_keys.json")
+        keys.ensure_keys()
+        bridge = _verified_mock_bridge(keys)
         bridge.ingest.side_effect = [True, False]
-        bridge.is_verified_agent.return_value = True
         gw = FederationGateway(bridge=bridge)
         transport = self._make_transport(
             [
-                {"operation": "heartbeat", "source": "good-peer", "payload": {}},
-                {"operation": "unknown_op", "source": "good-peer", "payload": {}},
+                _sign_outbound({"operation": "heartbeat", "source": keys.node_id, "payload": {}}, keys),
+                _sign_outbound({"operation": "unknown_op", "source": keys.node_id, "payload": {}}, keys),
             ]
         )
 
@@ -463,15 +518,22 @@ class TestProcessInbound:
         quarantine_files = [path for path in (tmp_path / "quarantine").glob("*.json") if path.name != "index.json"]
         assert len(quarantine_files) == 1
         record = json.loads(quarantine_files[0].read_text())
-        assert record["stage"] == "gateway_authorization"
-        assert record["reason"] == "unauthorized_unverified_sender"
+        # Fail-closed: unknown sender on a PROTECTED op is now blocked at the
+        # crypto gate (before authz) — verifier has no public_key to check
+        # the signature against, so we must reject.
+        assert record["stage"] == "crypto_verification"
+        assert record["reason"] == "unknown_sender"
 
     def test_unverified_sender_public_operation_is_allowed(self, tmp_path):
         transport = NadiFederationTransport(str(tmp_path))
         node_x_keys = NodeKeyStore(tmp_path / "node-x" / ".node_keys.json")
         node_x_keys.ensure_keys()
+        # Claim payloads MUST carry node_id — the gateway's authz check needs
+        # both public_key and node_id to enforce derive_node_id(public_key)
+        # == node_id. agent-city's _send_federation_claim already includes it.
         payload = {
             "agent_name": "node-x",
+            "node_id": node_x_keys.node_id,
             "public_key": node_x_keys.public_key,
             "capabilities": ["infra"],
         }
@@ -511,7 +573,12 @@ class TestProcessInbound:
         bridge = FederationBridge(agent_id="steward", verified_agents_path=tmp_path / "verified_agents.json")
         gw = FederationGateway(bridge=bridge)
         gov_payload = {"target": "fix:federation_ci_required:agent-internet", "severity": "high", "reward": 108, "description": "Fix CI"}
-        claim_payload = {"agent_name": "node-x", "public_key": node_x_keys.public_key, "capabilities": ["bounty_hunter"]}
+        claim_payload = {
+            "agent_name": "node-x",
+            "node_id": node_x_keys.node_id,
+            "public_key": node_x_keys.public_key,
+            "capabilities": ["bounty_hunter"],
+        }
 
         (tmp_path / "nadi_inbox.json").write_text(
             json.dumps(
@@ -567,10 +634,14 @@ class TestProcessInbound:
         transport = NadiFederationTransport(str(tmp_path))
         node_x_keys = NodeKeyStore(tmp_path / "node-x" / ".node_keys.json")
         node_x_keys.ensure_keys()
+        # Registry MUST be keyed by derive_node_id(public_key); the gateway's
+        # registry-consistency check would otherwise reject before the sig
+        # verification runs. (This is the new anti-spoofing invariant.)
         (tmp_path / "verified_agents.json").write_text(
             json.dumps(
                 {
-                    "node-x": {
+                    node_x_keys.node_id: {
+                        "node_id": node_x_keys.node_id,
                         "agent_name": "node-x",
                         "public_key": node_x_keys.public_key,
                         "capabilities": ["bounty_hunter"],
@@ -583,7 +654,7 @@ class TestProcessInbound:
             json.dumps(
                 [
                     {
-                        "source": "node-x",
+                        "source": node_x_keys.node_id,
                         "target": "steward",
                         "operation": "governance_bounty",
                         "payload": gov_payload,
@@ -650,6 +721,7 @@ class TestProcessInbound:
 
         payload = {
             "agent_name": "node-a",
+            "node_id": node_a_keys.node_id,
             "public_key": node_a_keys.public_key,
             "capabilities": ["bounty_hunter", "infrastructure"],
         }
@@ -668,7 +740,8 @@ class TestProcessInbound:
         assert processed == 1
         registry = json.loads((node_b / "verified_agents.json").read_text())
         assert registry[node_a_keys.node_id]["public_key"] == node_a_keys.public_key
-        assert registry[node_a_keys.node_id]["capabilities"] == ["bounty_hunter", "infrastructure"]
+        # Capabilities are normalised (set + sort) by the handler now
+        assert sorted(registry[node_a_keys.node_id]["capabilities"]) == ["bounty_hunter", "infrastructure"]
 
     def test_spoofed_agent_claim_is_quarantined_for_identity_spoofing(self, tmp_path):
         node_b = tmp_path / "node-b"
@@ -702,15 +775,25 @@ class TestProcessInbound:
         assert record["stage"] == "gateway_authorization"
         assert record["reason"] == "identity_spoofing_attempt"
 
-    def test_signals_queued_for_moksha(self):
+    def test_signals_queued_for_moksha(self, tmp_path):
         """All processed messages queue Hebbian signals for MOKSHA drain."""
+        keys_p1 = NodeKeyStore(tmp_path / "p1" / ".node_keys.json")
+        keys_p1.ensure_keys()
+        keys_p2 = NodeKeyStore(tmp_path / "p2" / ".node_keys.json")
+        keys_p2.ensure_keys()
         bridge = MagicMock()
         bridge.ingest.return_value = True
+        bridge.is_verified_agent.return_value = True
+        bridge.get_verified_agent.side_effect = lambda nid: (
+            {"node_id": keys_p1.node_id, "public_key": keys_p1.public_key} if nid == keys_p1.node_id
+            else {"node_id": keys_p2.node_id, "public_key": keys_p2.public_key} if nid == keys_p2.node_id
+            else None
+        )
         gw = FederationGateway(bridge=bridge)
         transport = self._make_transport(
             [
-                {"operation": "heartbeat", "source": "p1", "payload": {}},
-                {"operation": "heartbeat", "source": "p2", "payload": {}},
+                _sign_outbound({"operation": "heartbeat", "source": keys_p1.node_id, "payload": {}}, keys_p1),
+                _sign_outbound({"operation": "heartbeat", "source": keys_p2.node_id, "payload": {}}, keys_p2),
             ]
         )
 
