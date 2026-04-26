@@ -19,6 +19,7 @@ from steward.federation import (
     OP_TASK_FAILED,
     FederationBridge,
 )
+from steward.federation_crypto import derive_node_id
 from steward.federation_transport import NadiFederationTransport
 from steward.marketplace import Marketplace
 from steward.reaper import HeartbeatReaper
@@ -617,6 +618,70 @@ class TestMokshaFlush:
         assert parsed.operation == "heartbeat"
         assert parsed.ttl_s == 900.0
         assert isinstance(parsed.payload, dict)
+
+    def test_flush_signs_outbound_when_node_private_key_env_set(self, tmp_path, monkeypatch):
+        """With NODE_PRIVATE_KEY exported, every outbound message gains a
+        canonical payload_hash + signature, source becomes node_id, and the
+        steward registers itself in verified_agents.json (self-claim)."""
+        import hashlib
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+        from steward.federation_crypto import derive_node_id, verify_payload_signature
+
+        sk = Ed25519PrivateKey.generate()
+        priv_hex = sk.private_bytes(
+            serialization.Encoding.Raw,
+            serialization.PrivateFormat.Raw,
+            serialization.NoEncryption(),
+        ).hex()
+        pub_hex = sk.public_key().public_bytes(
+            serialization.Encoding.Raw, serialization.PublicFormat.Raw
+        ).hex()
+        expected_node_id = derive_node_id(pub_hex)
+
+        monkeypatch.setenv("NODE_PRIVATE_KEY", priv_hex)
+
+        reaper = HeartbeatReaper()
+        reaper.record_heartbeat("agent-city")
+        bridge = FederationBridge(
+            reaper=reaper,
+            agent_id="steward",
+            verified_agents_path=tmp_path / "verified_agents.json",
+        )
+        bridge.emit("city_report", {"foo": "bar"})
+        transport = FakeTransport()
+        bridge.flush_outbound(transport)
+
+        # Outbound message: source = node_id, signed
+        assert len(transport.inbox) == 1
+        msg = transport.inbox[0]
+        assert msg["source"] == expected_node_id
+        assert msg["payload_hash"], "payload_hash missing"
+        assert msg["signature"], "signature missing"
+        # Signature verifies via the same primitive remote receivers will use
+        assert verify_payload_signature(pub_hex, msg["payload_hash"], msg["signature"])
+        # payload_hash is the canonical sha256 of message minus sig fields
+        canonical = {k: v for k, v in msg.items() if k not in ("payload_hash", "signature")}
+        expected_hash = hashlib.sha256(
+            json.dumps(canonical, sort_keys=True).encode()
+        ).hexdigest()
+        assert msg["payload_hash"] == expected_hash
+
+        # Self-claim: steward registered itself in verified_agents.json
+        registry = json.loads((tmp_path / "verified_agents.json").read_text())
+        assert expected_node_id in registry
+        assert registry[expected_node_id]["agent_name"] == "steward"
+        assert registry[expected_node_id]["public_key"] == pub_hex
+
+        # Sentinel exists, second flush is idempotent (no second self-claim write)
+        sentinels = list(tmp_path.glob(".self_claim_sent_*"))
+        assert len(sentinels) == 1
+        bridge.emit("city_report", {"foo": "baz"})
+        before_mtime = sentinels[0].stat().st_mtime
+        bridge.flush_outbound(transport)
+        after_mtime = sentinels[0].stat().st_mtime
+        assert before_mtime == after_mtime  # no rewrite
 
 
 # ── Inbound: Delegate Task ─────────────────────────────────────
