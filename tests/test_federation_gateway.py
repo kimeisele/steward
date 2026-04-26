@@ -18,7 +18,11 @@ def _sign_outbound(msg: dict, keys: NodeKeyStore) -> dict:
 
     Same hash convention as agent-city's FederationRelay._sign_payload —
     sha256 over sorted-keys JSON of the message minus signing fields.
+    Adds a fresh timestamp so the gateway replay guard accepts it.
     """
+    import time as _time
+
+    msg = {**msg, "timestamp": msg.get("timestamp", _time.time())}
     canonical = {k: v for k, v in msg.items() if k not in ("payload_hash", "signature")}
     payload_hash = hashlib.sha256(json.dumps(canonical, sort_keys=True).encode()).hexdigest()
     return {
@@ -621,6 +625,7 @@ class TestProcessInbound:
                         "operation": "governance_bounty",
                         "payload": gov_payload,
                         "message_id": "gov-c",
+                        "timestamp": __import__("time").time(),
                         "payload_hash": __import__("hashlib").sha256(json.dumps(gov_payload, sort_keys=True).encode()).hexdigest(),
                         "signature": sign_payload_hash(node_x_keys.private_key, __import__("hashlib").sha256(json.dumps(gov_payload, sort_keys=True).encode()).hexdigest()),
                     }
@@ -802,6 +807,91 @@ class TestProcessInbound:
         signals = gw._stats.drain_signals()
         assert len(signals) == 2
         assert all(proto == "nadi" and success is True for proto, success in signals)
+
+
+# ── Replay protection ────────────────────────────────────────────
+
+
+class TestReplayProtection:
+    """Replay guard: timestamp window + per-source LRU of payload_hash."""
+
+    def _make_transport(self, messages: list[dict]) -> MagicMock:
+        transport = MagicMock()
+        transport.read_outbox.return_value = messages
+        return transport
+
+    def test_replay_of_identical_signed_message_is_blocked(self, tmp_path):
+        keys = NodeKeyStore(tmp_path / "k" / ".node_keys.json")
+        keys.ensure_keys()
+        bridge = _verified_mock_bridge(keys)
+        gw = FederationGateway(bridge=bridge)
+        msg = _sign_outbound({"operation": "heartbeat", "source": keys.node_id, "payload": {"a": 1}}, keys)
+        transport = self._make_transport([msg, msg])  # exact same bytes twice
+
+        processed = gw.process_inbound(transport)
+
+        assert processed == 1  # first accepted, second blocked
+        assert bridge.ingest.call_count == 1
+
+    def test_message_with_stale_timestamp_is_blocked(self, tmp_path):
+        keys = NodeKeyStore(tmp_path / "k" / ".node_keys.json")
+        keys.ensure_keys()
+        bridge = _verified_mock_bridge(keys)
+        gw = FederationGateway(bridge=bridge)
+        # Timestamp 1 hour in the past — outside the ±5min window
+        stale = _sign_outbound(
+            {"operation": "heartbeat", "source": keys.node_id, "payload": {}, "timestamp": time.time() - 3600},
+            keys,
+        )
+        processed = gw.process_inbound(self._make_transport([stale]))
+
+        assert processed == 0
+        bridge.ingest.assert_not_called()
+
+    def test_message_without_timestamp_is_blocked(self, tmp_path):
+        keys = NodeKeyStore(tmp_path / "k" / ".node_keys.json")
+        keys.ensure_keys()
+        bridge = _verified_mock_bridge(keys)
+        gw = FederationGateway(bridge=bridge)
+        # Build a message and strip timestamp post-sign — simulate a sender
+        # that doesn't include one
+        msg = _sign_outbound({"operation": "heartbeat", "source": keys.node_id, "payload": {}}, keys)
+        del msg["timestamp"]
+        # Re-sign without timestamp
+        import hashlib as _h
+        canonical = {k: v for k, v in msg.items() if k not in ("payload_hash", "signature")}
+        msg["payload_hash"] = _h.sha256(json.dumps(canonical, sort_keys=True).encode()).hexdigest()
+        msg["signature"] = sign_payload_hash(keys.private_key, msg["payload_hash"])
+
+        processed = gw.process_inbound(self._make_transport([msg]))
+
+        assert processed == 0
+        bridge.ingest.assert_not_called()
+
+    def test_public_operation_skips_replay_guard(self, tmp_path):
+        """federation.agent_claim is PUBLIC — replay guard does not apply."""
+        keys = NodeKeyStore(tmp_path / "k" / ".node_keys.json")
+        keys.ensure_keys()
+        bridge = _verified_mock_bridge(keys)
+        gw = FederationGateway(bridge=bridge)
+        # No timestamp, no signature — agent_claim is bootstrap and not subject
+        # to replay protection (it's idempotent at the handler level)
+        claim = {
+            "operation": "federation.agent_claim",
+            "source": keys.node_id,
+            "payload": {
+                "agent_name": "k", "node_id": keys.node_id,
+                "public_key": keys.public_key, "capabilities": [],
+            },
+        }
+        # Send twice: second should still be accepted at the gateway level
+        # (the handler dedupes by node_id + content hash internally)
+        transport = self._make_transport([claim, claim])
+        processed = gw.process_inbound(transport)
+        assert processed == 2
+
+
+import time  # noqa: E402  — used only by replay tests above
 
 
 # ── Stats ────────────────────────────────────────────────────────

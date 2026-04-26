@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections import OrderedDict
 from dataclasses import dataclass, field
 
 from steward.federation import PROTECTED_OPERATIONS, PUBLIC_OPERATIONS
@@ -91,6 +92,13 @@ class GatewayStats:
         }
 
 
+# Replay protection — sliding timestamp window + per-source LRU of seen hashes.
+# Window is generous enough to absorb clock skew and NADI relay latency, tight
+# enough that an attacker cannot stockpile signed messages.
+_REPLAY_WINDOW_S: float = 300.0     # ±5 minutes
+_REPLAY_CACHE_PER_SOURCE: int = 256  # LRU size per source — bounds memory
+
+
 class FederationGateway(GatewayProtocol):
     """Unified federation entry point — Five Tattva Gates at the boundary.
 
@@ -113,6 +121,50 @@ class FederationGateway(GatewayProtocol):
         self._a2a = a2a
         self._reaper = reaper
         self._stats = GatewayStats()
+        # Replay protection state — per-source LRU of payload_hash → timestamp
+        self._seen: dict[str, OrderedDict[str, float]] = {}
+
+    def _check_replay(self, msg: dict) -> tuple[bool, str, str]:
+        """Sliding-window + LRU replay guard for PROTECTED NADI messages.
+
+        Rejects when:
+          - timestamp is missing or outside ±_REPLAY_WINDOW_S of now
+          - (source, payload_hash) tuple has already been processed within
+            the per-source LRU cache (cap _REPLAY_CACHE_PER_SOURCE)
+
+        Returns (ok, reason, stage). Non-NADI / non-PROTECTED messages pass
+        through unchanged — they are guarded by other layers.
+        """
+        if self._detect_protocol(msg) != "nadi":
+            return True, "", ""
+        operation = str(msg.get("operation", "")).strip()
+        if operation not in PROTECTED_OPERATIONS:
+            return True, "", ""
+
+        source = str(msg.get("source", "")).strip()
+        payload_hash = str(msg.get("payload_hash", "")).strip()
+        if not source or not payload_hash:
+            # Crypto stage will catch these too, but reject early so we don't
+            # pollute the LRU with empty keys.
+            return False, "missing_replay_fields", "replay_protection"
+
+        ts_raw = msg.get("timestamp")
+        try:
+            ts = float(ts_raw)
+        except (TypeError, ValueError):
+            return False, "missing_timestamp", "replay_protection"
+        now = time.time()
+        if abs(now - ts) > _REPLAY_WINDOW_S:
+            return False, "timestamp_outside_window", "replay_protection"
+
+        cache = self._seen.setdefault(source, OrderedDict())
+        if payload_hash in cache:
+            return False, "replay_detected", "replay_protection"
+        cache[payload_hash] = ts
+        # Prune LRU
+        while len(cache) > _REPLAY_CACHE_PER_SOURCE:
+            cache.popitem(last=False)
+        return True, "", ""
 
     # ── GatewayProtocol Interface ─────────────────────────────────
 
@@ -456,6 +508,28 @@ class FederationGateway(GatewayProtocol):
                     metadata={
                         "protocol": self._detect_protocol(msg),
                         "code": 401,
+                        "source": msg.get("source", ""),
+                        "operation": msg.get("operation", ""),
+                    },
+                )
+                continue
+            replay_ok, replay_reason, replay_stage = self._check_replay(msg)
+            if not replay_ok:
+                self._stats.errors += 1
+                logger.warning(
+                    "GATEWAY REPLAY: blocked message source=%s operation=%s reason=%s",
+                    msg.get("source", ""),
+                    msg.get("operation", ""),
+                    replay_reason,
+                )
+                self._quarantine_transport_messages(
+                    transport,
+                    [msg],
+                    reason=replay_reason,
+                    stage=replay_stage,
+                    metadata={
+                        "protocol": self._detect_protocol(msg),
+                        "code": 409,
                         "source": msg.get("source", ""),
                         "operation": msg.get("operation", ""),
                     },
