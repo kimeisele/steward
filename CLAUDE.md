@@ -29,7 +29,7 @@
 ## Development
 
 ## Status
-Health: 0.858 (sattva) · Immune: 0/0 heals, breaker OK · Federation: 13 peers (13 alive, 0 suspect, 0 dead)
+Health: 0.857 (sattva) · Immune: 0/0 heals, breaker OK · Federation: 14 peers (14 alive, 0 suspect, 0 dead)
 
 ## Action
 - #53: [security] Leaked .node_keys.json purged + NODE_PRIVATE_KEY env wired (TICKET-006 Phase 3)
@@ -45,7 +45,7 @@ Health: 0.858 (sattva) · Immune: 0/0 heals, breaker OK · Federation: 13 peers 
 Git: main, 124 dirty, ci=, 1 open PRs
 Project: python
 Code: 0 files, 0 cls, 0 fn
-Tests: pytest, 91 files, last=failed
+Tests: pytest, 91 files, last=unknown
 Health: 211 source files, 2 smells (2 large, 0 stale)
 
 ## Toolbox
@@ -54,4 +54,4 @@ Health: 211 source files, 2 smells (2 large, 0 stale)
 ## Architecture
 38 services · 25 tattvas
 MURALI: **genesis**(2) → **dharma**(5) → **karma**(4) → **moksha**(6)
-<!-- briefing v3.0.0 | 644 tokens | budget: standard (2000) | focus: rajas, git_pain=0.8, test_pain=0.7, ctx_pressure=1.0 | 2026-04-26T21:26:43 -->
+<!-- briefing v3.0.0 | 644 tokens | budget: standard (2000) | focus: sattva, git_pain=0.8, ctx_pressure=1.0 | 2026-04-26T22:47:42 -->
