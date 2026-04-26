@@ -63,6 +63,9 @@ jobs:
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          # Node identity for outbound NADI signing (consumed in TICKET-007).
+          # Wired now so the secret plumbing is in place before signing lands.
+          NODE_PRIVATE_KEY: ${{ secrets.NODE_PRIVATE_KEY }}
         run: |
           CYCLES=${{ github.event.inputs.cycles || '4' }}
           python -c "
