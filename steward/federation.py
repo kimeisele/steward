@@ -18,15 +18,17 @@ Integration:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import os
 import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from steward.federation_crypto import derive_node_id
+from steward.federation_crypto import derive_node_id, sign_payload_hash
 from vibe_core.mahamantra.federation.types import FederationMessage
 
 logger = logging.getLogger("STEWARD.FEDERATION")
@@ -289,6 +291,12 @@ class FederationBridge:
     _delegations_rejected: int = field(default=0, init=False)
     _op_dispatch: dict = field(default=None, init=False, repr=False)
 
+    # Outbound-signing identity — lazy-loaded from NODE_PRIVATE_KEY env on
+    # first flush_outbound. None means no signing (legacy fallback, logs WARNING).
+    _node_identity_cache: dict | None = field(default=None, init=False, repr=False)
+    _node_identity_loaded: bool = field(default=False, init=False, repr=False)
+    _self_claim_done: bool = field(default=False, init=False, repr=False)
+
     def __post_init__(self) -> None:
         self._op_dispatch = {
             OP_HEARTBEAT: self._handle_heartbeat,
@@ -453,13 +461,128 @@ class FederationBridge:
                 processed += 1
         return processed
 
+    def _load_node_identity(self) -> dict | None:
+        """Lazy-load NODE_PRIVATE_KEY env into a node-identity dict.
+
+        Returns {node_id, public_key, private_key} or None if env is unset
+        or malformed. Cached after first call.
+        """
+        if self._node_identity_loaded:
+            return self._node_identity_cache
+        self._node_identity_loaded = True
+
+        env_key = (os.environ.get("NODE_PRIVATE_KEY") or "").strip()
+        if not env_key:
+            logger.warning(
+                "BRIDGE: NODE_PRIVATE_KEY env unset — outbound messages will be unsigned"
+            )
+            return None
+
+        # NODE_PRIVATE_KEY is the raw 32-byte seed (hex) OR a JSON node-keys
+        # blob (Genesis-Hook stores the latter). Accept both.
+        priv_hex = env_key
+        try:
+            blob = json.loads(env_key)
+            if isinstance(blob, dict) and blob.get("private_key"):
+                priv_hex = str(blob["private_key"]).strip()
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        try:
+            from cryptography.hazmat.primitives import serialization
+            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+            raw = bytes.fromhex(priv_hex)
+            if len(raw) != 32:
+                raise ValueError(f"expected 32 raw bytes, got {len(raw)}")
+            sk = Ed25519PrivateKey.from_private_bytes(raw)
+            pub_hex = sk.public_key().public_bytes(
+                serialization.Encoding.Raw, serialization.PublicFormat.Raw
+            ).hex()
+            self._node_identity_cache = {
+                "private_key": priv_hex,
+                "public_key": pub_hex,
+                "node_id": derive_node_id(pub_hex),
+            }
+            logger.info(
+                "BRIDGE: NODE_PRIVATE_KEY loaded — node_id=%s public_key=%s",
+                self._node_identity_cache["node_id"], pub_hex,
+            )
+            return self._node_identity_cache
+        except (ValueError, TypeError, ImportError) as e:
+            logger.error("BRIDGE: failed to parse NODE_PRIVATE_KEY: %s", e)
+            return None
+
+    def _sign_message_dict(self, msg: dict, identity: dict) -> dict:
+        """Attach canonical sha256 payload_hash + base64 ed25519 signature.
+
+        Same convention as agent-city's FederationRelay._sign_payload and
+        steward-federation/nadi_kit's _sign_message — wire format compatible
+        with steward.federation_crypto.verify_payload_signature.
+        """
+        canonical = {k: v for k, v in msg.items() if k not in ("payload_hash", "signature")}
+        payload_hash = hashlib.sha256(
+            json.dumps(canonical, sort_keys=True).encode("utf-8")
+        ).hexdigest()
+        signature = sign_payload_hash(identity["private_key"], payload_hash)
+        return {**canonical, "payload_hash": payload_hash, "signature": signature}
+
+    def _ensure_self_registered(self) -> None:
+        """Register steward's own identity in verified_agents.json (idempotent).
+
+        Dogfooding: steward is a federation node like any other. Its outbound
+        messages now carry source=node_id and a signature, so receivers (and
+        steward's own gateway via the NADI loop-back) need a verified_agents
+        entry to authenticate them. The self-claim goes through the same
+        _handle_agent_claim path that every other node uses, including the
+        derive_node_id consistency check.
+
+        Sentinel-bound: a fresh sentinel per public_key digest means a key
+        rotation triggers a fresh self-claim automatically.
+        """
+        if self._self_claim_done:
+            return
+        identity = self._load_node_identity()
+        if identity is None:
+            self._self_claim_done = True
+            return
+        token = hashlib.sha256(identity["public_key"].encode("utf-8")).hexdigest()[:16]
+        sentinel_dir = self._verified_agents_file().parent
+        sentinel_dir.mkdir(parents=True, exist_ok=True)
+        sentinel = sentinel_dir / f".self_claim_sent_{token}"
+        if sentinel.exists():
+            self._self_claim_done = True
+            return
+        capabilities = ["operator", "federation_gateway", "registry_authority"]
+        ok = self._handle_agent_claim({
+            "node_id": identity["node_id"],
+            "agent_name": self.agent_id,
+            "public_key": identity["public_key"],
+            "capabilities": capabilities,
+        })
+        if ok:
+            try:
+                sentinel.write_text("")
+            except OSError as e:
+                logger.warning("BRIDGE: self-claim sentinel write failed: %s", e)
+        self._self_claim_done = True
+        logger.info(
+            "BRIDGE: self-claim done — node_id=%s pubkey_token=%s ok=%s",
+            identity["node_id"], token, ok,
+        )
+
     def flush_outbound(self, transport: FederationTransport) -> int:
         """Publish all pending outbound events via transport.
 
-        Returns count of messages published.
+        Returns count of messages published. Each message is signed with
+        steward's NODE_PRIVATE_KEY (loaded once, cached) before transport
+        delivery. If the env is unset, messages go out unsigned and
+        downstream receivers with hard crypto gates will reject them —
+        WARNING is logged on first call.
         """
+        self._ensure_self_registered()
         if not self._outbound:
             return 0
+        identity = self._load_node_identity()
 
         # Get known peer IDs for targeted delivery (not broadcast *)
         peer_ids = []
@@ -471,11 +594,15 @@ class FederationBridge:
         messages = []
         blocked_messages = []
         registry = self._load_peer_registry()
+        # source on the wire is the cryptographic node_id when available, so
+        # downstream verified_agents.json lookups (keyed by node_id) succeed.
+        # Falls back to agent_id when env is unset — keeps legacy behaviour.
+        source_id = identity["node_id"] if identity else self.agent_id
         for event in self._outbound:
             targets = peer_ids if peer_ids else ["*"]
             for target in targets:
                 msg = FederationMessage(
-                    source=self.agent_id,
+                    source=source_id,
                     target=target,
                     operation=event.operation,
                     payload=event.payload,
@@ -489,6 +616,8 @@ class FederationBridge:
                 if reason:
                     blocked_messages.append((payload, reason))
                     continue
+                if identity is not None:
+                    payload = self._sign_message_dict(payload, identity)
                 messages.append(payload)
 
         if blocked_messages and hasattr(transport, "quarantine_messages"):
