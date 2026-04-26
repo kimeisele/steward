@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
+from steward.federation_crypto import derive_node_id
 from vibe_core.mahamantra.federation.types import FederationMessage
 
 logger = logging.getLogger("STEWARD.FEDERATION")
@@ -345,10 +346,27 @@ class FederationBridge:
         return raw if isinstance(raw, dict) else {}
 
     def _save_verified_agents(self, registry: dict[str, dict]) -> None:
+        """Persist registry to disk with byte-level idempotency.
+
+        Skips the write entirely when the on-disk content is byte-identical to
+        what we would write. This keeps the steward heartbeat workflow from
+        producing spurious "chore: update verified_agents" commits when claim
+        messages arrive but carry no new information.
+        """
         path = self._verified_agents_file()
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".json.tmp")
         content = json.dumps(registry, indent=2, sort_keys=True)
+        if path.exists():
+            try:
+                if path.read_text() == content:
+                    logger.debug(
+                        "FEDERATION: verified_agents unchanged (%d entries) — skip write",
+                        len(registry),
+                    )
+                    return
+            except OSError:
+                pass
+        tmp = path.with_suffix(".json.tmp")
         tmp.write_text(content)
         tmp.replace(path)
         logger.info("FEDERATION: saved verified_agents (%d entries) to %s", len(registry), path.resolve())
@@ -1049,6 +1067,17 @@ class FederationBridge:
         return True
 
     def _handle_agent_claim(self, payload: dict) -> bool:
+        """Upsert a federation node into verified_agents.json.
+
+        Defence-in-depth: the gateway already enforces
+        derive_node_id(public_key) == node_id at the boundary, but we re-check
+        here so the registry can never grow an inconsistent entry through a
+        different code path (test fixtures, manual ingest, future inputs).
+
+        Idempotency: if the existing entry is semantically identical (same
+        public_key, agent_name, capabilities), updated_at is preserved and the
+        save short-circuits — no spurious commits in steward's heartbeat repo.
+        """
         agent_name = str(payload.get("agent_name", "")).strip()
         public_key = str(payload.get("public_key", "")).strip()
         node_id = str(payload.get("node_id", "")).strip()
@@ -1058,20 +1087,45 @@ class FederationBridge:
             return False
         if not isinstance(capabilities, list):
             return False
+        if derive_node_id(public_key) != node_id:
+            logger.warning(
+                "BRIDGE: agent_claim REJECTED — node_id %s does not derive from public_key %s",
+                node_id, public_key[:16],
+            )
+            return False
 
+        normalized_caps = sorted({str(item) for item in capabilities})
         registry = self._load_verified_agents()
+        existing = registry.get(node_id) if isinstance(registry.get(node_id), dict) else None
+        existing_caps = (
+            sorted({str(item) for item in existing.get("capabilities", [])})
+            if existing else None
+        )
+        unchanged = (
+            existing is not None
+            and existing.get("public_key") == public_key
+            and existing.get("agent_name") == agent_name
+            and existing_caps == normalized_caps
+        )
+        if unchanged:
+            logger.info(
+                "BRIDGE: agent_claim identical — node_id=%s skipped (no registry write)",
+                node_id,
+            )
+            return True
+
         registry[node_id] = {
             "node_id": node_id,
             "agent_name": agent_name,
             "public_key": public_key,
-            "capabilities": [str(item) for item in capabilities],
+            "capabilities": normalized_caps,
             "updated_at": time.time(),
         }
         self._save_verified_agents(registry)
         logger.info(
             "BRIDGE: agent_claim upsert node_id=%s capabilities=%d",
             node_id,
-            len(capabilities),
+            len(normalized_caps),
         )
         return True
 
