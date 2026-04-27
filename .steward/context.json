@@ -1,18 +1,18 @@
 {
   "version": 1,
-  "timestamp": 1777261169.3391016,
+  "timestamp": 1777278049.35334,
   "project": {
     "name": "steward",
     "path": "/home/runner/work/steward/steward"
   },
   "senses": {
-    "prompt_summary": "\n\n## Environment Perception\nGit: main, 12 dirty, ci=success, 1 open PRs\nProject: python\nCode: 0 files, 0 cls, 0 fn\nTests: pytest, 91 files, last=unknown\nHealth: 211 source files, 2 smells (2 large, 0 stale)",
-    "total_pain": 0.16,
+    "prompt_summary": "\n\n## Environment Perception\nGit: main, 8 dirty, ci=success, 1 open PRs\nProject: python\nCode: 0 files, 0 cls, 0 fn\nTests: pytest, 91 files, last=unknown\nHealth: 211 source files, 2 smells (2 large, 0 stale)",
+    "total_pain": 0.0,
     "detail": {
       "srotra": {
         "active": true,
-        "pain": 0.8,
-        "quality": "tamas"
+        "pain": 0.15,
+        "quality": "rajas"
       },
       "tvak": {
         "active": true,
@@ -37,11 +37,11 @@
     }
   },
   "health": {
-    "value": 0.854,
+    "value": 0.858,
     "guna": "sattva",
     "provider_health": 1.0,
     "error_pressure": 0.746,
-    "context_pressure": 0.973
+    "context_pressure": 1.0
   },
   "gaps": {
     "active": [],
@@ -123,47 +123,58 @@
   "tasks": {
     "pending": [
       {
-        "id": "5d226770-4034-4400-b73f-d5b2d0b4af22",
+        "id": "6fcf4e4e-aa36-4dd4-865f-f594f00cfc51",
         "title": "[HEALTH_CHECK] Quick Health Check",
         "priority": 70,
         "status": "PENDING"
       },
       {
-        "id": "615c75ce-c904-4cef-a58d-8fb096fe664e",
+        "id": "e5054df4-825b-4572-8923-1a02f2b6c783",
         "title": "[FEDERATION_HEALTH] Federation Health Check",
-        "priority": 90,
-        "status": "COMPLETED"
-      },
-      {
-        "id": "852b628a-e453-4525-920a-ec9321a0f632",
-        "title": "[HEAL_REPO] Heal Federation Repos",
-        "priority": 90,
-        "status": "COMPLETED"
-      },
-      {
-        "id": "ede56468-77c5-4980-bb16-242c5a319aed",
-        "title": "[CROSS_REPO_DIAGNOSTIC] Cross-Repo Diagnostic",
         "priority": 90,
         "status": "PENDING"
       },
       {
-        "id": "24229dd9-7e0d-4c73-a1a6-8d9b2199679e",
+        "id": "64deb92f-da53-4759-afd6-a11d233a47ab",
+        "title": "[HEAL_REPO] Heal Federation Repos",
+        "priority": 90,
+        "status": "PENDING"
+      },
+      {
+        "id": "fbf220aa-cd86-4cdd-8f7d-c04880736de9",
+        "title": "[CROSS_REPO_DIAGNOSTIC] Cross-Repo Diagnostic",
+        "priority": 70,
+        "status": "PENDING"
+      },
+      {
+        "id": "9c835f9b-82e1-4ad3-ac8a-82760679d8f3",
         "title": "[SYNTHESIZE_BRIEFING] Synthesize Context Briefing",
         "priority": 70,
         "status": "PENDING"
+      },
+      {
+        "id": "5477b217-2b7a-446e-b2ea-6dda3330b585",
+        "title": "[HEAL_REPO] Peer ag_e3331b8d3b0d20a7 \u2014 Kirtan escalation",
+        "priority": 90,
+        "status": "COMPLETED"
+      },
+      {
+        "id": "96440f72-eed4-476f-8d40-71bcc3eb40a9",
+        "title": "[HEAL_REPO] Peer ag_3b3b41d6c427860e \u2014 Kirtan escalation",
+        "priority": 90,
+        "status": "COMPLETED"
       }
     ]
   },
   "federation": {
-    "total_peers": 62,
+    "total_peers": 63,
     "by_status": {
-      "alive": 10,
-      "dead": 3,
-      "evicted": 49
+      "alive": 11,
+      "evicted": 52
     },
-    "avg_trust": 0.25161290322580615,
-    "total_reaps": 8290,
-    "total_evictions": 109,
+    "avg_trust": 0.25555555555555526,
+    "total_reaps": 8292,
+    "total_evictions": 112,
     "lease_ttl_s": 900.0,
     "trust_decay": 0.2,
     "peers": [
@@ -269,6 +280,12 @@
           "descriptor_incomplete",
           "testing"
         ]
+      },
+      {
+        "agent_id": "ag_fd5a7db51b1acac1",
+        "status": "alive",
+        "trust": 0.5,
+        "capabilities": []
       }
     ],
     "marketplace": {
@@ -280,11 +297,13 @@
       "default_ttl_s": 600.0
     },
     "gateway": {
-      "total_requests": 0,
-      "by_protocol": {},
+      "total_requests": 1,
+      "by_protocol": {
+        "nadi": 1
+      },
       "rejected_parse": 0,
       "rejected_validate": 0,
-      "errors": 0,
+      "errors": 1,
       "pending_signals": 0
     }
   },
@@ -307,11 +326,11 @@
     "signals": [
       {
         "kind": "federation_healthy",
-        "met": false,
+        "met": true,
         "actual": {
-          "alive": 10,
+          "alive": 11,
           "suspect": 0,
-          "dead": 3
+          "dead": 0
         }
       },
       {
@@ -326,24 +345,28 @@
       },
       {
         "kind": "active_missions_at_most",
-        "met": true,
-        "actual": 3
+        "met": false,
+        "actual": 5
       }
     ],
     "failing": [
-      "federation_healthy"
+      "active_missions_at_most"
     ]
   },
   "cetana": {
     "alive": true,
-    "total_beats": 5,
-    "frequency_hz": 0.19603999999999994,
-    "phase": "DHARMA",
+    "total_beats": 4,
+    "frequency_hz": 0.23719999999999994,
+    "phase": "GENESIS",
     "consecutive_anomalies": 0,
-    "last_health": 0.8541947093670159,
+    "last_health": 0.8579749117648712,
     "last_guna": "sattva"
   },
   "issues": [
+    {
+      "number": 58,
+      "title": "[security] P0 \u2014 stop .node_keys.json re-leak loop (TICKET-009 hotfix)"
+    },
     {
       "number": 53,
       "title": "[security] Leaked .node_keys.json purged + NODE_PRIVATE_KEY env wired (TICKET-006 Phase 3)"
