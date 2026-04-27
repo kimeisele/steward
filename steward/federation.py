@@ -553,9 +553,17 @@ class FederationBridge:
             self._self_claim_done = True
             return
         capabilities = ["operator", "federation_gateway", "registry_authority"]
+        # agent_name is the human-readable display name in verified_agents.json.
+        # We hardcode "steward" here rather than using self.agent_id because
+        # services.py:463 reassigns self.agent_id to key_store.node_id at boot
+        # to make the Reaper-based self-filter (`p.agent_id != self.agent_id`,
+        # federation.py:591) compare like-for-like with peer node_ids. That's
+        # load-bearing for outbound routing and must NOT change. The display
+        # name in the registry, however, should remain "steward" so operators
+        # can grep verified_agents.json by readable handle. (TICKET-010-MICRO)
         ok = self._handle_agent_claim({
             "node_id": identity["node_id"],
-            "agent_name": self.agent_id,
+            "agent_name": "steward",
             "public_key": identity["public_key"],
             "capabilities": capabilities,
         })
