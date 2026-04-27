@@ -270,6 +270,15 @@ class NadiFederationTransport:
                         stage="transport_parse",
                     )
                     continue
+                # TTL gate: silently drop expired messages so the gateway doesn't
+                # waste cycles signing-checking 22-day-old hub backlog. No
+                # quarantine — staleness is not malice, just delivery lag.
+                ttl = item.get("ttl_s")
+                ts = item.get("timestamp")
+                if isinstance(ttl, (int, float)) and ttl > 0 and isinstance(ts, (int, float)):
+                    if time.time() > ts + ttl:
+                        self._seen.add(fingerprint)
+                        continue
                 expected_hash = str(item.get("payload_hash", "")).strip()
                 if expected_hash:
                     actual_hash = self._payload_hash(item.get("payload", {}))

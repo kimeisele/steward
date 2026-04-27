@@ -9,6 +9,7 @@ Validates:
 
 import hashlib
 import json
+import time
 
 from steward.federation_crypto import verify_payload_signature
 from steward.federation_transport import (
@@ -120,6 +121,33 @@ class TestNadiFederationTransport:
     def test_read_outbox_empty(self, tmp_path):
         transport = NadiFederationTransport(str(tmp_path))
         assert transport.read_outbox() == []
+
+    def test_read_outbox_silently_drops_ttl_expired_messages(self, tmp_path):
+        """Stale messages (timestamp + ttl_s < now) are dropped without
+        quarantine — staleness is delivery lag, not malice. Prevents the
+        gateway from wasting cycles on hub-buffer backlog."""
+        transport = NadiFederationTransport(str(tmp_path))
+        fresh = {
+            "source": "ag_fresh", "target": "steward", "operation": "heartbeat",
+            "payload": {}, "timestamp": time.time(), "ttl_s": 900.0,
+        }
+        stale = {
+            "source": "ag_stale", "target": "steward", "operation": "heartbeat",
+            "payload": {}, "timestamp": time.time() - 7200, "ttl_s": 900.0,
+        }
+        (tmp_path / "nadi_inbox.json").write_text(json.dumps([fresh, stale]))
+
+        msgs = transport.read_outbox()
+
+        sources = {m["source"] for m in msgs}
+        assert "ag_fresh" in sources
+        assert "ag_stale" not in sources
+        # No quarantine for stale (it's not an integrity violation)
+        quarantine_files = [
+            p for p in (tmp_path / "quarantine").glob("*.json")
+            if p.name != "index.json"
+        ] if (tmp_path / "quarantine").exists() else []
+        assert len(quarantine_files) == 0
 
     def test_append_to_inbox_writes_outbox(self, tmp_path):
         """append_to_inbox writes OUR outbox (nadi_outbox.json)."""
