@@ -86,7 +86,27 @@ class NadiFederationTransport:
         return hashlib.sha256(encoded.encode()).hexdigest()
 
     def _with_integrity_fields(self, payload: dict) -> dict:
+        """Attach integrity fields (legacy path) UNLESS the message is
+        already signed by an upstream layer.
+
+        FederationBridge.flush_outbound (TICKET-007 #54) signs every
+        outbound message with the canonical wire format
+        (source = derive_node_id(public_key), payload_hash over the whole
+        message minus sig fields, base64 ed25519 signature). If those
+        three fields are populated, this transport must NOT overwrite
+        them — doing so produced ghost-identity emissions for cycles.
+
+        The legacy file-based-key path is preserved only for messages
+        that arrive without signing (back-compat for any code that
+        still constructs raw FederationMessage dicts and hands them to
+        the transport directly).
+        """
         enriched = dict(payload)
+        if enriched.get("source") and enriched.get("payload_hash") and enriched.get("signature"):
+            # Pre-signed by FederationBridge — only stamp a message_id if missing.
+            enriched.setdefault("message_id", str(uuid.uuid4()))
+            return enriched
+        # Legacy path: payload-scoped hash, transport signs with file-based key
         enriched["source"] = self.node_id
         enriched["message_id"] = str(uuid.uuid4())
         enriched["payload_hash"] = self._payload_hash(enriched.get("payload", {}))
