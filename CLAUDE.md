@@ -29,7 +29,7 @@
 ## Development
 
 ## Status
-Health: 0.857 (sattva) · Immune: 0/0 heals, breaker OK · Federation: 12 peers (12 alive, 0 suspect, 0 dead)
+Health: 0.857 (sattva) · Immune: 0/0 heals, breaker OK · Federation: 11 peers (11 alive, 0 suspect, 0 dead)
 
 ## Action
 - #58: [security] P0 — stop .node_keys.json re-leak loop (TICKET-009 hotfix)
@@ -55,4 +55,4 @@ Health: 211 source files, 2 smells (2 large, 0 stale)
 ## Architecture
 38 services · 25 tattvas
 MURALI: **genesis**(2) → **dharma**(5) → **karma**(4) → **moksha**(6)
-<!-- briefing v3.0.0 | 663 tokens | budget: standard (2000) | focus: rajas, git_pain=0.8, test_pain=0.7, ctx_pressure=1.0 | 2026-05-07T13:07:16 -->
+<!-- briefing v3.0.0 | 663 tokens | budget: standard (2000) | focus: rajas, git_pain=0.8, test_pain=0.7, ctx_pressure=1.0 | 2026-05-07T20:37:18 -->
