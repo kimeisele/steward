@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "timestamp": 1780305791.3969266,
+  "timestamp": 1780312650.3220599,
   "project": {
     "name": "steward",
     "path": "/home/runner/work/steward/steward"
@@ -37,11 +37,11 @@
     }
   },
   "health": {
-    "value": 0.857,
+    "value": 0.858,
     "guna": "sattva",
     "provider_health": 1.0,
     "error_pressure": 0.746,
-    "context_pressure": 0.994
+    "context_pressure": 0.995
   },
   "gaps": {
     "active": [],
@@ -56,10 +56,21 @@
   "sessions": {
     "recent": [
       {
+        "task": "[autonomous] HEAL_REPO",
+        "outcome": "clean",
+        "summary": "Deterministic HEAL_REPO: no issues",
+        "timestamp": "2026-04-27T03:39:12.201889+00:00",
+        "tokens": 0,
+        "rounds": 0,
+        "errors": 0,
+        "files_written": [],
+        "buddhi_action": ""
+      },
+      {
         "task": "[autonomous] HEALTH_CHECK",
         "outcome": "clean",
         "summary": "Deterministic HEALTH_CHECK: no issues",
-        "timestamp": "2026-06-01T09:20:56.142302+00:00",
+        "timestamp": "2026-06-01T11:16:47.667901+00:00",
         "tokens": 0,
         "rounds": 0,
         "errors": 0,
@@ -70,7 +81,7 @@
         "task": "[autonomous] FEDERATION_HEALTH",
         "outcome": "problem_found",
         "summary": "Deterministic FEDERATION_HEALTH: problem detected",
-        "timestamp": "2026-06-01T09:21:10.608443+00:00",
+        "timestamp": "2026-06-01T11:16:47.941173+00:00",
         "tokens": 0,
         "rounds": 0,
         "errors": 0,
@@ -81,7 +92,7 @@
         "task": "[autonomous] CROSS_REPO_DIAGNOSTIC",
         "outcome": "clean",
         "summary": "Deterministic CROSS_REPO_DIAGNOSTIC: no issues",
-        "timestamp": "2026-06-01T09:21:51.837994+00:00",
+        "timestamp": "2026-06-01T11:17:20.707895+00:00",
         "tokens": 0,
         "rounds": 0,
         "errors": 0,
@@ -92,92 +103,51 @@
         "task": "[autonomous] SYNTHESIZE_BRIEFING",
         "outcome": "clean",
         "summary": "Deterministic SYNTHESIZE_BRIEFING: no issues",
-        "timestamp": "2026-06-01T09:22:31.836825+00:00",
+        "timestamp": "2026-06-01T11:17:30.314538+00:00",
         "tokens": 0,
         "rounds": 0,
         "errors": 0,
         "files_written": [],
         "buddhi_action": ""
-      },
-      {
-        "task": "Federation degraded: no alive peer with capability 'federation_relay'; no alive peer with capability 'heartbeat_observer'. Check transport connectivity.",
-        "outcome": "success",
-        "summary": "review: 1 rounds, 0 tools",
-        "timestamp": "2026-06-01T09:23:11.304276+00:00",
-        "tokens": 525,
-        "rounds": 1,
-        "errors": 0,
-        "files_written": [],
-        "buddhi_action": "review"
       }
     ],
     "stats": {
       "total_sessions": 50,
-      "success_rate": 0.18,
-      "total_tokens": 20350,
+      "success_rate": 0.16,
+      "total_tokens": 19825,
       "total_tool_calls": 6,
-      "avg_tokens_per_session": 407
+      "avg_tokens_per_session": 396
     },
-    "prompt_summary": "Previous sessions in this project:\n  [2026-06-01] clean: [autonomous] SYNTHESIZE_BRIEFING (0 tokens, 0 rounds, files: none)\n  [2026-06-01] success: Federation degraded: no alive peer with capability 'federation_relay'; no alive  (525 tokens, 1 rounds, files: none)"
+    "prompt_summary": "Previous sessions in this project:\n  [2026-06-01] clean: [autonomous] CROSS_REPO_DIAGNOSTIC (0 tokens, 0 rounds, files: none)\n  [2026-06-01] clean: [autonomous] SYNTHESIZE_BRIEFING (0 tokens, 0 rounds, files: none)"
   },
   "tasks": {
     "pending": [
       {
-        "id": "3600ec34-7633-4ad3-bb12-146d7733de94",
+        "id": "1782bb5d-0bea-45a6-9aeb-e8baa2454979",
         "title": "[HEALTH_CHECK] Quick Health Check",
         "priority": 70,
         "status": "COMPLETED"
       },
       {
-        "id": "a8cb88c3-bb15-448b-880f-d7e8beda6e95",
+        "id": "5ea5cc35-8567-45c7-812d-0511311c6c8d",
         "title": "[FEDERATION_HEALTH] Federation Health Check",
-        "priority": 70,
+        "priority": 90,
         "status": "COMPLETED"
       },
       {
-        "id": "0c3ad96b-3804-41dc-b481-ba84573f8579",
+        "id": "89513d32-565a-4f9f-a341-ced9fc336597",
         "title": "[HEAL_REPO] Heal Federation Repos",
         "priority": 90,
         "status": "COMPLETED"
       },
       {
-        "id": "b02cc8fe-78f3-45a2-8948-c9bebafb9adc",
+        "id": "f8c007a3-cd7d-4d06-89ed-7ddd31e6b0fc",
         "title": "[CROSS_REPO_DIAGNOSTIC] Cross-Repo Diagnostic",
         "priority": 70,
         "status": "COMPLETED"
       },
       {
-        "id": "a1cec14d-cb2a-480d-9e0d-56812a23469b",
-        "title": "[SYNTHESIZE_BRIEFING] Synthesize Context Briefing",
-        "priority": 70,
-        "status": "COMPLETED"
-      },
-      {
-        "id": "8e436cdf-8356-4c33-8d10-68c07ed96c67",
-        "title": "[HEALTH_CHECK] Quick Health Check",
-        "priority": 70,
-        "status": "COMPLETED"
-      },
-      {
-        "id": "43afd00b-42ee-42f9-aba9-28b704c3aa18",
-        "title": "[FEDERATION_HEALTH] Federation Health Check",
-        "priority": 70,
-        "status": "COMPLETED"
-      },
-      {
-        "id": "ca71814b-5f34-4f69-a87e-15f99b95e972",
-        "title": "[HEAL_REPO] Heal Federation Repos",
-        "priority": 90,
-        "status": "COMPLETED"
-      },
-      {
-        "id": "79a9b959-ff5e-424a-bdef-4a3e8ed642bc",
-        "title": "[CROSS_REPO_DIAGNOSTIC] Cross-Repo Diagnostic",
-        "priority": 70,
-        "status": "COMPLETED"
-      },
-      {
-        "id": "18c60e5c-7375-4916-aed5-e1b6ce26efc2",
+        "id": "0f124c1d-3449-4e28-b1ea-ae6e212e6a39",
         "title": "[SYNTHESIZE_BRIEFING] Synthesize Context Briefing",
         "priority": 70,
         "status": "COMPLETED"
@@ -185,13 +155,13 @@
     ]
   },
   "federation": {
-    "total_peers": 65,
+    "total_peers": 64,
     "by_status": {
-      "alive": 13,
+      "alive": 12,
       "evicted": 52
     },
-    "avg_trust": 0.26307692307692276,
-    "total_reaps": 8306,
+    "avg_trust": 0.2593749999999997,
+    "total_reaps": 8297,
     "total_evictions": 112,
     "lease_ttl_s": 900.0,
     "trust_decay": 0.2,
@@ -306,12 +276,6 @@
         "capabilities": []
       },
       {
-        "agent_id": "ag_a3d01dd7ebc9d836",
-        "status": "alive",
-        "trust": 0.5,
-        "capabilities": []
-      },
-      {
         "agent_id": "ag_1a690227ab4118a1",
         "status": "alive",
         "trust": 0.5,
@@ -321,19 +285,19 @@
     "marketplace": {
       "active_claims": 0,
       "unique_agents": 0,
-      "total_grants": 1035,
+      "total_grants": 1034,
       "total_contests": 0,
       "total_evictions": 0,
       "default_ttl_s": 600.0
     },
     "gateway": {
-      "total_requests": 3,
+      "total_requests": 2,
       "by_protocol": {
-        "nadi": 3
+        "nadi": 2
       },
       "rejected_parse": 0,
       "rejected_validate": 0,
-      "errors": 2,
+      "errors": 1,
       "pending_signals": 0
     }
   },
@@ -358,7 +322,7 @@
         "kind": "federation_healthy",
         "met": true,
         "actual": {
-          "alive": 13,
+          "alive": 12,
           "suspect": 0,
           "dead": 0
         }
@@ -383,11 +347,11 @@
   },
   "cetana": {
     "alive": true,
-    "total_beats": 38,
-    "frequency_hz": 0.10000051973924577,
-    "phase": "KARMA",
+    "total_beats": 5,
+    "frequency_hz": 0.16722799999999993,
+    "phase": "DHARMA",
     "consecutive_anomalies": 0,
-    "last_health": 0.8572519117648711,
+    "last_health": 0.8575562004486561,
     "last_guna": "sattva"
   },
   "issues": [
