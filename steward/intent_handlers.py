@@ -20,6 +20,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("STEWARD.INTENT_HANDLERS")
 
+# Sentinel: unterscheidet "kein Handler vorhanden" von "None = kein Problem gefunden".
+# Löst die überladene None-Semantik auf, ohne den globalen None-Erfolgs-Vertrag zu ändern.
+NO_HANDLER = object()
+
 
 class IntentHandlers:
     """Deterministic detection handlers — 0 LLM tokens per call.
@@ -62,7 +66,7 @@ class IntentHandlers:
         handler = dispatch.get(intent)
         if handler is None:
             logger.warning("No handler for intent %s", intent)
-            return None
+            return NO_HANDLER
         return handler()
 
     # ── Detection Handlers (0 LLM tokens) ──────────────────────────────

@@ -7,6 +7,7 @@ Verifies that the autonomy loop works without LLM calls:
   - Handlers return None (no issue) or problem string (needs LLM)
 """
 
+from steward.intent_handlers import NO_HANDLER
 from steward.intents import INTENT_TYPE_KEY, TaskIntent
 
 
@@ -239,13 +240,51 @@ class TestDeterministicDispatch:
         assert "outbox backlog" in result.lower()
         assert fake_llm.call_count == 0
 
-    def test_dispatch_unknown_intent_returns_none(self, fake_llm):
-        """Unknown intent types are skipped, not fed to LLM."""
+    def test_dispatch_unknown_intent_returns_sentinel(self, fake_llm):
+        """Unknown intent types return NO_HANDLER sentinel, not None."""
         from steward.agent import StewardAgent
         from tests.conftest import track_agent
 
         agent = track_agent(StewardAgent(provider=fake_llm))
         result = agent._autonomy.dispatch_intent("not_a_real_intent")
+        assert result is NO_HANDLER
+        assert fake_llm.call_count == 0
+
+    def test_known_intent_no_problem_still_none(self, fake_llm):
+        """Known intent with no problem detected still returns None."""
+        from steward.agent import StewardAgent
+        from tests.conftest import track_agent
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+        agent._cetana.stop()
+
+        # HEALTH_CHECK returns None when health is above critical threshold
+        result = agent._autonomy.dispatch_intent(TaskIntent.HEALTH_CHECK)
+        assert result is None
+        assert fake_llm.call_count == 0
+
+    def test_unhandled_intent_task_blocked_not_completed(self, fake_llm):
+        """Unhandled intent dispatch returns NO_HANDLER sentinel (blocking signal)."""
+        from steward.agent import StewardAgent
+        from tests.conftest import track_agent
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+
+        # Dispatch an intent that has no handler
+        result = agent._autonomy.dispatch_intent("bottleneck_escalation")
+        assert result is NO_HANDLER
+        assert fake_llm.call_count == 0
+
+    def test_normal_task_still_completes(self, fake_llm):
+        """Regression: known intent with success still behaves normally."""
+        from steward.agent import StewardAgent
+        from tests.conftest import track_agent
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+        agent._cetana.stop()
+
+        # A known intent that succeeds returns None (problem-free)
+        result = agent._autonomy.dispatch_intent(TaskIntent.HEALTH_CHECK)
         assert result is None
         assert fake_llm.call_count == 0
 

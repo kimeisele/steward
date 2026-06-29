@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Awaitable, Callable
 
 from steward.fix_pipeline import FixPipeline, problem_fingerprint
-from steward.intent_handlers import IntentHandlers
+from steward.intent_handlers import IntentHandlers, NO_HANDLER
 from steward.services import (
     SVC_SANKALPA,
     SVC_SYNAPSE_STORE,
@@ -226,9 +226,16 @@ class AutonomyEngine:
                 return None
 
             try:
-                problem = self.dispatch_intent(intent)
-                task_mgr.update_task(task.id, status=TaskStatus.COMPLETED)
+                result = self.dispatch_intent(intent)
 
+                if result is NO_HANDLER:
+                    logger.warning("No handler for intent %s — task BLOCKED for review", intent)
+                    task_mgr.update_task(task.id, status=TaskStatus.BLOCKED)
+                    self._ledger.record_autonomous(intent.name, False)
+                    return None
+
+                problem = result
+                task_mgr.update_task(task.id, status=TaskStatus.COMPLETED)
                 self._ledger.record_autonomous(intent.name, problem is not None)
 
                 if problem:
@@ -267,7 +274,7 @@ class AutonomyEngine:
 
     # ── Intent Dispatch (delegates to IntentHandlers) ──────────────────
 
-    def dispatch_intent(self, intent: object) -> str | None:
+    def dispatch_intent(self, intent: object) -> str | None | object:
         """Dispatch a TaskIntent to its deterministic handler."""
         return self.handlers.dispatch(intent)
 
