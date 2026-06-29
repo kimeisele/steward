@@ -43,7 +43,7 @@ Health: 0.857 (sattva) · Immune: 0/0 heals, breaker OK · Federation: 12 peers 
 - #6: Campaigns system: dynamic North Star + mission config
 
 ## Environment Perception
-Git: main, 13 dirty
+Git: main, 13 dirty, ci=, 0 open PRs
 Project: python
 Code: 0 files, 0 cls, 0 fn
 Tests: pytest, 91 files, last=failed
@@ -55,4 +55,4 @@ Health: 211 source files, 2 smells (2 large, 0 stale)
 ## Architecture
 38 services · 25 tattvas
 MURALI: **genesis**(2) → **dharma**(5) → **karma**(4) → **moksha**(6)
-<!-- briefing v3.0.0 | 659 tokens | budget: standard (2000) | focus: rajas, git_pain=0.8, test_pain=0.7, ctx_pressure=1.0 | 2026-06-29T08:58:25 -->
+<!-- briefing v3.0.0 | 663 tokens | budget: standard (2000) | focus: rajas, git_pain=0.8, test_pain=0.7, ctx_pressure=1.0 | 2026-06-29T10:35:08 -->
