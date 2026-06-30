@@ -50,10 +50,19 @@ class TaskIntent(enum.Enum):
     # Autonomous — federation architecture gaps
     FEDERATION_GAP_SCAN = "federation_gap_scan"
 
+    # Membran-Signale (eingehend von Föderation — Stadt & Welt)
+    BOTTLENECK_ESCALATION = "bottleneck_escalation"  # agent-city brain_health/critique
+    GOVERNANCE_BOUNTY = "governance_bounty"  # agent-world Legislator
+
     @property
     def is_proactive(self) -> bool:
         """Proactive intents create PRs instead of direct fixes."""
         return self in _PROACTIVE_INTENTS
+
+    @property
+    def is_membran(self) -> bool:
+        """Membran intents process inbound federation signals and require a task payload."""
+        return self in _MEMBRAN_INTENTS
 
     @classmethod
     def from_intent_type(cls, intent_type: str) -> TaskIntent | None:
@@ -68,6 +77,8 @@ class TaskIntent(enum.Enum):
 
 
 _PROACTIVE_INTENTS = frozenset({TaskIntent.UPDATE_DEPS, TaskIntent.REMOVE_DEAD_CODE, TaskIntent.HEAL_REPO})
+
+_MEMBRAN_INTENTS = frozenset({TaskIntent.BOTTLENECK_ESCALATION, TaskIntent.GOVERNANCE_BOUNTY})
 
 
 # Metadata key used in TaskManager tasks to store the intent type

@@ -226,7 +226,7 @@ class AutonomyEngine:
                 return None
 
             try:
-                result = self.dispatch_intent(intent)
+                result = self.dispatch_intent(intent, task)
 
                 if result is NO_HANDLER:
                     logger.warning("No handler for intent %s — task BLOCKED for review", intent)
@@ -274,9 +274,9 @@ class AutonomyEngine:
 
     # ── Intent Dispatch (delegates to IntentHandlers) ──────────────────
 
-    def dispatch_intent(self, intent: object) -> str | None | object:
+    def dispatch_intent(self, intent: object, task: object = None) -> str | None | object:
         """Dispatch a TaskIntent to its deterministic handler."""
-        return self.handlers.dispatch(intent)
+        return self.handlers.dispatch(intent, task)
 
     # ── Federated Task Execution ──────────────────────────────────────
 
