@@ -289,10 +289,16 @@ class TestDeterministicDispatch:
         assert fake_llm.call_count == 0
 
     def test_dispatch_routes_correctly(self, fake_llm):
-        """Each TaskIntent routes to its correct handler."""
+        """Each TaskIntent routes to its correct handler.
+
+        Detector intents (health checks, scans) return None when no problems detected.
+        Membran intents (federation signals) require a task payload; without one they
+        return NO_HANDLER (which blocks the task in autonomy.py).
+        """
         from unittest.mock import MagicMock, patch
 
         from steward.agent import StewardAgent
+        from steward.intent_handlers import NO_HANDLER
         from steward.services import SVC_REAPER
         from tests.conftest import track_agent
         from vibe_core.di import ServiceRegistry
@@ -317,5 +323,105 @@ class TestDeterministicDispatch:
         with patch("subprocess.run", return_value=mock_result):
             for intent in TaskIntent:
                 result = agent._autonomy.dispatch_intent(intent)
-                assert result is None, f"Intent {intent.name} unexpectedly returned: {result}"
+                if intent.is_membran:
+                    # Membran intents require a payload; without one they correctly signal NO_HANDLER → BLOCKED
+                    assert result is NO_HANDLER, f"Membran intent {intent.name} should return NO_HANDLER without payload, got: {result}"
+                else:
+                    assert result is None, f"Intent {intent.name} unexpectedly returned: {result}"
+        assert fake_llm.call_count == 0
+
+
+class SimpleTask:
+    """Minimal task object for testing — no mocks, just real data."""
+    def __init__(self, id: str, title: str, description: str):
+        self.id = id
+        self.title = title
+        self.description = description
+
+
+class TestMembranSignals:
+    """Tests for Membran-Signal handlers (Kap. 2)."""
+
+    def test_bottleneck_escalation_intent_registered(self):
+        """TaskIntent.BOTTLENECK_ESCALATION exists."""
+        assert TaskIntent["BOTTLENECK_ESCALATION"]
+        assert TaskIntent.BOTTLENECK_ESCALATION.value == "bottleneck_escalation"
+
+    def test_governance_bounty_intent_registered(self):
+        """TaskIntent.GOVERNANCE_BOUNTY exists."""
+        assert TaskIntent["GOVERNANCE_BOUNTY"]
+        assert TaskIntent.GOVERNANCE_BOUNTY.value == "governance_bounty"
+
+    def test_bottleneck_handler_returns_problem_not_sentinel(self, fake_llm):
+        """Bottleneck handler dispatch returns problem string, NOT NO_HANDLER."""
+        from steward.agent import StewardAgent
+        from tests.conftest import track_agent
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+        agent._cetana.stop()
+
+        # Create real task with bottleneck description (key:value format)
+        task = SimpleTask(
+            id="test-task-123",
+            title="[BOTTLENECK_ESCALATION] test",
+            description="target_repo:kimeisele/agent-city\n"
+        )
+
+        # Dispatch the bottleneck intent with task context
+        result = agent._autonomy.dispatch_intent(TaskIntent.BOTTLENECK_ESCALATION, task)
+        assert result is not NO_HANDLER
+        assert isinstance(result, str)
+        assert "bottleneck escalation" in result.lower()
+        assert fake_llm.call_count == 0
+
+    def test_bottleneck_handler_extracts_repo(self, fake_llm):
+        """Bottleneck handler extracts target_repo from description."""
+        from steward.agent import StewardAgent
+        from tests.conftest import track_agent
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+        agent._cetana.stop()
+
+        # Create real task with specific repo
+        task = SimpleTask(
+            id="test-task-456",
+            title="[BOTTLENECK_ESCALATION] test",
+            description="target_repo:kimeisele/special-repo\n"
+        )
+
+        result = agent._autonomy.dispatch_intent(TaskIntent.BOTTLENECK_ESCALATION, task)
+        assert "special-repo" in result
+        assert fake_llm.call_count == 0
+
+    def test_governance_handler_returns_problem_not_sentinel(self, fake_llm):
+        """Governance bounty handler dispatch returns problem string, NOT NO_HANDLER."""
+        from steward.agent import StewardAgent
+        from tests.conftest import track_agent
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+        agent._cetana.stop()
+
+        # Create real task with governance description
+        task = SimpleTask(
+            id="test-task-789",
+            title="[GOVERNANCE_BOUNTY] test",
+            description="target_repo:kimeisele/world-repo\n"
+        )
+
+        result = agent._autonomy.dispatch_intent(TaskIntent.GOVERNANCE_BOUNTY, task)
+        assert result is not NO_HANDLER
+        assert isinstance(result, str)
+        assert "governance" in result.lower() or "bounty" in result.lower()
+        assert fake_llm.call_count == 0
+
+    def test_kap1_regression_unknown_intent_still_blocked(self, fake_llm):
+        """Regression: unknown intent still returns NO_HANDLER (BLOCKED)."""
+        from steward.agent import StewardAgent
+        from tests.conftest import track_agent
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+
+        # Dispatch a completely unknown intent
+        result = agent._autonomy.dispatch_intent("truly_unknown_intent")
+        assert result is NO_HANDLER
         assert fake_llm.call_count == 0

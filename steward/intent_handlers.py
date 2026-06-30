@@ -9,6 +9,7 @@ Extracted from AutonomyEngine to reduce LCOM4 (god-class → focused modules).
 
 from __future__ import annotations
 
+import inspect
 import logging
 from typing import TYPE_CHECKING, Callable
 
@@ -23,6 +24,18 @@ logger = logging.getLogger("STEWARD.INTENT_HANDLERS")
 # Sentinel: unterscheidet "kein Handler vorhanden" von "None = kein Problem gefunden".
 # Löst die überladene None-Semantik auf, ohne den globalen None-Erfolgs-Vertrag zu ändern.
 NO_HANDLER = object()
+
+
+def _parse_federated_task_description(description: str) -> dict[str, str]:
+    """Parse persisted metadata lines from a federated task description."""
+    metadata: dict[str, str] = {}
+    for raw_line in description.splitlines():
+        line = raw_line.strip()
+        if not line or ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        metadata[key.strip()] = value.strip()
+    return metadata
 
 
 class IntentHandlers:
@@ -43,10 +56,14 @@ class IntentHandlers:
         self._vedana_fn = vedana_fn
         self._cwd = cwd
 
-    def dispatch(self, intent: object) -> str | None:
+    def dispatch(self, intent: object, task: object = None) -> str | None | object:
         """Dispatch a TaskIntent to its deterministic handler.
 
-        Returns None if no issues found, or a problem description string.
+        Returns None if no issues found, a problem description string, or NO_HANDLER sentinel.
+
+        Intelligente Rückwärtskompatibilität: inspiziert die Handler-Signatur:
+        - Neue Handler (mit task-Parameter): task wird durchgereicht
+        - Alte Handler (nur self): handler() wird OHNE Argument aufgerufen
         """
         from steward.intents import TaskIntent
 
@@ -62,12 +79,20 @@ class IntentHandlers:
             TaskIntent.REMOVE_DEAD_CODE: self.execute_remove_dead_code,
             TaskIntent.SYNTHESIZE_BRIEFING: self.execute_synthesize_briefing,
             TaskIntent.FEDERATION_GAP_SCAN: self.execute_federation_gap_scan,
+            TaskIntent.BOTTLENECK_ESCALATION: self.execute_bottleneck_escalation,
+            TaskIntent.GOVERNANCE_BOUNTY: self.execute_governance_bounty,
         }
         handler = dispatch.get(intent)
         if handler is None:
             logger.warning("No handler for intent %s", intent)
             return NO_HANDLER
-        return handler()
+
+        # Inspiziere Handler-Signatur: erwartet dieser Handler 'task'?
+        sig = inspect.signature(handler)
+        if 'task' in sig.parameters:
+            return handler(task)
+        else:
+            return handler()
 
     # ── Detection Handlers (0 LLM tokens) ──────────────────────────────
 
@@ -437,3 +462,28 @@ class IntentHandlers:
         if gaps:
             return "Federation gaps detected: " + "; ".join(gaps)
         return None
+
+    def execute_bottleneck_escalation(self, task: object = None) -> str | None | object:
+        """Membran-Signal der Stadt: Bottleneck (kaputte Contracts) eskaliert.
+
+        Detektor-Muster: übersetzt das Anliegen in einen Problem-String;
+        die Heilung übernimmt die abgesicherte Pipeline. 0 LLM-Tokens.
+        """
+        if task is None:
+            # Membran signal without payload cannot be processed → BLOCKED (not silent success, not fabricated problem)
+            return NO_HANDLER
+        meta = _parse_federated_task_description(getattr(task, "description", "") or "")
+        repo = meta.get("target_repo", "unknown-repo")
+        return f"City bottleneck escalation: degraded contracts in {repo} — route to heal pipeline"
+
+    def execute_governance_bounty(self, task: object = None) -> str | None | object:
+        """Membran-Signal von agent-world: Policy-Verstoß als Bounty.
+
+        Detektor-Muster wie oben. 0 Tokens.
+        """
+        if task is None:
+            # Membran signal without payload cannot be processed → BLOCKED (not silent success, not fabricated problem)
+            return NO_HANDLER
+        meta = _parse_federated_task_description(getattr(task, "description", "") or "")
+        repo = meta.get("target_repo", "unknown-repo")
+        return f"Governance bounty: policy violation in {repo} — route to heal pipeline"
