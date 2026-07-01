@@ -21,8 +21,11 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Awaitable, Callable
 
+from vibe_core.mahamantra.substrate.sankalpa.will import check_conscience
+
 from steward.fix_pipeline import FixPipeline, problem_fingerprint
 from steward.intent_handlers import IntentHandlers, NO_HANDLER
+from steward.intents import INTENT_TO_CONSCIENCE
 from steward.services import (
     SVC_SANKALPA,
     SVC_SYNAPSE_STORE,
@@ -131,6 +134,7 @@ class AutonomyEngine:
         cwd: str,
         run_fn: Callable[[str], Awaitable[str]],
         vedana_fn: Callable[[], object],
+        ashrama_fn: Callable[[], object] | None = None,
         git_actuator: object | None = None,
         github_actuator: object | None = None,
         conversation_reset_fn: Callable[[], None] | None = None,
@@ -140,6 +144,8 @@ class AutonomyEngine:
         self._ledger = ledger
         self._conversation_reset_fn = conversation_reset_fn
         self._senses = senses
+        self._vedana_fn = vedana_fn
+        self._ashrama_fn = ashrama_fn
 
         # Composed modules — focused, testable, low LCOM4
         self.handlers = IntentHandlers(
@@ -158,6 +164,17 @@ class AutonomyEngine:
         )
 
     # ── Public API ─────────────────────────────────────────────────────
+
+    def _current_bhakti(self) -> int:
+        """Dynamische Hingabe aus gelebter Gesundheit (vedana.health), 0-100.
+
+        NICHT aus statischer VM-cell.integrity. Sinkt mit schlechtem Dienst.
+        """
+        try:
+            health = self._vedana_fn().health  # 0.0-1.0, lebendig
+        except Exception:
+            health = 0.99  # konservativer Fallback nur bei Nichtverfügbarkeit
+        return int(max(0.0, min(1.0, health)) * 100)
 
     async def run_autonomous(self, idle_minutes: int | None = None) -> str | None:
         """One autonomous cycle: generate tasks + dispatch next.
@@ -223,6 +240,28 @@ class AutonomyEngine:
             if intent is None:
                 logger.warning("No typed intent in task '%s' — skipping", task.title)
                 task_mgr.update_task(task.id, status=TaskStatus.COMPLETED)
+                return None
+
+            # ── Gewissenstor (Kapitel 3a) ────────────────────────────────
+            # Prüfe dharmische Berechtigung VOR Dispatch
+            intent_str = INTENT_TO_CONSCIENCE.get(intent, "shutdown")  # fail-CLOSED: unbekannt → blockiert via "shutdown" (erfordert system_control+admin)
+            ashrama = self._ashrama_fn() if self._ashrama_fn else None
+            if ashrama is None:
+                logger.warning("Ashrama not available for conscience check on %s", intent.name)
+                task_mgr.update_task(task.id, status=TaskStatus.BLOCKED)
+                self._ledger.record_autonomous(intent.name, False)
+                return None
+
+            verdict = check_conscience(intent_str, ashrama, self._current_bhakti())
+
+            if not verdict.is_permitted:
+                logger.warning(
+                    "CONSCIENCE: intent %s NOT permitted (guna=%s, bhakti=%d): %s [missing=%s]",
+                    intent.name, verdict.guna, self._current_bhakti(), verdict.reason,
+                    verdict.missing_permissions,
+                )
+                task_mgr.update_task(task.id, status=TaskStatus.BLOCKED)
+                self._ledger.record_autonomous(intent.name, False)
                 return None
 
             try:

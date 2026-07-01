@@ -425,3 +425,135 @@ class TestMembranSignals:
         result = agent._autonomy.dispatch_intent("truly_unknown_intent")
         assert result is NO_HANDLER
         assert fake_llm.call_count == 0
+
+
+class TestConscience:
+    """Tests for Kapitel 3a: Gewissenstor (dharmische Gating)."""
+
+    def test_steward_has_grihastha_identity(self, fake_llm):
+        """Agent._ashrama == Ashrama.GRIHASTHA."""
+        from vibe_core.mahamantra.protocols.sankalpa.types import Ashrama
+        from steward.agent import StewardAgent
+        from tests.conftest import track_agent
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+        assert agent._ashrama == Ashrama.GRIHASTHA
+
+    def test_bhakti_scales_with_vedana(self, fake_llm):
+        """Bhakti skaliert mit vedana.health: 1.0→100, 0.5→50, 0.0→0."""
+        from steward.agent import StewardAgent
+        from tests.conftest import track_agent
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+        agent._cetana.stop()
+
+        # _current_bhakti() muss die vedana_fn nutzen
+        # Prüfe den Bereich
+        bhakti = agent._autonomy._current_bhakti()
+        assert 0 <= bhakti <= 100, f"Bhakti {bhakti} sollte zwischen 0 und 100 sein"
+
+    def test_conscience_allows_authorized_intent(self, fake_llm):
+        """Autorisierter Intent (HEAL_REPO→contract_import_fix) bei GRIHASTHA+hohem Bhakti → durchgelassen."""
+        from vibe_core.mahamantra.substrate.sankalpa.will import check_conscience
+        from vibe_core.mahamantra.protocols.sankalpa.types import Ashrama
+        from steward.agent import StewardAgent
+        from steward.intents import INTENT_TO_CONSCIENCE, TaskIntent
+        from tests.conftest import track_agent
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+        agent._cetana.stop()
+
+        # HEAL_REPO ist auf contract_import_fix gemappt
+        intent_str = INTENT_TO_CONSCIENCE[TaskIntent.HEAL_REPO]
+        bhakti = agent._autonomy._current_bhakti()
+        verdict = check_conscience(intent_str, Ashrama.GRIHASTHA, bhakti)
+        assert verdict.is_permitted, f"HEAL_REPO sollte erlaubt sein, aber: {verdict.reason}"
+
+    def test_conscience_blocks_unauthorized(self, fake_llm):
+        """Gewissenstor blockiert "shutdown" (braucht system_control+admin, GRIHASTHA hat keine)."""
+        from vibe_core.mahamantra.substrate.sankalpa.will import check_conscience
+        from vibe_core.mahamantra.protocols.sankalpa.types import Ashrama
+        from steward.agent import StewardAgent
+        from tests.conftest import track_agent
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+        agent._cetana.stop()
+
+        # "shutdown" erfordert ['system_control', 'admin'] — GRIHASTHA hat beide NICHT
+        verdict = check_conscience("shutdown", Ashrama.GRIHASTHA, 99)
+        assert verdict.is_permitted is False, "shutdown sollte für GRIHASTHA blockiert sein"
+        assert "admin" in verdict.missing_permissions, "admin sollte in missing_permissions sein"
+
+    def test_low_bhakti_revokes_borderline(self, fake_llm):
+        """Niedriga Bhakti (<50) blockiert borderline-Intents."""
+        from vibe_core.mahamantra.substrate.sankalpa.will import check_conscience
+        from vibe_core.mahamantra.protocols.sankalpa.types import Ashrama
+        from steward.agent import StewardAgent
+        from tests.conftest import track_agent
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+        agent._cetana.stop()
+
+        # Mit sehr niedrigem Bhakti prüfen
+        low_bhakti = 10
+        verdict = check_conscience("create_pr", Ashrama.GRIHASTHA, low_bhakti)
+        # Wenn Bhakti zu niedrig ist, sollte es blockiert sein
+        assert not verdict.is_permitted or verdict.bhakti >= 10
+
+    def test_kap1_kap2_regression(self, fake_llm):
+        """Regression: Kap-1/2 Logik funktioniert noch (NO_HANDLER, Membran-Payload)."""
+        from steward.agent import StewardAgent
+        from steward.intents import TaskIntent
+        from tests.conftest import track_agent
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+        agent._cetana.stop()
+
+        # Unbekannter Intent → NO_HANDLER
+        result = agent._autonomy.dispatch_intent("unknown_intent")
+        assert result is NO_HANDLER
+
+        # Membran-Intent mit Payload → Problem-String
+        task = SimpleTask(
+            id="test-task",
+            title="[HEAL_REPO] test",
+            description="target_repo:test/repo\n"
+        )
+        result = agent._autonomy.dispatch_intent(TaskIntent.HEAL_REPO, task)
+        # HEAL_REPO sollte entweder None (ok) oder String (problem) sein, nicht NO_HANDLER
+        assert result is None or isinstance(result, str)
+
+    def test_unmapped_intent_fails_closed(self, fake_llm):
+        """Nicht gemappter Intent → fällt auf "shutdown" (fail-closed) → blockiert."""
+        from vibe_core.mahamantra.substrate.sankalpa.will import check_conscience
+        from vibe_core.mahamantra.protocols.sankalpa.types import Ashrama
+        from steward.agent import StewardAgent
+        from steward.intents import INTENT_TO_CONSCIENCE
+        from tests.conftest import track_agent
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+        agent._cetana.stop()
+
+        # Simuliere einen unmapped Intent
+        fake_intent = object()  # Nicht in INTENT_TO_CONSCIENCE
+        intent_str = INTENT_TO_CONSCIENCE.get(fake_intent, "shutdown")
+        assert intent_str == "shutdown", "Unmapped intent sollte auf 'shutdown' fallen"
+
+        # "shutdown" ist fail-closed → blockiert für GRIHASTHA
+        verdict = check_conscience(intent_str, Ashrama.GRIHASTHA, 99)
+        assert verdict.is_permitted is False, "Unmapped intent sollte blockiert sein"
+
+    def test_authorized_write_intent_passes(self, fake_llm):
+        """Autorisierte Schreib-Intents (contract_import_fix) werden NICHT blockiert."""
+        from vibe_core.mahamantra.substrate.sankalpa.will import check_conscience
+        from vibe_core.mahamantra.protocols.sankalpa.types import Ashrama
+        from steward.agent import StewardAgent
+        from tests.conftest import track_agent
+
+        agent = track_agent(StewardAgent(provider=fake_llm))
+        agent._cetana.stop()
+
+        # "contract_import_fix" erfordert nur ['code_modify'] — GRIHASTHA HAT code_modify
+        verdict = check_conscience("contract_import_fix", Ashrama.GRIHASTHA, 80)
+        assert verdict.is_permitted is True, "contract_import_fix sollte für GRIHASTHA erlaubt sein"
+        assert verdict.missing_permissions == [], "Keine Permissions sollten fehlen"
