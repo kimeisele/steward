@@ -81,5 +81,27 @@ _PROACTIVE_INTENTS = frozenset({TaskIntent.UPDATE_DEPS, TaskIntent.REMOVE_DEAD_C
 _MEMBRAN_INTENTS = frozenset({TaskIntent.BOTTLENECK_ESCALATION, TaskIntent.GOVERNANCE_BOUNTY})
 
 
+# TaskIntent → check_conscience permission key mapping (Kapitel 3a: dharmische Gating).
+# Lesende/detektierende Intents → "review_todos" (keine Schreibrechte erforderlich).
+# Schreibende Intents → echter Permission-Key aus INTENT_PERMISSION_MAP.
+INTENT_TO_CONSCIENCE: dict[TaskIntent, str] = {
+    # Lesend/detektierend — keine besonderen Rechte
+    TaskIntent.HEALTH_CHECK: "review_todos",
+    TaskIntent.SENSE_SCAN: "review_todos",
+    TaskIntent.CI_CHECK: "review_todos",
+    TaskIntent.FEDERATION_HEALTH: "review_todos",
+    TaskIntent.CROSS_REPO_DIAGNOSTIC: "review_todos",
+    TaskIntent.FEDERATION_GAP_SCAN: "review_todos",
+    TaskIntent.SYNTHESIZE_BRIEFING: "doc_update",        # schreibt Doku
+    # Schreibend — brauchen echte Rechte
+    TaskIntent.HEAL_REPO: "contract_import_fix",          # code_modify
+    TaskIntent.BOTTLENECK_ESCALATION: "contract_import_fix",  # code_modify
+    TaskIntent.GOVERNANCE_BOUNTY: "contract_import_fix",  # code_modify
+    TaskIntent.POST_MERGE: "commit_and_push",             # git
+    TaskIntent.UPDATE_DEPS: "create_pr",                  # git_push + pr_create
+    TaskIntent.REMOVE_DEAD_CODE: "create_pr",             # git_push + pr_create
+}
+
+
 # Metadata key used in TaskManager tasks to store the intent type
 INTENT_TYPE_KEY = "intent_type"

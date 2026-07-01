@@ -25,6 +25,7 @@ from typing import AsyncIterator
 from steward import __version__, agent_bus, agent_memory
 from steward.antahkarana.ksetrajna import KsetraJna
 from steward.antahkarana.vedana import measure_vedana
+from vibe_core.mahamantra.protocols.sankalpa.types import Ashrama
 from steward.autonomy import AutonomyEngine
 from steward.buddhi import Buddhi
 from steward.cetana import Cetana
@@ -210,6 +211,7 @@ class StewardAgent(GADBase):
             cwd=self._cwd,
             run_fn=self.run,
             vedana_fn=lambda: self.vedana,
+            ashrama_fn=lambda: self._ashrama,
             git_actuator=self._git_actuator,
             github_actuator=self._github_actuator,
             conversation_reset_fn=self._reset_conversation,
@@ -223,6 +225,9 @@ class StewardAgent(GADBase):
         # Lazy: mahamantra import takes ~4s. Only compute when discover() is called.
         self._persona: dict[str, str] | None = None
         self._persona_loaded = False
+
+        # Dharmische Identität (Kapitel 3a: Gewissen)
+        self._ashrama = Ashrama.GRIHASTHA
 
         # Build system prompt — minimal. LLM only needs: instruction + cwd.
         # Tool sigs injected by engine. Everything else is infrastructure.
