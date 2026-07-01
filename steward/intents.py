@@ -54,6 +54,9 @@ class TaskIntent(enum.Enum):
     BOTTLENECK_ESCALATION = "bottleneck_escalation"  # agent-city brain_health/critique
     GOVERNANCE_BOUNTY = "governance_bounty"  # agent-world Legislator
 
+    # Stagnations-Diagnose (Kapitel 3b: Willensbildung)
+    DIAGNOSE_STAGNATION = "diagnose_stagnation"
+
     @property
     def is_proactive(self) -> bool:
         """Proactive intents create PRs instead of direct fixes."""
@@ -93,6 +96,7 @@ INTENT_TO_CONSCIENCE: dict[TaskIntent, str] = {
     TaskIntent.CROSS_REPO_DIAGNOSTIC: "review_todos",
     TaskIntent.FEDERATION_GAP_SCAN: "review_todos",
     TaskIntent.SYNTHESIZE_BRIEFING: "doc_update",        # schreibt Doku
+    TaskIntent.DIAGNOSE_STAGNATION: "review_todos",     # lesender Detektor
     # Schreibend — brauchen echte Rechte
     TaskIntent.HEAL_REPO: "contract_import_fix",          # code_modify
     TaskIntent.BOTTLENECK_ESCALATION: "contract_import_fix",  # code_modify

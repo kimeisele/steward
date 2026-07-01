@@ -212,6 +212,7 @@ class StewardAgent(GADBase):
             run_fn=self.run,
             vedana_fn=lambda: self.vedana,
             ashrama_fn=lambda: self._ashrama,
+            is_stuck_fn=lambda: self._ksetrajna.is_stuck(),
             git_actuator=self._git_actuator,
             github_actuator=self._github_actuator,
             conversation_reset_fn=self._reset_conversation,
