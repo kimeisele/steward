@@ -774,8 +774,10 @@ class TestProactiveDispatch:
         assert fake_llm.call_count == 0
 
     def test_dispatch_routes_proactive_intents(self, fake_llm):
-        """Proactive intents dispatch without error."""
+        """All intents dispatch without error (membran → NO_HANDLER, others → None/str)."""
         from unittest.mock import MagicMock, patch
+
+        from steward.intent_handlers import NO_HANDLER
 
         agent = self._make_agent(fake_llm)
         # Mock subprocess to avoid real pip call in UPDATE_DEPS
@@ -785,7 +787,11 @@ class TestProactiveDispatch:
         with patch("subprocess.run", return_value=mock_result):
             for intent in TaskIntent:
                 result = agent._autonomy.dispatch_intent(intent)
-                assert result is None or isinstance(result, str)
+                if intent.is_membran:
+                    # Membran intents require a payload; without one they correctly signal NO_HANDLER → BLOCKED
+                    assert result is NO_HANDLER, f"Membran intent {intent.name} should return NO_HANDLER without payload, got: {result}"
+                else:
+                    assert result is None or isinstance(result, str), f"Intent {intent.name} unexpectedly returned: {result}"
         assert fake_llm.call_count == 0
 
     def test_proactive_task_dispatches_in_autonomous(self, fake_llm):
