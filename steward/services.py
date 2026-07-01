@@ -835,6 +835,25 @@ def _add_steward_missions(sankalpa: object) -> None:
                 max_executions_per_day=3,
                 enabled=True,
             ),
+            SankalpaStrategy(
+                id="strategy_diagnose_stagnation",
+                name="Diagnose Stagnation",
+                description=(
+                    "When macro-stagnation detected: task progress stalled across "
+                    "multiple rounds. Perform diagnostic reflection to identify "
+                    "root cause (blocked patterns, error loops, drift threshold)."
+                ),
+                trigger=SankalpaTrigger(
+                    trigger_type=TriggerType.CONDITION_BASED,
+                ),
+                frequency=StrategyFrequency.DAILY,
+                intent_type="diagnose_stagnation",
+                intent_template={},
+                requires_ci_green=False,
+                requires_no_pending_intents=False,
+                max_executions_per_day=3,
+                enabled=True,
+            ),
         ],
         owner="steward",
     )

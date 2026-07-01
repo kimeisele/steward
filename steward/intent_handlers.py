@@ -81,6 +81,7 @@ class IntentHandlers:
             TaskIntent.FEDERATION_GAP_SCAN: self.execute_federation_gap_scan,
             TaskIntent.BOTTLENECK_ESCALATION: self.execute_bottleneck_escalation,
             TaskIntent.GOVERNANCE_BOUNTY: self.execute_governance_bounty,
+            TaskIntent.DIAGNOSE_STAGNATION: self.execute_diagnose_stagnation,
         }
         handler = dispatch.get(intent)
         if handler is None:
@@ -402,6 +403,19 @@ class IntentHandlers:
             return "CLAUDE.md is stale (context.json updated since last synthesis). Use the synthesize_briefing tool to refresh it."
 
         return None
+
+    def execute_diagnose_stagnation(self) -> str:
+        """Stagnation detector (Kapitel 3b) — 0 tokens.
+
+        CONDITION_BASED trigger: fires when is_stuck() detects macro-stagnation.
+        Always returns a problem string (no None). The FixPipeline then invokes
+        the LLM to reflect on and resolve the stagnation.
+
+        This detector does NOT solve stagnation itself — it signals that reflection
+        is needed. The LLM turn (invoked by FixPipeline) creates the drift that
+        resets is_stuck (new pattern, new round, health change).
+        """
+        return "Macro-stagnation detected: tasks not progressing meaningfully over multiple rounds. Needs reflection and diagnostic."
 
     def execute_federation_gap_scan(self) -> str | None:
         """Scan federation architecture for gaps — 0 tokens.

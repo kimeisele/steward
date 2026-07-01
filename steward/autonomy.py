@@ -12,6 +12,7 @@ Extracted handlers and pipelines live in:
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import shutil
 import subprocess
@@ -135,6 +136,7 @@ class AutonomyEngine:
         run_fn: Callable[[str], Awaitable[str]],
         vedana_fn: Callable[[], object],
         ashrama_fn: Callable[[], object] | None = None,
+        is_stuck_fn: Callable[[], bool] | None = None,
         git_actuator: object | None = None,
         github_actuator: object | None = None,
         conversation_reset_fn: Callable[[], None] | None = None,
@@ -146,6 +148,7 @@ class AutonomyEngine:
         self._senses = senses
         self._vedana_fn = vedana_fn
         self._ashrama_fn = ashrama_fn
+        self._is_stuck_fn = is_stuck_fn
 
         # Composed modules — focused, testable, low LCOM4
         self.handlers = IntentHandlers(
@@ -567,11 +570,18 @@ class AutonomyEngine:
         campaign_health = evaluate_campaign(self._cwd, senses=self._senses)
 
         active = task_mgr.list_tasks(status=TaskStatus.PENDING) + task_mgr.list_tasks(status=TaskStatus.IN_PROGRESS)
-        intents = sankalpa.think(
+
+        # Defensively check if substrate's think() accepts is_stagnating parameter
+        # (substrate may not yet support it). Falls back to base parameters.
+        _think_params = inspect.signature(sankalpa.think).parameters
+        _kwargs = dict(
             idle_minutes=idle_minutes,
             pending_intents=len(active),
             ci_green=campaign_health.ci_green,
         )
+        if "is_stagnating" in _think_params:
+            _kwargs["is_stagnating"] = self._is_stuck_fn() if self._is_stuck_fn else False
+        intents = sankalpa.think(**_kwargs)
         for intent in intents:
             typed = TaskIntent.from_intent_type(intent.intent_type)
             if typed is None:

@@ -326,6 +326,10 @@ class TestDeterministicDispatch:
                 if intent.is_membran:
                     # Membran intents require a payload; without one they correctly signal NO_HANDLER → BLOCKED
                     assert result is NO_HANDLER, f"Membran intent {intent.name} should return NO_HANDLER without payload, got: {result}"
+                elif intent == TaskIntent.DIAGNOSE_STAGNATION:
+                    # Stagnation detector always reports a problem when called (Kap 3b).
+                    # In real execution, it only fires when is_stuck() is true (CONDITION_BASED).
+                    assert isinstance(result, str) and result, f"DIAGNOSE_STAGNATION should return a problem string, got: {result}"
                 else:
                     assert result is None, f"Intent {intent.name} unexpectedly returned: {result}"
         assert fake_llm.call_count == 0
