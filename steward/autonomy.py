@@ -419,6 +419,26 @@ class AutonomyEngine:
 
         return result
 
+    @staticmethod
+    def _extract_target_peer(task_title: str) -> str | None:
+        """Extract target peer_id from a HEAL_REPO task title.
+
+        Title format (persistence-safe, mirrors parse_intent_from_title):
+            "[HEAL_REPO] Peer {peer_id} — Kirtan escalation"
+        Peer ids may contain hyphens (agent-city, steward-test), so we anchor
+        on the unambiguous delimiters "Peer " and " — " rather than splitting.
+        Returns the peer_id, or None if the title does not match.
+        """
+        marker = "] Peer "
+        start = task_title.find(marker)
+        if start < 0:
+            return None
+        start += len(marker)
+        end = task_title.find(" — ", start)
+        peer_id = task_title[start:end] if end > start else task_title[start:]
+        peer_id = peer_id.strip()
+        return peer_id or None
+
     async def _execute_heal_repo(self, task: object, task_mgr: object, TaskStatus: object) -> str | None:
         """Execute HEAL_REPO: find degraded peers, heal their repos.
 
@@ -434,10 +454,24 @@ class AutonomyEngine:
             task_mgr.update_task(task.id, status=TaskStatus.COMPLETED)
             return None
 
-        degraded = reaper.suspect_peers() + reaper.dead_peers()
-        if not degraded:
+        # 1 Task = 1 Peer: heal exactly the peer this task was created for
+        # (Command pattern — the task's target, not a blind global sweep).
+        target_id = self._extract_target_peer(getattr(task, "title", "") or "")
+        if target_id is None:
+            logger.warning(
+                "HEAL_REPO: could not extract target peer from title %r — skipping", getattr(task, "title", "")
+            )
             task_mgr.update_task(task.id, status=TaskStatus.COMPLETED)
             return None
+
+        target_peer = reaper.get_peer(target_id)
+        degraded_ids = {p.agent_id for p in (reaper.suspect_peers() + reaper.dead_peers())}
+        if target_peer is None or target_id not in degraded_ids:
+            # Peer recovered (or unknown) before we got here — nothing to heal.
+            logger.info("HEAL_REPO: peer %s no longer degraded — closing task", target_id)
+            task_mgr.update_task(task.id, status=TaskStatus.COMPLETED)
+            return None
+        degraded = [target_peer]
 
         healer = RepoHealer(
             pipeline=self.pipeline,
@@ -446,7 +480,7 @@ class AutonomyEngine:
         )
 
         results = []
-        for peer in degraded[:3]:
+        for peer in degraded:  # exactly the target peer (1 Task = 1 Peer)
             # Try local first, then remote clone
             repo_path = _resolve_peer_repo(peer.agent_id)
 
