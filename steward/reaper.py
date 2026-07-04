@@ -7,7 +7,7 @@ when peers die: lease expiration, trust degradation, slot reclamation.
 3-Strike Eviction Protocol:
     ALIVE   → missed 1 lease window → SUSPECT  (trust -= decay)
     SUSPECT → missed 2nd window     → DEAD     (trust -= decay, slots reclaimable)
-    DEAD    → missed 3rd window     → EVICTED  (trust = 0, purged from registry)
+    DEAD    → missed 3rd window     → EVICTED  (trust preserved — CI statelessness is not a trust violation; purged from active registry)
 
 The reaper is SOURCE-AGNOSTIC — any code can call record_heartbeat().
 Integration points:
@@ -47,7 +47,7 @@ class PeerStatus(enum.Enum):
     ALIVE = "alive"
     SUSPECT = "suspect"  # missed 1 lease window
     DEAD = "dead"  # missed 2+ windows
-    EVICTED = "evicted"  # trust = 0, purged
+    EVICTED = "evicted"  # trust preserved (CI-fair), purged from active set
 
 
 # Fingerprint stability threshold: N consecutive heartbeats with same
@@ -289,7 +289,7 @@ class HeartbeatReaper:
             old_trust = peer.trust
 
             peer.status = transition.next_status
-            peer.trust = max(0.0, peer.trust - self.trust_decay) if transition.decay else peer.trust  # preserve trust on eviction — CI statelessness ≠ defect
+            peer.trust = round(max(0.0, peer.trust - self.trust_decay), 10) if transition.decay else peer.trust  # preserve trust on eviction — CI statelessness ≠ defect
             detail = transition.detail_fn(age, self.lease_ttl_s)
 
             if transition.evict:

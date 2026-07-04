@@ -115,7 +115,9 @@ class TestReaping:
         assert len(consequences) == 1
         c = consequences[0]
         assert c.action == "evict"
-        assert c.new_trust == 0.0
+        # Eviction PRESERVES trust (fix 4a7d55e7a0, 2026-03-30): CI statelessness
+        # is not a trust violation. 0.5 - 0.2 - 0.2 = 0.1 (rounded, no float drift).
+        assert c.new_trust == 0.1
         # Evicted peer kept in registry for persistence
         peer = reaper.get_peer("agent-a")
         assert peer is not None
