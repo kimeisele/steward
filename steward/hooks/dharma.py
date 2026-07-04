@@ -291,7 +291,13 @@ class DharmaFederationHook(BasePhaseHook):
             try:
                 data = json.loads(peer_path.read_text())
                 self._capabilities = tuple(data.get("capabilities", []))
-            except (json.JSONDecodeError, OSError):
+            except json.JSONDecodeError as e:
+                logger.warning("DHARMA: peer.json is corrupt — treating peer as capability-less: %s", e)
+                self._capabilities = ()
+            except OSError as e:
+                logger.warning(
+                    "DHARMA: could not read peer.json (%s) — treating peer as capability-less", type(e).__name__
+                )
                 self._capabilities = ()
         else:
             self._capabilities = ()
@@ -411,8 +417,12 @@ class DharmaFederationHook(BasePhaseHook):
                             len(recorded),
                             ", ".join(sorted(recorded)),
                         )
-            except (json.JSONDecodeError, OSError):
-                pass
+            except (json.JSONDecodeError, OSError) as e:
+                # Was silently swallowed — a corrupt/unreadable inbox made the whole
+                # federation look silent with no trace. Behaviour unchanged (skip this
+                # cycle's inbox), but now visible. Narrowing the try scope is tracked
+                # separately (the block also wraps record_heartbeat).
+                logger.error("DHARMA: could not process nadi_inbox (%s) — skipping this cycle: %s", type(e).__name__, e)
 
         # Check for stale delivery receipts — messages that were pushed
         # but never implicitly confirmed by a response from the target.
