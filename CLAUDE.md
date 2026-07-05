@@ -29,7 +29,7 @@
 ## Development
 
 ## Status
-Health: 0.858 (sattva) · Immune: 0/0 heals, breaker OK · Federation: 12 peers (12 alive, 0 suspect, 0 dead)
+Health: 0.857 (sattva) · Immune: 0/0 heals, breaker OK · Federation: 12 peers (12 alive, 0 suspect, 0 dead)
 
 ## Action
 - #58: [security] P0 — stop .node_keys.json re-leak loop (TICKET-009 hotfix)
@@ -43,9 +43,9 @@ Health: 0.858 (sattva) · Immune: 0/0 heals, breaker OK · Federation: 12 peers 
 - #6: Campaigns system: dynamic North Star + mission config
 
 ## Environment Perception
-Git: main, 13 dirty, ci=, 4 open PRs
+Git: main, 12 dirty, ci=, 4 open PRs
 Project: python
-Code: 0 files, 0 cls, 0 fn
+Code: 200 files, 670 cls, 442 fn, 10 low-cohesion cls (worst: FederationBridge LCOM4=7)
 Tests: pytest, 91 files, last=unknown
 Health: 211 source files, 2 smells (2 large, 0 stale)
 
@@ -55,4 +55,4 @@ Health: 211 source files, 2 smells (2 large, 0 stale)
 ## Architecture
 38 services · 25 tattvas
 MURALI: **genesis**(2) → **dharma**(5) → **karma**(4) → **moksha**(6)
-<!-- briefing v3.0.0 | 663 tokens | budget: standard (2000) | focus: sattva, git_pain=0.8, ctx_pressure=1.0 | 2026-07-05T05:29:52 -->
+<!-- briefing v3.0.0 | 679 tokens | budget: standard (2000) | focus: sattva, git_pain=0.8, ctx_pressure=1.0 | 2026-07-05T19:36:01 -->
