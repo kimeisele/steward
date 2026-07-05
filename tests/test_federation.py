@@ -10,9 +10,9 @@ from steward.federation import (
     OP_CITY_REPORT,
     OP_CLAIM_OUTCOME,
     OP_CLAIM_SLOT,
+    OP_DELEGATE_TASK,
     OP_FEDERATION_NODE_HEALTH,
     OP_GOVERNANCE_BOUNTY,
-    OP_DELEGATE_TASK,
     OP_HEARTBEAT,
     OP_RELEASE_SLOT,
     OP_TASK_COMPLETED,
@@ -624,6 +624,7 @@ class TestMokshaFlush:
         canonical payload_hash + signature, source becomes node_id, and the
         steward registers itself in verified_agents.json (self-claim)."""
         import hashlib
+
         from cryptography.hazmat.primitives import serialization
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 

@@ -25,7 +25,6 @@ from typing import AsyncIterator
 from steward import __version__, agent_bus, agent_memory
 from steward.antahkarana.ksetrajna import KsetraJna
 from steward.antahkarana.vedana import measure_vedana
-from vibe_core.mahamantra.protocols.sankalpa.types import Ashrama
 from steward.autonomy import AutonomyEngine
 from steward.buddhi import Buddhi
 from steward.cetana import Cetana
@@ -70,6 +69,7 @@ from steward.types import (
 from vibe_core.di import ServiceRegistry
 from vibe_core.mahamantra.adapters.attention import MahaAttention
 from vibe_core.mahamantra.protocols._gad import GADBase
+from vibe_core.mahamantra.protocols.sankalpa.types import Ashrama
 from vibe_core.mahamantra.substrate.manas.synaptic import HebbianSynaptic
 from vibe_core.protocols.memory import MemoryProtocol
 from vibe_core.runtime.tool_safety_guard import ToolSafetyGuard

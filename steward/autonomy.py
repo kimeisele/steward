@@ -22,10 +22,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Awaitable, Callable
 
-from vibe_core.mahamantra.substrate.sankalpa.will import check_conscience
-
 from steward.fix_pipeline import FixPipeline, problem_fingerprint
-from steward.intent_handlers import IntentHandlers, NO_HANDLER
+from steward.intent_handlers import NO_HANDLER, IntentHandlers
 from steward.intents import INTENT_TO_CONSCIENCE
 from steward.services import (
     SVC_SANKALPA,
@@ -34,6 +32,7 @@ from steward.services import (
 )
 from steward.tools.circuit_breaker import CircuitBreaker
 from vibe_core.di import ServiceRegistry
+from vibe_core.mahamantra.substrate.sankalpa.will import check_conscience
 
 if TYPE_CHECKING:
     from steward.senses import SenseCoordinator

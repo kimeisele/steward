@@ -1,10 +1,11 @@
 """Tests for A2A Peer Discovery — Agent Card scanning."""
 
 from __future__ import annotations
-import pytest
 
-from pathlib import Path
 import json
+from pathlib import Path
+
+import pytest
 
 from steward.a2a_discovery import A2APeerDiscovery, DiscoveredPeer
 

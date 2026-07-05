@@ -436,9 +436,9 @@ class TestConscience:
 
     def test_steward_has_grihastha_identity(self, fake_llm):
         """Agent._ashrama == Ashrama.GRIHASTHA."""
-        from vibe_core.mahamantra.protocols.sankalpa.types import Ashrama
         from steward.agent import StewardAgent
         from tests.conftest import track_agent
+        from vibe_core.mahamantra.protocols.sankalpa.types import Ashrama
 
         agent = track_agent(StewardAgent(provider=fake_llm))
         assert agent._ashrama == Ashrama.GRIHASTHA
@@ -458,11 +458,11 @@ class TestConscience:
 
     def test_conscience_allows_authorized_intent(self, fake_llm):
         """Autorisierter Intent (HEAL_REPO→contract_import_fix) bei GRIHASTHA+hohem Bhakti → durchgelassen."""
-        from vibe_core.mahamantra.substrate.sankalpa.will import check_conscience
-        from vibe_core.mahamantra.protocols.sankalpa.types import Ashrama
         from steward.agent import StewardAgent
         from steward.intents import INTENT_TO_CONSCIENCE, TaskIntent
         from tests.conftest import track_agent
+        from vibe_core.mahamantra.protocols.sankalpa.types import Ashrama
+        from vibe_core.mahamantra.substrate.sankalpa.will import check_conscience
 
         agent = track_agent(StewardAgent(provider=fake_llm))
         agent._cetana.stop()
@@ -475,10 +475,10 @@ class TestConscience:
 
     def test_conscience_blocks_unauthorized(self, fake_llm):
         """Gewissenstor blockiert "shutdown" (braucht system_control+admin, GRIHASTHA hat keine)."""
-        from vibe_core.mahamantra.substrate.sankalpa.will import check_conscience
-        from vibe_core.mahamantra.protocols.sankalpa.types import Ashrama
         from steward.agent import StewardAgent
         from tests.conftest import track_agent
+        from vibe_core.mahamantra.protocols.sankalpa.types import Ashrama
+        from vibe_core.mahamantra.substrate.sankalpa.will import check_conscience
 
         agent = track_agent(StewardAgent(provider=fake_llm))
         agent._cetana.stop()
@@ -490,10 +490,10 @@ class TestConscience:
 
     def test_low_bhakti_revokes_borderline(self, fake_llm):
         """Niedriga Bhakti (<50) blockiert borderline-Intents."""
-        from vibe_core.mahamantra.substrate.sankalpa.will import check_conscience
-        from vibe_core.mahamantra.protocols.sankalpa.types import Ashrama
         from steward.agent import StewardAgent
         from tests.conftest import track_agent
+        from vibe_core.mahamantra.protocols.sankalpa.types import Ashrama
+        from vibe_core.mahamantra.substrate.sankalpa.will import check_conscience
 
         agent = track_agent(StewardAgent(provider=fake_llm))
         agent._cetana.stop()
@@ -529,11 +529,11 @@ class TestConscience:
 
     def test_unmapped_intent_fails_closed(self, fake_llm):
         """Nicht gemappter Intent → fällt auf "shutdown" (fail-closed) → blockiert."""
-        from vibe_core.mahamantra.substrate.sankalpa.will import check_conscience
-        from vibe_core.mahamantra.protocols.sankalpa.types import Ashrama
         from steward.agent import StewardAgent
         from steward.intents import INTENT_TO_CONSCIENCE
         from tests.conftest import track_agent
+        from vibe_core.mahamantra.protocols.sankalpa.types import Ashrama
+        from vibe_core.mahamantra.substrate.sankalpa.will import check_conscience
 
         agent = track_agent(StewardAgent(provider=fake_llm))
         agent._cetana.stop()
@@ -549,10 +549,10 @@ class TestConscience:
 
     def test_authorized_write_intent_passes(self, fake_llm):
         """Autorisierte Schreib-Intents (contract_import_fix) werden NICHT blockiert."""
-        from vibe_core.mahamantra.substrate.sankalpa.will import check_conscience
-        from vibe_core.mahamantra.protocols.sankalpa.types import Ashrama
         from steward.agent import StewardAgent
         from tests.conftest import track_agent
+        from vibe_core.mahamantra.protocols.sankalpa.types import Ashrama
+        from vibe_core.mahamantra.substrate.sankalpa.will import check_conscience
 
         agent = track_agent(StewardAgent(provider=fake_llm))
         agent._cetana.stop()

@@ -586,9 +586,9 @@ class GenesisProvisioningHook(BasePhaseHook):
 
     def _provision_if_needed(self, repo: str, agent_id: str) -> None:
         """Check if NODE_PRIVATE_KEY exists; if not, generate and set it."""
-        import subprocess as _sp
-        import json as _json
         import hashlib as _hashlib
+        import json as _json
+        import subprocess as _sp
 
         # 1. Idempotency check: does secret already exist?
         check = _sp.run(
@@ -647,6 +647,7 @@ class GenesisProvisioningHook(BasePhaseHook):
         # 4. Encrypt with PyNaCl sealed box
         try:
             import base64 as _b64
+
             from nacl.public import PublicKey, SealedBox
 
             repo_pub_key = PublicKey(_b64.b64decode(pk_data["key"]))

@@ -6,10 +6,10 @@ import hashlib
 import json
 from unittest.mock import MagicMock
 
-from steward.federation_crypto import NodeKeyStore, derive_node_id, sign_payload_hash
 from steward.federation import FederationBridge
-from steward.federation_transport import NadiFederationTransport
+from steward.federation_crypto import NodeKeyStore, sign_payload_hash
 from steward.federation_gateway import FederationGateway, _is_a2a, _is_nadi
+from steward.federation_transport import NadiFederationTransport
 from steward.services import SVC_TASK_MANAGER
 
 
@@ -892,7 +892,6 @@ class TestReplayProtection:
 
 
 import time  # noqa: E402  — used only by replay tests above
-
 
 # ── Stats ────────────────────────────────────────────────────────
 
