@@ -95,7 +95,7 @@ class GatewayStats:
 # Replay protection — sliding timestamp window + per-source LRU of seen hashes.
 # Window is generous enough to absorb clock skew and NADI relay latency, tight
 # enough that an attacker cannot stockpile signed messages.
-_REPLAY_WINDOW_S: float = 300.0     # ±5 minutes
+_REPLAY_WINDOW_S: float = 300.0  # ±5 minutes
 _REPLAY_CACHE_PER_SOURCE: int = 256  # LRU size per source — bounds memory
 
 

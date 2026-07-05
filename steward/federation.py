@@ -205,9 +205,7 @@ def _bottleneck_dedup_key(
     target_repo = str(payload.get("target_repo", source_agent)).strip() or source_agent
     contract_name = str(payload.get("contract_name", "")).strip()
     if not contract_name:
-        contract_name = _normalize_bottleneck_contract(
-            str(payload.get("target", fallback_target))
-        )
+        contract_name = _normalize_bottleneck_contract(str(payload.get("target", fallback_target)))
     return f"{target_repo}:{contract_name}"[:160]
 
 
@@ -473,9 +471,7 @@ class FederationBridge:
 
         env_key = (os.environ.get("NODE_PRIVATE_KEY") or "").strip()
         if not env_key:
-            logger.warning(
-                "BRIDGE: NODE_PRIVATE_KEY env unset — outbound messages will be unsigned"
-            )
+            logger.warning("BRIDGE: NODE_PRIVATE_KEY env unset — outbound messages will be unsigned")
             return None
 
         # NODE_PRIVATE_KEY is the raw 32-byte seed (hex) OR a JSON node-keys
@@ -491,13 +487,12 @@ class FederationBridge:
         try:
             from cryptography.hazmat.primitives import serialization
             from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
             raw = bytes.fromhex(priv_hex)
             if len(raw) != 32:
                 raise ValueError(f"expected 32 raw bytes, got {len(raw)}")
             sk = Ed25519PrivateKey.from_private_bytes(raw)
-            pub_hex = sk.public_key().public_bytes(
-                serialization.Encoding.Raw, serialization.PublicFormat.Raw
-            ).hex()
+            pub_hex = sk.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()
             self._node_identity_cache = {
                 "private_key": priv_hex,
                 "public_key": pub_hex,
@@ -505,7 +500,8 @@ class FederationBridge:
             }
             logger.info(
                 "BRIDGE: NODE_PRIVATE_KEY loaded — node_id=%s public_key=%s",
-                self._node_identity_cache["node_id"], pub_hex,
+                self._node_identity_cache["node_id"],
+                pub_hex,
             )
             return self._node_identity_cache
         except (ValueError, TypeError, ImportError) as e:
@@ -520,9 +516,7 @@ class FederationBridge:
         with steward.federation_crypto.verify_payload_signature.
         """
         canonical = {k: v for k, v in msg.items() if k not in ("payload_hash", "signature")}
-        payload_hash = hashlib.sha256(
-            json.dumps(canonical, sort_keys=True).encode("utf-8")
-        ).hexdigest()
+        payload_hash = hashlib.sha256(json.dumps(canonical, sort_keys=True).encode("utf-8")).hexdigest()
         signature = sign_payload_hash(identity["private_key"], payload_hash)
         return {**canonical, "payload_hash": payload_hash, "signature": signature}
 
@@ -561,12 +555,14 @@ class FederationBridge:
         # load-bearing for outbound routing and must NOT change. The display
         # name in the registry, however, should remain "steward" so operators
         # can grep verified_agents.json by readable handle. (TICKET-010-MICRO)
-        ok = self._handle_agent_claim({
-            "node_id": identity["node_id"],
-            "agent_name": "steward",
-            "public_key": identity["public_key"],
-            "capabilities": capabilities,
-        })
+        ok = self._handle_agent_claim(
+            {
+                "node_id": identity["node_id"],
+                "agent_name": "steward",
+                "public_key": identity["public_key"],
+                "capabilities": capabilities,
+            }
+        )
         if ok:
             try:
                 sentinel.write_text("")
@@ -575,7 +571,9 @@ class FederationBridge:
         self._self_claim_done = True
         logger.info(
             "BRIDGE: self-claim done — node_id=%s pubkey_token=%s ok=%s",
-            identity["node_id"], token, ok,
+            identity["node_id"],
+            token,
+            ok,
         )
 
     def flush_outbound(self, transport: FederationTransport) -> int:
@@ -1227,17 +1225,15 @@ class FederationBridge:
         if derive_node_id(public_key) != node_id:
             logger.warning(
                 "BRIDGE: agent_claim REJECTED — node_id %s does not derive from public_key %s",
-                node_id, public_key[:16],
+                node_id,
+                public_key[:16],
             )
             return False
 
         normalized_caps = sorted({str(item) for item in capabilities})
         registry = self._load_verified_agents()
         existing = registry.get(node_id) if isinstance(registry.get(node_id), dict) else None
-        existing_caps = (
-            sorted({str(item) for item in existing.get("capabilities", [])})
-            if existing else None
-        )
+        existing_caps = sorted({str(item) for item in existing.get("capabilities", [])}) if existing else None
         unchanged = (
             existing is not None
             and existing.get("public_key") == public_key

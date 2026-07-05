@@ -10,9 +10,9 @@ from steward.federation import (
     OP_CITY_REPORT,
     OP_CLAIM_OUTCOME,
     OP_CLAIM_SLOT,
+    OP_DELEGATE_TASK,
     OP_FEDERATION_NODE_HEALTH,
     OP_GOVERNANCE_BOUNTY,
-    OP_DELEGATE_TASK,
     OP_HEARTBEAT,
     OP_RELEASE_SLOT,
     OP_TASK_COMPLETED,
@@ -397,7 +397,11 @@ class TestFlushOutbound:
         bridge.emit(OP_DELEGATE_TASK, {"title": "Fix tests"})
 
         assert bridge.flush_outbound(transport) == 0
-        records = [json.loads(path.read_text()) for path in (tmp_path / "quarantine").glob("*.json") if path.name != "index.json"]
+        records = [
+            json.loads(path.read_text())
+            for path in (tmp_path / "quarantine").glob("*.json")
+            if path.name != "index.json"
+        ]
         assert len(records) == 1
         assert records[0]["stage"] == "routing_outbound"
         assert records[0]["reason"] == "circuit_breaker_peer_critical"
@@ -423,7 +427,11 @@ class TestFlushOutbound:
         bridge.emit(OP_DELEGATE_TASK, {"title": "Fix tests"})
 
         assert bridge.flush_outbound(transport) == 0
-        records = [json.loads(path.read_text()) for path in (tmp_path / "quarantine").glob("*.json") if path.name != "index.json"]
+        records = [
+            json.loads(path.read_text())
+            for path in (tmp_path / "quarantine").glob("*.json")
+            if path.name != "index.json"
+        ]
         assert len(records) == 1
         assert records[0]["reason"] == "circuit_breaker_protocol_mismatch"
         assert records[0]["message"]["target"] == "peer-old"
@@ -624,6 +632,7 @@ class TestMokshaFlush:
         canonical payload_hash + signature, source becomes node_id, and the
         steward registers itself in verified_agents.json (self-claim)."""
         import hashlib
+
         from cryptography.hazmat.primitives import serialization
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
@@ -635,9 +644,7 @@ class TestMokshaFlush:
             serialization.PrivateFormat.Raw,
             serialization.NoEncryption(),
         ).hex()
-        pub_hex = sk.public_key().public_bytes(
-            serialization.Encoding.Raw, serialization.PublicFormat.Raw
-        ).hex()
+        pub_hex = sk.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw).hex()
         expected_node_id = derive_node_id(pub_hex)
 
         monkeypatch.setenv("NODE_PRIVATE_KEY", priv_hex)
@@ -663,9 +670,7 @@ class TestMokshaFlush:
         assert verify_payload_signature(pub_hex, msg["payload_hash"], msg["signature"])
         # payload_hash is the canonical sha256 of message minus sig fields
         canonical = {k: v for k, v in msg.items() if k not in ("payload_hash", "signature")}
-        expected_hash = hashlib.sha256(
-            json.dumps(canonical, sort_keys=True).encode()
-        ).hexdigest()
+        expected_hash = hashlib.sha256(json.dumps(canonical, sort_keys=True).encode()).hexdigest()
         assert msg["payload_hash"] == expected_hash
 
         # Self-claim: steward registered itself in verified_agents.json
@@ -1514,4 +1519,3 @@ class TestBottleneckResolutionEmitter:
         hook.execute(ctx)
 
         assert len(bridge._outbound) == 0
-

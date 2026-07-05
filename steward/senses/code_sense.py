@@ -162,7 +162,24 @@ class CodeSense:
 
     def perceive(self) -> SensePerception:
         """Perceive code structure — modules, classes, functions, imports, cohesion."""
-        py_files = sorted(self._cwd.rglob("*.py"))[:_MAX_FILES]
+        # Walk the tree pruning excluded dirs (.venv, hidden, __pycache__,
+        # node_modules) IN PLACE so we never descend into them. rglob() would
+        # scan the entire venv (thousands of files, ~100x slower) and, after
+        # alphabetical sort, fill the _MAX_FILES budget with dot-dir paths that
+        # then get filtered out — yielding zero real files. Pruning fixes both
+        # the correctness bug (0 files) and the performance bug (timeout).
+        import os
+
+        _EXCLUDED = {"__pycache__", "venv", ".venv", "node_modules"}
+        collected: list[Path] = []
+        for root, dirs, files in os.walk(self._cwd):
+            dirs[:] = [d for d in dirs if not d.startswith(".") and d not in _EXCLUDED]
+            for fn in files:
+                if fn.endswith(".py"):
+                    collected.append(Path(root) / fn)
+            if len(collected) >= _MAX_FILES:
+                break
+        py_files = sorted(collected)[:_MAX_FILES]
 
         packages: list[str] = []
         total_classes = 0

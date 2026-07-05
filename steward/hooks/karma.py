@@ -239,7 +239,7 @@ class KarmaBottleneckResolutionHook(BasePhaseHook):
             for line in desc.split("\n"):
                 line = line.strip()
                 if line.startswith("dedup_key:"):
-                    dedup_key = line[len("dedup_key:"):]
+                    dedup_key = line[len("dedup_key:") :]
                     break
 
             if not dedup_key:
@@ -276,4 +276,3 @@ class KarmaBottleneckResolutionHook(BasePhaseHook):
 
         if emitted:
             ctx.operations.append(f"karma_bottleneck_resolution:emitted={emitted}")
-

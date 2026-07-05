@@ -13,7 +13,9 @@ class QuarantineReplayEngine:
     gateway: object
     node_id: str = "steward"
 
-    def _iter_selected_records(self, *, file_name: str = "", reject_reason: str = "", limit: int | None = None) -> list[dict]:
+    def _iter_selected_records(
+        self, *, file_name: str = "", reject_reason: str = "", limit: int | None = None
+    ) -> list[dict]:
         records = []
         for record in self.transport.list_quarantine_records():
             if file_name and record.get("file_name") != file_name:
@@ -68,7 +70,9 @@ class QuarantineReplayEngine:
             "files": files,
         }
 
-    def build_node_health_report(self, *, file_name: str = "", reject_reason: str = "", limit: int | None = None) -> dict[str, object]:
+    def build_node_health_report(
+        self, *, file_name: str = "", reject_reason: str = "", limit: int | None = None
+    ) -> dict[str, object]:
         metrics = self.analytics(file_name=file_name, reject_reason=reject_reason, limit=limit)
         total = int(metrics.get("total", 0))
         if total > 50:

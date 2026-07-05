@@ -35,8 +35,8 @@ def register_default_hooks(registry: PhaseHookRegistry) -> None:
     from steward.hooks.moksha import (
         MokshaFederationHook,
         MokshaPersistenceHook,
-        MokshaSynapseHook,
         MokshaQuarantineCleanupHook,
+        MokshaSynapseHook,
     )
 
     # GENESIS hooks

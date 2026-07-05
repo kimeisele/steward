@@ -378,6 +378,7 @@ class DharmaFederationHook(BasePhaseHook):
                                     if pub_key:
                                         try:
                                             from steward.federation_crypto import verify_payload_signature
+
                                             verified = verify_payload_signature(pub_key, payload_hash, signature)
                                         except Exception:
                                             verified = False
@@ -405,7 +406,11 @@ class DharmaFederationHook(BasePhaseHook):
                         reaper.record_heartbeat(agent_id=peer_id, source="nadi_inbox")
                         recorded.add(peer_id)
                     if recorded:
-                        logger.info("FEDERATION: recorded heartbeats for %d inbox sources: %s", len(recorded), ", ".join(sorted(recorded)))
+                        logger.info(
+                            "FEDERATION: recorded heartbeats for %d inbox sources: %s",
+                            len(recorded),
+                            ", ".join(sorted(recorded)),
+                        )
             except (json.JSONDecodeError, OSError):
                 pass
 

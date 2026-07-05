@@ -22,10 +22,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Awaitable, Callable
 
-from vibe_core.mahamantra.substrate.sankalpa.will import check_conscience
-
 from steward.fix_pipeline import FixPipeline, problem_fingerprint
-from steward.intent_handlers import IntentHandlers, NO_HANDLER
+from steward.intent_handlers import NO_HANDLER, IntentHandlers
 from steward.intents import INTENT_TO_CONSCIENCE
 from steward.services import (
     SVC_SANKALPA,
@@ -34,6 +32,7 @@ from steward.services import (
 )
 from steward.tools.circuit_breaker import CircuitBreaker
 from vibe_core.di import ServiceRegistry
+from vibe_core.mahamantra.substrate.sankalpa.will import check_conscience
 
 if TYPE_CHECKING:
     from steward.senses import SenseCoordinator
@@ -247,7 +246,9 @@ class AutonomyEngine:
 
             # ── Gewissenstor (Kapitel 3a) ────────────────────────────────
             # Prüfe dharmische Berechtigung VOR Dispatch
-            intent_str = INTENT_TO_CONSCIENCE.get(intent, "shutdown")  # fail-CLOSED: unbekannt → blockiert via "shutdown" (erfordert system_control+admin)
+            intent_str = INTENT_TO_CONSCIENCE.get(
+                intent, "shutdown"
+            )  # fail-CLOSED: unbekannt → blockiert via "shutdown" (erfordert system_control+admin)
             ashrama = self._ashrama_fn() if self._ashrama_fn else None
             if ashrama is None:
                 logger.warning("Ashrama not available for conscience check on %s", intent.name)
@@ -260,7 +261,10 @@ class AutonomyEngine:
             if not verdict.is_permitted:
                 logger.warning(
                     "CONSCIENCE: intent %s NOT permitted (guna=%s, bhakti=%d): %s [missing=%s]",
-                    intent.name, verdict.guna, self._current_bhakti(), verdict.reason,
+                    intent.name,
+                    verdict.guna,
+                    self._current_bhakti(),
+                    verdict.reason,
                     verdict.missing_permissions,
                 )
                 task_mgr.update_task(task.id, status=TaskStatus.BLOCKED)

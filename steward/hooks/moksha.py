@@ -220,7 +220,6 @@ class MokshaQuarantineCleanupHook(BasePhaseHook):
         remaining = sum(1 for _ in quarantine_dir.glob("*.json"))
         if remaining > 100:
             logger.warning(
-                "MOKSHA QUARANTINE: %d files remain after cleanup — "
-                "investigate with steward --replay-quarantine",
+                "MOKSHA QUARANTINE: %d files remain after cleanup — investigate with steward --replay-quarantine",
                 remaining,
             )
