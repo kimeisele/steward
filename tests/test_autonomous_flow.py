@@ -789,9 +789,13 @@ class TestProactiveDispatch:
                 result = agent._autonomy.dispatch_intent(intent)
                 if intent.is_membran:
                     # Membran intents require a payload; without one they correctly signal NO_HANDLER → BLOCKED
-                    assert result is NO_HANDLER, f"Membran intent {intent.name} should return NO_HANDLER without payload, got: {result}"
+                    assert result is NO_HANDLER, (
+                        f"Membran intent {intent.name} should return NO_HANDLER without payload, got: {result}"
+                    )
                 else:
-                    assert result is None or isinstance(result, str), f"Intent {intent.name} unexpectedly returned: {result}"
+                    assert result is None or isinstance(result, str), (
+                        f"Intent {intent.name} unexpectedly returned: {result}"
+                    )
         assert fake_llm.call_count == 0
 
     def test_proactive_task_dispatches_in_autonomous(self, fake_llm):

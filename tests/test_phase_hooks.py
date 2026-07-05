@@ -376,7 +376,9 @@ class TestDefaultHookRegistration:
         assert hooks is not None
         assert hooks.hook_count(DHARMA) == 5  # health, reaper, marketplace, federation, immune
         assert hooks.hook_count(GENESIS) == 2  # discovery + provisioning (GenesisProvisioningHook, commit 11127b7ccb)
-        assert hooks.hook_count(MOKSHA) == 6  # synapse, health_report, persistence, federation, quarantine_cleanup, context_bridge
+        assert (
+            hooks.hook_count(MOKSHA) == 6
+        )  # synapse, health_report, persistence, federation, quarantine_cleanup, context_bridge
 
     def test_dharma_dispatch_through_agent(self, fake_llm):
         """Agent._phase_dharma() dispatches through PhaseHookRegistry."""

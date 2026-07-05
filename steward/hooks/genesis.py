@@ -562,9 +562,7 @@ class GenesisProvisioningHook(BasePhaseHook):
 
         # Provision all peers under owner/ that lack NODE_PRIVATE_KEY
         # Skip crypto IDs (ag_xxxx) — those are transport signatures not repos
-        all_peers = (list(reaper.alive_peers()) +
-                     list(reaper.suspect_peers()) +
-                     list(reaper.dead_peers()))
+        all_peers = list(reaper.alive_peers()) + list(reaper.suspect_peers()) + list(reaper.dead_peers())
         logger.info("PROVISIONER: found %d total peers", len(all_peers))
         seen = set()
         provision_count = 0
@@ -592,9 +590,16 @@ class GenesisProvisioningHook(BasePhaseHook):
 
         # 1. Idempotency check: does secret already exist?
         check = _sp.run(
-            ["gh", "api", f"repos/{repo}/actions/secrets",
-             "--jq", '.secrets[] | select(.name=="NODE_PRIVATE_KEY") | .name'],
-            capture_output=True, text=True, timeout=10
+            [
+                "gh",
+                "api",
+                f"repos/{repo}/actions/secrets",
+                "--jq",
+                '.secrets[] | select(.name=="NODE_PRIVATE_KEY") | .name',
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if "NODE_PRIVATE_KEY" in check.stdout:
             logger.debug("PROVISIONER: %s already has NODE_PRIVATE_KEY", repo)
@@ -623,18 +628,21 @@ class GenesisProvisioningHook(BasePhaseHook):
             logger.error("PROVISIONER: key generation failed for %s: %s", repo, exc)
             return
 
-        secret_value = _json.dumps({
-            "private_key": priv_hex,
-            "public_key": pub_hex,
-            "node_id": node_id,
-        })
+        secret_value = _json.dumps(
+            {
+                "private_key": priv_hex,
+                "public_key": pub_hex,
+                "node_id": node_id,
+            }
+        )
 
         # 3. Fetch repo public key for GitHub sealed box encryption
         try:
             pk_result = _sp.run(
-                ["gh", "api", f"repos/{repo}/actions/secrets/public-key",
-                 "--jq", "{key_id: .key_id, key: .key}"],
-                capture_output=True, text=True, timeout=10
+                ["gh", "api", f"repos/{repo}/actions/secrets/public-key", "--jq", "{key_id: .key_id, key: .key}"],
+                capture_output=True,
+                text=True,
+                timeout=10,
             )
             if pk_result.returncode != 0:
                 logger.warning("PROVISIONER: cannot access %s secrets API", repo)
@@ -659,16 +667,13 @@ class GenesisProvisioningHook(BasePhaseHook):
 
         # 5. Set secret via GitHub API
         try:
-            api_input = _json.dumps({
-                "encrypted_value": encrypted,
-                "key_id": pk_data['key_id']
-            })
+            api_input = _json.dumps({"encrypted_value": encrypted, "key_id": pk_data["key_id"]})
             set_result = _sp.run(
-                ["gh", "api", "-X", "PUT",
-                 f"repos/{repo}/actions/secrets/NODE_PRIVATE_KEY",
-                 "--input", "-"],
+                ["gh", "api", "-X", "PUT", f"repos/{repo}/actions/secrets/NODE_PRIVATE_KEY", "--input", "-"],
                 input=api_input,
-                capture_output=True, text=True, timeout=15
+                capture_output=True,
+                text=True,
+                timeout=15,
             )
             if set_result.returncode == 0:
                 logger.info("PROVISIONER: ✅ NODE_PRIVATE_KEY set for %s (node_id=%s)", repo, node_id)

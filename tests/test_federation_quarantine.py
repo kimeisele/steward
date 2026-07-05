@@ -15,7 +15,7 @@ class TestQuarantineReplayEngine:
             stage="gateway_reject",
         )
         transport.quarantine_messages(
-            [{"raw_text": "{broken json", "path": str(tmp_path / 'nadi_inbox.json')}],
+            [{"raw_text": "{broken json", "path": str(tmp_path / "nadi_inbox.json")}],
             reason="NADI inbox JSON decode failed",
             stage="transport_read",
         )
@@ -41,7 +41,9 @@ class TestQuarantineReplayEngine:
             reason="Bridge rejected operation 'heartbeat'",
             stage="gateway_reject",
         )
-        quarantine_file = [path for path in (tmp_path / "quarantine").glob("*.json") if path.name != "index.json"][0].name
+        quarantine_file = [path for path in (tmp_path / "quarantine").glob("*.json") if path.name != "index.json"][
+            0
+        ].name
 
         engine = QuarantineReplayEngine(transport=transport, gateway=gateway)
         summary = engine.reinject(file_name=quarantine_file)
@@ -114,7 +116,7 @@ class TestQuarantineReplayEngine:
             stage="gateway_validate_reject",
         )
         transport.quarantine_messages(
-            [{"raw_text": "{broken json", "path": str(tmp_path / 'nadi_inbox.json')}],
+            [{"raw_text": "{broken json", "path": str(tmp_path / "nadi_inbox.json")}],
             reason="NADI inbox JSON decode failed",
             stage="transport_malformed",
         )

@@ -95,15 +95,15 @@ INTENT_TO_CONSCIENCE: dict[TaskIntent, str] = {
     TaskIntent.FEDERATION_HEALTH: "review_todos",
     TaskIntent.CROSS_REPO_DIAGNOSTIC: "review_todos",
     TaskIntent.FEDERATION_GAP_SCAN: "review_todos",
-    TaskIntent.SYNTHESIZE_BRIEFING: "doc_update",        # schreibt Doku
-    TaskIntent.DIAGNOSE_STAGNATION: "review_todos",     # lesender Detektor
+    TaskIntent.SYNTHESIZE_BRIEFING: "doc_update",  # schreibt Doku
+    TaskIntent.DIAGNOSE_STAGNATION: "review_todos",  # lesender Detektor
     # Schreibend — brauchen echte Rechte
-    TaskIntent.HEAL_REPO: "contract_import_fix",          # code_modify
+    TaskIntent.HEAL_REPO: "contract_import_fix",  # code_modify
     TaskIntent.BOTTLENECK_ESCALATION: "contract_import_fix",  # code_modify
     TaskIntent.GOVERNANCE_BOUNTY: "contract_import_fix",  # code_modify
-    TaskIntent.POST_MERGE: "commit_and_push",             # git
-    TaskIntent.UPDATE_DEPS: "create_pr",                  # git_push + pr_create
-    TaskIntent.REMOVE_DEAD_CODE: "create_pr",             # git_push + pr_create
+    TaskIntent.POST_MERGE: "commit_and_push",  # git
+    TaskIntent.UPDATE_DEPS: "create_pr",  # git_push + pr_create
+    TaskIntent.REMOVE_DEAD_CODE: "create_pr",  # git_push + pr_create
 }
 
 

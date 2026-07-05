@@ -325,11 +325,15 @@ class TestDeterministicDispatch:
                 result = agent._autonomy.dispatch_intent(intent)
                 if intent.is_membran:
                     # Membran intents require a payload; without one they correctly signal NO_HANDLER → BLOCKED
-                    assert result is NO_HANDLER, f"Membran intent {intent.name} should return NO_HANDLER without payload, got: {result}"
+                    assert result is NO_HANDLER, (
+                        f"Membran intent {intent.name} should return NO_HANDLER without payload, got: {result}"
+                    )
                 elif intent == TaskIntent.DIAGNOSE_STAGNATION:
                     # Stagnation detector always reports a problem when called (Kap 3b).
                     # In real execution, it only fires when is_stuck() is true (CONDITION_BASED).
-                    assert isinstance(result, str) and result, f"DIAGNOSE_STAGNATION should return a problem string, got: {result}"
+                    assert isinstance(result, str) and result, (
+                        f"DIAGNOSE_STAGNATION should return a problem string, got: {result}"
+                    )
                 else:
                     assert result is None, f"Intent {intent.name} unexpectedly returned: {result}"
         assert fake_llm.call_count == 0
@@ -337,6 +341,7 @@ class TestDeterministicDispatch:
 
 class SimpleTask:
     """Minimal task object for testing — no mocks, just real data."""
+
     def __init__(self, id: str, title: str, description: str):
         self.id = id
         self.title = title
@@ -366,9 +371,7 @@ class TestMembranSignals:
 
         # Create real task with bottleneck description (key:value format)
         task = SimpleTask(
-            id="test-task-123",
-            title="[BOTTLENECK_ESCALATION] test",
-            description="target_repo:kimeisele/agent-city\n"
+            id="test-task-123", title="[BOTTLENECK_ESCALATION] test", description="target_repo:kimeisele/agent-city\n"
         )
 
         # Dispatch the bottleneck intent with task context
@@ -388,9 +391,7 @@ class TestMembranSignals:
 
         # Create real task with specific repo
         task = SimpleTask(
-            id="test-task-456",
-            title="[BOTTLENECK_ESCALATION] test",
-            description="target_repo:kimeisele/special-repo\n"
+            id="test-task-456", title="[BOTTLENECK_ESCALATION] test", description="target_repo:kimeisele/special-repo\n"
         )
 
         result = agent._autonomy.dispatch_intent(TaskIntent.BOTTLENECK_ESCALATION, task)
@@ -407,9 +408,7 @@ class TestMembranSignals:
 
         # Create real task with governance description
         task = SimpleTask(
-            id="test-task-789",
-            title="[GOVERNANCE_BOUNTY] test",
-            description="target_repo:kimeisele/world-repo\n"
+            id="test-task-789", title="[GOVERNANCE_BOUNTY] test", description="target_repo:kimeisele/world-repo\n"
         )
 
         result = agent._autonomy.dispatch_intent(TaskIntent.GOVERNANCE_BOUNTY, task)
@@ -518,11 +517,7 @@ class TestConscience:
         assert result is NO_HANDLER
 
         # Membran-Intent mit Payload → Problem-String
-        task = SimpleTask(
-            id="test-task",
-            title="[HEAL_REPO] test",
-            description="target_repo:test/repo\n"
-        )
+        task = SimpleTask(id="test-task", title="[HEAL_REPO] test", description="target_repo:test/repo\n")
         result = agent._autonomy.dispatch_intent(TaskIntent.HEAL_REPO, task)
         # HEAL_REPO sollte entweder None (ok) oder String (problem) sein, nicht NO_HANDLER
         assert result is None or isinstance(result, str)

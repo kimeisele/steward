@@ -246,7 +246,9 @@ class AutonomyEngine:
 
             # ── Gewissenstor (Kapitel 3a) ────────────────────────────────
             # Prüfe dharmische Berechtigung VOR Dispatch
-            intent_str = INTENT_TO_CONSCIENCE.get(intent, "shutdown")  # fail-CLOSED: unbekannt → blockiert via "shutdown" (erfordert system_control+admin)
+            intent_str = INTENT_TO_CONSCIENCE.get(
+                intent, "shutdown"
+            )  # fail-CLOSED: unbekannt → blockiert via "shutdown" (erfordert system_control+admin)
             ashrama = self._ashrama_fn() if self._ashrama_fn else None
             if ashrama is None:
                 logger.warning("Ashrama not available for conscience check on %s", intent.name)
@@ -259,7 +261,10 @@ class AutonomyEngine:
             if not verdict.is_permitted:
                 logger.warning(
                     "CONSCIENCE: intent %s NOT permitted (guna=%s, bhakti=%d): %s [missing=%s]",
-                    intent.name, verdict.guna, self._current_bhakti(), verdict.reason,
+                    intent.name,
+                    verdict.guna,
+                    self._current_bhakti(),
+                    verdict.reason,
                     verdict.missing_permissions,
                 )
                 task_mgr.update_task(task.id, status=TaskStatus.BLOCKED)

@@ -128,12 +128,20 @@ class TestNadiFederationTransport:
         gateway from wasting cycles on hub-buffer backlog."""
         transport = NadiFederationTransport(str(tmp_path))
         fresh = {
-            "source": "ag_fresh", "target": "steward", "operation": "heartbeat",
-            "payload": {}, "timestamp": time.time(), "ttl_s": 900.0,
+            "source": "ag_fresh",
+            "target": "steward",
+            "operation": "heartbeat",
+            "payload": {},
+            "timestamp": time.time(),
+            "ttl_s": 900.0,
         }
         stale = {
-            "source": "ag_stale", "target": "steward", "operation": "heartbeat",
-            "payload": {}, "timestamp": time.time() - 7200, "ttl_s": 900.0,
+            "source": "ag_stale",
+            "target": "steward",
+            "operation": "heartbeat",
+            "payload": {},
+            "timestamp": time.time() - 7200,
+            "ttl_s": 900.0,
         }
         (tmp_path / "nadi_inbox.json").write_text(json.dumps([fresh, stale]))
 
@@ -143,10 +151,11 @@ class TestNadiFederationTransport:
         assert "ag_fresh" in sources
         assert "ag_stale" not in sources
         # No quarantine for stale (it's not an integrity violation)
-        quarantine_files = [
-            p for p in (tmp_path / "quarantine").glob("*.json")
-            if p.name != "index.json"
-        ] if (tmp_path / "quarantine").exists() else []
+        quarantine_files = (
+            [p for p in (tmp_path / "quarantine").glob("*.json") if p.name != "index.json"]
+            if (tmp_path / "quarantine").exists()
+            else []
+        )
         assert len(quarantine_files) == 0
 
     def test_append_to_inbox_writes_outbox(self, tmp_path):
@@ -274,7 +283,9 @@ class TestNadiFederationTransport:
                         "operation": "heartbeat",
                         "payload": heartbeat_payload,
                         "message_id": "msg-1",
-                        "payload_hash": hashlib.sha256(json.dumps(heartbeat_payload, sort_keys=True).encode()).hexdigest(),
+                        "payload_hash": hashlib.sha256(
+                            json.dumps(heartbeat_payload, sort_keys=True).encode()
+                        ).hexdigest(),
                     },
                     {"source": "agent-city", "payload": {}},
                     "not-a-dict",

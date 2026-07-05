@@ -40,9 +40,14 @@ def _load_from_hex_or_json(text: str) -> tuple[str, str, str] | None:
         raw = bytes.fromhex(text)
         if len(raw) == 32:
             sk = Ed25519PrivateKey.from_private_bytes(raw)
-            pub = sk.public_key().public_bytes(
-                serialization.Encoding.Raw, serialization.PublicFormat.Raw,
-            ).hex()
+            pub = (
+                sk.public_key()
+                .public_bytes(
+                    serialization.Encoding.Raw,
+                    serialization.PublicFormat.Raw,
+                )
+                .hex()
+            )
             return raw.hex(), pub, derive_node_id(pub)
     except (ValueError, TypeError):
         pass
@@ -86,7 +91,8 @@ class NodeKeyStore:
             if self.private_key and self.public_key:
                 logger.info(
                     "nodekeystore: loaded from file %s (env unset) — node_id=%s",
-                    self._path, self.node_id,
+                    self._path,
+                    self.node_id,
                 )
                 return
         # 3. Last resort

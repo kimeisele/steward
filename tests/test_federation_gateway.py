@@ -45,6 +45,7 @@ def _verified_mock_bridge(keys: NodeKeyStore, agent_name: str = "verified-peer")
     }
     return bridge
 
+
 # ── Protocol Detection ─────────────────────────────────────────────
 
 
@@ -311,15 +312,26 @@ class TestProcessInbound:
         bridge.ingest.return_value = True
         bridge.is_verified_agent.return_value = True
         bridge.get_verified_agent.side_effect = lambda nid: (
-            {"node_id": keys_a.node_id, "public_key": keys_a.public_key} if nid == keys_a.node_id
-            else {"node_id": keys_b.node_id, "public_key": keys_b.public_key} if nid == keys_b.node_id
+            {"node_id": keys_a.node_id, "public_key": keys_a.public_key}
+            if nid == keys_a.node_id
+            else {"node_id": keys_b.node_id, "public_key": keys_b.public_key}
+            if nid == keys_b.node_id
             else None
         )
         gw = FederationGateway(bridge=bridge)
         transport = self._make_transport(
             [
-                _sign_outbound({"operation": "heartbeat", "source": keys_a.node_id, "payload": {"agent_id": "a"}}, keys_a),
-                _sign_outbound({"operation": "claim_slot", "source": keys_b.node_id, "payload": {"slot_id": "s1", "agent_id": "b"}}, keys_b),
+                _sign_outbound(
+                    {"operation": "heartbeat", "source": keys_a.node_id, "payload": {"agent_id": "a"}}, keys_a
+                ),
+                _sign_outbound(
+                    {
+                        "operation": "claim_slot",
+                        "source": keys_b.node_id,
+                        "payload": {"slot_id": "s1", "agent_id": "b"},
+                    },
+                    keys_b,
+                ),
             ]
         )
 
@@ -341,10 +353,12 @@ class TestProcessInbound:
         bridge = _verified_mock_bridge(evicted_keys, agent_name="evicted-peer")
         gw = FederationGateway(bridge=bridge, reaper=reaper)
         transport = self._make_transport(
-            [_sign_outbound(
-                {"operation": "heartbeat", "source": evicted_keys.node_id, "payload": {"agent_id": "evicted-peer"}},
-                evicted_keys,
-            )]
+            [
+                _sign_outbound(
+                    {"operation": "heartbeat", "source": evicted_keys.node_id, "payload": {"agent_id": "evicted-peer"}},
+                    evicted_keys,
+                )
+            ]
         )
 
         processed = gw.process_inbound(transport)
@@ -401,17 +415,23 @@ class TestProcessInbound:
         bridge.ingest.return_value = True
         bridge.is_verified_agent.return_value = True
         bridge.get_verified_agent.side_effect = lambda nid: (
-            {"node_id": good_keys.node_id, "public_key": good_keys.public_key} if nid == good_keys.node_id
-            else {"node_id": bad_keys.node_id, "public_key": bad_keys.public_key} if nid == bad_keys.node_id
+            {"node_id": good_keys.node_id, "public_key": good_keys.public_key}
+            if nid == good_keys.node_id
+            else {"node_id": bad_keys.node_id, "public_key": bad_keys.public_key}
+            if nid == bad_keys.node_id
             else None
         )
         gw = FederationGateway(bridge=bridge, reaper=reaper)
         transport = self._make_transport(
             [
                 _sign_outbound({"operation": "heartbeat", "source": good_keys.node_id, "payload": {}}, good_keys),
-                _sign_outbound({"operation": "heartbeat", "source": bad_keys.node_id, "payload": {}}, bad_keys),  # REJECT: evicted
+                _sign_outbound(
+                    {"operation": "heartbeat", "source": bad_keys.node_id, "payload": {}}, bad_keys
+                ),  # REJECT: evicted
                 {"garbage": True},  # REJECT: unknown protocol
-                _sign_outbound({"operation": "claim_slot", "source": good_keys.node_id, "payload": {"slot_id": "s1"}}, good_keys),
+                _sign_outbound(
+                    {"operation": "claim_slot", "source": good_keys.node_id, "payload": {"slot_id": "s1"}}, good_keys
+                ),
             ]
         )
 
@@ -498,7 +518,12 @@ class TestProcessInbound:
 
     def test_unverified_sender_protected_operation_is_quarantined(self, tmp_path):
         transport = NadiFederationTransport(str(tmp_path))
-        payload = {"target": "fix:federation_ci_required:agent-internet", "severity": "high", "reward": 108, "description": "Fix CI"}
+        payload = {
+            "target": "fix:federation_ci_required:agent-internet",
+            "severity": "high",
+            "reward": 108,
+            "description": "Fix CI",
+        }
         (tmp_path / "nadi_inbox.json").write_text(
             json.dumps(
                 [
@@ -508,7 +533,9 @@ class TestProcessInbound:
                         "operation": "governance_bounty",
                         "payload": payload,
                         "message_id": "gov-1",
-                        "payload_hash": __import__("hashlib").sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest(),
+                        "payload_hash": __import__("hashlib")
+                        .sha256(json.dumps(payload, sort_keys=True).encode())
+                        .hexdigest(),
                     }
                 ]
             )
@@ -550,7 +577,9 @@ class TestProcessInbound:
                         "operation": "federation.agent_claim",
                         "payload": payload,
                         "message_id": "claim-1",
-                        "payload_hash": __import__("hashlib").sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest(),
+                        "payload_hash": __import__("hashlib")
+                        .sha256(json.dumps(payload, sort_keys=True).encode())
+                        .hexdigest(),
                     }
                 ]
             )
@@ -576,7 +605,12 @@ class TestProcessInbound:
         node_x_keys.ensure_keys()
         bridge = FederationBridge(agent_id="steward", verified_agents_path=tmp_path / "verified_agents.json")
         gw = FederationGateway(bridge=bridge)
-        gov_payload = {"target": "fix:federation_ci_required:agent-internet", "severity": "high", "reward": 108, "description": "Fix CI"}
+        gov_payload = {
+            "target": "fix:federation_ci_required:agent-internet",
+            "severity": "high",
+            "reward": 108,
+            "description": "Fix CI",
+        }
         claim_payload = {
             "agent_name": "node-x",
             "node_id": node_x_keys.node_id,
@@ -593,7 +627,9 @@ class TestProcessInbound:
                         "operation": "governance_bounty",
                         "payload": gov_payload,
                         "message_id": "gov-a",
-                        "payload_hash": __import__("hashlib").sha256(json.dumps(gov_payload, sort_keys=True).encode()).hexdigest(),
+                        "payload_hash": __import__("hashlib")
+                        .sha256(json.dumps(gov_payload, sort_keys=True).encode())
+                        .hexdigest(),
                     }
                 ]
             )
@@ -609,7 +645,9 @@ class TestProcessInbound:
                         "operation": "federation.agent_claim",
                         "payload": claim_payload,
                         "message_id": "claim-b",
-                        "payload_hash": __import__("hashlib").sha256(json.dumps(claim_payload, sort_keys=True).encode()).hexdigest(),
+                        "payload_hash": __import__("hashlib")
+                        .sha256(json.dumps(claim_payload, sort_keys=True).encode())
+                        .hexdigest(),
                     }
                 ]
             )
@@ -626,8 +664,13 @@ class TestProcessInbound:
                         "payload": gov_payload,
                         "message_id": "gov-c",
                         "timestamp": __import__("time").time(),
-                        "payload_hash": __import__("hashlib").sha256(json.dumps(gov_payload, sort_keys=True).encode()).hexdigest(),
-                        "signature": sign_payload_hash(node_x_keys.private_key, __import__("hashlib").sha256(json.dumps(gov_payload, sort_keys=True).encode()).hexdigest()),
+                        "payload_hash": __import__("hashlib")
+                        .sha256(json.dumps(gov_payload, sort_keys=True).encode())
+                        .hexdigest(),
+                        "signature": sign_payload_hash(
+                            node_x_keys.private_key,
+                            __import__("hashlib").sha256(json.dumps(gov_payload, sort_keys=True).encode()).hexdigest(),
+                        ),
                     }
                 ]
             )
@@ -654,7 +697,12 @@ class TestProcessInbound:
                 }
             )
         )
-        gov_payload = {"target": "fix:federation_ci_required:agent-internet", "severity": "high", "reward": 108, "description": "Fix CI"}
+        gov_payload = {
+            "target": "fix:federation_ci_required:agent-internet",
+            "severity": "high",
+            "reward": 108,
+            "description": "Fix CI",
+        }
         (tmp_path / "nadi_inbox.json").write_text(
             json.dumps(
                 [
@@ -664,7 +712,9 @@ class TestProcessInbound:
                         "operation": "governance_bounty",
                         "payload": gov_payload,
                         "message_id": "gov-bad",
-                        "payload_hash": __import__("hashlib").sha256(json.dumps(gov_payload, sort_keys=True).encode()).hexdigest(),
+                        "payload_hash": __import__("hashlib")
+                        .sha256(json.dumps(gov_payload, sort_keys=True).encode())
+                        .hexdigest(),
                         "signature": "deadbeef",
                     }
                 ]
@@ -769,7 +819,10 @@ class TestProcessInbound:
             "payload": payload,
             "message_id": "claim-spoof",
             "payload_hash": __import__("hashlib").sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest(),
-            "signature": sign_payload_hash(attacker_keys.private_key, __import__("hashlib").sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()),
+            "signature": sign_payload_hash(
+                attacker_keys.private_key,
+                __import__("hashlib").sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest(),
+            ),
         }
         (node_b / "nadi_inbox.json").write_text(json.dumps([message]))
 
@@ -790,8 +843,10 @@ class TestProcessInbound:
         bridge.ingest.return_value = True
         bridge.is_verified_agent.return_value = True
         bridge.get_verified_agent.side_effect = lambda nid: (
-            {"node_id": keys_p1.node_id, "public_key": keys_p1.public_key} if nid == keys_p1.node_id
-            else {"node_id": keys_p2.node_id, "public_key": keys_p2.public_key} if nid == keys_p2.node_id
+            {"node_id": keys_p1.node_id, "public_key": keys_p1.public_key}
+            if nid == keys_p1.node_id
+            else {"node_id": keys_p2.node_id, "public_key": keys_p2.public_key}
+            if nid == keys_p2.node_id
             else None
         )
         gw = FederationGateway(bridge=bridge)
@@ -859,6 +914,7 @@ class TestReplayProtection:
         del msg["timestamp"]
         # Re-sign without timestamp
         import hashlib as _h
+
         canonical = {k: v for k, v in msg.items() if k not in ("payload_hash", "signature")}
         msg["payload_hash"] = _h.sha256(json.dumps(canonical, sort_keys=True).encode()).hexdigest()
         msg["signature"] = sign_payload_hash(keys.private_key, msg["payload_hash"])
@@ -880,8 +936,10 @@ class TestReplayProtection:
             "operation": "federation.agent_claim",
             "source": keys.node_id,
             "payload": {
-                "agent_name": "k", "node_id": keys.node_id,
-                "public_key": keys.public_key, "capabilities": [],
+                "agent_name": "k",
+                "node_id": keys.node_id,
+                "public_key": keys.public_key,
+                "capabilities": [],
             },
         }
         # Send twice: second should still be accepted at the gateway level

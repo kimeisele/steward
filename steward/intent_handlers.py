@@ -90,7 +90,7 @@ class IntentHandlers:
 
         # Inspiziere Handler-Signatur: erwartet dieser Handler 'task'?
         sig = inspect.signature(handler)
-        if 'task' in sig.parameters:
+        if "task" in sig.parameters:
             return handler(task)
         else:
             return handler()

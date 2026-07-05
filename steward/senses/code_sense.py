@@ -169,6 +169,7 @@ class CodeSense:
         # then get filtered out — yielding zero real files. Pruning fixes both
         # the correctness bug (0 files) and the performance bug (timeout).
         import os
+
         _EXCLUDED = {"__pycache__", "venv", ".venv", "node_modules"}
         collected: list[Path] = []
         for root, dirs, files in os.walk(self._cwd):

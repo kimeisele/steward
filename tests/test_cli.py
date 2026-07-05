@@ -134,7 +134,9 @@ class TestReplayCLI:
     def test_handle_replay_quarantine_dry_run_outputs_summary(self, capsys):
         engine = MagicMock()
         engine.dry_run.return_value = {"would_accept": 5, "still_invalid": 2, "files": []}
-        args = MagicMock(dry_run=True, replay_all=False, file_name="", reject_reason="", output="human", replay_limit=None)
+        args = MagicMock(
+            dry_run=True, replay_all=False, file_name="", reject_reason="", output="human", replay_limit=None
+        )
 
         exit_code = _handle_replay_quarantine(args, engine=engine)
 
@@ -145,7 +147,14 @@ class TestReplayCLI:
     def test_handle_replay_quarantine_reinjects_targeted_reason(self, capsys):
         engine = MagicMock()
         engine.reinject.return_value = {"replayed": 1, "failed": 0, "files": ["abc.json"]}
-        args = MagicMock(dry_run=False, replay_all=False, file_name="", reject_reason="Gateway Validate Reject", output="json", replay_limit=7)
+        args = MagicMock(
+            dry_run=False,
+            replay_all=False,
+            file_name="",
+            reject_reason="Gateway Validate Reject",
+            output="json",
+            replay_limit=7,
+        )
 
         exit_code = _handle_replay_quarantine(args, engine=engine)
 
@@ -184,7 +193,11 @@ class TestReplayCLI:
         engine.build_node_health_report.return_value = {
             "node_id": "steward-node",
             "timestamp": 123.0,
-            "quarantine_metrics": {"total": 1, "by_reason": {"Gateway Validate Reject": 1}, "by_stage": {"gateway_validate_reject": 1}},
+            "quarantine_metrics": {
+                "total": 1,
+                "by_reason": {"Gateway Validate Reject": 1},
+                "by_stage": {"gateway_validate_reject": 1},
+            },
             "recommended_action": "dry_run_then_replay",
         }
         export_path = tmp_path / "node_health.json"
