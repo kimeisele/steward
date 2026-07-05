@@ -1519,3 +1519,43 @@ class TestBottleneckResolutionEmitter:
         hook.execute(ctx)
 
         assert len(bridge._outbound) == 0
+
+
+class TestAgentClaimRegistersPeerInReaper:
+    """MUTATION PROOF: a verified agent_claim must make the peer known to the
+    Reaper (keyed by agent_name), so dharma.py's _peers gate lets its
+    subsequent ag_ heartbeats through. Without the fix, peers stay [] and
+    named nodes freeze at 91 days despite live claims."""
+
+    def test_agent_claim_registers_peer_alive_by_agent_name(self, tmp_path):
+        from steward.federation import OP_AGENT_CLAIM, FederationBridge, derive_node_id
+        from steward.reaper import HeartbeatReaper
+
+        reaper = HeartbeatReaper()
+        bridge = FederationBridge(
+            agent_id="steward",
+            reaper=reaper,
+            verified_agents_path=tmp_path / "verified_agents.json",
+        )
+        public_key = "ecdsa-pub-city-001"
+        node_id = derive_node_id(public_key)
+
+        assert reaper.peer_count() == 0
+
+        assert bridge.ingest(
+            OP_AGENT_CLAIM,
+            {
+                "agent_name": "agent-city",
+                "node_id": node_id,
+                "public_key": public_key,
+                "capabilities": ["city_governance"],
+            },
+        )
+
+        # Peer must now be known to the reaper, keyed by CLARNAME not hash
+        assert reaper.get_peer("agent-city") is not None, "claim did not register peer in reaper"
+        assert reaper.peer_count() == 1
+        alive_names = {p.agent_id for p in reaper.alive_peers()}
+        assert "agent-city" in alive_names
+        # must NOT be keyed by the crypto hash
+        assert reaper.get_peer(node_id) is None

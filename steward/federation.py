@@ -1240,6 +1240,14 @@ class FederationBridge:
             and existing.get("agent_name") == agent_name
             and existing_caps == normalized_caps
         )
+        # Gatekeeper informs the doctor: a verified claim proves this peer exists.
+        # Key by agent_name (human identity), NOT node_id — crypto keys rotate,
+        # so multiple node_ids map to one agent (see verified_agents.json). This
+        # runs BEFORE the unchanged-shortcut so idempotent re-claims still keep
+        # the peer fresh in the reaper (otherwise a stable node would starve).
+        if self.reaper is not None and agent_name:
+            self.reaper.record_heartbeat(agent_id=agent_name, source="agent_claim")
+
         if unchanged:
             logger.info(
                 "BRIDGE: agent_claim identical — node_id=%s skipped (no registry write)",
