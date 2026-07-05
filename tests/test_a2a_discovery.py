@@ -240,7 +240,9 @@ def test_scan_with_known_repos_skips_org_scan():
     reaper = FakeReaper()
     discovery = A2APeerDiscovery(reaper=reaper)
     discovery._token = "fake-token"
-    discovery._last_scan = 0  # Allow scan
+    discovery._last_scan = (
+        -1e9
+    )  # far in the PAST — force scan regardless of monotonic() base (CI has small monotonic)  # Allow scan
 
     # Provide known repos — should NOT call _scan_org_repos
     from unittest.mock import patch
@@ -259,7 +261,7 @@ def test_scan_without_known_repos_calls_org_scan():
     """When known_repos is None, the org API is called (default behavior)."""
     discovery = A2APeerDiscovery()
     discovery._token = "fake-token"
-    discovery._last_scan = 0
+    discovery._last_scan = -1e9  # far in the PAST — force scan regardless of monotonic() base (CI has small monotonic)
 
     from unittest.mock import patch
 
@@ -275,7 +277,7 @@ def test_scan_with_known_repos_fetches_cards():
     reaper = FakeReaper()
     discovery = A2APeerDiscovery(reaper=reaper)
     discovery._token = "fake-token"
-    discovery._last_scan = 0
+    discovery._last_scan = -1e9  # far in the PAST — force scan regardless of monotonic() base (CI has small monotonic)
 
     test_peer = DiscoveredPeer(
         agent_id="agent-city",
