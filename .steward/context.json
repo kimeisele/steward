@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "timestamp": 1783441006.4122026,
+  "timestamp": 1783441952.077606,
   "project": {
     "name": "steward",
     "path": "/home/runner/work/steward/steward"
@@ -67,10 +67,10 @@
         "buddhi_action": ""
       },
       {
-        "task": "[autonomous] HEALTH_CHECK",
-        "outcome": "clean",
-        "summary": "Deterministic HEALTH_CHECK: no issues",
-        "timestamp": "2026-07-07T16:15:57.930778+00:00",
+        "task": "[autonomous] FEDERATION_HEALTH",
+        "outcome": "problem_found",
+        "summary": "Deterministic FEDERATION_HEALTH: problem detected",
+        "timestamp": "2026-07-07T16:31:30.922253+00:00",
         "tokens": 0,
         "rounds": 0,
         "errors": 0,
@@ -78,10 +78,10 @@
         "buddhi_action": ""
       },
       {
-        "task": "[autonomous] FEDERATION_HEALTH",
-        "outcome": "problem_found",
-        "summary": "Deterministic FEDERATION_HEALTH: problem detected",
-        "timestamp": "2026-07-07T16:15:59.238868+00:00",
+        "task": "[autonomous] HEALTH_CHECK",
+        "outcome": "clean",
+        "summary": "Deterministic HEALTH_CHECK: no issues",
+        "timestamp": "2026-07-07T16:32:00.882135+00:00",
         "tokens": 0,
         "rounds": 0,
         "errors": 0,
@@ -92,7 +92,7 @@
         "task": "[autonomous] CROSS_REPO_DIAGNOSTIC",
         "outcome": "clean",
         "summary": "Deterministic CROSS_REPO_DIAGNOSTIC: no issues",
-        "timestamp": "2026-07-07T16:16:34.715373+00:00",
+        "timestamp": "2026-07-07T16:32:15.450361+00:00",
         "tokens": 0,
         "rounds": 0,
         "errors": 0,
@@ -103,7 +103,7 @@
         "task": "[autonomous] SYNTHESIZE_BRIEFING",
         "outcome": "clean",
         "summary": "Deterministic SYNTHESIZE_BRIEFING: no issues",
-        "timestamp": "2026-07-07T16:16:46.404067+00:00",
+        "timestamp": "2026-07-07T16:32:32.070417+00:00",
         "tokens": 0,
         "rounds": 0,
         "errors": 0,
@@ -123,31 +123,31 @@
   "tasks": {
     "pending": [
       {
-        "id": "6161a31e-f7ae-4fe7-85ba-f62b2f3e3fd4",
+        "id": "bd463396-3627-48e9-8bcb-0cd1ebf7a8d2",
         "title": "[HEALTH_CHECK] Quick Health Check",
         "priority": 70,
         "status": "COMPLETED"
       },
       {
-        "id": "1808513b-9d5a-4f95-9ab9-9e9efe14e34e",
+        "id": "a5e9e45e-6c6a-4eda-9e5a-9691b3774ff8",
         "title": "[FEDERATION_HEALTH] Federation Health Check",
         "priority": 90,
         "status": "COMPLETED"
       },
       {
-        "id": "a7b483dc-697a-4fed-ba42-da7ee0cc24f2",
+        "id": "5b6e762b-7937-4af3-886d-6e7ef1055fbd",
         "title": "[HEAL_REPO] Heal Federation Repos",
         "priority": 90,
         "status": "COMPLETED"
       },
       {
-        "id": "a0478d8c-df40-477e-b8ae-56fb6973f20a",
+        "id": "2385309b-0e12-4eaa-b9be-aea97b73f564",
         "title": "[CROSS_REPO_DIAGNOSTIC] Cross-Repo Diagnostic",
         "priority": 70,
         "status": "COMPLETED"
       },
       {
-        "id": "d337b45e-99db-4ee2-ad87-7b687566eb36",
+        "id": "095f88e2-f7e8-4bc6-8e2b-3a8893dde0fa",
         "title": "[SYNTHESIZE_BRIEFING] Synthesize Context Briefing",
         "priority": 70,
         "status": "COMPLETED"
@@ -155,12 +155,12 @@
     ]
   },
   "federation": {
-    "total_peers": 64,
+    "total_peers": 65,
     "by_status": {
-      "alive": 12,
+      "alive": 13,
       "evicted": 52
     },
-    "avg_trust": 0.2593749999999997,
+    "avg_trust": 0.26307692307692276,
     "total_reaps": 8297,
     "total_evictions": 112,
     "lease_ttl_s": 900.0,
@@ -280,6 +280,12 @@
         "status": "alive",
         "trust": 0.5,
         "capabilities": []
+      },
+      {
+        "agent_id": "ag_0364d1d1c461d185",
+        "status": "alive",
+        "trust": 0.5,
+        "capabilities": []
       }
     ],
     "marketplace": {
@@ -291,11 +297,13 @@
       "default_ttl_s": 600.0
     },
     "gateway": {
-      "total_requests": 0,
-      "by_protocol": {},
+      "total_requests": 2,
+      "by_protocol": {
+        "nadi": 2
+      },
       "rejected_parse": 0,
       "rejected_validate": 0,
-      "errors": 0,
+      "errors": 1,
       "pending_signals": 0
     }
   },
@@ -320,7 +328,7 @@
         "kind": "federation_healthy",
         "met": true,
         "actual": {
-          "alive": 12,
+          "alive": 13,
           "suspect": 0,
           "dead": 0
         }
