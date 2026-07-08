@@ -1,12 +1,12 @@
 {
   "version": 1,
-  "timestamp": 1783544242.1938221,
+  "timestamp": 1783544541.3162339,
   "project": {
     "name": "steward",
     "path": "/home/runner/work/steward/steward"
   },
   "senses": {
-    "prompt_summary": "\n\n## Environment Perception\nGit: main, 13 dirty, ci=, 1 open PRs\nProject: python\nCode: 200 files, 667 cls, 441 fn, 10 low-cohesion cls (worst: AutonomyEngine LCOM4=6)\nTests: pytest, 92 files, last=unknown\nHealth: 212 source files, 2 smells (2 large, 0 stale)",
+    "prompt_summary": "\n\n## Environment Perception\nGit: main, 12 dirty, ci=, 1 open PRs\nProject: python\nCode: 200 files, 667 cls, 441 fn, 10 low-cohesion cls (worst: AutonomyEngine LCOM4=6)\nTests: pytest, 92 files, last=unknown\nHealth: 212 source files, 2 smells (2 large, 0 stale)",
     "total_pain": 0.16,
     "detail": {
       "srotra": {
@@ -70,7 +70,7 @@
         "task": "[autonomous] HEALTH_CHECK",
         "outcome": "clean",
         "summary": "Deterministic HEALTH_CHECK: no issues",
-        "timestamp": "2026-07-08T20:56:37.057869+00:00",
+        "timestamp": "2026-07-08T21:01:32.312016+00:00",
         "tokens": 0,
         "rounds": 0,
         "errors": 0,
@@ -81,7 +81,7 @@
         "task": "[autonomous] FEDERATION_HEALTH",
         "outcome": "problem_found",
         "summary": "Deterministic FEDERATION_HEALTH: problem detected",
-        "timestamp": "2026-07-08T20:56:38.510533+00:00",
+        "timestamp": "2026-07-08T21:01:33.019015+00:00",
         "tokens": 0,
         "rounds": 0,
         "errors": 0,
@@ -92,7 +92,7 @@
         "task": "[autonomous] CROSS_REPO_DIAGNOSTIC",
         "outcome": "clean",
         "summary": "Deterministic CROSS_REPO_DIAGNOSTIC: no issues",
-        "timestamp": "2026-07-08T20:57:11.094693+00:00",
+        "timestamp": "2026-07-08T21:02:09.274792+00:00",
         "tokens": 0,
         "rounds": 0,
         "errors": 0,
@@ -103,7 +103,7 @@
         "task": "[autonomous] SYNTHESIZE_BRIEFING",
         "outcome": "clean",
         "summary": "Deterministic SYNTHESIZE_BRIEFING: no issues",
-        "timestamp": "2026-07-08T20:57:22.187007+00:00",
+        "timestamp": "2026-07-08T21:02:21.309249+00:00",
         "tokens": 0,
         "rounds": 0,
         "errors": 0,
@@ -123,31 +123,31 @@
   "tasks": {
     "pending": [
       {
-        "id": "3794547b-9d40-474c-858e-c6b789a35056",
+        "id": "0cb60b7c-a0db-40ba-80db-78966d068587",
         "title": "[HEALTH_CHECK] Quick Health Check",
         "priority": 70,
         "status": "COMPLETED"
       },
       {
-        "id": "33912f74-5fdb-4301-b92f-54be3787c962",
+        "id": "832277f8-2c89-4ddf-a724-25abbdc9e244",
         "title": "[FEDERATION_HEALTH] Federation Health Check",
         "priority": 90,
         "status": "COMPLETED"
       },
       {
-        "id": "36330cbd-ee6b-4409-9e61-19c022359bc3",
+        "id": "3a59c09a-c93c-4a40-9d3d-ffdb2ea7ec7c",
         "title": "[HEAL_REPO] Heal Federation Repos",
         "priority": 90,
         "status": "COMPLETED"
       },
       {
-        "id": "90317564-8854-4efc-8e73-146735e56dac",
+        "id": "7992e475-68e3-4763-8aa3-220bad1d08cf",
         "title": "[CROSS_REPO_DIAGNOSTIC] Cross-Repo Diagnostic",
         "priority": 70,
         "status": "COMPLETED"
       },
       {
-        "id": "2437c565-6420-42d0-b084-006c2fe4ce6f",
+        "id": "5d63275f-b4c6-4c26-b216-e778be77ed81",
         "title": "[SYNTHESIZE_BRIEFING] Synthesize Context Briefing",
         "priority": 70,
         "status": "COMPLETED"
@@ -155,12 +155,12 @@
     ]
   },
   "federation": {
-    "total_peers": 64,
+    "total_peers": 65,
     "by_status": {
-      "alive": 12,
+      "alive": 13,
       "evicted": 52
     },
-    "avg_trust": 0.2593749999999997,
+    "avg_trust": 0.26307692307692276,
     "total_reaps": 8297,
     "total_evictions": 112,
     "lease_ttl_s": 900.0,
@@ -280,6 +280,12 @@
         "status": "alive",
         "trust": 0.5,
         "capabilities": []
+      },
+      {
+        "agent_id": "ag_a42171ece1f8fcc0",
+        "status": "alive",
+        "trust": 0.5,
+        "capabilities": []
       }
     ],
     "marketplace": {
@@ -291,11 +297,13 @@
       "default_ttl_s": 600.0
     },
     "gateway": {
-      "total_requests": 0,
-      "by_protocol": {},
+      "total_requests": 2,
+      "by_protocol": {
+        "nadi": 2
+      },
       "rejected_parse": 0,
       "rejected_validate": 0,
-      "errors": 0,
+      "errors": 1,
       "pending_signals": 0
     }
   },
@@ -320,7 +328,7 @@
         "kind": "federation_healthy",
         "met": true,
         "actual": {
-          "alive": 12,
+          "alive": 13,
           "suspect": 0,
           "dead": 0
         }
