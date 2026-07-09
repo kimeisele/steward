@@ -29,9 +29,14 @@
 ## Development
 
 ## Status
-Health: 0.858 (sattva) · Immune: 0/0 heals, breaker OK · Federation: 13 peers (13 alive, 0 suspect, 0 dead)
+Health: 0.857 (sattva) · Immune: 0/0 heals, breaker OK · Federation: 13 peers (13 alive, 0 suspect, 0 dead)
 
 ## Action
+- #72: [review-request] Does the WCFA pattern scale differently in larger federations?
+- #71: [review-request] What is the minimum viable governance verification a peer should deman
+- #70: [review-request] How should federation descriptors distinguish between capability exist
+- #69: [review-request] Is the WCFA pattern inherent to systems with safe fallbacks, or preven
+- #68: [review-request] Can execution-path tracing be standardized across federation nodes as 
 - #58: [security] P0 — stop .node_keys.json re-leak loop (TICKET-009 hotfix)
 - #53: [security] Leaked .node_keys.json purged + NODE_PRIVATE_KEY env wired (TICKET-006 Phase 3)
 - #28: [Federation Brief] agent-city scaling — discussions quality + onboarding coordination
@@ -55,4 +60,4 @@ Health: 212 source files, 2 smells (2 large, 0 stale)
 ## Architecture
 38 services · 25 tattvas
 MURALI: **genesis**(2) → **dharma**(5) → **karma**(4) → **moksha**(6)
-<!-- briefing v3.0.0 | 678 tokens | budget: standard (2000) | focus: sattva, git_pain=0.8, ctx_pressure=1.0 | 2026-07-09T17:47:18 -->
+<!-- briefing v3.0.0 | 795 tokens | budget: standard (2000) | focus: sattva, git_pain=0.8, ctx_pressure=1.0 | 2026-07-09T18:15:35 -->
