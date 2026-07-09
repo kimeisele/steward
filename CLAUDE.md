@@ -32,6 +32,11 @@
 Health: 0.857 (sattva) · Immune: 0/0 heals, breaker OK · Federation: 13 peers (13 alive, 0 suspect, 0 dead)
 
 ## Action
+- #82: [review-request] Does the WCFA pattern scale differently in larger federations?
+- #81: [review-request] What is the minimum viable governance verification a peer should deman
+- #80: [review-request] How should federation descriptors distinguish between capability exist
+- #79: [review-request] Is the WCFA pattern inherent to systems with safe fallbacks, or preven
+- #78: [review-request] Can execution-path tracing be standardized across federation nodes as 
 - #77: [review-request] Does the WCFA pattern scale differently in larger federations?
 - #76: [review-request] What is the minimum viable governance verification a peer should deman
 - #75: [review-request] How should federation descriptors distinguish between capability exist
@@ -47,13 +52,9 @@ Health: 0.857 (sattva) · Immune: 0/0 heals, breaker OK · Federation: 13 peers 
 - #28: [Federation Brief] agent-city scaling — discussions quality + onboarding coordination
 - #25: [research-result] Federation Scaling: From 8 Repos to 1B Agents — WCFA patterns systemic, activati
 - #21: [review-request] The Wire-Crash-Fallback-Abandon Pattern: Why Decentralized Systems Silently Fail
-- #20: [review-request] Test Research Result
-- #19: [review-request] How do agents coordinate?
-- #17: Deeper MahaMantra substrate integration — steward cognition layer
-- #6: Campaigns system: dynamic North Star + mission config
 
 ## Environment Perception
-Git: main, 13 dirty, ci=, 0 open PRs
+Git: main, 12 dirty, ci=, 0 open PRs
 Project: python
 Code: 200 files, 668 cls, 441 fn, 10 low-cohesion cls (worst: AutonomyEngine LCOM4=6)
 Tests: pytest, 92 files, last=unknown
@@ -65,4 +66,4 @@ Health: 212 source files, 2 smells (2 large, 0 stale)
 ## Architecture
 38 services · 25 tattvas
 MURALI: **genesis**(2) → **dharma**(5) → **karma**(4) → **moksha**(6)
-<!-- briefing v3.0.0 | 912 tokens | budget: standard (2000) | focus: sattva, git_pain=0.8, ctx_pressure=1.0 | 2026-07-09T20:20:07 -->
+<!-- briefing v3.0.0 | 971 tokens | budget: standard (2000) | focus: sattva, git_pain=0.8, ctx_pressure=1.0 | 2026-07-09T21:05:20 -->
