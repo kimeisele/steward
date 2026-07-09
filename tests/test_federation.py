@@ -1559,3 +1559,115 @@ class TestAgentClaimRegistersPeerInReaper:
         assert "agent-city" in alive_names
         # must NOT be keyed by the crypto hash
         assert reaper.get_peer(node_id) is None
+
+
+class TestFederationInboxTTLFilter:
+    """TTL validation in _process_inbox_messages — the REAL method, effect-based."""
+
+    def _known(self, HeartbeatReaper, peer_id, offset=500.0):
+        import time
+
+        r = HeartbeatReaper()
+        r.record_heartbeat(agent_id=peer_id, source="setup")
+        r.get_peer(peer_id).last_seen = time.time() - offset
+        return r, r.get_peer(peer_id).last_seen
+
+    def test_expired_heartbeat_not_recorded(self):
+        import time
+
+        from steward.hooks.dharma import DharmaFederationHook
+        from steward.reaper import HeartbeatReaper
+
+        r, base = self._known(HeartbeatReaper, "phantom-old")
+        msg = {
+            "operation": "heartbeat",
+            "agent_id": "phantom-old",
+            "source": "phantom-old",
+            "timestamp": time.time() - 14400.0,
+            "ttl_s": 7200.0,
+        }
+        DharmaFederationHook()._process_inbox_messages([msg], r, None)
+        assert r.get_peer("phantom-old").last_seen == base
+
+    def test_fresh_heartbeat_recorded(self):
+        import time
+
+        from steward.hooks.dharma import DharmaFederationHook
+        from steward.reaper import HeartbeatReaper
+
+        r, base = self._known(HeartbeatReaper, "peer-fresh")
+        msg = {
+            "operation": "heartbeat",
+            "agent_id": "peer-fresh",
+            "source": "peer-fresh",
+            "timestamp": time.time() - 60.0,
+            "ttl_s": 7200.0,
+        }
+        DharmaFederationHook()._process_inbox_messages([msg], r, None)
+        assert r.get_peer("peer-fresh").last_seen > base
+
+    def test_missing_ttl_default_accepts_fresh(self):
+        import time
+
+        from steward.hooks.dharma import DharmaFederationHook
+        from steward.reaper import HeartbeatReaper
+
+        r, base = self._known(HeartbeatReaper, "peer-default")
+        msg = {
+            "operation": "heartbeat",
+            "agent_id": "peer-default",
+            "source": "peer-default",
+            "timestamp": time.time() - 3600.0,
+        }
+        DharmaFederationHook()._process_inbox_messages([msg], r, None)
+        assert r.get_peer("peer-default").last_seen > base
+
+    def test_missing_ttl_default_rejects_old(self):
+        import time
+
+        from steward.hooks.dharma import DharmaFederationHook
+        from steward.reaper import HeartbeatReaper
+
+        r, base = self._known(HeartbeatReaper, "phantom-default")
+        msg = {
+            "operation": "heartbeat",
+            "agent_id": "phantom-default",
+            "source": "phantom-default",
+            "timestamp": time.time() - 10000.0,
+        }
+        DharmaFederationHook()._process_inbox_messages([msg], r, None)
+        assert r.get_peer("phantom-default").last_seen == base
+
+    def test_missing_timestamp_skipped_failclosed(self):
+        from steward.hooks.dharma import DharmaFederationHook
+        from steward.reaper import HeartbeatReaper
+
+        r, base = self._known(HeartbeatReaper, "phantom-no-ts")
+        msg = {"operation": "heartbeat", "agent_id": "phantom-no-ts", "source": "phantom-no-ts", "ttl_s": 7200.0}
+        DharmaFederationHook()._process_inbox_messages([msg], r, None)
+        assert r.get_peer("phantom-no-ts").last_seen == base
+
+    def test_agent_claim_unaffected_by_ttl(self):
+        import time
+
+        from steward.hooks.dharma import DharmaFederationHook
+        from steward.reaper import HeartbeatReaper
+
+        class _Fed:
+            def __init__(self):
+                self.ingested = []
+
+            def ingest(self, op, payload):
+                self.ingested.append((op, payload))
+
+            def get_verified_agent(self, n):
+                return None
+
+        fed = _Fed()
+        claim = {
+            "operation": "federation.agent_claim",
+            "payload": {"agent_id": "claimant"},
+            "timestamp": time.time() - 99999.0,
+        }
+        DharmaFederationHook()._process_inbox_messages([claim], HeartbeatReaper(), fed)
+        assert fed.ingested == [("federation.agent_claim", {"agent_id": "claimant"})]

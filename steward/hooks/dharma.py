@@ -27,6 +27,11 @@ from vibe_core.di import ServiceRegistry
 logger = logging.getLogger("STEWARD.HOOKS.DHARMA")
 
 
+# Default TTL for inbox messages lacking explicit ttl_s (2h): generous enough
+# for legitimate fresh heartbeats, rejects day/month-old phantoms (Befund §47c).
+DEFAULT_NADI_TTL_S = 7200.0
+
+
 class DharmaHealthHook(BasePhaseHook):
     """Monitor vedana health — set anomaly flag when critical."""
 
@@ -355,68 +360,7 @@ class DharmaFederationHook(BasePhaseHook):
                 reaper = ServiceRegistry.get(SVC_REAPER)
                 federation = ServiceRegistry.get(SVC_FEDERATION)
                 if reaper is not None and federation is not None:
-                    recorded = set()
-                    # Process agent_claim messages first (cryptographic identity)
-                    for msg in messages:
-                        if msg.get("operation") == "federation.agent_claim":
-                            federation.ingest("federation.agent_claim", msg.get("payload", msg))
-                    # Then record heartbeats
-                    for msg in messages:
-                        # Prefer agent_id (human-readable identity) over source (node crypto ID)
-                        peer_id = msg.get("agent_id") or msg.get("source")
-                        if not peer_id:
-                            continue
-                        # Crypto IDs (ag_xxxxx) are node signatures, not identities.
-                        # Skip unless already a known peer (prevents false identity injection).
-                        if peer_id.startswith("ag_") and peer_id not in reaper._peers:
-                            continue
-                        # SIGNATURE VALIDATION (Path 1 — nadi_inbox relay)
-                        signature = str(msg.get("signature", "")).strip()
-                        payload_hash = str(msg.get("payload_hash", "")).strip()
-                        if signature and payload_hash:
-                            # Message is signed — validate Ed25519
-                            source_node = msg.get("source", peer_id)
-                            verified = False
-                            if federation is not None and hasattr(federation, "get_verified_agent"):
-                                record = federation.get_verified_agent(source_node)
-                                if isinstance(record, dict):
-                                    pub_key = str(record.get("public_key", "")).strip()
-                                    if pub_key:
-                                        try:
-                                            from steward.federation_crypto import verify_payload_signature
-
-                                            verified = verify_payload_signature(pub_key, payload_hash, signature)
-                                        except Exception:
-                                            verified = False
-                                    if not verified:
-                                        logger.warning(
-                                            "FEDERATION: REJECTED signed heartbeat from %s — invalid Ed25519 signature",
-                                            peer_id,
-                                        )
-                                        continue
-                                else:
-                                    # Signed but unknown sender — reject
-                                    logger.warning(
-                                        "FEDERATION: REJECTED signed heartbeat from unknown sender %s — no public key on record",
-                                        peer_id,
-                                    )
-                                    continue
-                        else:
-                            # Unsigned message — tolerate only known peers (Path 3 agents)
-                            if peer_id not in reaper._peers:
-                                logger.debug(
-                                    "FEDERATION: SKIPPED unsigned heartbeat from unknown %s — no crypto proof",
-                                    peer_id,
-                                )
-                                continue
-                        reaper.record_heartbeat(agent_id=peer_id, source="nadi_inbox")
-                        recorded.add(peer_id)
-                    if recorded:
-                        logger.info(
-                            "FEDERATION: recorded heartbeats for %d inbox sources: %s",
-                            len(recorded),
-                            ", ".join(sorted(recorded)),
-                        )
+                    self._process_inbox_messages(messages, reaper, federation)
             except (json.JSONDecodeError, OSError) as e:
                 # Was silently swallowed — a corrupt/unreadable inbox made the whole
                 # federation look silent with no trace. Behaviour unchanged (skip this
@@ -477,3 +421,92 @@ class DharmaFederationHook(BasePhaseHook):
                     logger.info("FEDERATION: gateway processed %d inbound messages", processed)
             else:
                 federation.process_inbound(transport)
+
+    def _process_inbox_messages(self, messages: list, reaper, federation) -> None:
+        """Process inbox: agent_claim + heartbeats, with TTL validation.
+
+        Rejects expired messages (age > ttl_s, default DEFAULT_NADI_TTL_S) so that
+        stale replayed heartbeats cannot keep dead peers artificially alive
+        (phantom heartbeat, Befund §44-47). Missing timestamp = fail-closed skip.
+        """
+        recorded = set()
+        # Process agent_claim messages first (cryptographic identity)
+        for msg in messages:
+            if msg.get("operation") == "federation.agent_claim":
+                federation.ingest("federation.agent_claim", msg.get("payload", msg))
+        # Then record heartbeats
+        for msg in messages:
+            # Prefer agent_id (human-readable identity) over source (node crypto ID)
+            peer_id = msg.get("agent_id") or msg.get("source")
+            if not peer_id:
+                continue
+            # Crypto IDs (ag_xxxxx) are node signatures, not identities.
+            # Skip unless already a known peer (prevents false identity injection).
+            if peer_id.startswith("ag_") and peer_id not in reaper._peers:
+                continue
+            # SIGNATURE VALIDATION (Path 1 — nadi_inbox relay)
+            signature = str(msg.get("signature", "")).strip()
+            payload_hash = str(msg.get("payload_hash", "")).strip()
+            if signature and payload_hash:
+                # Message is signed — validate Ed25519
+                source_node = msg.get("source", peer_id)
+                verified = False
+                if federation is not None and hasattr(federation, "get_verified_agent"):
+                    record = federation.get_verified_agent(source_node)
+                    if isinstance(record, dict):
+                        pub_key = str(record.get("public_key", "")).strip()
+                        if pub_key:
+                            try:
+                                from steward.federation_crypto import verify_payload_signature
+
+                                verified = verify_payload_signature(pub_key, payload_hash, signature)
+                            except Exception:
+                                verified = False
+                        if not verified:
+                            logger.warning(
+                                "FEDERATION: REJECTED signed heartbeat from %s — invalid Ed25519 signature",
+                                peer_id,
+                            )
+                            continue
+                    else:
+                        # Signed but unknown sender — reject
+                        logger.warning(
+                            "FEDERATION: REJECTED signed heartbeat from unknown sender %s — no public key on record",
+                            peer_id,
+                        )
+                        continue
+            else:
+                # Unsigned message — tolerate only known peers (Path 3 agents)
+                if peer_id not in reaper._peers:
+                    logger.debug(
+                        "FEDERATION: SKIPPED unsigned heartbeat from unknown %s — no crypto proof",
+                        peer_id,
+                    )
+                    continue
+
+            # TTL VALIDATION — reject expired messages (phantom heartbeat fix, Befund §47).
+            # Age is derived from timestamp; missing timestamp fails closed (no age = no trust).
+            timestamp = msg.get("timestamp")
+            if timestamp is None:
+                logger.debug(
+                    "FEDERATION: SKIPPED heartbeat from %s — no timestamp (fail-closed)",
+                    peer_id,
+                )
+                continue
+            ttl_s = msg.get("ttl_s", DEFAULT_NADI_TTL_S)
+            age_s = time.time() - timestamp
+            if age_s > ttl_s:
+                logger.debug(
+                    "FEDERATION: SKIPPED expired heartbeat from %s (age %.0fs > TTL %.0fs)",
+                    peer_id,
+                    age_s,
+                    ttl_s,
+                )
+                continue
+
+            reaper.record_heartbeat(agent_id=peer_id, source="nadi_inbox")
+            recorded.add(peer_id)
+        if recorded:
+            logger.info(
+                "FEDERATION: recorded heartbeats for %d inbox sources: %s", len(recorded), ", ".join(sorted(recorded))
+            )
