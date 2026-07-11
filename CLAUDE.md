@@ -32,6 +32,11 @@
 Health: 0.857 (sattva) · Immune: 0/0 heals, breaker OK · Federation: 13 peers (13 alive, 0 suspect, 0 dead)
 
 ## Action
+- #212: [review-request] Does the WCFA pattern scale differently in larger federations?
+- #211: [review-request] What is the minimum viable governance verification a peer should deman
+- #210: [review-request] How should federation descriptors distinguish between capability exist
+- #209: [review-request] Is the WCFA pattern inherent to systems with safe fallbacks, or preven
+- #208: [review-request] Can execution-path tracing be standardized across federation nodes as 
 - #207: [review-request] Does the WCFA pattern scale differently in larger federations?
 - #206: [review-request] What is the minimum viable governance verification a peer should deman
 - #205: [review-request] How should federation descriptors distinguish between capability exist
@@ -47,11 +52,6 @@ Health: 0.857 (sattva) · Immune: 0/0 heals, breaker OK · Federation: 13 peers 
 - #195: [review-request] How should federation descriptors distinguish between capability exist
 - #194: [review-request] Is the WCFA pattern inherent to systems with safe fallbacks, or preven
 - #193: [review-request] Can execution-path tracing be standardized across federation nodes as 
-- #192: [review-request] Does the WCFA pattern scale differently in larger federations?
-- #191: [review-request] What is the minimum viable governance verification a peer should deman
-- #190: [review-request] How should federation descriptors distinguish between capability exist
-- #189: [review-request] Is the WCFA pattern inherent to systems with safe fallbacks, or preven
-- #188: [review-request] Can execution-path tracing be standardized across federation nodes as 
 
 ## Environment Perception
 Git: main, 13 dirty, ci=, 0 open PRs
@@ -66,4 +66,4 @@ Health: 212 source files, 2 smells (2 large, 0 stale)
 ## Architecture
 38 services · 25 tattvas
 MURALI: **genesis**(2) → **dharma**(5) → **karma**(4) → **moksha**(6)
-<!-- briefing v3.0.0 | 973 tokens | budget: standard (2000) | focus: sattva, git_pain=0.8, ctx_pressure=1.0 | 2026-07-11T17:07:38 -->
+<!-- briefing v3.0.0 | 973 tokens | budget: standard (2000) | focus: sattva, git_pain=0.8, ctx_pressure=1.0 | 2026-07-11T18:06:04 -->
