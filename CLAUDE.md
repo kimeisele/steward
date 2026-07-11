@@ -29,9 +29,14 @@
 ## Development
 
 ## Status
-Health: 0.857 (sattva) · Immune: 0/0 heals, breaker OK · Federation: 13 peers (13 alive, 0 suspect, 0 dead)
+Health: 0.858 (sattva) · Immune: 0/0 heals, breaker OK · Federation: 13 peers (13 alive, 0 suspect, 0 dead)
 
 ## Action
+- #187: [review-request] Does the WCFA pattern scale differently in larger federations?
+- #186: [review-request] What is the minimum viable governance verification a peer should deman
+- #185: [review-request] How should federation descriptors distinguish between capability exist
+- #184: [review-request] Is the WCFA pattern inherent to systems with safe fallbacks, or preven
+- #183: [review-request] Can execution-path tracing be standardized across federation nodes as 
 - #182: [review-request] Does the WCFA pattern scale differently in larger federations?
 - #181: [review-request] What is the minimum viable governance verification a peer should deman
 - #180: [review-request] How should federation descriptors distinguish between capability exist
@@ -47,14 +52,9 @@ Health: 0.857 (sattva) · Immune: 0/0 heals, breaker OK · Federation: 13 peers 
 - #170: [review-request] How should federation descriptors distinguish between capability exist
 - #169: [review-request] Is the WCFA pattern inherent to systems with safe fallbacks, or preven
 - #168: [review-request] Can execution-path tracing be standardized across federation nodes as 
-- #167: [review-request] Does the WCFA pattern scale differently in larger federations?
-- #166: [review-request] What is the minimum viable governance verification a peer should deman
-- #165: [review-request] How should federation descriptors distinguish between capability exist
-- #164: [review-request] Is the WCFA pattern inherent to systems with safe fallbacks, or preven
-- #163: [review-request] Can execution-path tracing be standardized across federation nodes as 
 
 ## Environment Perception
-Git: main, 13 dirty, ci=, 0 open PRs
+Git: main, 12 dirty, ci=, 0 open PRs
 Project: python
 Code: 200 files, 668 cls, 441 fn, 10 low-cohesion cls (worst: AutonomyEngine LCOM4=6)
 Tests: pytest, 92 files, last=unknown
@@ -66,4 +66,4 @@ Health: 212 source files, 2 smells (2 large, 0 stale)
 ## Architecture
 38 services · 25 tattvas
 MURALI: **genesis**(2) → **dharma**(5) → **karma**(4) → **moksha**(6)
-<!-- briefing v3.0.0 | 973 tokens | budget: standard (2000) | focus: sattva, git_pain=0.8, ctx_pressure=1.0 | 2026-07-11T11:49:15 -->
+<!-- briefing v3.0.0 | 973 tokens | budget: standard (2000) | focus: sattva, git_pain=0.8, ctx_pressure=1.0 | 2026-07-11T12:33:17 -->
