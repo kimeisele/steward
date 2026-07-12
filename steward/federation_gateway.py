@@ -405,6 +405,32 @@ class FederationGateway(GatewayProtocol):
             # Verify node_id matches derived ID from public_key (prevent tampering)
             if derive_node_id(public_key) != node_id:
                 return False, "identity_spoofing_attempt", "gateway_authorization"
+            # Proof of possession: the claim must be signed with the very key it
+            # claims. Without this, anyone who can drop a message into the hub can
+            # register under any agent_name with a key they just made up — and the
+            # steward would then happily verify that impostor's signatures, because
+            # its public key is now on record. Registration has to stay open (a new
+            # node has no verified key yet), so the proof is that it signs its own
+            # claim: possession of the private half is checked against the public
+            # half it hands over. Every node already signs every message (nadi_kit
+            # emit(), steward _sign_message_dict) — the signature was simply never
+            # looked at on this path.
+            payload_hash = str(msg.get("payload_hash", "")).strip()
+            signature = str(msg.get("signature", "")).strip()
+            if not payload_hash or not signature:
+                logger.warning(
+                    "GATEWAY: agent_claim from %s carries no signature — "
+                    "proof of possession missing (not yet enforced)",
+                    node_id,
+                )
+            elif not verify_payload_signature(public_key, payload_hash, signature):
+                logger.warning(
+                    "GATEWAY: agent_claim from %s failed proof of possession — "
+                    "signature does not match the claimed public key (not yet enforced)",
+                    node_id,
+                )
+            else:
+                logger.info("GATEWAY: agent_claim from %s proved possession of its key", node_id)
         if operation in PUBLIC_OPERATIONS:
             return True, "", ""
         if self._bridge is not None and hasattr(self._bridge, "is_verified_agent"):
