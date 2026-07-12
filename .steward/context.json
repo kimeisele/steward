@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "timestamp": 1783886781.1815772,
+  "timestamp": 1783887427.5971377,
   "project": {
     "name": "steward",
     "path": "/home/runner/work/steward/steward"
@@ -37,11 +37,11 @@
     }
   },
   "health": {
-    "value": 0.86,
+    "value": 0.861,
     "guna": "sattva",
     "provider_health": 1.0,
     "error_pressure": 0.754,
-    "context_pressure": 0.995
+    "context_pressure": 1.0
   },
   "gaps": {
     "active": [],
@@ -56,6 +56,28 @@
   "sessions": {
     "recent": [
       {
+        "task": "Federation degraded: no alive peer with capability 'federation_relay'; no alive peer with capability 'heartbeat_observer'. Check transport connectivity.",
+        "outcome": "success",
+        "summary": "review: 5 rounds, 4 tools",
+        "timestamp": "2026-07-12T09:18:39.483078+00:00",
+        "tokens": 8041,
+        "rounds": 5,
+        "errors": 0,
+        "files_written": [],
+        "buddhi_action": "review"
+      },
+      {
+        "task": "[autonomous] HEALTH_CHECK",
+        "outcome": "clean",
+        "summary": "Deterministic HEALTH_CHECK: no issues",
+        "timestamp": "2026-07-12T09:18:51.705612+00:00",
+        "tokens": 0,
+        "rounds": 0,
+        "errors": 0,
+        "files_written": [],
+        "buddhi_action": ""
+      },
+      {
         "task": "[autonomous] FEDERATION_HEALTH",
         "outcome": "problem_found",
         "summary": "Deterministic FEDERATION_HEALTH: problem detected",
@@ -67,32 +89,10 @@
         "buddhi_action": ""
       },
       {
-        "task": "[autonomous] FEDERATION_HEALTH",
-        "outcome": "problem_found",
-        "summary": "Deterministic FEDERATION_HEALTH: problem detected",
-        "timestamp": "2026-07-12T20:02:07.242716+00:00",
-        "tokens": 0,
-        "rounds": 0,
-        "errors": 0,
-        "files_written": [],
-        "buddhi_action": ""
-      },
-      {
-        "task": "[autonomous] CROSS_REPO_DIAGNOSTIC",
-        "outcome": "clean",
-        "summary": "Deterministic CROSS_REPO_DIAGNOSTIC: no issues",
-        "timestamp": "2026-07-12T20:03:58.729157+00:00",
-        "tokens": 0,
-        "rounds": 0,
-        "errors": 0,
-        "files_written": [],
-        "buddhi_action": ""
-      },
-      {
         "task": "[autonomous] HEALTH_CHECK",
         "outcome": "clean",
         "summary": "Deterministic HEALTH_CHECK: no issues",
-        "timestamp": "2026-07-12T20:05:54.287217+00:00",
+        "timestamp": "2026-07-12T20:16:05.552616+00:00",
         "tokens": 0,
         "rounds": 0,
         "errors": 0,
@@ -100,10 +100,10 @@
         "buddhi_action": ""
       },
       {
-        "task": "[autonomous] SYNTHESIZE_BRIEFING",
-        "outcome": "clean",
-        "summary": "Deterministic SYNTHESIZE_BRIEFING: no issues",
-        "timestamp": "2026-07-12T20:06:05.690097+00:00",
+        "task": "[autonomous] FEDERATION_HEALTH",
+        "outcome": "problem_found",
+        "summary": "Deterministic FEDERATION_HEALTH: problem detected",
+        "timestamp": "2026-07-12T20:16:27.476891+00:00",
         "tokens": 0,
         "rounds": 0,
         "errors": 0,
@@ -118,54 +118,54 @@
       "total_tool_calls": 6,
       "avg_tokens_per_session": 343
     },
-    "prompt_summary": "Previous sessions in this project:\n  [2026-07-12] clean: [autonomous] HEALTH_CHECK (0 tokens, 0 rounds, files: none)\n  [2026-07-12] clean: [autonomous] SYNTHESIZE_BRIEFING (0 tokens, 0 rounds, files: none)"
+    "prompt_summary": "Previous sessions in this project:\n  [2026-07-12] clean: [autonomous] HEALTH_CHECK (0 tokens, 0 rounds, files: none)\n  [2026-07-12] problem_found: [autonomous] FEDERATION_HEALTH (0 tokens, 0 rounds, files: none)"
   },
   "tasks": {
     "pending": [
       {
-        "id": "86e8644a-97c6-4ca4-a1e1-c97ec44e95d2",
+        "id": "240d2159-c155-46b8-bcc7-8c219c3570aa",
         "title": "[HEALTH_CHECK] Quick Health Check",
         "priority": 70,
         "status": "COMPLETED"
       },
       {
-        "id": "9ba8cbfb-5743-4fa7-8198-0fddb40f0363",
+        "id": "b5d73d0f-947f-4b43-bb24-c51d034c99fa",
         "title": "[FEDERATION_HEALTH] Federation Health Check",
         "priority": 90,
         "status": "COMPLETED"
       },
       {
-        "id": "061e1abf-42fe-4c42-921e-49f454ce6d5e",
+        "id": "af2ac9f2-576d-45fb-b64a-97a7e1e19593",
         "title": "[HEAL_REPO] Heal Federation Repos",
         "priority": 90,
-        "status": "COMPLETED"
+        "status": "PENDING"
       },
       {
-        "id": "003f38e6-2d9e-4ee9-99ea-e49fecc7e566",
+        "id": "b6d7cf63-81d5-48b7-a405-2871c3d6b4ef",
         "title": "[CROSS_REPO_DIAGNOSTIC] Cross-Repo Diagnostic",
-        "priority": 90,
-        "status": "COMPLETED"
+        "priority": 70,
+        "status": "PENDING"
       },
       {
-        "id": "d31190fd-eaaf-4584-82ed-8d16e644b023",
+        "id": "a37a3760-0b7f-41c9-a98d-5bf82a68c69e",
         "title": "[SYNTHESIZE_BRIEFING] Synthesize Context Briefing",
         "priority": 70,
-        "status": "COMPLETED"
+        "status": "PENDING"
       },
       {
-        "id": "50e45b29-d545-4002-8960-80c52e436a29",
+        "id": "b9aac447-e2f2-461d-9264-dca254250598",
         "title": "[HEAL_REPO] Peer ag_fd5a7db51b1acac1 \u2014 Kirtan escalation",
         "priority": 90,
         "status": "COMPLETED"
       },
       {
-        "id": "423d545a-3aa7-4864-b35c-30008bf0a297",
+        "id": "07db6a8b-f8b2-4bb2-ac60-a6368a9f5945",
         "title": "[HEAL_REPO] Peer ag_f1bc59288c9c5443 \u2014 Kirtan escalation",
         "priority": 90,
         "status": "COMPLETED"
       },
       {
-        "id": "0179f5d6-e9de-43be-800d-f8581a189dfe",
+        "id": "e7b7581d-7c4f-4388-9c9b-2210ea6ddb10",
         "title": "[HEAL_REPO] Peer ag_eb39d27421b3971d \u2014 Kirtan escalation",
         "priority": 90,
         "status": "COMPLETED"
@@ -179,7 +179,7 @@
       "evicted": 55
     },
     "avg_trust": 0.24848484848484825,
-    "total_reaps": 8315,
+    "total_reaps": 8311,
     "total_evictions": 115,
     "lease_ttl_s": 900.0,
     "trust_decay": 0.2,
@@ -295,8 +295,8 @@
       }
     ],
     "marketplace": {
-      "active_claims": 0,
-      "unique_agents": 0,
+      "active_claims": 1,
+      "unique_agents": 1,
       "total_grants": 1037,
       "total_contests": 0,
       "total_evictions": 0,
@@ -350,21 +350,41 @@
       {
         "kind": "active_missions_at_most",
         "met": true,
-        "actual": 0
+        "actual": 3
       }
     ],
     "failing": []
   },
   "cetana": {
     "alive": true,
-    "total_beats": 20,
-    "frequency_hz": 0.1004559558074149,
-    "phase": "GENESIS",
+    "total_beats": 3,
+    "frequency_hz": 0.29599999999999993,
+    "phase": "MOKSHA",
     "consecutive_anomalies": 0,
-    "last_health": 0.8600425023013136,
+    "last_health": 0.8607985023013136,
     "last_guna": "sattva"
   },
   "issues": [
+    {
+      "number": 322,
+      "title": "[review-request] Does the WCFA pattern scale differently in larger federations?"
+    },
+    {
+      "number": 321,
+      "title": "[review-request] What is the minimum viable governance verification a peer should deman"
+    },
+    {
+      "number": 320,
+      "title": "[review-request] How should federation descriptors distinguish between capability exist"
+    },
+    {
+      "number": 319,
+      "title": "[review-request] Is the WCFA pattern inherent to systems with safe fallbacks, or preven"
+    },
+    {
+      "number": 318,
+      "title": "[review-request] Can execution-path tracing be standardized across federation nodes as "
+    },
     {
       "number": 317,
       "title": "[review-request] Does the WCFA pattern scale differently in larger federations?"
@@ -423,26 +443,6 @@
     },
     {
       "number": 303,
-      "title": "[review-request] Can execution-path tracing be standardized across federation nodes as "
-    },
-    {
-      "number": 302,
-      "title": "[review-request] Does the WCFA pattern scale differently in larger federations?"
-    },
-    {
-      "number": 301,
-      "title": "[review-request] What is the minimum viable governance verification a peer should deman"
-    },
-    {
-      "number": 300,
-      "title": "[review-request] How should federation descriptors distinguish between capability exist"
-    },
-    {
-      "number": 299,
-      "title": "[review-request] Is the WCFA pattern inherent to systems with safe fallbacks, or preven"
-    },
-    {
-      "number": 298,
       "title": "[review-request] Can execution-path tracing be standardized across federation nodes as "
     }
   ]
