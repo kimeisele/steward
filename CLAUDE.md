@@ -57,7 +57,7 @@ Health: 0.857 (sattva) · Immune: 0/0 heals, breaker OK · Federation: 13 peers 
 Git: main, 13 dirty, ci=, 0 open PRs
 Project: python
 Code: 200 files, 668 cls, 441 fn, 10 low-cohesion cls (worst: AutonomyEngine LCOM4=6)
-Tests: pytest, 92 files, last=unknown
+Tests: pytest, 92 files, last=failed
 Health: 212 source files, 2 smells (2 large, 0 stale)
 
 ## Toolbox
@@ -66,4 +66,4 @@ Health: 212 source files, 2 smells (2 large, 0 stale)
 ## Architecture
 38 services · 25 tattvas
 MURALI: **genesis**(2) → **dharma**(5) → **karma**(4) → **moksha**(6)
-<!-- briefing v3.0.0 | 973 tokens | budget: standard (2000) | focus: sattva, git_pain=0.8, ctx_pressure=1.0 | 2026-07-12T08:20:52 -->
+<!-- briefing v3.0.0 | 973 tokens | budget: standard (2000) | focus: rajas, git_pain=0.8, test_pain=0.7, ctx_pressure=1.0 | 2026-07-12T08:36:53 -->
