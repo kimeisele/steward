@@ -359,8 +359,9 @@ class DharmaFederationHook(BasePhaseHook):
                 messages = json.loads(inbox_path.read_text())
                 reaper = ServiceRegistry.get(SVC_REAPER)
                 federation = ServiceRegistry.get(SVC_FEDERATION)
+                transport = ServiceRegistry.get(SVC_FEDERATION_TRANSPORT)
                 if reaper is not None and federation is not None:
-                    self._process_inbox_messages(messages, reaper, federation)
+                    self._process_inbox_messages(messages, reaper, federation, transport)
             except (json.JSONDecodeError, OSError) as e:
                 # Was silently swallowed — a corrupt/unreadable inbox made the whole
                 # federation look silent with no trace. Behaviour unchanged (skip this
@@ -422,7 +423,7 @@ class DharmaFederationHook(BasePhaseHook):
             else:
                 federation.process_inbound(transport)
 
-    def _process_inbox_messages(self, messages: list, reaper, federation) -> None:
+    def _process_inbox_messages(self, messages: list, reaper, federation, transport=None) -> None:
         """Process inbox: agent_claim + heartbeats, with TTL validation.
 
         Rejects expired messages (age > ttl_s, default DEFAULT_NADI_TTL_S) so that
@@ -430,6 +431,11 @@ class DharmaFederationHook(BasePhaseHook):
         (phantom heartbeat, Befund §44-47). Missing timestamp = fail-closed skip.
         """
         recorded = set()
+        # Messages we refuse end up here. Without this the same rejected heartbeat is
+        # re-read from nadi_inbox.json on every cycle, re-checked and re-rejected
+        # forever, and the inbox never shrinks (Befund 207).
+        rejected: list = []
+        seen_bad = getattr(transport, "_quarantined", set()) if transport is not None else set()
         # Process agent_claim messages first (cryptographic identity)
         for msg in messages:
             if msg.get("operation") == "federation.agent_claim":
@@ -437,12 +443,19 @@ class DharmaFederationHook(BasePhaseHook):
         # Then record heartbeats
         for msg in messages:
             # Prefer agent_id (human-readable identity) over source (node crypto ID)
+            # Already refused in an earlier cycle: drop it without re-checking or
+            # re-logging, but make sure it leaves the inbox this time.
+            if seen_bad and transport is not None and transport._fingerprint(msg) in seen_bad:
+                rejected.append(msg)
+                continue
             peer_id = msg.get("agent_id") or msg.get("source")
             if not peer_id:
+                rejected.append(msg)
                 continue
             # Crypto IDs (ag_xxxxx) are node signatures, not identities.
             # Skip unless already a known peer (prevents false identity injection).
             if peer_id.startswith("ag_") and peer_id not in reaper._peers:
+                rejected.append(msg)
                 continue
             # SIGNATURE VALIDATION (Path 1 — nadi_inbox relay)
             signature = str(msg.get("signature", "")).strip()
@@ -467,6 +480,7 @@ class DharmaFederationHook(BasePhaseHook):
                                 "FEDERATION: REJECTED signed heartbeat from %s — invalid Ed25519 signature",
                                 peer_id,
                             )
+                            rejected.append(msg)
                             continue
                     else:
                         # Signed but unknown sender — reject
@@ -474,6 +488,7 @@ class DharmaFederationHook(BasePhaseHook):
                             "FEDERATION: REJECTED signed heartbeat from unknown sender %s — no public key on record",
                             peer_id,
                         )
+                        rejected.append(msg)
                         continue
             else:
                 # Unsigned message — tolerate only known peers (Path 3 agents)
@@ -482,6 +497,7 @@ class DharmaFederationHook(BasePhaseHook):
                         "FEDERATION: SKIPPED unsigned heartbeat from unknown %s — no crypto proof",
                         peer_id,
                     )
+                    rejected.append(msg)
                     continue
 
             # TTL VALIDATION — reject expired messages (phantom heartbeat fix, Befund §47).
@@ -492,6 +508,7 @@ class DharmaFederationHook(BasePhaseHook):
                     "FEDERATION: SKIPPED heartbeat from %s — no timestamp (fail-closed)",
                     peer_id,
                 )
+                rejected.append(msg)
                 continue
             ttl_s = msg.get("ttl_s", DEFAULT_NADI_TTL_S)
             age_s = time.time() - timestamp
@@ -510,3 +527,20 @@ class DharmaFederationHook(BasePhaseHook):
             logger.info(
                 "FEDERATION: recorded heartbeats for %d inbox sources: %s", len(recorded), ", ".join(sorted(recorded))
             )
+
+        # Refused messages leave the inbox. Quarantine records them (fingerprint +
+        # reason, so nothing is lost and they can be replayed), remove_inbox_messages
+        # takes them out of nadi_inbox.json. Both already existed; nothing called them,
+        # so every rejected heartbeat was re-read and re-rejected on the next cycle and
+        # the inbox only ever grew (Befund 207).
+        if rejected and transport is not None:
+            try:
+                transport.quarantine_messages(rejected, reason='inbox_validation_failed', stage='dharma')
+                removed = transport.remove_inbox_messages(rejected)
+                logger.info(
+                    'FEDERATION: quarantined %d rejected message(s), removed %d from inbox',
+                    len(rejected),
+                    removed,
+                )
+            except Exception as e:
+                logger.error('FEDERATION: could not quarantine rejected messages: %s', e)
