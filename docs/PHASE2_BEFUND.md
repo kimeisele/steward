@@ -286,3 +286,136 @@ Noch kein Produktivcode wurde in Phase 2 geändert. Vor Ticket A bleiben zwei Pu
    Ein neuer Knoten könnte sonst seinen ersten Heartbeat vor Verarbeitung seines Claims verlieren.
 
 Erst danach folgt eine Patch-Entscheidung. Vermutung ist kein Freigabekriterium.
+
+---
+
+## §8 — READ-ONLY RECON: TICKET A IN DER BISHERIGEN FORM IST NICHT SICHER (2026-07-13)
+
+### Messbasis
+
+Alle Steward-Dateien und Zustandsdaten stammen aus demselben Live-Snapshot:
+
+- Commit: `01e34a32b603ce92c7c9c35810648dd8dd758457`
+- Tree: `1ea13e9f820219916499641ef458c3c268f15c2b`
+- Inbox-Blob: `fd5cef74874490da83daafa691daaa369bd635c4`
+- Registry-Blob: `a2bc477427e0ba38ba48d7dee4b8a2bac1aca646`
+- Produktionslog: Steward Heartbeat Run `29282815952` (2146 Zeilen)
+
+`agent-city` wurde separat auf seinem Live-Head fixiert:
+
+- Commit: `1f8663d7be25abc929fa1e0dee8fb18fecbc0749`
+- Produktionslog: Agent City Heartbeat Run `29282840554` (1986 Zeilen)
+
+### Die 97 Sender sind jetzt vollständig zerlegt
+
+Inbox: 576 Nachrichten von 117 unterschiedlichen String-Quellen. Registry: 64 Einträge.
+Davon kamen 320 Nachrichten von genau 97 Quellen, deren `source` kein Registry-Key war.
+
+- 96 der 97 Quellen waren Fossilien (letzte Nachricht älter als sieben Tage; der jüngste
+  dieser Fossil-Sender war bereits rund 77 Tage alt).
+- Genau eine unregistrierte Quelle war aktuell: `ag_365d8a2518ac7210`.
+- Diese Quelle hatte neun Nachrichten innerhalb der letzten 24 Stunden:
+  `city_report` und `bottleneck_escalation`.
+- Alle neun hatten leere `signature`- und `payload_hash`-Werte. Eine erste Messung hatte
+  fälschlich nur auf Feld-Anwesenheit statt auf nichtleeren Inhalt geprüft und sie dadurch
+  als signiert gezählt. Diese Messung ist hiermit korrigiert.
+- Beim Transport-TTL-Filter waren im Snapshot noch zwei T0c-Nachrichten gültig; der Rest
+  war bereits älter als die deklarierte TTL von 7200 Sekunden.
+
+Ergebnis: Phase-1 §219.20 ist geklärt. Es gibt nicht 97 potentiell lebende unbekannte
+Knoten, sondern 96 Fossilquellen und einen lebenden, unregistrierten Parallel-Sender aus
+`agent-city`.
+
+### T0c ist kein dritter Knoten, sondern ein veralteter zweiter Sendepfad in agent-city
+
+Der `agent-city`-Snapshot beweist die Kette:
+
+1. `data/federation/peer.json` enthält die alte ID `ag_365d8a2518ac7210`.
+2. `FederationNadi.__post_init__()` liest und cached diese ID als `_city_id`.
+3. `_build_federation_nadi()` lädt zwar das echte `NODE_PRIVATE_KEY` und kennt dessen
+   kanonische ID `ag_b670dc6cbcb705fe`, übergibt die Identität aber nicht an
+   `FederationNadi` und aktualisiert dessen Cache nicht.
+4. Erst danach patcht ein anderer Identity-Service `peer.json` auf `ag_b670...` — zu spät
+   für das bereits konstruierte `FederationNadi`-Objekt.
+5. `FederationNadi.emit()` überschreibt jede Caller-Quelle mit der gecachten alten ID.
+6. `FederationMessage.to_dict()` schreibt leere Signaturfelder; dieser Pfad signiert nicht.
+
+Das Produktionslog bestätigt die zeitliche Reihenfolge:
+
+- `20:33:52`: `Node identity: ag_b670dc6cbcb705fe`
+- `20:33:52`: `FederationNadi wired`
+- `20:33:53`: `Patched peer.json with node_id=ag_b670dc6cbcb705fe`
+- später: `FederationNadi: flushed 1 messages`
+
+Parallel sendet `city.federation.FederationRelay` Claim und Heartbeat korrekt signiert unter
+`ag_b670...`. `city_report` und `bottleneck_escalation` laufen jedoch über das alte
+`FederationNadi`. T0c ist damit ein Identitäts- und Signatur-Split innerhalb desselben Repos.
+
+### Der Gateway ist nicht nur umgangen — der Dharma-Hook crasht vor ihm
+
+Der bisherige Plan nahm an, dass nach dem direkten Claim-Bypass zuverlässig
+`gateway.process_inbound(transport)` folgt. Produktion beweist das Gegenteil:
+
+- Run `29282815952`: `GATEWAY` = 0 Treffer.
+- `BRIDGE: agent_claim identical` = 858 Treffer.
+- `Hook dharma_federation failed: name 'Path' is not defined` = 7 Treffer.
+- Der Hook importiert `Path` und `json` lokal im Aufrufer `_federation_heartbeat()`. Diese
+  Namen sind in der separaten Methode `_process_inbox_messages()` nicht sichtbar.
+- Sobald Protocol-Offender existieren, scheitert `_process_inbox_messages()` beim Schreiben
+  von `protocol_violations.json` an `Path` (danach wäre auch `json` undefiniert).
+- Dadurch werden Quarantäne, `remove_inbox_messages()` und der spätere Gateway-Aufruf in
+  jedem Zyklus übersprungen.
+
+Das erklärt gleichzeitig die CI-Baseline aus §7 und die Laufzeit: Ruff hatte genau diese
+beiden undefinierten Namen bereits gemeldet. Der Lint-Fehler ist ein produktiver Circuit
+Breaker, kein kosmetischer Befund.
+
+### Die Legacy-Schleife behandelt jede Operation wie einen Heartbeat
+
+`_process_inbox_messages()` iteriert in der zweiten Schleife über alle Inbox-Nachrichten,
+ohne `operation == heartbeat` zu verlangen. Damit werden auch `agent_claim`, `city_report`,
+`bottleneck_escalation` und andere Operationen durch den Legacy-Heartbeat-Validator gezogen.
+
+Für eine neue kryptographische ID gilt dort:
+
+- `peer_id = source` (also `ag_*`).
+- Ist diese ID noch nicht in `reaper._peers`, wird die Nachricht abgelehnt.
+- Wenn der `Path`-Crash repariert wäre, würde die Nachricht anschließend quarantänisiert
+  und physisch aus der Inbox entfernt — bevor der Gateway sie später lesen kann.
+
+Der bestehende Claim-Test bildet das nicht ab: Sein künstlicher Claim hat kein `source`.
+Dadurch entsteht weder ein echter `ag_*`-Bootstrap-Pfad noch der Protocol-Offender/`Path`-
+Fehler. Ein Ende-zu-Ende-Test für Dharma → Transport → Gateway existiert nicht.
+
+### Korrektur an Phase-1 §219.25/§219.26
+
+Der vorgeschlagene Patch „nur Zeilen 439-442 löschen“ darf nicht ausgeführt werden:
+
+1. Der `Path`-Crash bliebe bestehen; der Gateway würde weiterhin nicht laufen.
+2. Ein isolierter Import-Fix würde den bisher unerreichbaren Fail-closed-Gateway aktivieren
+   und T0cs einzige `city_report`/`bottleneck_escalation`-Leitung blockieren.
+3. Neue Claims könnten vom vorgelagerten Legacy-Validator entfernt werden, bevor der
+   Gateway den öffentlichen Bootstrap-Pfad ausführt.
+4. `FederationTransport._seen` dedupliziert nur im Prozessspeicher. Erfolgreiche Nachrichten
+   bleiben auf Disk und werden in einem neuen Workflow-Prozess erneut gesehen; das ist keine
+   dauerhafte Inbox-Bereinigung.
+
+### Neue sichere Reihenfolge
+
+1. **T0c zuerst:** `agent-city` muss `FederationNadi` aus der kanonischen Secret-Identität
+   initialisieren und `city_report`/`bottleneck_escalation` im Steward-Wire-Format signieren.
+   Produktionsbeweis: Quelle `ag_b670...`, nichtleere `payload_hash`/`signature`, keine neue ID.
+2. **Echter Integrationstest:** Mit realem Transport, realem Gateway und realem Dharma-Hook
+   beweisen, dass Claim und geschützte Nachricht genau einmal und in richtiger Reihenfolge
+   verarbeitet werden. Kein Stub und kein Claim ohne `source`.
+3. **Gateway-Rewire als zusammenhängender Steward-Fix:** `Path`/`json` reparieren, Legacy-
+   Heartbeat-Verarbeitung auf echte Heartbeats begrenzen oder nach dem Gateway anordnen und
+   sicherstellen, dass Bootstrap-Claims nicht vor dem Gateway entfernt werden.
+4. **Zuerst Beobachtungsmodus:** Blockentscheidungen und erwartete Auswirkungen am echten
+   Inbox-Snapshot protokollieren, bevor Fail-closed für alle Protected Operations scharf wird.
+5. **Produktionsverifikation:** `GATEWAY`-Zeilen müssen erscheinen; direkte wiederholte
+   Claim-Ingests müssen verschwinden; T0c-Signale dürfen nicht verloren gehen.
+6. **Danach B':** Inbox und Registry gemeinsam nach dem verifizierten Kriterium purgen.
+
+Bis diese Reihenfolge erfüllt ist, bleibt Ticket A blockiert. Es wurde in Phase 2 kein
+Produktivcode verändert.
