@@ -716,6 +716,30 @@ def _analyze_federation(repo_path: Path) -> tuple[list[Finding], bool, dict, boo
         except OSError:
             pass
 
+
+    # A peer whose messages keep getting refused is not flaky — it is speaking the
+    # wrong protocol (its own emit() with no signature, the way agent-city did).
+    # dharma already refuses those and records who; read that here so it becomes a
+    # finding, and from there a HEAL_REPO task, rather than a log line nobody reads.
+    violations_path = repo_path / "data" / "federation" / "protocol_violations.json"
+    if violations_path.exists():
+        try:
+            _vdata = json.loads(violations_path.read_text())
+            _peers = _vdata.get("peers", {}) if isinstance(_vdata, dict) else {}
+        except (json.JSONDecodeError, OSError):
+            _peers = {}
+        for _peer_id, _count in sorted(_peers.items(), key=lambda kv: -kv[1]):
+            findings.append(
+                _finding(
+                    FindingKind.PEER_PROTOCOL_VIOLATION,
+                    Severity.WARNING,
+                    f"peer {_peer_id} sent {_count} unsigned or malformed message(s): its"
+                    f" messages carry no signature, so nothing it says can be verified",
+                    f"switch {_peer_id} to nadi_kit — pull nadi_kit.py, pass"
+                    f" NODE_PRIVATE_KEY, let it write the outbox (see agent-world)",
+                )
+            )
+
     return findings, has_descriptor, descriptor, has_peer, peer_caps
 
 

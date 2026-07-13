@@ -543,16 +543,31 @@ class DharmaFederationHook(BasePhaseHook):
             for _m in rejected:
                 _pid = str(_m.get("agent_id") or _m.get("source") or "?")
                 by_peer[_pid] = by_peer.get(_pid, 0) + 1
-            for _pid, _n in sorted(by_peer.items(), key=lambda kv: -kv[1]):
-                if _n >= 3 and _pid != "?":
-                    logger.warning(
-                        "PROTOCOL VIOLATION: peer %s sent %d unsigned/invalid message(s) "
-                        "this cycle — node is not using nadi_kit (no signature/payload_hash). "
-                        "Remediation: switch %s to nadi_kit.",
-                        _pid,
-                        _n,
-                        _pid,
+            offenders = {p: n for p, n in by_peer.items() if n >= 3 and p != "?"}
+            for _pid, _n in sorted(offenders.items(), key=lambda kv: -kv[1]):
+                logger.warning(
+                    "PROTOCOL VIOLATION: peer %s sent %d unsigned/invalid message(s) "
+                    "this cycle — node is not using nadi_kit (no signature/payload_hash). "
+                    "Remediation: switch %s to nadi_kit.",
+                    _pid,
+                    _n,
+                    _pid,
+                )
+            # Persist so DiagnosticSense can turn this into a finding. Logging alone
+            # goes nowhere: the immune hook reads findings from diagnose_repo(), not
+            # log lines, so a warning here would be seen by nobody.
+            if offenders:
+                try:
+                    _vpath = Path("data/federation/protocol_violations.json")
+                    _vpath.parent.mkdir(parents=True, exist_ok=True)
+                    _vpath.write_text(
+                        json.dumps(
+                            {"observed_at": time.time(), "peers": offenders},
+                            indent=2,
+                        )
                     )
+                except OSError as _e:
+                    logger.debug("could not persist protocol violations: %s", _e)
 
         if rejected and transport is not None:
             try:

@@ -38,6 +38,7 @@ _STRATEGY: dict[FindingKind, FixStrategy] = {
     FindingKind.CIRCULAR_IMPORT: FixStrategy.DETERMINISTIC,
     FindingKind.CI_FAILING: FixStrategy.COMPOUND,
     FindingKind.NADI_BLOCKED: FixStrategy.DETERMINISTIC,
+    FindingKind.PEER_PROTOCOL_VIOLATION: FixStrategy.DETERMINISTIC,
     FindingKind.BASE_EXCEPTION_CATCH: FixStrategy.DETERMINISTIC,
     FindingKind.DYNAMIC_IMPORT: FixStrategy.DETERMINISTIC,
     FindingKind.UNBOUNDED_COLLECTION: FixStrategy.SKIP,  # needs human decision on size
