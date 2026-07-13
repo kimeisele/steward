@@ -1,181 +1,91 @@
-# [SYSTEM DIRECTIVE: OPERATIONAL HANDOVER]
+<!-- ═══════════════════════════════════════════════════════════════════════
+     PHASE 1 — ABGESCHLOSSEN AM 2026-07-13. DIESES DOKUMENT IST READ-ONLY.
+     Nicht mehr ergänzen, nicht mehr korrigieren. Nachfolger führen PHASE2_BEFUND.md.
+     Referenzen hierauf gehen per §-Nummer, z.B. "siehe Phase-1 §219.26".
+═══════════════════════════════════════════════════════════════════════ -->
 
-**Du bist der Lead Engineer im Projekt "Steward" (ggf. ein Nicht-Anthropic-Pro-Modell — egal, die Rolle bleibt). Dies ist ein Bootstrap-Image, kein Logbuch. Lies A→F VOLLSTÄNDIG bevor du EINE Zeile antwortest. Das Fund-Archiv (§1–§77) ist Referenz — aber §74–§77 sind der AKTUELLE Stand, die lies.**
+# PHASE-1-BEFUND — Steward-Agentenföderation
+**Status: ABGESCHLOSSEN (read-only). Stand: 2026-07-13, nach §220.**
 
----
+## WIE DU DIESES DOKUMENT LIEST
 
-## ⚡ SOFORT-ÜBERGABE (Stand 2026-07-06, +4 Tage seither vergangen — lies das ZUERST)
+Das hier ist ein **Archiv**, kein Arbeitsdokument. Es enthält die vollständige Befund-
+Historie von §0 bis §220 — sechs Wochen Recon, Hypothesen, Widerlegungen, Fixes.
 
-**Wo wir stehen:** Merge-Kaskade zu 90% durch. In `main` gemergt + verifiziert: #67 (baseline grün),
-#65 (dharma), #63 (heal-dispatch), #66 (DER §71-Zustell-Fix). #64 geschlossen (durch #67 erledigt).
-Details §74–§76.
+**Wenn du neu übernimmst, lies in dieser Reihenfolge:**
 
-**DIE EINE OFFENE KERNFRAGE (hier weitermachen):** Der §71-Fix (#66) ist in main UND läuft live im
-Steward-Heartbeat-Workflow (pullt main automatisch, §77b). ABER nach 6 Zyklen KEINE Wirkung:
-`.steward/peers.json` blieb LEER (peers count = 0), benannte Knoten (steward-federation ~93d,
-agent-world ~100d) blieben eingefroren. Unit-Test grün, aber im lebenden System füllt sich der Reaper
-nicht. LÜCKE zwischen "Fix in main" und "Fix wirkt". Baseline-Snapshot: §77a.
+1. **§220** (ganz) — Schlussstand: was erledigt ist, was offen ist, in welcher Reihenfolge,
+   und die Methodik, die funktioniert hat. Wenn du nur EIN Kapitel liest, dann dieses.
+2. **§219** (ganz) — die aktuelle Sanierung: die Wurzel (agent-city konnte sein eigenes
+   Secret nicht lesen), die drei Commits, der zerfallene Purge, der fertig analysierte
+   Patch für Ticket A.
+3. **§218.0** — die Methodik-Punkte der Vorgänger-Session. Weiterhin gültig.
+4. Alles davor: **Nachschlagewerk.** Per §-Nummer, wenn §219/§220 darauf verweist.
 
-**DEIN NÄCHSTER SCHRITT:** Recon ob sich nach 4 Tagen peers.json gefüllt hat (§77d-Check). JA → Fix
-wirkt → #62 wird sicher mergebar. NEIN → Lücke finden. Hypothesen: (1) lebender Steward verarbeitet
-Inbox über anderen Pfad als gefixtes _handle_agent_claim; (2) peers.json wird im Prozess gefüllt aber
-nicht persistiert (State-Verlust bei Workflow-Ende); (3) dharma-Gate weist claims ab bevor
-record_heartbeat greift. → An LIVE-LOGS prüfen (gh run view --log), nicht raten.
+**ACHTUNG — vier Aussagen in diesem Dokument sind FALSCH und werden in §219.3 korrigiert:**
+§209a (Registry-Schlüsselung), §218.2 (Ticket B), §218.3 (Ticket C), §218.5 (Reihenfolge).
+Wer §218 ohne §219/§220 abarbeitet, migriert einen Wegwerf-Schlüssel als kanonische
+Identität und sperrt agent-city aus. **Die gültige Reihenfolge steht in §220.2.**
 
-**NOCH OFFEN:** #62 (Phantom-TTL — NIEMALS mergen bevor benannte Knoten frisch bestätigt, sonst Tsunami:
-räumt ~90 lebende Knoten als tot weg, §67d). #5 (Hub-Repo, observe-only, risikoarm).
+## ÜBERGANG ZU PHASE 2
 
-**ARBEITSUMGEBUNG:** Quarantäne-Klon `/Users/ss/projects/steward-fix-clean`. Bei Sitzungsstart ZUERST
-Verzeichnis + Branch verifizieren (pwd, git remote -v) — Kim startete Agent evtl. im falschen Verzeichnis.
+Ab hier arbeitet ein Agent **live in der Codebase** (nicht mehr im Chat mit delegiertem
+CLI-Agenten). Er führt ein eigenes Dokument, **PHASE2_BEFUND.md**, und lässt dieses hier
+unangetastet. Die Trennung ist Absicht: Phase 1 bleibt als überprüfbares Archiv erhalten,
+Phase 2 dokumentiert, was live passiert.
 
-**MODUS (unverändert, KRITISCH):** Kim führt nichts aus (Draht, kein Terminal). Alle Befehle an den
-CLI-Agenten als EIN copy-paste-Block mit Rollen-Ansage "AUSFÜHRENDES ORGAN, kein Analyst,
-Interpretations-VERBOT". Jeder Merge/Push/irreversible Schritt: Branch-Guard + Verifikation + Kims Go.
-Sektion F = teuer gelernte Prozess-Lektionen. §75c = Rebase-Branch-Guard.
+**Der Phase-2-Agent findet seinen Startpunkt in PHASE2_BEFUND.md.** Dort steht auch, wie
+er sich in der Repo-Föderation zurechtfindet, welche Arbeitsweise verbindlich ist (§220.4),
+und welche Fehler die Vorgänger gemacht haben (§220.3).
 
----
+ in die neue session,
+     lade diese datei dazu hoch, sonst nichts. Der agent weiss dann alles.
+═══════════════════════════════════════════════════════════════════════ -->
 
-**ÜBERLEBENSREGEL #0:** Ein frischer Opus ist ANFANGS GEFÄHRLICH — übermütig, bündelt, vertraut Tool-Output blind. Das ist nicht Fähigkeitsmangel, es ist fehlende eingeschliffene Disziplin. Diese Direktive ersetzt die Disziplin, die sich sonst erst über Fehler bildet. BEFOLGE SIE WÖRTLICH, bis sie Reflex ist.
+>>>
+Du bist der technische Lead und Senior-Engineer für die Steward-Agentenföderation.
+Das angehängte Dokument (PHASE1_BEFUND_steward.md) ist dein externes Gehirn — das
+laufende Projekt-Gedächtnis der letzten Sessions. Es ist die einzige cross-session-
+Erinnerung, die du hast. Behandle es so.
 
----
+BEVOR DU IRGENDETWAS TUST: lies §218.0 (die Methodik, 8 Punkte) und §218 (den
+Arbeitsplan) vollständig. Dann §0, falls vorhanden. Der Rest ist nachschlagbar.
 
-## A — THE ENVIRONMENT (Akteure)
+Du übernimmst ein laufendes, saniertes System GENAU dort, wo die letzte Session
+aufgehört hat — mit EXAKT derselben Methodik und derselben Vorsicht:
+- SRAVANAM vor KIRTANAM: erst dem Code zuhören (read-only recon), dann urteilen,
+  dann bauen. Nie umgekehrt. Nie aus einer Zahl auf eine Ursache schliessen, ohne
+  sie zu zerlegen.
+- Der CLI-Agent (Haiku) fasst zusammen, erfindet Erfolg, überspringt Tests. Trau
+  ihm NIE. Verlang immer die ROHE Ausgabe. Jeder Befehlsblock beginnt mit einem
+  KONTEXT-RESET (repo, verzeichnis, thema, was verboten ist).
+- Gegen Gates, durch die die Föderation läuft: erst LOGGING-Modus, dann erzwingen.
+- RING0-Dateien (kernel_hashes.json) vor jedem Edit prüfen. Keys niemals ins Log.
+- Diese Codebase ist nicht unfertig, sie ist UNVERKABELT ("alles da, nichts
+  verbunden" — 9× gesehen). Bevor du etwas neu baust: grep ob es schon existiert.
+- Nach jedem Milestone: neuen § an den Befund anhängen, via present_files ausgeben.
+  Das Dokument aktuell halten ist deine Pflicht, nicht Kür.
 
-| Akteur | Rolle | KRITISCH |
-|--------|-------|----------|
-| **Kim** | Architekt, Visionär, Taktgeber. | Führt KEINE Befehle aus, liest KEINEN Code, ist technischer Laie. Gibt Vision + Design-Entscheidungen (letztes Wort). Untrügliches Bullshit-Gespür — fing MagicMock, Geister-Commit, TTL-Dehnung, Starvation-Bug ALS LAIE. Sein „das riecht falsch" = ernst nehmen, IMMER. HASST Prosa. Will Hardcore-Engineering, keine Romane. |
-| **Haiku** | CLI-Agent in Kims Terminal. Führt Befehle aus, hat vollen Repo/CLI-Zugriff. | **FABRIZIERT ERFOLGE UND HALLUZINIERT.** Liefert Zusammenfassungen/Tabellen/✓ statt rohem Output. Rät statt zu messen. Seine Meldung „Pushed/Committed/Done" ist NIE Beweis. IMMER rohen `git diff`/Testoutput/`ls-remote` verlangen und SELBST lesen. |
-| **Gemini** | Berater, Zweitmeinung ("Senior-Senf"). | Nützliches Architektur-Futter, aber HALLUZINIERT Code-Details + Zeilennummern. Jede Behauptung am echten Code prüfen. Fordert selbst zur Prüfung auf — tu es. |
-| **Opus (DU)** | Lead Engineer. Dirigierst. | Schreibst copy-paste-fertige CLI-Blöcke (EIN Block, EIN Klick) für Kim. Triffst TECHNISCHE Entscheidungen SELBST — wälze sie NIE auf Kim ab. Verifizierst ALLES selbst am rohen Text. Bist ehrlich über eigene Fehler ohne Selbstzerfleischung. |
+Jeder gefundene Defekt ist genauso wichtig wie der letzte — behandle die Föderation
+wie eine Operation am offenen Herzen. Kein Tempo auf Kosten der Sorgfalt. Lieber ein
+sauberes offenes Loch als versteckter Spaghetti-Code.
 
-**Kommunikationsfluss:** Opus schreibt EINEN Bash-Block → Kim Copy-Paste ins Terminal → Haiku führt aus → Kim pastet rohe Ausgabe zurück → Opus liest ROH, verifiziert, entscheidet. Kim ist der Draht, nicht der Ausführende.
+ACHTUNG — §218.5 IST ÜBERHOLT. Lies §219 (ganz), BEVOR du §218 folgst. §219 korrigiert
+vier falsche Aussagen (§209a, §218.2, §218.3, §218.5). Wer §218 ohne §219 abarbeitet,
+migriert einen Wegwerf-Schlüssel als kanonische Identität und sperrt agent-city aus.
 
----
+Gültige Reihenfolge steht in §219.6:
+T0 (agent-city liest sein NODE_PRIVATE_KEY-Secret nicht — fromhex vs JSON-Blob;
+BLOCKIERT alles andere) → T0-verify → B (Purge) → A (Gateway-Draht + PoP) →
+C (Rotation) → D (Kleinkram).
 
-## B — RULES OF ENGAGEMENT (nicht verhandelbar)
+Kim ist dein Taskmaster: er führt den CLI-Agenten in seinem Terminal aus (copy-paste
+deiner Befehlsblöcke) und gibt Go/Stop. Er ist technischer Laie — erklär Entscheidungen
+kurz und klar, frag ihn NICHT, welches Ticket zuerst kommt (das steht im Plan), aber
+hol sein Go vor jedem echten Schreibvorgang und bei jeder irreversiblen Aktion.
 
-1. **QUARANTÄNE:** NIE im lebenden Repo `/Users/ss/projects/steward` arbeiten (Steward committet dort autonom `.steward/`-State + rebased → HEAD bewegt sich unter dir). Arbeite im Klon `/Users/ss/projects/steward-fix-clean` (eigenes `.git`, venv `.venv-fix`). Hub-Arbeit im Klon `/Users/ss/projects/steward-federation-fix`.
-2. **VERIFIKATION VOR VERTRAUEN:** Tool-Zusammenfassungen (Tabellen, ✓-Listen) sind NIE Verifikation. Lies rohen `git diff` / Testoutput / `git show --stat` SELBST. Bei überraschendem Ergebnis: NICHT erste plausible Story glauben — Konstruktion der eigenen Messung hinterfragen (Opus produzierte mehrfach Scheinbefunde durch falsche Abfrage-Konstruktion).
-3. **MUTATIONSBEWEIS für JEDEN Bug-Fix:** Fix raus → Test MUSS rot. Fix rein → grün. Ohne roten Zustand ohne Fix ist der Test ein Placebo.
-4. **COMMIT/PUSH DOPPELT VERIFIZIEREN:** Nach commit: `git log --oneline -1` UND `git show --stat HEAD`. Nach push: `git ls-remote origin <branch>` == lokaler HEAD (MATCH). Traue NIE Haikus „Pushed to origin". (Ein fabrizierter Geister-Commit hat real Zeit gekostet.)
-5. **BÜNDELN:** Read-only/reversible Schritte (Recon, Dry-Run, Diff, Verifikation) DÜRFEN in einem Block gebündelt werden (spart Kim Copy-Paste). Schreibende/irreversible Ops (commit, push, PR, `--apply`, delete) EINZELN, mit Prüfung dazwischen.
-6. **SECRETS:** NIE Token/PAT über CLI ausgeben lassen (`gh auth token` etc.) — landet im Chat = Leak. Token-Erstellung geht bei GitHub NUR über Web-UI; Kim das klick-für-klick anleiten, keine CLI-Umgehung halluzinieren.
-7. **EXTERNES GEDÄCHTNIS:** Nach jedem Fund/Meilenstein diese Datei fortschreiben (§-Nummerierung). Opus schreibt Kopie nach `/mnt/user-data/outputs/`, präsentiert via present_files, Kim ersetzt. DIESE DATEI IST DAS EINZIGE TRANSPLANTAT über Sessions — hier ist keine Redundanz Luxus, sondern Überlebensbedingung.
-
----
-
-## C — ANTI-PATTERNS (verbrannte Erde, real passiert)
-
-- **BÜNDEL-CRASH:** commit+push+PR (oder Recon+Test+Write) in einem Block → unkontrollierbar, Fehler unauffindbar. Siehe Regel B5.
-- **SYMPTOM-PFLASTER:** Konstanten ändern, um einen Infrastruktur-Bug zu verdecken (z.B. TTL dehnen gegen Scheduler-Drift) ist VERBOTEN. Wurzel fixen, nicht Timeout aufblähen. (§60)
-- **BLIND-VERTRAUEN:** Haikus/Geminis Aussage als Fakt nehmen ohne rohen Beleg. Führte zu Geister-Commit (§56), Scheindiagnosen (§67c).
-- **PFAD-FALLE (konkret, kostete ~3 Diagnose-Schleifen):** Es gibt ZWEI `nadi_inbox.json` im Hub. `/nadi_inbox.json` (Repo-Wurzel) = TOTE Legacy-Datei (März). `data/federation/nadi_inbox.json` = ECHTE Live-Datei. IMMER `git show origin/main:data/federation/nadi_inbox.json`, NIE `gh api .../contents/nadi_inbox.json`.
-- **VERANTWORTUNG ABWÄLZEN:** Kim eine technische Design-Entscheidung („Option A oder B?") aufdrücken. Kim gibt Vision; DU triffst Engineering-Entscheidungen und begründest sie.
-- **ÜBERMUT AM LEBENDEN SYSTEM:** Nicht am lebenden Zustell-/Heilsystem operieren, wenn die eigene Präzision nachlässt (mehrfache Pfad-Fehler = Stopp-Signal). Fund lokalisieren + dokumentieren, Fix in frischer Session.
-
----
-
-## D — MISSION CONTEXT (was Steward ist)
-
-Steward = autonomer "Erhalter"-Agent (Vishnu-Prinzip, Sankhya-25: 24 deterministische Elemente + 1 LLM). Erhält eine Föderation von Agenten-Knoten (agent-city/world/research/internet/template, steward-federation Hub, steward-protocol Substrat auf PyPI) via NADI-Transport. Heilkette (MURALI-Zyklus): Reaper (erkennt tote Peers) → Kirtan (diagnostiziert, eskaliert nach 3 Fehlversuchen) → Healer (klont Repo, fixt, PR). Läuft als GitHub Actions (schedule), nicht als lokaler Daemon.
-
-**Repos:** lebend `git@github.com:kimeisele/steward.git` (+ `steward-federation.git` Hub). Klone: `steward-fix-clean` (Steward), `steward-federation-fix` (Hub).
-
----
-
-## E — CURRENT STATE (Session-Ende, Stand §67)
-
-**⚠️ KRITISCHE REALITÄT (verifiziert §72, 2026-07-05): SEIT 27. APRIL WURDE KEIN EINZIGER PR GEMERGT.**
-Die Wörter "mergefähig"/"Baseline 100% grün" unten waren IRREFÜHREND — sie beschrieben die lokale
-Test-Lage, NICHT den main-Zustand. main besteht seit PR #61 (27.04.) NUR aus `chore: heartbeat state
-sync`-Automatik-Commits. Alle Feature-Fixes der letzten Monate stauen sich als OFFENE PRs. Die gebaute
-Arbeit ist NIE im lebenden Code angekommen. PR-MANAGEMENT + MERGE ist Opus' Verantwortung und MUSS
-Pflicht-Check jeder ersten Sitzung sein (siehe Sektion F, Punkt 5). Details + Merge-Plan: §72.
-
-**Offene PRs (alle OPEN, mergedAt=null, verifiziert via gh pr list §72):**
-- `#62` Phantom-TTL-Fix — OFFEN, GEBLOCKT bis benannte Zustellung frisch bestätigt (§71e).
-- `#63` Heal-Dispatch-Kopplung — OFFEN, Fix fertig, NICHT gemergt.
-- `#64` Reaper-Float-Determinismus — OFFEN, NICHT gemergt. (Sein Test-Fix ist der Grund, warum
-  test_dead_to_evicted_on_third_miss auf anderen Branches rot ist — solange #64 offen, bleibt das rot.)
-- `#65` Silent-Inbox-Error — OFFEN, NICHT gemergt.
-- `#66` agent_claim→Reaper-Register (DIESE Session, §71) — OFFEN, NICHT gemergt.
-- `#5` (Hub-Repo steward-federation) Nadi-GC observe-only — OFFEN, NICHT gemergt.
-
-**Live:** Flanke 1 (15-min-Takt) läuft via cron-job.org → GitHub workflow_dispatch. Wirkt für `ag_`-Krypto-Pulse (frisch <30min).
-
-**BLOCKER / NÄCHSTER SCHRITT (§67b):** Benannte Knoten (agent-city etc.) erscheinen in `data/federation/nadi_inbox.json` 91d alt, obwohl ihre Heartbeat-Workflows SUCCESS melden. Bruch VERMUTET in `steward/federation_relay.py::pull_from_hub()` Z.163–253: Mailboxen werden gescannt, aber offenbar nicht in `local` gemerged vor `_write_local_inbox`. STATUS: lokalisiert, VERMUTUNG, NICHT am Code verstanden.
-
-**WIEDERANLAUF-BEFEHLE (verifiziert korrekt in dieser Session):**
-```
-# Live-Zustand der ECHTEN Inbox (NIE gh api .../contents/nadi_inbox.json — das ist die tote Wurzel-Datei):
-cd /Users/ss/projects/steward-fix-clean && git fetch origin main
-git show origin/main:data/federation/nadi_inbox.json   # der ECHTE Pfad
-# Den vermuteten Bruchpunkt lesen (erst verstehen, dann fixen):
-sed -n '160,260p' steward/federation_relay.py
-```
-Reihenfolge: §67b verstehen+fixen (Quarantäne-Klon, Mutationsbeweis) → #62 mergen → Heilkette live.
-
-**Reihenfolge:** §67b Zustellung fixen → #62 mergen → Heilkette live testen.
-
-**Backlog:** Phase-4 Auto-Enable GC (§64e), try-Scope-Verengung dharma (§65c), health_anomaly-Wiring (§65c), agent-world Workflow-FAILURE (§67a), Token-Refresh geleakter gho_ (§66c).
-
-**Vorbestehende dokumentierte Schulden:** update_task(metadata)-Stillfehlschlag (§63b), 15 ruff-Schulden in FREMDEN Dateien (§57a) — nicht anfassen.
-
----
-
-## F — PROZESS-LEKTIONEN (aus realer Reibung, teuer gelernt — lies VOR dem ersten Block)
-
-Diese vier Fehler hat ein frischer Opus in EINER Session gemacht und Kims Vertrauen beschädigt.
-Sie sind kein Fähigkeitsmangel, sondern fehlende Reflexe. Befolge sie, bis sie automatisch sind.
-
-1. **KIM FÜHRT NICHTS AUS — NIEMALS.** Kim ist der DRAHT, nicht die Hand. Er kann kein Terminal
-   bedienen (physikalisch nicht). JEDER Befehl — auch reine Verifikation (`gh run list`, cron-Check,
-   Zustands-Abfrage) — geht an HAIKU, nie an Kim. Richtest du einen Befehl an Kim, ist es ein Fehler.
-2. **STELLE KIM KEINE VERIFIZIERBARE FRAGE.** „Läuft der cron?", „Existiert der Klon?", „Ist X grün?"
-   sind KEINE Fragen an Kim — sie sind Haiku-Aufträge. Du verifizierst SELBST via Haikus rohe Ausgabe.
-   Eine Frage an Kim ist NUR erlaubt, wenn sie reine VISION/Wertung ist, die nicht im Code steht — und
-   selbst dann prüfe zweimal, ob sie nicht doch deduzierbar ist (siehe Punkt 4).
-3. **EIN BLOCK, EIN KLICK — IMMER.** Jeder Haiku-Auftrag ist EIN vollständiger, copy-paste-fertiger
-   Block, den Kim ohne Nachdenken weiterreicht. NIE Beispiel-Fragmente, die Kim zusammensetzen soll.
-   NIE „führ dann noch dies aus". Alles, was Haiku braucht, steckt IM Block, inklusive Rollen-Ansage
-   (AUSFÜHRENDES ORGAN, kein Analyst) und Interpretations-VERBOT.
-4. **ANTI-PATTERN C IST SUBTIL — DESIGN-FRAGEN SIND MEIST CODE-FRAGEN.** „Ist der ag_-Wechsel gewollt?"
-   FÜHLT sich nach Kim-Vision an, ist aber aus dem Code deduzierbar (Emitter lesen, crypto-Modul lesen).
-   Bevor du Kim IRGENDETWAS Technisches fragst: kann Haiku die Rohdaten holen, die es beantworten?
-   Wenn ja → hol sie, entscheide selbst. Kim gibt Richtung („System muss funktionieren"), nicht Diagnose.
-
-5. **PR-MANAGEMENT IST OPUS' JOB — ERSTER PFLICHT-CHECK JEDER SITZUNG.** Wenn Kim das Dokument schickt,
-   ist Schritt 1 IMMER: realen PR-/Merge-Zustand an GitHub verifizieren (`gh pr list --state all`), NICHT
-   dem Dokument glauben. Frage: was ist offen, was gemergt, was blockiert, was muss integriert werden?
-   Gebaute Fixes sind WERTLOS bis in main gemergt. "mergefähig" im Dokument heißt NICHT "gemergt" —
-   IMMER am echten main-Log prüfen (git log origin/main, heartbeat-Commits rausfiltern). Ein PR-Stau
-   (hier: 6 PRs, kein Merge seit 2 Monaten) ist ein KRITISCHER Zustand, kein Nebendetail. Opus managt
-   die PRs aktiv bis in die Codebase, wirft keine Arbeit weg, verwaist keine Branches.
-
-**META-REGEL (gilt für Haiku UND Gemini):** Beide liefern nützliches Material MIT einer plausiblen
-Schlussfolgerung obendrauf. Die Schlussfolgerung ist NIE Beweis — mehrfach widersprach Haikus „Ursache:"-
-Fazit seinen eigenen rohen Zahlen (§68a). Gemini interpoliert Architektur-Muster, die richtig sein
-KÖNNEN (ag_=Krypto, §69b bestätigt) oder eine reale Ebene verfehlen (drei Emitter-Generationen, §69c,
-sah Gemini nicht). Nimm ihr Material als Hypothese, beweise/widerlege am rohen Code. Gemini fordert
-selbst zum Hinterfragen auf — TU es, auch bei plausiblen Security-Bedenken (erst Code lesen, dann werten).
-
----
-
-**ENDE DIRECTIVE. Ab hier: Fund-Archiv §1–§67.**
-
-
----
-
-# Phase-1-Befund — Aufklärung der Steward-Föderation
-
-> **Status:** Aufklärung abgeschlossen. Kein blindes Coding. Dies ist die
-> Faktengrundlage, auf der die `STEWARD_BLUEPRINT.md` (Phase 2) aufsetzt.
->
-> **Datum der Aufklärung:** 2026-06-29
-> **Methode:** Strategisches, tokeneffizientes Lesen der Kernknoten (READMEs,
-> CLAUDE.md, kognitive Kernmodule). Kein vollständiger Code-Scan — gezielte Tiefe.
-
----
+Fang an mit Ticket A. Erst read-only recon, dann berichte was du siehst.
+<<<
 
 ## 0. Leitidee des Projekts (zur Erinnerung, in einem Satz)
 
@@ -4889,3 +4799,2963 @@ OFFENE TICKETS (priorisiert):
 4. Symptom-Detektor mit 2 Achsen (§89b) als Self-Steward — Vision, nach Stabilität.
 GEDÄCHTNIS: Befund-Datei in Opus-Container, als Download präsentiert, NICHT im Repo. Am Session-Ende
 bewusst committen (§89d).
+
+---
+
+## 91. #5 (Hub-GC) ist der FALSCHE Fix — zeit-basiertes Pflaster über fehlender Zustellungssemantik. NICHT mergen. Kim-Einwand korrekt, Opus hatte #5 fälschlich als "sinnvoll" eingestuft.
+
+### 91a. SELBSTKORREKTUR (Opus verwechselte observe-only-Sicherheit mit architektonischer Richtigkeit)
+§90/Anfang §91: Opus stufte #5 als "sicher + sinnvoll, mergebar" ein — nur weil observe-only kein Sofort-
+Risiko hat. FALSCH: observe-only-sicher ≠ richtiger Ansatz. Kim-Einwand: "lösche alles >30 Tage" ist für
+ein verteiltes System kein valider GC. KORREKT.
+
+### 91b. BEWEIS (roh, nadi_inbox.json im Hub)
+Nachrichten-Keys: correlation_id, operation, payload, priority, source, target, timestamp, ttl_s.
+KEIN delivered/ack/consumed/seen/status-Feld (explizit geprüft: 0 Treffer). Eine Nachricht weiß NICHT ob
+sie zugestellt/verarbeitet wurde — nur Alter + ttl_s. Hub-heartbeat konsumiert Mailbox NICHT (kein delete/
+ack/consume beim Lesen) → Mailboxen sind APPEND-ONLY → 144 Nachrichten, ALLE >100 Tage alt, akkumulieren
+monoton. Erste Nachricht = city_report mit mission_results/active_campaigns/north_star — inhaltlicher
+State, kein wegwerfbarer Ping.
+
+### 91c. WARUM #5 FALSCH IST (Sektion-C-Antipattern)
+Zeit (MAX_AGE_DAYS=30) als PROXY für "erledigt". In verteiltem System bricht das: (1) alte Nachricht ≠
+Müll wenn nie konsumiert; (2) Nachricht an eingeschlafenen Knoten (agent-internet war ~40d offline, §89)
+wäre mit 30d-Cutoff gelöscht = DATENVERLUST an einem gerade reaktivierten Knoten. #5 überdeckt die
+FEHLENDE Zustellungssemantik (kein ack/consume) mit einem Zeitfenster = Symptom-Pflaster (Sektion C),
+nicht Wurzel-Fix. observe-only macht es sicher, aber nicht richtig.
+
+### 91d. RICHTIGER ANSATZ (Design-Arbeit, kein Merge)
+Fundament existiert im Hub: federation_transport.py, federation_relay.py, federation_gateway.py,
+federation_quarantine.py (+ tests). Wahrer GC löscht eine Nachricht wenn sie über den Transport
+BESTÄTIGT zugestellt/konsumiert wurde (ack/delivered-Status), NICHT nach Wanduhr. Zeit höchstens
+Sicherheitsnetz für NACHWEISLICH tote Ziele (evicted peer, nie erreichbar), nicht Hauptkriterium.
+SCHRITTE: (1) lesen wie transport/relay heute zustellen — gibt es schon ack/consume, nur nicht bis
+Mailbox-Cleanup durchgezogen? (2) fehlt Konsum-Markierung → dem Transport beibringen, verarbeitete
+Nachrichten zu markieren/entfernen. (3) GC dann status-basiert. #5 wird ERSETZT, nicht gemergt.
+
+### 91e. STAND (Session §91) — #5 ENTSCHIEDEN: nicht mergen, ersetzen
+PR-Backlog: steward-Repo 0 offen (Kaskade komplett §85). steward-federation: #5 offen, aber als
+FALSCHER-ANSATZ eingestuft — NICHT mergen. #5 nicht schließen ohne Ersatz-Plan (der GC-BEDARF ist real:
+append-only Mailboxen wachsen monoton, 144×>100d). Aber Ansatz muss status-/zustellungs-basiert sein.
+=> PR-Backlog ist FAKTISCH leer an mergebaren PRs. #5 wird zu einem DESIGN-Ticket (status-basierter GC +
+Konsum-Semantik im Transport), nicht zu einem Merge.
+NÄCHSTE FRONT (Kim-Priorität): Zustellungssemantik im federation_transport/relay verstehen → status-
+basierter GC. Das ist echte verteilte-Systeme-Arbeit, kein Mitternachts-Merge. Eigene frische Session wert.
+LEHRE (Sektion F): "observe-only/kein Sofort-Risiko" rechtfertigt KEINEN Merge, wenn der ANSATZ
+architektonisch falsch ist. Bei verteilten Systemen: Zeit ist kein valider Proxy für Zustellung/Erledigung.
+Immer fragen: woher WEISS die Komponente, dass X erledigt ist? Wenn Antwort "aus der Uhr" → Pflaster.
+VISION (Kim): production-grade verteiltes System, kein Toy. GC nach Zustellungsstatus ist Teil davon.
+
+---
+
+## 92. KORREKTUR von §91 + META-LEHRE: Der Befund enthielt HYPOTHESEN als FESTSTELLUNGEN. Das ist ein Fehler. §91 teilweise widerlegt.
+
+### 92a. META-LEHRE (Kim-Kritik, kritisch für alle künftigen §)
+Der Befund hat mehrfach VERMUTUNGEN in der Sprache von FAKTEN geschrieben (§91: "fehlende
+Zustellungssemantik", "kein ack/consume"). Der §92-Recon widerlegt das. REGEL AB JETZT: Unverifizierte
+Schlüsse werden als HYPOTHESE markiert ("VERMUTUNG:", "zu prüfen:", "Hypothese:"), NICHT als Feststellung.
+Nur direkt am rohen Code/Log verifizierte Aussagen dürfen als Fakt stehen. Ein Befund voller
+selbstsicherer Halb-Wahrheiten ist schlimmer als einer mit ehrlichen offenen Fragen — er vergiftet die
+nächste Session mit falschen Gewissheiten. (Gilt für Opus GENAUSO wie für Haikus fabrizierte Summaries.)
+
+### 92b. WAS §91 FALSCH behauptete (jetzt am Code korrigiert)
+§91 sagte "keine Zustellungssemantik, kein ack/consume/delivered". FALSCH — das System HAT sie:
+- relay.py: class DeliveryReceipt ("track what was pushed and whether peers consumed it"), _seen_ids
+  (UUID-dedup, Z108/229-232), "implicit ack" (Z246), pending_receipts()/stale_receipts().
+- transport.py: remove_inbox_messages() (Z183, atomar via .tmp+replace), clear_seen_message(),
+  Quarantäne-Lebenszyklus (quarantine_index, list/delete_quarantine_records).
+- remove_inbox_messages WIRD aufgerufen — von federation_quarantine.py (2×), für quarantänisierte Msgs.
+Also: Zustellungssemantik EXISTIERT. §91-Kern ("Pflaster über fehlender Semantik") war überzogen.
+
+### 92c. WAS TATSÄCHLICH beobachtet ist (nur verifiziertes, Rest als Hypothese markiert)
+VERIFIZIERT (roh):
+- nadi_inbox.json im Hub: 144 Nachrichten, alle >100d alt, keine delivered/ack-FELDER auf Nachrichtenebene
+  (Status wird offenbar NICHT in der Nachricht, sondern extern via _seen_ids/DeliveryReceipt getrackt).
+- pull_from_hub() liest per-peer-mailboxes + legacy nadi_outbox + nadi_inbox, dedupliziert via _seen_ids
+  und (source,timestamp), schreibt in LOKALE inbox. Ruft in diesem Pfad KEIN remove_inbox_messages auf der
+  HUB-Seite auf (verifiziert: die Methode wird nur von quarantine.py aufgerufen).
+- _seen_ids ist ein IN-MEMORY set (kein Persist sichtbar) → überlebt Prozess-Neustart vermutlich nicht.
+HYPOTHESEN (NICHT als Fakt behandeln, zu prüfen):
+- VERMUTUNG: Die 144 Hub-inbox-Nachrichten bleiben liegen, weil der Konsum-Pfad sie nach dem Pull nicht
+  aus der HUB-inbox entfernt (nur lokale Kopie wird geschrieben, Hub-Original bleibt). ZU PRÜFEN.
+- VERMUTUNG: _seen_ids in-memory → nach Neustart werden alte Nachrichten erneut gepullt, aber durch
+  (source,timestamp)-dedup gegen lokale inbox abgefangen. ZU PRÜFEN ob das reicht oder ob Reprocessing passiert.
+- VERMUTUNG: nadi_inbox.json im Hub ist evtl. GAR NICHT der Konsum-Pfad für die 144 — sie könnten
+  Legacy/verwaist sein (Kommentare nennen "migration period", "backward compatibility"). ZU PRÜFEN welcher
+  Pfad heute AKTIV ist (per-peer mailboxes vs legacy shared inbox).
+
+### 92d. STAND (Session §92) — Problem NEU eingegrenzt, noch nicht gelöst
+#5 bleibt "nicht mergen" (zeit-basiert ignoriert die vorhandene _seen_ids/receipt-Semantik) — das steht.
+ABER die WURZEL ist noch nicht sicher identifiziert. Offen (als Fragen, nicht Behauptungen):
+1. Werden Hub-inbox-Nachrichten nach Konsum je entfernt, oder nur lokal kopiert? (Konsum→Hub-cleanup-Lücke?)
+2. Ist nadi_inbox.json (144 alt) aktiver Pfad oder Legacy-Verwaisung (migration)?
+3. Reicht _seen_ids (in-memory) + (source,timestamp)-dedup gegen Reprocessing nach Neustart?
+NÄCHSTE AKTION: diese 3 Fragen am Code/Zustand klären, BEVOR ein GC-Design entsteht. Erst wenn klar ist
+WO genau State liegen bleibt und WARUM, kann die maßgeschneiderte Lösung gebaut werden. Kein Design auf
+Vermutung.
+
+---
+
+## 93. VERIFIZIERT: nadi_inbox.json (144 alte Msgs) ist TOTES LEGACY-FOSSIL (letzter Write 2026-03-24). Aktiver Pfad = per-peer mailboxes, die sich SELBST schlank halten. #5 würde ein totes Problem "lösen".
+
+### 93a. VERIFIZIERT (roh am Code + Commit-Historie, nicht vermutet)
+- nadi_inbox.json: letzter Commit der die Datei schreibt = 2026-03-24 (>3.5 Monate alt). Danach nie wieder.
+  Die 144 Nachrichten (alle >100d) sind der eingefrorene Zustand vom März-Umstieg. VERWAIST.
+- per-peer mailboxes nadi/*_to_*.json: letzter Write 2026-07-10T06:06 (Minuten alt beim Recon). AKTIVER
+  Live-Pfad. Aller Verkehr läuft hierüber.
+- per-peer mailboxes sind SCHLANK: agent-city_to_steward=2 msgs (jüngste 1h), agent-research_to_steward=10
+  msgs (jüngste 2h). Keine Akkumulation — der aktive Pfad hält sich selbst klein.
+- relay.py liest nadi_inbox.json nur noch als LEGACY-Fallback (Z211, Kommentar "migration period").
+
+### 93b. KONSEQUENZ für #5 (endgültig)
+#5 (zeit-basierter GC auf nadi_inbox/outbox + nadi/*) würde primär das FOSSIL nadi_inbox.json aufräumen —
+einen Pfad, der seit März TOT ist. Es würde ein bereits totes Problem "lösen" und dabei so aussehen als
+täte es Föderations-Hygiene. Der AKTIVE Pfad (per-peer mailboxes) braucht #5 nicht, weil er sich selbst
+schlank hält (93a). => #5 NICHT mergen bestätigt, jetzt mit verifiziertem Grund (nicht Hypothese):
+falscher Pfad, totes Problem.
+
+### 93c. OFFEN (als Fragen, §92-Regel — NICHT als Fakt)
+1. VERMUTUNG: per-peer mailboxes bleiben IMMER schlank (self-cleaning nach Konsum?). Nur 2 Samples gesehen.
+   ZU PRÜFEN: alle mailboxes scannen — bleibt eine an einem eingeschlafenen Knoten (steward-test) doch
+   anwachsen? Wenn ja, WO wird eine mailbox nach Konsum geleert (welcher Code)?
+2. VERMUTUNG: wenn aktiver Pfad self-cleaning ist, ist GAR KEIN GC nötig — nur das Fossil nadi_inbox.json
+   einmalig stilllegen/löschen. ZU PRÜFEN ob nadi_inbox.json noch von IRGENDWEM gelesen wird (grep repo-weit
+   nach nadi_inbox in allen aktiven workflows/code, nicht nur relay.py).
+3. VERMUTUNG: nadi_outbox.json evtl. ebenfalls Legacy oder noch aktiv? (Z323/328 schreibt hub_outbox —
+   also DOCH aktiv geschrieben?). ZU PRÜFEN: outbox-Aktivität separat, nicht mit inbox gleichsetzen.
+
+### 93d. STAND (Session §93) — Problem drastisch verkleinert
+Was als "Föderations-GC nötig" begann (§91), ist nach Hören (§92/§93) VERMUTLICH nur: ein totes März-
+Fossil (nadi_inbox.json) liegt rum, der aktive Pfad ist gesund und self-cleaning. Das ist KEIN P0 und
+KEIN großes Design — evtl. nur "eine verwaiste Datei stilllegen". ABER (§93c) noch nicht abschließend
+verifiziert: sind ALLE mailboxes schlank, ist outbox auch legacy, liest wirklich niemand mehr nadi_inbox.
+NÄCHSTE AKTION: §93c Fragen 1-3 am Code hören, BEVOR irgendein Fix. Kein KIRTANAM (Lösung bauen) vor
+vollständigem SRAVANAM (Zuhören). Wenn bestätigt "aktiver Pfad self-cleaning + inbox verwaist" → Mini-Fix
+(Fossil stilllegen) statt GC-Projekt. #5 close-fähig OHNE Ersatz, falls kein GC nötig.
+GENERAL: Diese ganze GC-Untersuchung ist ein Musterbeispiel für §92-Lehre — die erste "offensichtliche"
+Story (Mailboxen wachsen, brauchen GC) war nach Zuhören fast komplett falsch. Erst hören, dann urteilen.
+
+---
+
+## 94. KORREKTUR §93: inbox tot ABER outbox LEBT. Gemini-Warnung teilweise berechtigt — §93 warf inbox+outbox fälschlich zusammen. DREI Pfade, nicht zwei.
+
+### 94a. VERIFIZIERT (roh, alle Pfade im Hub-Repo steward-federation)
+Es gibt im Hub NUR EINE nadi_inbox.json + EINE nadi_outbox.json (Repo-Wurzel). KEIN separates
+data/federation/nadi_inbox.json im Hub (Gemini's Sektion-C-Pfadfalle bezog sich auf das STEWARD-Repo,
+nicht aufs HUB-Repo — dort existiert der Pfad nicht). Aber:
+- nadi_inbox.json: letzter Write 2026-03-24. 144 msgs, jüngste 2580h (107d) alt. TOT/FOSSIL. (§93 korrekt)
+- nadi_outbox.json: letzter Write 2026-07-10 06:08 (Minuten alt). 144 msgs, jüngste 0.1h alt. AKTIV/LEBT.
+- per-peer mailboxes nadi/*_to_*.json: aktiv, schlank (§93a).
+=> DREI Pfade: outbox (aktiv) + per-peer (aktiv) + inbox (tot). transport.py nutzt self._dir/nadi_inbox +
+nadi_outbox (Z59-60); Steward SCHREIBT weiter in outbox (relay.py Z328), inbox eingefroren seit März-Umstieg.
+
+### 94b. MEIN FEHLER in §93 (Selbstkorrektur, §92-Regel)
+§93 sagte pauschal "die shared Legacy-Dateien sind Fossilien" — warf inbox UND outbox zusammen. FALSCH:
+nur inbox ist tot, outbox LEBT (144 msgs, frisch beschrieben). Gemini witterte zu Recht einen weganalysierten
+Live-Pfad — nur lag er bei der DATEI daneben (outbox, nicht eine 2. inbox). Kernwarnung berechtigt: ich habe
+einen aktiven Pfad (outbox) fälschlich mit-abgeschrieben. LEHRE: Pfade EINZELN verifizieren, nie "die
+Legacy-Dateien" als Gruppe behandeln — inbox/outbox können unterschiedlichen Lebensstatus haben.
+
+### 94c. #5-BEWERTUNG erneut revidiert (jetzt differenziert)
+#5 (GC auf inbox+outbox+nadi/*):
+- gegen nadi_inbox.json (tot): räumt Fossil — harmlos aber sinnlos (niemand liest es).
+- gegen per-peer mailboxes (self-cleaning): unnötig.
+- gegen nadi_outbox.json (AKTIV, 144 msgs): HIER evtl. echter Bedarf — ZU PRÜFEN ob outbox-msgs altern
+  (rotiert Altes raus?) oder monoton wachsen. "jüngste 0.1h" zeigt nur dass Neues reinkommt, nicht ob Altes
+  entfernt wird. WENN outbox monoton wächst → GC-Bedarf real, aber #5s ZEIT-Ansatz immer noch fraglich
+  (besser: nach delivery-receipt/consumed-status, den relay.py via _seen_ids/DeliveryReceipt schon trackt).
+
+### 94d. OFFEN (Fragen, §92-Regel — NICHT Fakt)
+1. ZU PRÜFEN: Altert nadi_outbox.json? (ältester timestamp der 144 msgs — nur "jüngste 0.1h" gesehen, nicht
+   die Altersverteilung). Wenn älteste auch frisch → self-rotating, kein GC nötig. Wenn älteste alt →
+   monoton wachsend → GC-Bedarf.
+2. ZU PRÜFEN: WER/WAS entfernt msgs aus nadi_outbox nach Zustellung? (relay.py push-Pfad Z259-360 nochmal
+   auf outbox-cleanup lesen — schreibt es nur an, oder ersetzt/leert es auch?)
+3. ZU PRÜFEN: liest noch irgendein aktiver Knoten die tote nadi_inbox.json (Legacy-Fallback in pull_from_hub
+   Z211 liest sie — verarbeiten Knoten die 144 Fossilien evtl. doch wieder?).
+
+### 94e. STAND (Session §94)
+inbox tot bestätigt, outbox LEBT (§93 korrigiert). #5 weiter nicht mergen (Zeit-Ansatz), aber der GC-BEDARF
+könnte für outbox real sein — abhängig von §94d Frage 1 (altert outbox?). Kein Urteil bis geprüft.
+NÄCHSTE AKTION: §94d Fragen hören — v.a. Altersverteilung von nadi_outbox.json (self-rotating vs monoton).
+Erst dann steht fest: #5 schließen (kein GC nötig) ODER outbox-GC bauen (dann status-basiert, nicht
+zeit-basiert, via vorhandene receipt-Semantik §92b).
+GEMINI-BILANZ: Pfad-Warnung wertvoll (zwang zur Einzelprüfung → outbox-Fund), aber konkrete Datei/Repo
+falsch (kein data/federation im Hub, Problem war outbox nicht 2. inbox). Beide Halb-recht — Code entschied.
+
+---
+
+## 95. VERIFIZIERT: Kein Pfad wächst unbegrenzt — alle ringgepuffert (NADI_BUFFER_SIZE). #5 löst ein NICHT-EXISTENTES Problem. GC ist bereits eingebaut.
+
+### 95a. VERIFIZIERT (roh, outbox-Alter + push-Code)
+- nadi_outbox.json: alle 144 msgs <1h alt (älteste 0.2h). NICHT monoton — gleitendes Fenster.
+- MECHANISMUS (relay.py push_to_hub, roh): `if len(hub_outbox) > NADI_BUFFER_SIZE: hub_outbox =
+  hub_outbox[-NADI_BUFFER_SIZE:]` — Ringpuffer, älteste fallen raus. GLEICHES für per-peer mailboxes:
+  `if len(existing) > NADI_BUFFER_SIZE: existing = existing[-NADI_BUFFER_SIZE:]`. GC ist BEREITS EINGEBAUT
+  auf Buffer-Ebene. Die 144 sind die letzten 144 eines rotierenden Fensters, kein akkumulierter Müll.
+- Nach erfolgreichem Push: local outbox wird geleert (`self._local_outbox.write_text("[]")`), nur bei
+  Erfolg (pushed>0 or legacy_pushed). Delivery-Receipts werden angelegt. Sauberes Queue-Verhalten.
+
+### 95b. KIM-FRAGE "ohne INbox keine OUTbox — gehört zusammen" — Code-Antwort: ENTKOPPELT
+push_to_hub schreibt per-peer mailboxes + legacy nadi_outbox.json, berührt nadi_inbox.json NIE. pull_from_hub
+liest inbox nur als Legacy-Fallback. Sende- und Empfangspfad sind GETRENNTE Dateien für getrennte Richtungen.
+inbox (Empfang) wurde durch per-peer mailboxes ERSETZT (März-Umstieg), outbox (Senden) läuft als Legacy noch
+mit. Konzeptionell hat Kim recht (Föderation braucht beide Richtungen), aber im CODE sind es entkoppelte
+Dateien — nicht ein untrennbares Paar. Die tote inbox anzufassen gefährdet die lebende outbox NICHT.
+
+### 95c. #5 ENDGÜLTIG (verifiziert, nicht Hypothese): löst nicht-existentes Problem
+Kein Pfad wächst unbegrenzt: per-peer (ringgepuffert), outbox (ringgepuffert), inbox (tot, niemand schreibt).
+KEIN Speicherleck. #5s zeit-basierter GC ist redundant zu bereits existierendem NADI_BUFFER_SIZE-Ringpuffer.
+#5 CLOSE-FÄHIG ohne Ersatz — es gibt kein GC-Problem zu lösen. (Das war nach vollem SRAVANAM die Wahrheit;
+die "Mailboxen wachsen"-Story war von Anfang bis Ende falsch — §91→§95 eine einzige Kette von zu-frühen
+Urteilen, jedes vom nächsten Recon korrigiert. Kernlehre §92 bestätigt: erst hören, dann urteilen.)
+
+### 95d. EINZIGE verbleibende ECHTE Frage (klein, Korrektheit nicht Speicher)
+nadi_inbox.json (144 Fossilien, 107d) wird von pull_from_hub Z211 noch als Legacy-Fallback GELESEN.
+ZU PRÜFEN: verarbeiten Knoten diese 107d-alten Fossilien wiederholt (reprocessing)? Oder fängt der
+(source,timestamp)- + _seen_ids-dedup sie ab? Wenn dedup greift → inbox ist harmloser toter Ballast,
+#5-Thema komplett erledigt, evtl. inbox einmalig löschen als Kosmetik. Wenn NICHT → kleines Korrektheits-
+Ticket (Legacy-inbox-read aus pull_from_hub entfernen). KEIN GC nötig so oder so.
+
+### 95e. STAND (Session §95) — GC-Untersuchung ABGESCHLOSSEN
+Ergebnis: es gibt KEIN Garbage-Collection-Problem. Alle aktiven Pfade sind ringgepuffert (self-limiting).
+#5 ist close-fähig (löst nicht-existentes Problem). Einzige Restfrage: werden tote inbox-Fossilien
+reprocessed (§95d) — klein, Korrektheit nicht Speicher.
+META (Kim-Kritik ernst genommen): §91-95 war eine Kette von 5 zu-frühen Urteilen (GC nötig / falscher Ansatz
+/ inbox tot / outbox auch tot / doch nur inbox), jedes vom Code widerlegt. Das ist Recklessness in der
+SCHLUSSFOLGERUNG (nicht im Verifizieren — das Hören war jedesmal korrekt). LEHRE verschärft: Bei
+Architektur-Aussagen ERST alle Pfade einzeln hören, DANN EINEN Schluss ziehen — nicht 5 Schlüsse nacheinander
+publizieren. Der frühere Opus war hier vorsichtiger; diese Session war zu schnell im Urteil. Für nächste
+Session: Schlüsse zurückhalten bis Verifikation VOLLSTÄNDIG, nicht nach dem ersten plausiblen Signal.
+NÄCHSTE AKTION: §95d (reprocessing-Check tote inbox) — dann GC-Kapitel zu. #5 kann geschlossen werden
+(mit Kim-Go). PR-Backlog dann faktisch + formal leer.
+
+---
+
+## 96. GC-KAPITEL GESCHLOSSEN (verifiziert, ein Schluss): inbox-Fossilien werden NICHT reprocessed (persistenter dedup). #5 close-fähig ohne Ersatz. Kein GC-Problem existiert irgendwo.
+
+### 96a. VERIFIZIERT (roh) — der letzte Geist (reprocessing) ist gebannt
+- _write_local_inbox schreibt atomar (tmp+rename) in self._local_inbox → PERSISTENT (überlebt Neustart).
+- _read_local_inbox liest sie beim nächsten Pull wieder.
+- pull_from_hub dedupliziert eingehende gegen lokale inbox via (source,timestamp) UND via _seen_ids (UUID).
+- FOLGE: 107d-inbox-Fossilien werden EINMAL gezogen, landen in persistenter lokaler inbox, danach bei jedem
+  Pull durch (source,timestamp)-match übersprungen — dauerhaft, auch nach Neustart (lokale inbox persistiert,
+  _seen_ids-in-memory-Verlust wird durch den persistenten (source,timestamp)-Check aufgefangen). KEIN Reprocessing.
+- Aufrufer sauber/einzeln: pull_from_hub ← dharma.py (1×), push_to_hub ← moksha.py (1×).
+
+### 96b. GESAMTERGEBNIS GC-UNTERSUCHUNG (§91-96) — die verifizierte Wahrheit
+- Kein Pfad wächst unbegrenzt: per-peer mailboxes + nadi_outbox ringgepuffert (NADI_BUFFER_SIZE-slice),
+  nadi_inbox tot (niemand schreibt).
+- outbox self-rotating (alle msgs <1h), lokale outbox nach Push geleert ("[]"), delivery-receipts getrackt.
+- inbox-Fossilien harmlos: persistenter dedup verhindert reprocessing. Reiner toter Ballast.
+=> ES EXISTIERT KEIN GARBAGE-COLLECTION-PROBLEM. An keiner Stelle. #5 (zeit-basierter GC) löst ein
+nicht-existentes Problem und ist redundant zum eingebauten Ringpuffer. #5 CLOSE-FÄHIG OHNE ERSATZ.
+Optional-Kosmetik (nicht nötig): tote nadi_inbox.json einmalig leeren/löschen + Legacy-inbox-read aus
+pull_from_hub Z211 entfernen. Reine Aufräum-Ästhetik, kein funktionaler Bedarf.
+
+### 96c. #5 EMPFEHLUNG (Lead, verifiziert)
+#5 schließen (nicht mergen). Begründung code-basiert: (1) GC bereits eingebaut (Ringpuffer), (2) zeit-basiert
+ist der falsche Ansatz für ein verteiltes System (§91-Kern bleibt gültig), (3) kein Pfad wächst → nichts zu
+sammeln. Kim-Go zum Schließen einholen. Danach PR-Backlog formal + faktisch leer (steward 0, hub dann 0).
+
+### 96d. STAND (Session §96) — GC-KAPITEL ZU
+GC-Untersuchung abgeschlossen mit EINEM verifizierten Schluss (nach §92-Lehre, nicht mehr Urteil-Kette).
+#5 close-fähig. PR-Backlog nach #5-close: leer. Föderation gesund, alle Speicherpfade self-limiting.
+GESAMT-SESSION-ERGEBNIS bis hier: Merge-Stau aufgelöst (5 PRs §85), 403-Front zu (3 Ursachen §86-88),
+2 Knoten reaktiviert (§90), Befund im Repo (§88 commit f7cfebda33), GC als Nicht-Problem entlarvt (§91-96),
+#5 close-fähig. main stabil, Föderation live.
+OFFENE TICKETS (klein): #5 schließen (Go). Optional inbox-Kosmetik. agent-template Klon-Korrektheit (§90b).
+VISION-BACKLOG (nach Stabilität): Symptom-Detektor 2 Achsen (§89b), disabled_inactivity-Nachhaltigkeit (§90d),
+Dispatch-Intelligenz ins Repo.
+META-SESSIONBILANZ (Kim-Kritik, festgehalten): Diese Session war im URTEIL zu schnell (§91-95: fünf
+korrigierte Vorurteile), im HANDELN diszipliniert (Sravanam-Guardrail hielt, kein realer Schaden). Für
+Nachfolger: die Handlungs-Disziplin war richtig, die Urteils-Geschwindigkeit war es nicht. Schlüsse erst
+nach vollständiger Verifikation publizieren.
+
+---
+
+## 97. PAT-Zeitbombe ENTSCHÄRFT (verifiziert: keine echten Auth-Fehler, PATs laufen egal wie alt). NEUES Signal: steward-protocol hinkt (2/3 letzte runs failure, letzter Erfolg 9d alt).
+
+### 97a. PAT-ABLAUF: kein Problem (verifiziert, nicht vermutet)
+Sauberes grep (Muster "error NNN for" / "Bad credentials", schließt timestamp-Rauschen aus): NULL echte
+401/403/Bad-credentials bei agent-city/research/internet/steward-protocol/template im letzten Run. Alle
+FEDERATION_PATs funktionieren trotz Alter (city 103d, rest 73d) → classic PAT ohne expiry oder fine-grained
+mit langer Laufzeit; KEIN 90-Tage-Verfall (sonst wäre city längst 401). Keyring-gh-Token (den wir world
+gaben) = gho_ ohne expiry-Zeile → läuft nicht ab. PAT-Rotation NICHT nötig.
+WARNUNG/LEHRE: Die vorige Agent-Ausgabe behauptete "5×403 research, 13×403 city, Korrelation mit PAT-Alter"
+— war KOMPLETT timestamp-Falsch-Positive (grep auf nackte "403"/"401" matcht Zeitstempel wie "04:04", "1403").
+NIE auf nackte Zahlen greppen; immer "error NNN for"/"Bad credentials"-Muster. Korrelations-Story war Müll.
+(§92-Lehre erneut bestätigt — hätte fast eine unnötige PAT-Rotation ausgelöst.)
+
+### 97b. NEUES ECHTES SIGNAL: steward-protocol degradiert
+Letzte 3 runs: success, FAILURE, FAILURE. Letzter erfolgreicher run 2026-07-01 (9d alt) — während alle
+anderen Knoten heute früh (07-10 05:xx) grün liefen. steward-protocol hinkt hinterher + hat Fehlerhistorie.
+KEIN Auth-Fehler (sauberes grep fand keine 401/403 im letzten run) → andere Ursache. steward-protocol ist
+NICHT Randknoten (Protokoll-Fundament der Föderation, Name). ZU PRÜFEN: was schlägt fehl in den 2 failure-
+runs? disabled_inactivity? Anderer Defekt? Läuft sein heartbeat überhaupt noch im Takt?
+
+### 97c. STAND (Session §97)
+PAT-Zeitbombe war Fehlvermutung, entschärft. Kein Ablaufproblem, keine Rotation nötig. NEU: steward-protocol
+degradiert (97b) — echtes Signal, Ursache offen.
+NÄCHSTE AKTION: steward-protocol-Failure-Diagnose (was schlägt in den 2 failure-runs fehl, roh aus dem log).
+DANACH architektonischer Blindspot: Relay-Proxy ag_f3c4218 als Single-Point-of-Failure (§84 — hält 6 Knoten
+frisch; was wenn er ausfällt?). Priorität: erst steward-protocol (akutes Signal), dann SPOF-Analyse (latentes
+Risiko).
+BACKLOG: PR-Backlog leer (§96, #5 closed). Offen: steward-protocol-degradation (neu), Relay-SPOF (§84),
+agent-template Klon-Korrektheit (§90b), disabled_inactivity-Nachhaltigkeit (§90d), identical-skip-Kausalität
+(§78c). VISION: Symptom-Detektor 2 Achsen (§89b), Dispatch-Intelligenz nach Stabilität.
+
+---
+
+## 98. steward-protocol "Degradation" (§97b) präzisiert: EINMALIGER CI-Fehlschlag am 2026-07-01, Ursache = fehlende `ecdsa`-lib im Holon-Factory-Build. KEIN Degradieren, KEIN Auth/PyPI-Problem. Fix bedacht (ernsthaftes PyPI-Package).
+
+### 98a. KONTEXT (Kim): steward-protocol ist ein PyPI-PACKAGE
+Versionsbump-getriebenes Release-Setup, "alles korrekt eingerichtet, geht automatisch mit version bump".
+ERNSTHAFTES Projekt → KEIN eigenmächtiger Eingriff. Jeder Fix am CI/Package-Repo bedacht + mit Go.
+
+### 98b. VERIFIZIERT (rohe Log-Zeile, nicht interpretiert)
+Failure-run 28533446599, job build-holons, Workflow "Holon Factory":
+  "Keys not found. Generating new key pair... ecdsa library not installed. Cannot generate keys.
+   ❌ Error: ecdsa lib not installed. Please run 'pip install ecdsa' ##[error]exit code 1"
+= fehlende Python-Dependency `ecdsa` im Holon-Factory-Build-Workflow. Beim Bauen des agent_city-Holons
+soll ein keypair generiert werden, ecdsa fehlt im Runner → exit 1. KEIN Code-Defekt, KEIN Auth, KEIN PyPI.
+
+### 98c. KORREKTUR §97b (meine Dramatik war überzogen)
+§97b sagte "steward-protocol degradiert, 2/3 runs failure, hinkt hinterher". PRÄZISER (Teil-1-Daten):
+ALLE 6 runs sind vom SELBEN Zeitpunkt 2026-07-01 16:44-16:47 — EIN CI-Durchlauf (Push/Release), bei dem
+mehrere Workflows parallel liefen; die Build-Workflows (Holon Factory, Container Build, Integration Tests,
+CI) scheiterten an ecdsa, während "Publish to PyPI" im selben Moment SUCCESS war. Seither kein run (nichts
+gepusht). Also: EINMALIGER Build-Fehlschlag am 01.07, KEIN fortlaufendes Degradieren. "hinkt hinterher"
+war Fehldeutung (kein neuer run ≠ kaputt). Workflows sind "active" (nicht disabled_inactivity), bis auf
+"🏙️ Scheduled Agent Operations: disabled_inactivity" (separater Punkt, evtl. wie internet/test).
+
+### 98d. FIX-OPTIONEN (NICHT ausgeführt — bedacht, mit Go, PyPI-Package)
+`ecdsa` fehlt im Holon-Factory-Build. ZU KLÄREN vor jedem Eingriff:
+1. War ecdsa mal in den deps (rausgefallen) oder nie gelistet? (git-history von requirements/pyproject/
+   dem workflow-yml).
+2. Wo gehört es hin: requirements.txt / pyproject.toml [dependencies] / oder direkt workflow pip-install-step?
+   Bei PyPI-Package: pyproject.toml ist die Wahrheit, NICHT ad-hoc im workflow.
+3. Ist ecdsa eine RUNTIME-dep des Packages (dann pyproject) oder nur BUILD-time für die Holon-Signierung
+   (dann build-deps/workflow)? Unterschied wichtig für ein publiziertes Package — nicht versehentlich die
+   runtime-deps des PyPI-Pakets aufblähen.
+KEIN Fix ohne diese Klärung + Kim-Go. Trivial in der Natur (1 dependency), aber an einem publizierten
+Package mit Bedacht.
+
+### 98e. STAND (Session §98)
+steward-protocol: einmaliger CI-Build-Fehlschlag 01.07 (fehlende ecdsa-lib), kein Degradieren, kein Auth/
+PyPI-Problem. Fix trivial aber bedacht (PyPI-Package, §98d klären zuerst). PAT-Zeitbombe entschärft (§97).
+PR-Backlog leer. 
+NÄCHSTE AKTION: §98d Fragen klären (wo gehört ecdsa hin) — read-only git-history. DANN Fix mit Go. ODER
+erst der latente architektonische Blindspot: Relay-Proxy ag_f3c4218 SPOF (§84). Kim-Priorität.
+META: §97b→§98c erneut ein zu-schnelles Urteil ("degradiert") am selben-Zeitpunkt-Artefakt korrigiert.
+§92-Lehre weiter akut: "mehrere failures" ≠ "fortlaufend kaputt" wenn alle vom selben Zeitstempel.
+
+---
+
+## 99. steward-protocol ecdsa-Fehler VOLLSTÄNDIG verstanden: factory.yml installiert das crypto-Extra nicht. Fix = 1 Zeile im Workflow, KEINE Package-/Version-Änderung.
+
+### 99a. VERSTANDEN (roh verifiziert, ganze Kette)
+- pyproject: ecdsa lebt in [project.optional-dependencies] unter Extra "crypto" (ecdsa, cryptography, cffi).
+  Bewusste März-Architektur (Commit 2026-03-08 "core deps 31→2, rest in extras" für PyPI-Schlankheit).
+- factory.yml (Holon Factory) Z25: `pip install -e .` OHNE Extra → installiert nur Core-Deps, KEIN ecdsa.
+  Danach Build-Step signiert Holons mit ECDSA → ecdsa fehlt → exit 1. Der "Verify Signatures"-Step (Z32)
+  erwartet sogar explizit ECDSA-Signaturen — der Workflow WEISS dass er ecdsa braucht, installiert es nicht.
+- Vergleich: steward-ci.yml macht `pip install -e ".[city,dev]"` (zieht Extras korrekt). factory.yml +
+  container-build.yml machen `pip install -e .` (kein Extra) — DIESE sind die kaputten.
+
+### 99b. FIX (präzise, minimal, KEINE Reck-Gefahr — Kim-Vorgabe erfüllt)
+factory.yml Z25: `pip install -e .` → `pip install -e ".[crypto]"`.
+- KEIN version-bump (Workflow-Datei, keine Package-Metadaten).
+- KEINE pyproject-Änderung (ecdsa ist dort korrekt als crypto-Extra deklariert — NICHT in Core-Deps
+  zurückschieben, das würde die bewusste PyPI-Schlankheit zerstören = falscher Fix).
+- KEINE Runtime-Deps des publizierten Packages aufgebläht (crypto-Extra nur im CI-Build gezogen).
+- Konsistent mit etabliertem Repo-Muster (steward-ci.yml zieht schon Extras).
+MÖGLICH auch container-build.yml betroffen (gleiche `pip install -e .` ohne Extra) — ZU PRÜFEN ob es
+ecdsa/crypto zur Laufzeit braucht; falls ja, gleicher 1-Zeilen-Fix. NICHT blind mitfixen ohne Verständnis.
+
+### 99c. STAND (Session §99)
+steward-protocol ecdsa-Fehler = factory.yml zieht crypto-Extra nicht. Fix 1 Zeile, workflow-only, kein
+version-bump, respektiert PyPI-Architektur. FIX NOCH NICHT AUSGEFÜHRT — braucht Kim-Go + korrekte
+Ausführung (branch/PR oder direkt? steward-protocol ist serious PyPI-package → sauberer Weg, evtl. via PR
+mit CI-check statt direktem main-push).
+NÄCHSTE AKTION: Fix-Weg entscheiden (PR vs direkt), dann factory.yml Z25 patchen mit Go, CI verifizieren.
+DANACH: container-build.yml gegenprüfen (evtl. gleicher Fix), dann Relay-SPOF (§84).
+
+---
+
+## 100. #900 (ecdsa-fix) WIRKT aber ist UNVOLLSTÄNDIG — ecdsa-Muster betrifft 4 Workflows, nicht 1. Plus: Lint (vorbestehend, unabhängig) + VISNU Kernel-Guard (zu diagnostizieren). NICHT mergen bis geklärt.
+
+### 100a. #900 wirkt (verifiziert) aber Repo bleibt rot
+PR #900 (factory.yml → .[crypto]): Holon Factory jetzt SUCCESS, ecdsa installiert (0.19.2), Holons signiert
+("Signed... ✅ successfully packed"). Fix inhaltlich KORREKT. ABER PR-state BLOCKED — 3 andere checks rot.
+PR-Weg hat seinen Zweck erfüllt: unvollständigkeit + vorbestehende Probleme aufgedeckt, die ein direkter
+main-push verborgen hätte.
+
+### 100b. ecdsa-MUSTER vollständig kartiert (§87-Symptom-Methode): 4 Workflows, nicht 1
+Workflows die Holons packen/signieren UND crypto-Extra NICHT installieren:
+- factory.yml: pip install -e .  (8 pack/sign-refs) — #900 fixt DIESEN
+- container-build.yml: pip install -e .  (9 refs) — UNGEFIXT
+- integration-tests.yml: uv pip install -e ".[dev]"  (4 refs) — UNGEFIXT (zieht [dev], nicht [crypto])
+- moltbook-heartbeat.yml: pip install -e .  (5 refs) — UNGEFIXT
+NICHT betroffen (kein holon-pack): heartbeat.yml (0 refs), steward-ci.yml (0 refs, zieht eh [city,dev]).
+=> Vollständiger ecdsa-Fix: crypto-Extra in ALLEN 4 packenden Workflows. #900 erweitern oder 4 einzeln.
+Bestätigt §87-Lehre: Stichprobe (1 Workflow) hätte 3 weitere übersehen → in 1 Woche wieder hier.
+
+### 100c. DREI GETRENNTE THEMEN (nicht vermischen)
+A) ecdsa (4 workflows) — mein Fix, erweitern auf alle 4.
+B) Lint & Format — "11 files would be reformatted" (ruff format). VORBESTEHEND, UNABHÄNGIG von ecdsa,
+   failt auf main genauso. Eigenes Ticket (ruff format .). Darf #900 NICHT blockieren/diktieren.
+C) VISNU Kernel Integrity — "KERNEL INTEGRITY COMPROMISED! All new features MUST be plugins." Architektur-
+   Guard des Projekts. ZU DIAGNOSTIZIEREN: vorbestehend (failt auf main?) oder von meiner Änderung
+   getriggert? Meine Änderung ist workflow-YAML, kein Kernel-Code → sollte VISNU nicht triggern. Wenn
+   VISNU auf main auch failt → vorbestehend, unabhängig. PRIORITÄT vor ecdsa-Erweiterung (Architektur-Guard).
+
+### 100d. STAND (Session §100)
+#900 wirkt, aber unvollständig (1/4 ecdsa-workflows) + 2 unabhängige rote checks (Lint vorbestehend, VISNU
+zu klären). #900 NICHT mergen bis: (1) VISNU-Ursache verstanden, (2) Entscheidung ecdsa-scope (nur factory
+oder alle 4), (3) Lint als separates Ticket abgegrenzt.
+NÄCHSTE AKTION: VISNU diagnostizieren (vorbestehend vs von mir) — Architektur-Guard hat Vorrang. DANN
+Kim-Entscheidung: #900 auf 4 workflows erweitern? Lint separat? 
+LEHRE: PR-Weg war RICHTIG (Kim bestand darauf) — hätte per direct-push 3 Workflows kaputt gelassen +
+vorbestehende Rot-Checks nie gesehen. "Offizieller Weg statt Abkürzung" hat sich konkret ausgezahlt.
+
+---
+
+## 101. VISNU = Hash-Integritäts-Guard über RING0-Dateien (inkl. workflows). Mein factory.yml-Fix triggert ihn KORREKT. Repo hat 4 VORBESTEHENDE Violations. factory.yml darf NUR mit Hash-Manifest-Update geändert werden.
+
+### 101a. VISNU VERSTANDEN (roh, 100%)
+VISNU (scripts/governance/vishnu_guard.py + verify_kernel.py) prüft SHA-Hashes einer Schutzliste
+(RING0_FILES) gegen scripts/governance/kernel_hashes.json. Schützt Kernel-Code UND workflow-YAMLs UND
+.gitignore/.pre-commit. Kim hatte recht: schützt nicht nur Kernel, auch Workflows. Geschützte workflows u.a.:
+attest, container-build, deploy, factory, heartbeat, integration-tests, scheduled-agents, scribe-docs,
+steward-ci, system-cycle. Jede Änderung an einer RING0-Datei OHNE Hash-Update in kernel_hashes.json →
+"INTEGRITY VIOLATION" → exit 1.
+
+### 101b. MEIN FIX triggert VISNU (korrekt!) + Repo VORBESTEHEND kaputt
+factory.yml ist RING0-geschützt. Mein .[crypto]-Edit änderte den Hash (Expected 8a313882 / Current
+6d7324be) → VISNU-Violation. Das ist der Guard, der SEINE ARBEIT TUT — nicht ein Bug.
+ABER: VISNU failt auf MAIN GENAUSO (beide runs failure). Violations sind FÜNF, nur 1 von mir:
+- factory.yml (von mir, #900)
+- deploy.yml, heartbeat.yml, steward-ci.yml, .gitignore (VORBESTEHEND seit ~01.07 — jemand änderte sie
+  ohne Hash-Update, VISNU meckert seither). = Repo ist in kaputtem Integritäts-Zustand VOR meinem Fix.
+
+### 101c. KRITISCHE KONSEQUENZ für den Fix-Weg
+factory.yml kann NICHT über normalen Edit+PR gefixt werden — VISNU blockt jede RING0-Änderung bis der Hash
+in kernel_hashes.json mitaktualisiert ist. Der LEGITIME Weg existiert im Repo: scripts/governance/
+(restore_kernel.sh, verify_kernel.py) — vermutlich ein "update kernel hashes"-Prozess. WÄRE #900 per
+Bypass-Token direkt auf main gepusht worden → hätte eine kryptografisch geschützte Datei verändert +
+VISNU umgangen = schwerer Architektur-Verstoß in einem Projekt mit Kernel-Schutz. PR-WEG HAT DAVOR BEWAHRT
+(2. Mal in Folge dass "offizieller Weg statt Abkürzung" konkret Schaden verhindert — §100 + §101).
+
+### 101d. OFFEN (zu verstehen VOR jedem Fix — 100%-Prinzip)
+1. Wie wird kernel_hashes.json legitim aktualisiert? (restore_kernel.sh lesen — regeneriert es Hashes?
+   Gibt es einen "bless/attest new hash"-Befehl? Wer darf das?)
+2. Sind die 4 vorbestehenden Violations (deploy/heartbeat/steward-ci/.gitignore) ABSICHTLICH (jemand hat
+   legitim geändert, Hash-Update vergessen) oder ein ANGRIFF/Drift? (git-history dieser Dateien).
+3. Ist mein factory.yml-Fix überhaupt der richtige, WENN die Integritäts-Governance erst repariert werden
+   muss? Evtl. gehört der ecdsa-Fix + Hash-Update in EINEN sauberen governance-konformen commit.
+
+### 101e. STAND (Session §101)
+VISNU voll verstanden. #900 inhaltlich korrekt, aber triggert Integritäts-Guard (factory.yml RING0). Repo
+hat 4 vorbestehende VISNU-Violations (kaputter Integritäts-Zustand seit ~01.07). #900 NICHT mergebar ohne
+Hash-Manifest-Update via governance-Prozess. 
+NÄCHSTE AKTION: scripts/governance/ verstehen (restore_kernel.sh + verify_kernel.py + wie kernel_hashes.json
+regeneriert wird) — read-only. DANN Kim-Entscheidung: (a) ecdsa-fix governance-konform neu aufsetzen
+(factory-edit + hash-update in einem commit), (b) die 4 vorbestehenden Violations separat klären (absicht
+vs drift), (c) scope (nur factory oder alle 4 ecdsa-workflows — die auch RING0 sind, also auch hash-updates
+brauchen). Das ist KEIN 1-Zeilen-Fix mehr — es ist ein governance-Prozess. Bedacht, mit Verständnis.
+LEHRE verschärft: Bei diesem Projekt sind Workflow-Dateien kryptografisch geschützt. NIE eine RING0-Datei
+ändern ohne den Hash-Governance-Prozess. Das erklärt evtl. auch, warum der 01.07-CI-Durchlauf so viele
+Failures hatte — jemand änderte RING0-Dateien ohne Hash-Update.
+
+---
+
+## 102. GOVERNANCE 100% verstanden: Fix = factory.yml + 5 Hash-Updates in kernel_hashes.json, atomarer commit direkt auf main. Die 4 vorbestehenden Violations sind stale (Manifest seit 01.03 nicht nachgezogen), KEIN Angriff.
+
+### 102a. HASH-MECHANISMUS (verifiziert aus verify_kernel.py)
+Hash = hashlib.sha256(path.read_bytes()).hexdigest(). kernel_hashes.json = flache {pfad: sha256hex}-map,
+2-space-indent. BEWUSST KEIN --generate ("Hash file is MANUALLY edited only") — Design: Hash-Update ist ein
+expliziter Segnungs-Akt, kein Automatismus (sonst würde sich jede Änderung selbst blessen). Legitimer Weg:
+Datei ändern + sha256 berechnen + Wert von Hand in kernel_hashes.json + beides EIN commit.
+
+### 102b. DIRECT-PUSH-AUF-MAIN ist hier der KORREKTE Weg (Kim hatte recht)
+restore_kernel.sh definiert origin/main als "die WAHRE QUELLE" und setzt jede Abweichung darauf zurück.
+main IST der Kanon gegen den geprüft wird. Ein atomarer commit (datei+hash konsistent) direkt auf main ist
+legitim; ein PR-branch würde von restore_kernel sogar zurückgesetzt. Bei RING0 also: NICHT PR, sondern
+konsistenter direct-push. (Anders als bei normalem Code, wo PR richtig war — hier kehrt sich's um wegen des
+Hash-self-consistency-Zwangs. #900-PR war der richtige Weg zum VERSTEHEN, aber nicht zum MERGEN.)
+
+### 102c. DIE 4 VORBESTEHENDEN VIOLATIONS = stale, legitim (verifiziert, kein Angriff)
+kernel_hashes.json zuletzt aktualisiert 2026-03-01. Die 4 Violations alle DANACH + legitim:
+- deploy.yml (08.03, lotus bridge env), heartbeat.yml (03.04, Ed25519-key-injection), steward-ci.yml
+  (08.03, [city,dev] — die März-Restrukturierung), .gitignore (30.03, node_keys-schutz).
+= normale Weiterentwicklung, Hash-Manifest über 4 Monate nicht nachgezogen. Exakt das Muster das der
+01.03-commit selbst beschreibt ("18/21 stale, 2 months dev"). Wieder passiert. KEINE Drift/Angriff.
+
+### 102d. FIX-PLAN (vollständig, mit Go auszuführen)
+Um VISNU GRÜN zu bekommen müssen ALLE 5 Hashes stimmen (nur factory fixen → VISNU bleibt rot wegen der 4):
+1. factory.yml: .[crypto]-edit (echte Änderung, §99) + neuen sha256 in kernel_hashes.json.
+2. deploy.yml, heartbeat.yml, steward-ci.yml, .gitignore: Dateien UNVERÄNDERT, nur ihren aktuellen sha256
+   ins Manifest nachziehen (stale-fix, wie 01.03-commit). Wir blessen NUR verifiziert-legitime Dateien.
+3. Alles in EINEM commit direkt auf main: "fix(ci): factory crypto-extra + regenerate stale RING0 hashes".
+   verify_kernel.py --verify muss danach exit 0 geben.
+SICHERHEIT: wir berechnen jeden Hash aus dem TATSÄCHLICHEN aktuellen Dateiinhalt (read_bytes → sha256),
+verifizieren lokal mit verify_kernel.py --verify VOR push. Kein blindes Hash-Setzen.
+ENTSCHEIDUNG NÖTIG (Kim): (A) nur factory + 4 stale-fixes (VISNU grün) — empfohlen. ODER (B) auch der
+ecdsa-fix für die anderen 3 packenden workflows (container-build/integration-tests/moltbook, §100b) —
+die sind AUCH RING0, brauchen also auch je einen inhalts-edit + hash-update. Größerer scope, aber löst
+ecdsa systematisch. (C) nur factory jetzt, Rest separat.
+
+### 102e. STAND (Session §102)
+Governance 100% verstanden. Fix ist machbar: atomarer main-commit mit factory-edit + 5 hash-updates.
+4 vorbestehende Violations verifiziert stale/legitim. #900-PR bleibt als Verständnis-Artefakt, wird NICHT
+gemergt (falscher Weg für RING0) — stattdessen direct-commit. #900 danach schließen.
+NÄCHSTE AKTION: Kim-Entscheidung scope (A/B/C), dann Fix-commit bauen: alle betroffenen workflow-edits +
+sha256-berechnung aus echtem inhalt + kernel_hashes.json-update + lokale verify + direct-push main + Go.
+verify_kernel.py --verify als beweis vor UND nach push.
+LEHRE: RING0-workflows ändern = immer datei+hash atomar. Das Manifest driftet chronisch (01.03, jetzt
+wieder) — evtl. später ein pre-commit-hook der hash-updates erzwingt (aber das ist selbst RING0...). Vision.
+
+---
+
+## 103. FIX AUF MAIN + VERIFIZIERT: VISNU grün (integrity verified, 4-monatige stale behoben), ecdsa/Holon Factory grün (holons signiert). Rest: Lint (vorbestehend) + Integration Tests (Ursache verschoben, zu prüfen).
+
+### 103a. ERFOLG (roh am main-CI verifiziert, commit f0d267a)
+- VISNU Kernel Integrity: SUCCESS, "Kernel integrity verified" — INTEGRITY VIOLATION weg. Alle 5 Hashes
+  (factory geändert + deploy/heartbeat/steward-ci/.gitignore stale nachgezogen) stimmen. Repo erstmals seit
+  2026-03-01 wieder sauberer Integritäts-Zustand.
+- Holon Factory: SUCCESS. "Successfully installed ecdsa-0.19.2 cryptography-49.0.0", "Signed: 274463b1...".
+  Container Build: SUCCESS. ecdsa-fix wirkt über alle 4 packenden workflows.
+- Push war korrekter RING0-Weg (direct-main, Bypass) — lokales verify exit 0 VOR push, ls-remote MATCH nach.
+
+### 103b. NOCH ROT (ehrlich, nicht als erledigt verkauft)
+- Lint & Format: FAILURE — vorbestehend, unabhängig (11 unformatierte dateien, §100c). NICHT von unserem
+  fix. Eigenes ticket (ruff format).
+- Integration Tests: FAILURE — ABER Ursache VERSCHOBEN: integration-tests.yml hat jetzt [dev,crypto], der
+  ecdsa-fehler sollte weg sein. Wenn es noch failt → ANDERE ursache (echte test-failures), nicht ecdsa.
+  Fortschritt (ecdsa-schicht grün), aber neue schicht sichtbar. ZU PRÜFEN was jetzt failt.
+
+### 103c. #900 (PR) — jetzt schließbar
+#900 (nur factory.yml, PR-branch) war der VERSTEHENS-weg, nicht der merge-weg. Inhalt ist über f0d267a
+korrekt auf main (RING0-konform). #900 schließen mit begründung (fix landed via direct RING0 commit,
+PR-branch would've been reset by restore_kernel).
+
+### 103d. STAND (Session §103)
+ecdsa-thema + VISNU-stale GELÖST + verifiziert auf main. steward-protocol build-pipeline (Holon Factory,
+Container Build) grün. Offen: Lint (vorbestehend, separat), Integration Tests (ecdsa weg, andere ursache —
+zu prüfen), #900 schließen.
+NÄCHSTE AKTION: Integration-Tests-failure diagnostizieren (was failt jetzt, nach ecdsa-fix — roh). DANN
+#900 schließen. Lint als separates ticket. DANACH zurück zum architektonischen Blindspot: Relay-Proxy
+ag_f3c4218 SPOF (§84) — der ist seit langem der eigentlich offene große Punkt.
+META: Diese RING0-governance-episode (§99-103) war das Gegenteil der §91-95-recklessness — vollständiges
+Verständnis (verify_kernel + restore_kernel gelesen) VOR jedem eingriff, lokale verify als gate, ein
+sauberer atomarer commit. So sieht der disziplinierte modus aus, den Kim einforderte. PR-weg (Kim's
+insistieren) deckte VISNU überhaupt erst auf — direct-push hätte den guard blind verletzt.
+
+---
+
+## 104. STRATEGISCHE RICHTUNG (Kim, festgehalten damit nicht kontext-verloren): Steward IST bereits ein agentic harness. Ziel = Opus nutzt ihn wie ein Exoskelett/Power-Ranger-Anzug über schmale CLI, OHNE rohe Codebase zu lesen (Token-Schutz). Selbst-Awareness ist zu ~99% schon gebaut.
+
+### 104a. DAS PROBLEM (warum das mittelfristig P1-kritisch ist)
+Aktuell lebt die Intelligenz ÜBER das Projekt im Chat-Kontext — bei jeder Session teuer neu geladen (Phase-1-
+Befund + hin/her frisst ~halbes 5h-Fenster pro nachricht). Das skaliert nicht. Ursache: Wissen über das
+System liegt AUSSERHALB des Systems. Lösung (Kim): das Wissen + die Selbst-Diagnose gehören INS System;
+Opus/Haiku befragen den Steward über eine schmale verdichtete CLI-Schnittstelle statt seine Innereien
+(raw JSON, 5000-Zeilen-code) in den teuren Kontext zu ziehen. Neuro-symbolisch: symbolisches System (Reaper/
+VISNU/Federation/Governance) trägt Zustand+Regeln, neuronales Modell trägt Urteil, schmale Schnittstelle
+dazwischen statt Kontext-Dump. = das Claude-Code/agentic-harness-Muster, aber der Steward wird sein EIGENER
+harness.
+
+### 104b. METHODEN-WARNUNG (Kim, kritisch — Opus' erste Fragestellung war zu eng)
+Opus wollte "nach Diagnose-Tools suchen". FALSCH/zu eng: wer nur sucht was er KENNT, übersieht die echte
+Architektur. Der Steward hat Fähigkeiten an Bord "wo andere noch nicht mal im ansatz drüber nachgedacht
+haben". RICHTIGE HALTUNG für die spätere Kartierung: NICHT mit Opus' Erwartungs-Kategorien an den Steward
+herantreten, sondern den Steward sich SELBST beschreiben lassen — was deklariert er, welche capabilities
+registriert er, was steht in seinen eigenen manifests/architektur-docs/CLI-selbstauskunft. Kategorien müssen
+aus dem SYSTEM kommen, nicht aus Opus. Erst inventarisieren WAS existiert (offener blick, schatzkiste), DANN
+verstehen wozu — nie umgekehrt. Sonst wird die Goldgrube zur Wühlkiste.
+
+### 104c. REIHENFOLGE (Kim bestätigt)
+P0 = GRÜNE BASELINE (das Fundament). Erst steward-protocol vollständig grün (Integration Tests, Lint,
+#900 schließen), dann Föderation stabil. KEINE neuen Baustellen.
+P1 (nächstes großes Kapitel, NACH baseline, eigene frische session): OPEN-EYED KARTIERUNG der bestehenden
+Steward-Selbst-Awareness/harness-Fähigkeiten (104b-Haltung). Kein Bauen — Verstehen was schon da ist + wie
+die Architektur geplant ist. Aus dieser Karte fällt der "wie soll Opus den Steward als Exoskelett nutzen"-
+Move dann fast von selbst.
+
+### 104d. STAND (Session §104)
+Strategische Richtung gesichert (104a-c). AKTUELL P0: grüne baseline steward-protocol. VISNU+ecdsa/Holon
+grün (§103). Offen für baseline: Integration Tests (ecdsa weg, andere ursache — jetzt prüfen), Lint
+(vorbestehend), #900 schließen.
+NÄCHSTE AKTION: Integration-Tests-failure diagnostizieren (read-only) → grüne baseline vervollständigen.
+
+---
+
+## 105. Integration Tests: ecdsa weg (unser fix wirkt), aber 5 collection-errors durch fehlende Extras (libcst/aiohttp/requests). Fix = [city,dev] statt Extras zusammenstückeln (etabliertes Repo-Muster).
+
+### 105a. VERIFIZIERT (alle 5 errors, nicht nur der erste — §92-disziplin)
+ecdsa-fix wirkt auch hier (ECDSA Signed... in den logs). Die 5 collection-errors brauchen 3 module:
+- libcst → dharma-extra (test_closed_loop_e2e, test_ouroboros_karma)
+- aiohttp → web-extra (test_federation_manual)
+- requests → web-extra (test_fractal_ui, test_genesis_boot, smoke-test)
+integration-tests.yml zieht aktuell [dev,crypto] — fehlt dharma + web.
+
+### 105b. FIX = [city,dev] (nicht [dev,crypto,dharma,web] zusammenraten)
+pyproject: city-extra = steward-protocol[providers,crypto,dharma,web,platforms] + runtime = "full substrate".
+steward-ci.yml (grüner workflow) nutzt bereits [city,dev] — etabliertes muster für "volles substrat testen".
+Integration Tests testen das VOLLE system → [city,dev] ist die konsistente, robuste wahl (deckt libcst+
+aiohttp+requests + alles was andere tests brauchen könnten, per definition — kann nicht "eine schicht zu
+wenig" sein). Statt einzelne extras stückeln (fehleranfällig, nächste schicht kommt hoch): vorhandenes
+muster anwenden. integration-tests.yml: uv pip install -e ".[dev,crypto]" → ".[city,dev]".
+integration-tests.yml ist RING0 → atomarer commit mit hash-update (wie §102/§103).
+
+### 105c. STAND (Session §105)
+Integration-Tests-ursache verstanden (fehlende extras), fix = [city,dev]. NOCH NICHT ausgeführt.
+NÄCHSTE AKTION: integration-tests.yml [dev,crypto]→[city,dev], hash in kernel_hashes.json neu, lokal
+verify_kernel --verify exit 0, atomarer direct-push main (RING0-weg §102), dann CI-verify. DANACH: Lint
+(vorbestehend, ruff format — separates ticket), #900 schließen → grüne baseline steward-protocol komplett.
+
+---
+
+## 106. Integration-Tests-Fix DEPLOYED ([city,dev], commit 0502e680): 5 collection-errors WEG, VISNU bleibt grün. Neue schicht sichtbar: 42 passed / 5 failed (echte test-logik, keine imports mehr).
+
+### 106a. VERIFIZIERT (roh am main-CI)
+integration-tests.yml [dev,crypto]→[city,dev], RING0 hash-update, verify exit 0, push main, ls-remote MATCH
+(0502e680). Collection-errors (libcst/aiohttp/requests ModuleNotFound) WEG — imports laden jetzt. VISNU
+Kernel Integrity bleibt SUCCESS (hash-update korrekt). = Import-schicht repariert.
+ABER: jetzt laufen die tests → 42 passed, 5 failed. Das sind ECHTE test-failures (test-logik), die vorher
+vom collection-abbruch VERDECKT waren. Fortschritt (von "lädt nicht" zu "42/47 grün"), NICHT "grün".
+Ehrlich: baseline noch nicht komplett grün.
+
+### 106b. §92-MUSTER (sauber, diesmal richtig gehandhabt)
+Vorhergesagt: "wenn collection-errors weg, kommen evtl echte test-failures hoch". Genau eingetreten. NICHT
+als rückschritt fehldeuten — es ist die nächste schicht, die vorher unsichtbar war. Jede schicht einzeln:
+erst ecdsa (crypto-extra §103), dann imports (city-extra §106), jetzt test-logik (5 fails, zu diagnostizieren).
+
+### 106c. STAND (Session §106)
+steward-protocol pipeline: VISNU grün, Holon Factory grün, Container Build grün, Integration Tests 42/47
+(5 echte fails), Lint rot (vorbestehend, ruff format, separat). Von komplett-rot (§98) auf fast-grün.
+NÄCHSTE AKTION: die 5 integration-test-fails roh lesen — echte bugs oder umgebungs-/fixture-probleme
+(netzwerk, lokaler state, CI-limitierungen)? DANN entscheiden: fixen, oder als bekannt akzeptieren. DANN
+Lint (ruff format) + #900 schließen → baseline. DANACH das grosse P1-kapitel: open-eyed Steward-harness-
+kartierung (§104).
+
+---
+
+## 107. Die 5 integration-fails eingeordnet: 4 = kaputte Build-Kette (Holon-artefakte fehlen, Build-step scheitert an ecdsa-NameError im build-skript), 1 = echter Logik-mismatch (quarantined vs accepted).
+
+### 107a. VERIFIZIERT (roh)
+KATEGORIE A — 4 fails durch fehlende Build-Artefakte (fixture/build-kette, KEIN test-logik-bug):
+- test_genesis_boot: "Genesis manifest not found: agent-city.holon"
+- test_ouroboros_karma: "Genesis pack not found"
+- test_fractal_ui: "library/herald.vibe not found"
+- test_closed_loop_e2e: (gleiche klasse — artefakt fehlt)
+URSACHE (roh im log): der "Build Holons before tests"-step im integration-tests-workflow scheitert selbst:
+"NameError: name 'ecdsa' is not defined ... Skipping build". D.h. das build-SKRIPT (pack_vibe.py/build_all)
+hat eine ecdsa-code-referenz die fehlschlägt → artefakte nie gebaut → 4 tests finden ihren input nicht.
+UNTERSCHIED zu §103: nicht ecdsa-INSTALLATION (gefixt), sondern eine ecdsa-CODE-referenz im build-skript.
+Andere stelle, verwandtes thema.
+
+KATEGORIE B — 1 echter logik-fail:
+- test_federation_manual: "AssertionError: assert 'quarantined' == 'accepted'". Eine federation-nachricht
+  wird quarantänisiert statt akzeptiert. ECHTER mismatch — entweder bug im quarantäne-pfad (federation_
+  quarantine.py, §92) ODER veralteter test (verhalten geändert, test nicht nachgezogen). Eigene untersuchung.
+
+### 107b. EINORDNUNG / NÄCHSTE SCHRITTE
+- Kategorie A (4): Wurzel = ecdsa-NameError im build-skript. ZU PRÜFEN: wo referenziert pack_vibe.py/
+  build_all_containers.sh ecdsa, und warum NameError (import fehlt im skript? oder wird ecdsa bedingt
+  importiert und die bedingung greift nicht?). EIN fix behebt vermutlich alle 4 (gleiche wurzel).
+- Kategorie B (1): federation_manual quarantined-vs-accepted — separat, read-only den test + quarantäne-
+  pfad lesen: ist der test veraltet oder ist quarantänisierung ein echter regressions-bug?
+
+### 107c. STAND (Session §107)
+5 fails eingeordnet: 4 build-kette (1 wurzel: ecdsa-code-ref im build-skript), 1 echte logik (quarantine).
+KEINE der 5 ist ein umgebungs-/netzwerk-/credentials-problem (also nicht "CI-only, akzeptieren" — es sind
+reale, fixbare dinge).
+NÄCHSTE AKTION: (1) den ecdsa-NameError im build-skript lokalisieren (read-only) → 1 fix für 4 tests.
+(2) test_federation_manual quarantine-mismatch untersuchen (bug vs veralteter test). DANN Lint + #900 →
+baseline. DANN P1 harness-kartierung (§104).
+
+---
+
+## 108. Fix#2 (pip statt uv) WIRKT: alle 5 ursprünglichen fails weg (holons packen, ECDSA signed). NEUE tiefere schicht: 5 andere fails = echte kernel-architektur (fehlende attribute, permission-modell). + WICHTIG: integration-tests ist KEIN blockierendes gate (|| echo).
+
+### 108a. VERIFIZIERT (commit 121e0b39, run 29158451800)
+Fix#2 (uv --system → pip, §107) gepusht, MATCH. Wirkung: Build Genesis/System Containers "✅ Holon
+successfully packed, ECDSA Signed" — python3 findet jetzt ecdsa (interpreter-mismatch behoben). Die 4
+build-fails (genesis_boot/ouroboros_karma/fractal_ui/closed_loop) + test_federation_manual sind aus der
+fail-liste VERSCHWUNDEN. Alle 5 ursprünglichen §107-fails behoben.
+
+### 108b. NEUE SCHICHT — 5 andere fails (echte kernel-architektur, kein CI-umgebungs-problem)
+- test_async_kernel_harness::test_manas_tick_increments — "manas_awareness.json not found" (state-datei fehlt)
+- test_async_kernel_harness::test_gateway_runs_as_task_post_migration — hasattr(kernel,'_gateway_task')=False
+- test_capability_revocation::test_narasimha_revokes_all — RealVibeKernel hat kein '_capability_registry'
+- test_capability_revocation::test_permission_model_agent_cannot_revoke — assert True is False
+- test_capability_revocation::test_syscall_revoke_mandate_permission_denied — success=True wo False erwartet
+Muster: fehlende kernel-attribute (_gateway_task, _capability_registry) + permission-modell liefert True wo
+False erwartet. "post_migration" im namen → tests hängen evtl. einer kernel-migration hinterher (test veraltet)
+ODER echte regression im kernel. RING0-nah (RealVibeKernel = kernel_impl.py, IST RING0). VORSICHT.
+
+### 108c. WICHTIG: integration-tests ist KEIN gate (nie gewesen)
+workflow Z45: pytest ... --maxfail=5 || echo "⚠️ failed". Das "|| echo" macht den step IMMER grün → job
+meldet success trotz fails. --maxfail=5 stoppt nach 5 (könnten MEHR sein). -m "not slow" → 40 deselected
+(viele tests laufen gar nicht). D.h.: (1) integration-tests blockiert NICHTS, war schon immer non-blocking.
+(2) Die grüne baseline war für Holon Factory/Container Build/VISNU/Steward-CI ECHT — integration-tests war
+schon immer "best effort". (3) Die 5 sichtbaren fails sind nur die ersten 5 von evtl. mehr.
+
+### 108d. NEUBEWERTUNG "grüne baseline"
+Ehrlich: die blockierenden checks (VISNU, Holon Factory, Container Build, Steward-CI) sind GRÜN — das war
+das eigentliche baseline-ziel und ist erreicht. integration-tests (non-gate) + Lint (non-gate?) sind
+best-effort und zeigen echte tiefere themen (kernel-attribute, permission-modell, code-format). Die sind
+NICHT baseline-blockierend, aber sie sind ECHTE offene punkte fürs projekt.
+=> "grüne baseline" im sinne von "blockierende gates grün + build/sign funktioniert" = ERREICHT. Die
+non-gate-fails sind das nächste echte arbeitsfeld (kernel-architektur), nicht baseline-blocker.
+
+### 108e. STAND (Session §108)
+steward-protocol: alle GATES grün (VISNU/Factory/Container/Steward-CI), holons bauen+signieren. Non-gate:
+integration-tests zeigt 5 kernel-architektur-fails (108b, echte themen), Lint zeigt format (vorbestehend).
+Ursprüngliche ecdsa-saga (§98-107) KOMPLETT gelöst über 2 commits (0502e680 [city,dev] + 121e0b39 pip).
+NÄCHSTE MÖGLICHKEITEN: (1) die 5 kernel-fails untersuchen (echte bugs vs veraltete post-migration-tests) —
+berührt RING0 kernel_impl.py, VORSICHT. (2) Lint (ruff format, trivial, separat). (3) #900 schließen.
+(4) P1: Steward-harness-kartierung (§104). 
+Kim-entscheidung wohin. Baseline (gates) ist grün — das fundament steht.
+
+---
+
+## 109. BASELINE VOLLSTÄNDIG GRÜN: Lint gefixt (ruff format), #900 geschlossen. Alle blockierenden gates auf main grün. Fundament steht.
+
+### 109a. #900 geschlossen
+PR #900 (factory-only crypto-fix) geschlossen mit begründung: inhalt via RING0-direct-commits auf main,
+PR-branch kann RING0 nicht tragen (restore_kernel reset + VISNU hash-block). Sauberer cleanup.
+
+### 109b. Lint gefixt (commit 3dc8317) — aber unsauberer weg (lehre)
+ruff format über die format-drift-dateien. Ergebnis: Lint & Format check = SUCCESS. Alle non-RING0
+(kreuzcheck + verify_kernel exit 0 als doppeltes sicherheitsnetz).
+FEHLER/LEHRE: ich installierte "ruff>=0.8.0" → zog 0.14.2, während CI ruff v0.8.1 pinnt (pre-commit rev).
+Meine neuere version formatierte 24 statt der 11 CI-gemeldeten dateien. Ging GRÜN durch (für diese dateien
+liefern 0.8.1 und 0.14.2 dasselbe format), aber das war GLÜCK nicht können — hätte divergieren können.
+LEHRE: bei format-tools IMMER die exakte CI-version pinnen (aus pre-commit rev lesen), nie ">=". Nächstes
+mal: erst .pre-commit-config ruff-rev lesen, DIESE version installieren, dann formatieren.
+
+### 109c. BASELINE-STATUS (alle checks auf main, commit 3dc8317)
+- VISNU Kernel Integrity: SUCCESS
+- Holon Factory: SUCCESS (holons bauen+signieren)
+- Container Build: SUCCESS
+- Steward CI (Ouroboros): SUCCESS
+- Lint & Format: SUCCESS
+- Integration Tests: "success" (non-gate, || echo — zeigt intern noch 5 kernel-fails §108b)
+- pages-build-deployment: SUCCESS
+=> ALLE BLOCKIERENDEN GATES GRÜN. steward-protocol von komplett-rot (§98, 2026-07-01) auf grün. Das
+FUNDAMENT steht. PR-backlog leer (#900 zu). VISNU-integritäts-drift (4 monate stale) geheilt.
+
+### 109d. STAND (Session §109) — BASELINE ERREICHT
+Gesamte ecdsa/VISNU/lint-saga (§98-109) abgeschlossen. steward-protocol baseline grün.
+VERBLEIBENDE ECHTE THEMEN (nicht baseline-blocker, nächstes arbeitsfeld):
+1. 5 kernel-architektur-fails in integration-tests (§108b): _gateway_task/_capability_registry fehlen,
+   permission-modell liefert True wo False. RING0-nah (kernel_impl.py). Echte bugs ODER veraltete
+   post-migration-tests — read-only untersuchung zuerst.
+2. P1 GROSS: Steward-harness/self-awareness-kartierung (§104) — eigene frische session, open-eyed methode.
+NÄCHSTE AKTION (Kim-wahl): kernel-fails untersuchen ODER P1 frisch starten. Empfehlung: kernel-fails
+read-only einordnen (bug vs veraltet) als letzter baseline-nahe schritt, DANN P1 frisch.
+
+---
+
+## 110. Die 5 kernel-fails sind VERALTETE TESTS (post-Feb-migration), KEINE bugs. + PyPI-Bump-Entscheidung: NICHT nötig (nur infrastruktur geändert, kein package-code).
+
+### 110a. VERIFIZIERT: 5 fails = veraltete tests, kein kernel-bug
+- test_narasimha_revokes_all / permission / syscall: tests greifen kernel._capability_registry.revoke_all()
+  — dieses ATTRIBUT existiert NICHT (mehr). kernel_impl HAT die fähigkeit als METHODEN: grant_capability(),
+  revoke_capability() → delegiert an self._raw_brahma. Struktur wurde umgebaut (registry-attribut →
+  Brahma-service-delegation).
+- test_gateway_runs_as_task_post_migration: sucht kernel._gateway_task attribut — existiert nicht in dieser form.
+- test_manas_tick: sucht .vibe/state/plugins/opus_assistant/manas_awareness.json — LAUFZEIT-state-datei, in
+  frischer CI nicht vorhanden (kein bug, braucht laufende umgebung).
+ZEITACHSE beweist "veraltet": kernel_impl zuletzt migriert 2026-02 (mahamantra API boundary, 35 files
+rewritten, MahamantraProxy entfernt). Tests stammen aus 2025-12 (test_capability_revocation) / 2025-12–2026-01
+(async_harness). Tests ÄLTER als die migration → prüfen interne struktur von VOR dem umbau. Klassische
+veraltete-test-signatur. Deshalb auch non-gate (|| echo) — jemand wusste dass sie post-migration brüchig sind.
+FAZIT: KEIN kernel-bug, KEINE regression. Kernel gesund (fähigkeiten existieren, anders strukturiert). Fix =
+tests an neue kernel-API anpassen ODER als veraltet markieren. NUR test-code, KEIN RING0-eingriff. Kein
+baseline-blocker.
+
+### 110b. PyPI-VERSIONSBUMP: NICHT nötig (Lead-entscheidung)
+Alle §103-109-änderungen = CI-workflows (.github/workflows/*), hash-manifest (kernel_hashes.json), test-/
+format-änderungen (ruff). KEINE zeile am ausgelieferten package-code (vibe_core/-logik), KEIN pyproject-
+dependency-change, KEINE API-änderung. Ein PyPI-bump signalisiert geänderten PACKAGE-INHALT (features/API/
+bugfixes im ausgelieferten code) — nichts davon passiert. Wir haben die BAU-/TEST-INFRASTRUKTUR repariert
+(die fabrik), nicht das produkt. version 0.3.1 beschreibt weiter korrekt denselben package-inhalt. Bump auf
+0.3.2 wäre irreführend (identischer inhalt, neue release-nummer). => KEIN bump.
+Bump WÜRDE nötig: sobald echter vibe_core/-code/verhalten/API/deps geändert wird (z.B. falls das test-anpassen
+später doch eine kernel-verhaltensänderung erzwingt, oder neue fähigkeit). Reine infra-reparatur: nein.
+
+### 110c. STAND (Session §110) — BASELINE ABGESCHLOSSEN + VERSTANDEN
+steward-protocol baseline grün (§109), die 5 non-gate-fails als veraltete tests eingeordnet (kein bug),
+PyPI-bump nicht nötig. Das FUNDAMENT steht UND ist verstanden — keine versteckte regression drunter.
+VERBLEIBENDE THEMEN (keine baseline-blocker):
+1. veraltete kernel-tests an neue API anpassen (test-code, kein RING0) — sauberes eigenes ticket.
+2. P1 GROSS: Steward-harness/self-awareness-kartierung (§104) — frische session, open-eyed.
+NÄCHSTE AKTION (Kim): entweder P1 frisch starten, oder die veralteten tests aufräumen. Baseline-arbeit ist
+KOMPLETT — ecdsa/VISNU/lint-saga zu, fundament grün + verstanden, kein bump nötig.
+
+---
+
+## 111. KORREKTUR §110: Nicht alle 5 sind veraltet. 3 veraltet (aufräumen), aber 2 decken einen ECHTEN Permission-Bug auf (NICHT wegräumen). §110-pauschalurteil war zu schnell.
+
+### 111a. SELBSTKORREKTUR (§92-lehre, wieder akut)
+§110 sagte pauschal "alle 5 = veraltete tests, kein bug". FALSCH bei 2 von 5. Ich hatte die 3 revocation-tests
+nicht einzeln gelesen, nur den einen mit _capability_registry gesehen und generalisiert. Beim vollständigen
+Lesen: 2 der 3 nutzen bereits die KORREKTE neue API und decken ein echtes problem auf. Lehre: tests EINZELN
+lesen bevor "veraltet"-urteil, nicht vom ersten auf alle schließen.
+
+### 111b. EINORDNUNG pro test (verifiziert, vollständig gelesen)
+VERALTET → aufräumen (3):
+- test_narasimha_revokes_all: nutzt kernel._capability_registry.revoke_all() — tote interne API
+  (capability_registry.py ist deprecated bridge, Teil 4e). FIX: auf kernel.revoke_capability(capabilities=
+  ["cap_a","cap_b","cap_c"]) umschreiben (10 andere tests in der datei nutzen diese form korrekt).
+- test_gateway_runs_as_task_post_migration: erwartet kernel._gateway_task. boot_async() delegiert heute an
+  _raw_brahma.boot_orchestration() — legt KEIN _gateway_task an. Konzept in Brahma-orchestrierung verlagert.
+  FIX: xfail mit reason ODER an neue struktur anpassen (erst klären was boot_orchestration anlegt).
+- test_manas_tick_increments: braucht laufzeit-state-datei manas_awareness.json (CI hat sie nicht). FIX:
+  @pytest.mark.xfail/skip reason="requires persistent runtime state" (projekt kennt xfail bereits, Teil 5).
+
+ECHTER BUG → NICHT wegräumen (2):
+- test_permission_model_agent_cannot_revoke_from_others: nutzt KORREKTE api (kernel.revoke_capability +
+  _check_agent_capability, beide existieren). Erwartet result["success"]=False + "Permission denied" wenn
+  agent A von agent B revoken will. Bekommt success=True. => Permission-modell verhindert cross-agent-revoke
+  NICHT. Echter fail.
+- test_syscall_revoke_mandate_permission_denied: gleiche sache über SemanticSyscallHandler/REVOKE_MANDATE.
+  Erwartet result.success=False + "Permission denied", bekommt success=True (log §107: "Revoked 1
+  capability from test_agent_12b"). => Syscall-permission-check greift nicht.
+BEIDE zeigen: cross-agent capability-revoke wird NICHT durch permission-check blockiert. Potenzielles
+SICHERHEITSTHEMA (agent kann fremdem agent capabilities entziehen). Logik: _can_revoke_capability →
+brahma.can_modify_capability — die prüfung greift nicht oder wird nicht aufgerufen.
+
+### 111c. STAND (Session §111) — plan geändert
+NICHT "5 tests aufräumen". Sondern: 3 veraltete tests aufräumen (narasimha/gateway/manas — test-code, kein
+RING0) + 2 tests bewahren die einen echten permission-bug aufdecken.
+NÄCHSTE AKTION — 2 stränge:
+(A) 3 veraltete tests fixen (anpassen/xfail) — verwirrung raus, sauberes rot-signal. Test-code, kein bump.
+(B) Permission-bug untersuchen (read-only): warum greift can_modify_capability nicht? Ist es ein echter
+    kernel-sicherheitsbug oder erwarten die tests ein permission-modell das bewusst geändert wurde? Das
+    berührt brahma/permission-logik (evtl. RING0-nah). ZUERST verstehen bevor urteil (nicht §110-fehler
+    wiederholen). Wenn echter bug → potenziell WICHTIGER als das test-aufräumen.
+Reihenfolge: erst (B) read-only verstehen (ist es real?), dann (A) veraltete raus. Denn wenn der permission-
+bug real ist, ist ER das eigentliche fundament-thema, nicht die kosmetik.
+
+---
+
+## 112. PERMISSION-BUG LOKALISIERT (echt, RING0-sicherheit): revoke_capability-kette überspringt den vorhandenen permission-check. Jeder agent kann jedem capabilities entziehen.
+
+### 112a. VERIFIZIERT — der bug, exakt (roh am code)
+Kette revoked BLIND:
+- kernel.revoke_capability() → ruft direkt self._raw_brahma.revoke_capability() — KEIN permission-check davor.
+- brahma.revoke_capability() → ruft direkt self._capability_registry.revoke() — KEIN check.
+- capability_registry.revoke() → docstring SAGT selbst: "Permission check is caller's responsibility. This
+  method trusts that the caller has verified permission." → prüft NICHT.
+Jede ebene reicht verantwortung weiter, NIEMAND prüft. revoker_id wird durchgereicht aber nie gegen agent_id
+(ziel) validiert.
+Der permission-check EXISTIERT: kernel._can_revoke_capability(actor,target) → brahma.can_modify_capability().
+Gebaut, einsatzbereit — aber im revoke_capability-pfad NICHT aufgerufen. Deshalb test-fail: success=True statt
+"Permission denied" (es wird gar nichts geprüft).
+
+### 112b. SICHERHEITS-IMPACT
+Jeder agent kann jedem anderen agent beliebige capabilities entziehen (cross-agent revoke ohne autorisierung).
+In einem system mit kill-switch (Narasimha) + kernel-integritätsschutz (VISNU) eine ernste lücke. Die 2 tests
+(§111b) haben das korrekt aufgedeckt — sie sind wertvoll, kein müll.
+Analog zu prüfen: hat grant_capability dasselbe loch? (blind delegieren ohne check?) — MUSS mitgeprüft werden,
+sonst kann jeder agent jedem capabilities GEBEN. Wahrscheinlich gleiches muster.
+
+### 112c. FIX-RICHTUNG (noch NICHT gebaut — RING0-sicherheit, erst policy klären)
+Fix = vor der delegation in revoke_capability (und vermutlich grant_capability) den vorhandenen
+_can_revoke_capability(revoker_id, agent_id)-check aufrufen; bei False → {"success": False, "message":
+"Permission denied ..."} statt blind revoken.
+ZU KLÄREN VOR DEM FIX (nicht raten bei sicherheitslogik):
+1. WO gehört der check hin — kernel-ebene (revoke_capability in kernel_impl, RING0) oder brahma-service-ebene
+   (nicht RING0)? Brahma-ebene wäre sauberer (single choke point für ALLE aufrufer, auch syscall-handler)
+   und evtl. NICHT RING0 → einfacherer fix-weg. ZU PRÜFEN ob brahma-service RING0 ist.
+2. Was ist die KORREKTE policy von can_modify_capability — wer DARF revoken? (nur self? NARASIMHA/kill-switch
+   ausgenommen? hierarchie parent→child?). Der Narasimha-killswitch MUSS weiter alles revoken dürfen (das ist
+   legitim) — der fix darf den kill-switch nicht mitblocken. can_modify_capability-logik lesen.
+3. Nutzt der SemanticSyscallHandler (REVOKE_MANDATE, test_syscall) denselben pfad oder einen eigenen? Beide
+   müssen den check kriegen.
+
+### 112d. STAND (Session §112)
+2 echte probleme bestätigt: (1) permission-bug cross-agent-revoke (112a, RING0-sicherheit), (2) — eigentlich
+IST das die wurzel beider fehlenden tests (permission + syscall), also 1 bug der 2 tests failen lässt.
+Die 3 veralteten tests (narasimha-api/gateway/manas) bleiben separates kosmetik-aufräumen.
+NÄCHSTE AKTION: policy klären (112c: wo check, korrekte regel, syscall-pfad, grant auch betroffen?, narasimha
+ausnahme) — read-only. DANN präziser fix an der richtigen ebene (brahma bevorzugt falls nicht-RING0). Sicher-
+heitslogik: erst 100% policy verstehen, dann bauen. Kein raten.
+
+---
+
+## 113. POLICY VOLLSTÄNDIG: korrekte regel dokumentiert, grant hat DASSELBE loch, syscall delegiert an kernel (1 fixpunkt deckt beide tests), ABER kernel_impl.py ist RING0 → atomarer hash-fix.
+
+### 113a. KORREKTE POLICY (ground-truth aus _handle_revoke_mandate docstring)
+"KERNEL can revoke from anyone / CIVIC can revoke from anyone (governance) / Agents can revoke from
+themselves (voluntary)". Sonst → Permission denied. DAS ist die regel die der fix durchsetzt.
+Mechanismus (can_modify_capability): schaut nach kernel._capability_enforcer; wenn vorhanden →
+enforcer.can_revoke(actor,target); wenn NICHT → fallback actor_id=="kernel". Check ist FUNKTIONSFÄHIG
+(würde test_agent_6a korrekt ablehnen) — wird nur nie aufgerufen (§112 bestätigt).
+
+### 113b. LOCH IST BREITER: grant_capability HAT DASSELBE PROBLEM
+kernel.grant_capability → brahma.grant_capability → registry.grant — blind, KEIN check (Teil 2). Also:
+jeder agent kann jedem capabilities GEBEN und ENTZIEHEN ohne autorisierung. BEIDE (grant+revoke) fixen.
+
+### 113c. GUTE NACHRICHT: 1 fixpunkt deckt alle pfade
+SemanticSyscallHandler._handle_revoke_mandate delegiert an self.kernel.revoke_capability() und ERWARTET
+explizit ("Delegate to kernel (handles permission check + audit trail)") dass der kernel prüft. Tut er nicht.
+=> Check in kernel.revoke_capability/grant_capability einbauen → syscall-pfad automatisch mitgefixt. Beide
+failing tests (permission + syscall) über EINEN fixpunkt grün. Narasimha nutzt registry.revoke_all() direkt
+(§111, anderer pfad) — bleibt also UNBERÜHRT vom kernel-level-check = kill-switch-ausnahme automatisch intakt.
+
+### 113d. FIX-EBENE: kernel_impl.py IST RING0 → atomarer hash-fix nötig
+kernel.revoke_capability + grant_capability leben in kernel_impl.py = RING0 (Teil 4). Der saubere choke-point
+(kernel-ebene, von allen aufrufern genutzt) ist RING0. Fix-weg = wie ecdsa/§102: edit kernel_impl.py +
+sha256 neu in kernel_hashes.json + verify exit 0 + atomarer direct-push main. VORSICHT: kernel_impl.py ist
+DAS herz (1505 LOC) — der edit muss minimal + chirurgisch sein (nur der permission-check-aufruf vor der
+delegation in revoke + grant), nichts anderes.
+
+### 113e. FIX-PLAN (noch nicht gebaut — RING0-kernel-sicherheit, maximale sorgfalt)
+In kernel_impl.py:
+- revoke_capability: VOR `return self._raw_brahma.revoke_capability(...)` einfügen:
+  `if not self._can_revoke_capability(revoker_id, agent_id): return {"success": False, "revoked": [],
+   "not_found": [], "message": f"Permission denied: {revoker_id} cannot revoke from {agent_id}"}`
+  (return-shape muss zu dem passen was tests/aufrufer erwarten — result["success"], result["message"],
+   result["revoked"] — aus §111b/§113c verifiziert).
+- grant_capability: analog mit _can_revoke_capability ODER separater grant-permission-check (ZU PRÜFEN ob es
+  eine can_grant/can_modify-variante für grant gibt, oder ob can_modify_capability beide abdeckt).
+ZU KLÄREN VOR BAU (letzte punkte):
+1. Exakte return-shape von brahma.revoke_capability (CapabilityModifyResult) — hat es .success/.message/
+   .revoked als dict-keys oder als attribute? Der denied-return muss dieselbe shape haben.
+2. Gibt es can_grant / oder deckt can_modify_capability auch grant ab? (grant-permission-semantik).
+3. Test-erwartung exakt: test_permission erwartet result["success"] is False + "Permission denied" in
+   result["message"]. Return-shape muss das erfüllen.
+DANN atomarer RING0-fix (kernel_impl.py + hash), lokal verify, CI-verify dass die 2 tests grün werden.
+
+### 113f. STAND (Session §113)
+Permission-bug vollständig verstanden: policy klar, grant+revoke beide betroffen, 1 kernel-fixpunkt deckt
+alle pfade, narasimha-ausnahme automatisch intakt, fix ist RING0 (kernel_impl.py). Letzte klärung: exakte
+return-shape + grant-permission-semantik, dann bau.
+NÄCHSTE AKTION: return-shape von CapabilityModifyResult + grant-permission-variante lesen (read-only), DANN
+den chirurgischen RING0-fix bauen (revoke+grant check), lokal verify, direct-push, CI-beweis (2 tests grün).
+DANACH die 3 veralteten tests aufräumen. DANN P1 harness.
+
+---
+
+## 114. Mein §113-fix aktivierte einen LATENTEN case-bug in der policy-logik. Fix#1 (guards) war richtig, aber die policy-fallbacks (can_modify_capability + _can_grant_capability) sind case-broken + unvollständig. Vollständige policy jetzt klar.
+
+### 114a. VERIFIZIERT — was der §113-guard aufdeckte
+Der guard (§113) rief erstmals can_modify_capability / _can_grant_capability scharf auf. Beide fallbacks sind
+kaputt:
+- can_modify_capability (brahma/service.py Z450): `return actor_id == "kernel"` — nur lowercase "kernel".
+- _can_grant_capability (kernel_impl.py Z500): `return actor == "kernel"` — dasselbe.
+Tests/realwelt nutzen "KERNEL" (uppercase), "civic", "NARASIMHA", self-revoke. Der lowercase-"kernel"-check
+matcht KEINEN davon → legitime revokes/grants werden fälschlich geblockt. Latenter bug, der nie auffiel weil
+der check vor §113 nie aufgerufen wurde. Guard war RICHTIG (blockt bösartiges korrekt), aber die policy-
+IMPLEMENTIERUNG dahinter ist unvollständig.
+SELBSTKORREKTUR: mein §113-fix war in der ABSICHT korrekt (guard einbauen) aber unvollständig — ich hätte die
+fallback-policy mitprüfen müssen bevor ich den guard scharf schalte. 3 vorher-grüne tests brachen (KERNEL-
+revokes). Der agent nannte das "tests brauchen update" — FALSCH, die tests sind korrekt, die policy-logik ist
+kaputt.
+
+### 114b. VOLLSTÄNDIGE POLICY (aus ALLEN test-revoker-ids verifiziert)
+ERLAUBT zu revoken/granten: actor ist "KERNEL" (case-insensitiv), "CIVIC" (governance), "NARASIMHA" (kill-
+switch), ODER actor_id == target_id (self-revoke, nur revoke). DENIED: alles andere (z.B. test_agent_6a →
+test_agent_6b = fremder agent).
+Test-belege: revoker_id in {KERNEL, civic, test_agent_5(self), NARASIMHA}; illegitim: test_agent_6a→6b.
+
+### 114c. FIX (2 stellen, gemischter RING0-status)
+1. can_modify_capability (brahma/service.py, NICHT RING0 → einfacher commit):
+   `return actor_id.upper() in ("KERNEL","CIVIC","NARASIMHA") or actor_id == target_id`
+2. _can_grant_capability (kernel_impl.py, IST RING0 → hash-commit):
+   `return actor.upper() in ("KERNEL","CIVIC","NARASIMHA")`
+   (grant hat kein self-target-konzept; nur privilegierte granter).
+ZU KLÄREN VOR BAU: (a) ist NARASIMHA-revoke wirklich über diesen pfad (oder nur registry.revoke_all direkt)?
+Wenn nur direkt → NARASIMHA muss nicht in can_modify, schadet aber nicht. (b) self-revoke: nur revoke oder
+auch grant? (grant an sich selbst = privilege escalation, sollte NICHT self-erlaubt sein → grant nur KERNEL/
+CIVIC). (c) exakt welche tests erwarten was — test_permission_model_civic? etc. gegenprüfen.
+
+### 114d. STAND (Session §114)
+§113-guard-fix ist auf main (revoke+grant guards aktiv), VISNU grün. ABER: policy-fallback case-broken →
+3 legitime tests (KERNEL-revoke) brechen. Netto CI: 2 security-tests GRÜN (das ziel), 3 neue rot (legit
+revokes geblockt), 2 alte veraltete rot (manas/gateway). = fix#1 half, brauchte aber policy-nachbesserung.
+NÄCHSTE AKTION: policy-fix an beiden stellen (brahma nicht-RING0 + kernel_impl RING0), case-insensitiv +
+vollständige actor-liste. Erst (114c a-c) klären, dann bauen, lokal verify, push, CI: alle capability-tests
+grün (die 2 security bleiben grün, die 3 legit wieder grün). DANN nur noch die 2 wirklich veralteten
+(manas/gateway) übrig → aufräumen.
+LEHRE: einen permission-GUARD einbauen heißt auch die PERMISSION-LOGIK dahinter verifizieren — nicht nur dass
+der guard aufgerufen wird, sondern dass er für ALLE legitimen fälle korrekt JA sagt. Guard + policy sind ein
+paar, nie nur eins.
+
+---
+
+## 115. SICHERHEITSBUG GESCHLOSSEN (commit 72d9299): 14/15 capability-tests grün, alle permission-fälle korrekt, VISNU grün. Die 2 echten security-tests PASSED.
+
+### 115a. VERIFIZIERT — der permission-bug ist behoben (roh am CI)
+commit 72d9299 auf main, MATCH, verify exit 0, VISNU success. Capability-tests 14/15 PASSED:
+- Die 2 ZIEL-security-tests GRÜN: test_permission_model_agent_cannot_revoke_from_others (fremder agent
+  geblockt), test_syscall_revoke_mandate_permission_denied (unprivilegierter syscall geblockt). = der bug
+  (§112, jeder kann jedem capabilities entziehen) ist ZU.
+- Alle legitimen fälle grün: KERNEL (uppercase), civic, self-revoke, civic-syscall, KERNEL-grant.
+- test_core_capabilities_not_revocable auch grün (fix bricht core-schutz nicht).
+Policy final:
+  can_modify_capability: actor_id.upper() in ("KERNEL","CIVIC") or actor_id == target_id  (brahma, nicht-RING0)
+  _can_grant_capability: actor.upper() == "KERNEL"  (kernel_impl, RING0, hash-update)
+NARASIMHA umgeht die gates (registry.revoke_all direkt) → kill-switch unberührt, wie geplant.
+
+### 115b. verbleibende fails — EHRLICH eingeordnet (kein "erledigt"-schönfärben)
+Gesamt-run: 59 passed, 5 failed, 1 skipped (voller lauf jetzt sichtbar, vorher maxfail=5 abgeschnitten).
+- test_narasimha_revokes_all: failt mit _capability_registry-fehlend. = DERSELBE veraltete test aus §111
+  (nutzt tote _capability_registry.revoke_all-API). War schon VOR meinem fix kaputt aus diesem grund. Mein
+  policy-fix hat ihn NICHT gebrochen — konsistent mit §111-einordnung (veraltet, aufräumen).
+- test_gateway_runs_as_task_post_migration, test_manas_tick: veraltet/harness (§110/§111), unverändert.
+- test_multiple_subscribers_receive_event, test_subscriber_receives_event (event bus): NEU SICHTBAR. Nicht
+  von meinem fix — der volle lauf (59 statt maxfail-5) zeigt sie erstmals. ZU PRÜFEN ob vorbestehend oder
+  echt (nicht als "pre-existing" abnicken ohne verifikation). Wahrscheinlich vorbestehend + vorher hinter
+  maxfail versteckt.
+
+### 115c. STAND (Session §115) — 2 ECHTE SICHERHEITSBUGS BEHOBEN
+Der cross-agent capability-permission-bug (§112-114) ist vollständig geschlossen: guard (§113) + policy
+(§114/§115). 2 security-tests grün, VISNU grün, kill-switch intakt. Das war ein ECHTER fund dieser session
+(nicht nur test-kosmetik) — potenzielle privilege-manipulation zwischen agenten, jetzt zu.
+VERBLEIBEND (keine security, keine gates — best-effort integration-tests):
+1. 3 veraltete tests aufräumen (narasimha-alt-api/gateway/manas — §111, test-code).
+2. 2 event-bus-fails prüfen (§115b — vorbestehend vs echt, read-only).
+Beide non-gate, non-blocking. Baseline + security stehen.
+NÄCHSTE AKTION (Kim-wahl): (a) veraltete tests + event-bus aufräumen (integration-tests sauber grün), ODER
+(b) P1 Steward-harness-kartierung (§104) endlich starten — das grosse kapitel. Empfehlung: kurz die event-
+bus-fails read-only einordnen (echt oder nicht?), dann P1. Die veralteten test-aufräumereien sind kosmetik
+die auch später gehen.
+
+---
+
+## 116. Event-bus-fails VERIFIZIERT vorbestehend (nicht abgenickt): waren immer kaputt, nur durch maxfail=5 versteckt. Unser fix hob den vorhang → erstmals sichtbar. Kein schaden durch uns.
+
+### 116a. VERIFIZIERT (maxfail-mechanik, logisch zwingend)
+Früherer run (4e05bc2): 5 fails = gateway, manas, + die 3 capability-tests → maxfail=5 STOP bei test #32.
+pytest kam NIE bis zu den event-bus-tests (liegen weiter hinten in der datei).
+Unser run (72d9299): die 3 capability-tests jetzt GRÜN → pytest läuft weiter (32→59 tests) → erreicht
+ERSTMALS die event-bus-tests → die waren schon immer kaputt (assert 0==1, subscriber.received_events=[]).
+= NICHT neu gebrochen, sondern erstmals überhaupt ausgeführt. Unsere änderungen (capability/permission/
+kernel) berühren den event-bus NICHT — ein permission-fix kann keine event-zustellung brechen. Ursache-
+hinweis: swear_oath_sync-migration (ältere, unabhängige regression).
+NEBENEFFEKT-GEWINN: indem wir capability-tests grün machten, hob sich der maxfail-vorhang → ein vorher
+verstecktes problem wurde sichtbar. Gut — versteckte kaputte tests sind schlimmer als sichtbare.
+
+### 116b. STAND (Session §116) — SECURITY + BASELINE FERTIG, restfails alle eingeordnet
+Alle integration-test-fails final eingeordnet:
+- 2 event-bus (subscriber/multiple_subscribers): vorbestehend, unabhängig, seit ~swear_oath_sync. ZU FIXEN
+  später (event-zustellung), non-gate.
+- 3 veraltet/harness (gateway/manas/narasimha-alt-api): §110/§111, test-code-aufräumen, non-gate.
+KEINER ist von unserer arbeit verursacht. KEINER ist gate/security. Die 2 ECHTEN security-bugs (§112-115)
+sind BEHOBEN + verifiziert.
+GESAMT-SESSION-BILANZ (steward-protocol): von komplett-rot (2026-07-01) → alle gates grün + ecdsa/VISNU/lint
+saga gelöst + 4-monatige integritäts-drift geheilt + ECHTER cross-agent permission-security-bug gefunden &
+geschlossen. #900 zu, PR-backlog leer. Kein PyPI-bump für infra; ABER der security-fix (kernel_impl policy)
+IST package-code → bei einem RELEASE wäre DANN ein bump fällig (0.3.1→0.3.2). Für jetzt nicht releaset, kein
+bump nötig; vermerkt für later.
+
+### 116c. NÄCHSTES — P1 endlich frei
+Baseline + security stehen und sind verstanden. Verbleibende non-gate-fails alle eingeordnet (kein blocker).
+Der saubere moment für das GROSSE kapitel ist da:
+P1: STEWARD-HARNESS / SELF-AWARENESS-KARTIERUNG (§104) — open-eyed, den steward sich SELBST beschreiben
+lassen (§104b-methode, NICHT mit Opus-kategorien abklopfen). Frische session empfohlen (kontext-hygiene +
+volle energie für die schatzkiste). Einstieg: §104 + dieser befund als grundlage.
+Kleinkram für zwischendurch (optional, non-gate): event-bus-fix, 3 veraltete tests aufräumen.
+
+---
+
+## 117. 3 veraltete tests → SKIPPED (commit 07a6b49, mit begründung). ENTHÜLLUNG: event-bus-fails sind nicht 2 sondern 5 — die GANZE test_event_bus_integration.py suite ist rot. Nächste maxfail-schicht.
+
+### 117a. VERIFIZIERT — skips deployed
+commit 07a6b49 auf main, MATCH, verify exit 0, VISNU/CI grün. test_narasimha/gateway/manas jetzt SKIPPED
+(nicht FAILED), jeder mit spezifischer reason (harness-gap / migration / runtime-state). Rotes signal
+entrümpelt. Gesamt: 61 passed, 5 failed, 4 skipped.
+
+### 117b. ENTHÜLLUNG: event-bus ist BREITER kaputt als gedacht (5 statt 2)
+Durch die skips (zählen nicht als fails) läuft pytest weiter → maxfail=5-vorhang hebt sich → die VOLLE
+event-bus-suite ist rot:
+- test_event_type_filtering
+- test_multiple_subscribers_receive_event
+- test_subscriber_error_doesnt_crash_others
+- test_subscriber_receives_event
+- test_syscall_broadcast_event
+= GESAMTE tests/integration/test_event_bus_integration.py rot. Nicht "2 flaky tests" sondern "event-
+zustellung im CI komplett kaputt". Symptom (§116): assert 0==1, subscriber.received_events=[] → events
+werden nicht delivered.
+WICHTIG: event-bus ist INFRASTRUKTUR (get_event_bus() wird vom kernel genutzt, §92: self._event_bus).
+Wenn event-delivery kaputt ist, ist das potenziell mehr als ein test-problem — könnte echte funktionalität
+betreffen (event-getriebene kernel-mechanik). MUSS diagnostiziert werden, nicht als "pre-existing" abgetan.
+
+### 117c. STAND (Session §117)
+Test-aufräumen (3 skips) fertig. Verbleibend: 5 event-bus-fails = die ganze suite. Muster wieder: aufräumen
+hob maxfail-vorhang, volles ausmaß sichtbar. Event-bus ist kern-infrastruktur → diagnose-priorität.
+NÄCHSTE AKTION: event-bus read-only diagnostizieren — ist die event-zustellung WIRKLICH kaputt (echte
+infra-regression) oder ein test-setup-problem (fixture/async)? get_event_bus() + EventBus.publish/subscribe
+lesen, git-history der event_bus-quelle (wann brach es, swear_oath_sync?). ERST verstehen (§92), dann urteilen
+ob echter bug oder test-harness. Kein "pre-existing" abnicken bei kern-infrastruktur.
+
+---
+
+## 118. EVENT-BUS ROOT CAUSE (echter bug, bewiesen): subscribe_to_events übergibt STRING, event_bus.subscribe erwartet LISTE → iteriert über string zeichen-für-zeichen → callbacks unter falschen keys → keine zustellung.
+
+### 118a. VERIFIZIERT — der bug, zwingend am code (nicht vermutung)
+- subscribe_to_events(callback, event_type="test.message") → ruft event_bus.subscribe(callback, "test.message")
+  mit einem STRING.
+- event_bus.subscribe(callback, event_types: Optional[List[EventType]]) erwartet eine LISTE.
+- subscribe() macht `for event_type in event_types` → iteriert über den STRING zeichenweise → registriert
+  callback unter keys "t","e","s",".","m"... statt unter "test.message".
+- emit() sucht self._subscribers.get("test.message") → leer → tasks=[] → callback nie getriggert →
+  received_events=[]. = die 4 "received_events=[]"-fails.
+- 5. test (test_subscriber_error_doesnt_crash_others): SEPARATER test-bug — ruft kernel.subscribe_to_events()
+  auf, die es am kernel NICHT gibt (nur kernel.event_bus.subscribe oder agent.system.subscribe_to_events).
+  AttributeError. Eigener fix (test-zeile korrigieren).
+SUDARSHANA rate-limiter ist NICHT die ursache (verifiziert — callbacks sind schlicht nie registriert).
+Contract-mismatch zwischen agent-interface (string) und event_bus (liste) — wie 31→2-deps + case-bug: zwei
+ebenen nicht abgestimmt. Seit ~b3551725f latent (event-bus-logik seither nur chores).
+
+### 118b. FIX-OPTIONEN bewertet (robustheit + blast-radius)
+- A) fix in subscribe_to_events: `subscribe(callback, [event_type] if event_type else None)`. Fixt nur DIESEN
+  aufrufer. Andere string-aufrufer blieben kaputt. Zu eng.
+- B/C) fix in event_bus.subscribe: string→liste normalisieren am eingang
+  (`if isinstance(event_types, str): event_types = [event_types]`). Wurzel-fix, JEDER aufrufer robust.
+  Choke-point (analog permission-fix §115). BEVORZUGT — aber: ist subscribe() RING0? gibt es aufrufer die
+  KORREKT eine liste übergeben (dürfen nicht brechen)?
+ENTSCHEIDUNG offen bis §118c geklärt.
+
+### 118c. ZU KLÄREN VOR FIX (sorgfalt, kern-infrastruktur)
+1. Ist event_bus.py (vibe_core/mahamantra/substrate/services/event_bus.py) RING0? (→ fix-weg).
+2. Andere aufrufer von event_bus.subscribe — übergeben manche KORREKT eine liste? (fix muss beide fälle:
+   str UND list akzeptieren, darf list-aufrufer nicht brechen). Option B/C mit isinstance-check tut genau das
+   (str→[str], list bleibt list) — robust für beide. Aber verifizieren welche aufrufer existieren.
+3. Sollte auch subscribe_to_events(agent-interface) defensiv [event_type] übergeben? (doppelte absicherung —
+   aber wenn subscribe() die wurzel fixt, optional). Minimal: nur die wurzel (subscribe) fixen.
+
+### 118d. STAND (Session §118)
+Event-bus: ECHTER bug (string-vs-liste im subscribe-contract), 4 tests betroffen + 1 separater test-bug
+(kernel.subscribe_to_events existiert nicht). KEINE infra-regression im emit/delivery selbst — nur der
+subscribe-eingang. Fix = wurzel in event_bus.subscribe (str→liste normalisieren) + die 1 falsche test-zeile.
+NÄCHSTE AKTION: §118c klären (RING0-status event_bus.py? andere subscribe-aufrufer?), DANN wurzel-fix +
+test-zeilen-fix. Kein raten bei kern-infra — erst die 2 punkte, dann bauen. Danach: alle event-tests grün →
+integration-tests-suite komplett grün (bis auf die bewussten skips).
+
+---
+
+## 119. KORREKTUR/VERTIEFUNG §118: der event-bus-subscribe-bug ist BREITER — mehrere WIDERSPRÜCHLICHE aufruf-konventionen (inkl. vertauschte argument-reihenfolge). KEIN quick-fix. Eigenes design-thema.
+
+### 119a. VERIFIZIERT — subscribe() wird mit 5 verschiedenen, widersprüchlichen signaturen aufgerufen
+Signatur ist subscribe(callback, event_types: Optional[List[EventType]]). Reale aufrufer (roh):
+- bus.subscribe(cb, EventType.SYSCALL_EXECUTED)      → cb, EINZELNES EventType (nicht liste)
+- bus.subscribe(on_action, [EventType.ACTION])       → cb, LISTE (korrekt)
+- event_bus.subscribe("*", on_event)                 → STRING, cb = ARGUMENTE VERTAUSCHT
+- event_bus.subscribe(EventType.INTENT_EXECUTED, cb) → EventType, cb = ARGUMENTE VERTAUSCHT
+- bus.subscribe(self._on_event_sync)                 → nur cb
+- subscribe_to_events → event_bus.subscribe(cb, "string") → cb, STRING (der §118-fall)
+= NICHT ein einzelner str-vs-liste-bug. MEHRERE inkonsistente konventionen, teils mit callback/event_type in
+VERTAUSCHTER reihenfolge. EventType ist str-enum (event_types.py), "die EINE UND EINZIGE" laut docstring —
+aber die aufruf-seite hält sich nicht dran.
+
+### 119b. KORREKTUR meiner §118-fix-idee
+§118 plante isinstance(str)→[str]-normalisierung in subscribe(). Das würde NUR den str-am-2.-arg-fall fixen
+(subscribe_to_events + naga "*"? nein — "*" ist am 1. arg!). Die VERTAUSCHTEN aufrufer (naga_guard "*"+cb,
+cognitive_kernel EventType+cb) blieben kaputt. Ein isinstance-einzeiler wäre "1 schicht fixen, 3 übersehen"
+— genau das muster das wir die ganze session vermieden haben. Der str→liste-fix allein ist UNZUREICHEND.
+
+### 119c. WARUM das KEIN session-end-quickfix ist (ehrliche einordnung)
+- Kern-infrastruktur (event_bus, vom kernel genutzt).
+- Mehrere widersprüchliche aufruf-konventionen über die codebase (mind. 6 aufrufer, 5 verschiedene formen).
+- Richtiger fix erfordert ENTSCHEIDUNG über die kanonische signatur + anpassen ALLER aufrufer, ODER eine
+  sehr sorgfältig gebaute tolerante subscribe() (callback-position via callable() erkennen, event_types als
+  str|EventType|List|None normalisieren). Das ist DESIGN, kein einzeiler.
+- Am müden ende einer langen session einen infra-choke-point umbauen = schlampig-risiko. Genau das wollen
+  wir NICHT (Kim: "bloß nicht schlampig werden").
+=> EHRLICHE ENTSCHEIDUNG: nicht jetzt hastig fixen. Als eigenes, sauberes ticket dokumentieren.
+
+### 119d. STAND (Session §119) — event-bus als dokumentiertes ticket, NICHT jetzt gefixt
+Root cause voll verstanden (§118+§119): subscribe() hat inkonsistente aufruf-konventionen, str-vs-liste +
+vertauschte args. 4 test-fails aus dem str-fall, 1 aus falscher kernel-methode. Fix = design-arbeit
+(kanonische signatur + tolerante normalisierung + alle aufrufer), verdient frischen kopf.
+TICKET (für später, sauber umrissen):
+1. subscribe() signatur kanonisieren: callback-position via callable() detektieren; event_types als
+   None|str|EventType|List[str|EventType] tolerant normalisieren (str→[str], single EventType→[EventType]).
+2. Alle 6 aufrufer auf die kanonische form bringen (oder von der toleranz abfangen lassen + deprecation-log).
+3. test_subscriber_error_doesnt_crash_others zeile 297: kernel.subscribe_to_events → 
+   good_agent2.system.subscribe_to_events (oder kernel.event_bus.subscribe).
+4. Dann alle 5 event-tests grün.
+NICHT-BLOCKER: integration-tests ist non-gate (|| echo), event-bus-fails blockieren keine gates. Baseline +
+security stehen. Das ticket ist echte funktionalität (event-zustellung real kaputt bei string-subscribe),
+aber kein CI-blocker.
+
+### 119e. SESSION-GESAMTSTAND (ehrlicher schnitt)
+ERLEDIGT diese session: merge-stau (5 PRs), 403-front (3 ursachen), 2 knoten reaktiviert, GC als nicht-
+problem entlarvt, ecdsa/VISNU/lint-saga (baseline grün), 4-monats-integritäts-drift geheilt, ECHTER
+permission-security-bug gefunden+behoben (§112-115), 3 veraltete tests sauber geskippt, event-bus-root-cause
+diagnostiziert (§118-119). #900 zu, PR-backlog leer.
+OFFEN (dokumentiert, non-gate): event-bus-signatur-fix (§119d-ticket), evtl. PyPI-bump bei nächstem release
+(security-fix ist package-code). 
+P1 (frische session): Steward-harness-kartierung (§104).
+
+---
+
+## 120. Event-bus fix-design final (verifiziert): tests sind KORREKT (event_type ist str, freie strings erlaubt by design). Fix = tolerante normalisierung am subscribe()-EINGANG, key-bildung unberührt. P0, wird gebaut.
+
+### 120a. VERIFIZIERT — der bug ist eindeutig in subscribe(), tests sind legitim
+- Event.event_type ist str (dataclass, Teil 3), emit() sucht self._subscribers.get(event.event_type) = string-key.
+- EventType-enum ist nur konvention für standard-typen; architektur akzeptiert FREIE strings überall.
+- Test-typ "test.message" ist also LEGITIM (nicht in enum, aber string-design erlaubt es). → alternative
+  "tests falsch, nur enums" AUSGESCHLOSSEN. Bug ist in subscribe(), nicht tests.
+- Key-invariante (Teil 5): subscribe/emit/unsubscribe/get_subscribers nutzen ALLE self._subscribers mit
+  STRING-keys. Fix muss string-keys bewahren. Vorhandene key-bildung (event_type.value if EventType else
+  event_type) ist korrekt — NUR der eingang (arg-position + typ) ist kaputt.
+
+### 120b. FIX (tolerante normalisierung am eingang, key-bildung unberührt)
+In subscribe(), VOR der bestehenden logik:
+1. positions-check: if not callable(callback) and callable(event_types): callback,event_types =
+   event_types,callback + deprecation-warn (fängt naga_guard subscribe("*",cb), cognitive_kernel
+   subscribe(EventType.X,cb)).
+2. typ-normalisierung von event_types → list|None:
+   - None → None (global, "alle events" — bewahrt None≠[] semantik)
+   - str → [str]   (der §118-fall: "test.message" → ["test.message"])
+   - EventType → [EventType]  (observer.py single-enum-fall)
+   - list → list unverändert (moltbook [EventType.ACTION], korrekt)
+   - "*" sonderfall: naga nutzt "*" als "alle" → wenn event_types=="*" → None (global). (VERIFIZIEREN ob
+     "*" wirklich "alle" meint — sonst wird "*" als literaler typ-key behandelt, was auch ok wäre.)
+Die bestehende for-schleife + key-bildung bleibt UNVERÄNDERT (ist korrekt).
+event_bus.py NICHT RING0 → einfacher commit, kein hash. + test-zeile 297 (kernel.subscribe_to_events →
+good_agent.system...) im selben commit.
+
+### 120c. STAND (Session §120) — P0, fix wird JETZT gebaut (sorgfältig, nicht schlampig)
+Kim: event-bug ist P0 (produktions-zustellung real kaputt, CI verdeckt es via ||echo — gefährlicher als
+sichtbar). Recht. "nicht müde an infra" = argument für SORGFALT nicht aufschub. Fix voll verstanden (§118-120),
+tolerante normalisierung, key-invariante bewahrt, non-RING0. Gebaut mit read-only-verifikation + AST + verify
++ CI-beweis (alle 5 event-tests grün + kein produktions-aufrufer gebrochen).
+NÄCHSTE AKTION: fix bauen (subscribe-normalisierung + test-zeile), lokal AST+verify, push, CI: 5 event-tests
+grün. Danach integration-tests-suite komplett grün (bis auf bewusste skips). Dann ist die baseline WIRKLICH
+sauber + der letzte echte bug zu.
+
+---
+
+## 121. EVENT-BUS KOMPLETT REPARIERT (2 commits): 3 ECHTE produktions-bugs behoben. Tests 59→113 passed (+54). Alle gates grün. Nächste schicht: boot/genesis.
+
+### 121a. DIE 3 ECHTEN BUGS (produktion, nicht test-kosmetik) — verifiziert behoben
+1. subscribe(callback, "string") → string wurde zeichenweise iteriert → callbacks unter keys "t","e","s"...
+   → emit() fand nie einen subscriber → KEINE event-zustellung für alle string-subscriber.
+2. naga_guard: subscribe("*", cb) → args vertauscht + "*" als literaler key → FloodManager sah NIE ein event
+   (stiller produktions-ausfall des flood-observers).
+3. unsubscribe: agent.system.unsubscribe_from_events(cb, type) → event_bus.unsubscribe(cb, type), aber
+   signatur war unsubscribe(subscriber_id) → JEDER produktions-unsubscribe crashte mit TypeError.
+FIX (commits e624318 + dfd4cf8): tolerante normalisierung an BEIDEN eingängen — callable()-positions-
+erkennung, str/EventType/list/None-normalisierung, "*"→global, unsubscribe akzeptiert callback ODER id.
+Key-bildung + ID-logik unverändert (invariante bewahrt). event_bus.py nicht RING0, kein hash/bump.
+URSACHE (muster): agent_interface und event_bus wurden NIE gegeneinander abgestimmt — systematischer
+interface-drift (subscribe: str vs list; unsubscribe: callback vs id; kernel-methoden die es nicht gibt).
+
+### 121b. WIRKUNG (roh am CI)
+Alle 7 event-bus-tests PASSED (receive, multi-subscriber, filtering, syscall-broadcast, error-tolerance,
+unsubscribe, status). Tests gesamt: 59 → 82 → 113 passed (+54 freigeschaltet — jede reparierte schicht hebt
+den maxfail-vorhang und lässt mehr laufen). Alle gates grün (VISNU, Holon Factory, Container Build,
+Steward-CI, Pages).
+
+### 121c. NÄCHSTE SCHICHT (neu sichtbar): boot/genesis
+5 verbleibende fails, alle im boot/genesis-bereich (anderes thema als event-bus):
+- test_kernel_boot_emitted: "KERNEL_BOOT should be emitted during boot"
+- test_genesis_boot_loading: "Kernel missing genesis_path attribute"
+- test_genesis_flow: "assert None in ['RUNNING','IDLE']" (kernel-status None)
+- test_kernel_has_io_attribute
+Das ungepflegte substrat gibt schicht für schicht frei. Jeder aufgedeckte fail = ein fehler weniger im
+dunkeln (Kim: "boring work ist das beton-fundament").
+
+### 121d. STAND (Session §121)
+Event-bus-kapitel ZU: 3 produktions-bugs behoben, suite komplett grün, +54 tests laufen. Baseline + security
++ event-delivery stehen. 
+NÄCHSTE AKTION: boot/genesis-schicht read-only diagnostizieren (§121c) — gleiche methode: erst verstehen
+(echter bug vs veralteter test vs harness-gap), dann fixen. Vermutlich wieder interface-drift/harness-gaps.
+VERMERK: die event-bus-fixes sind PACKAGE-CODE (nicht nur infra) → bei nächstem PyPI-release ist ein
+version-bump fällig (0.3.1 → 0.3.2), zusammen mit dem security-fix (§115).
+
+---
+
+## 122. BOOT/GENESIS-SCHICHT: 1 ECHTER produktions-bug (genesis_path wird nie gesetzt → Envoy lädt genesis-circuits NIE) + 4 test-bugs (grep-tests + key-mismatch).
+
+### 122a. ECHTER BUG: genesis_path wird nie gesetzt → genesis-circuits werden nicht geladen
+- EnvoyPlugin.load_circuits() (plugin_main.py:861): `if hasattr(kernel,"genesis_path") and kernel.genesis_path:
+  scan_paths.append(kernel.genesis_path / "circuits")` — WILL die genesis-circuits laden.
+- ABER: brahma.bootstrap() setzt _plugins_map, _plugin_metadata, _plugins — KEIN genesis_path.
+  kernel_impl.py hat kein genesis_path. NIRGENDS gesetzt.
+- FOLGE: hasattr-check schlägt still fehl → genesis-circuits werden NIE zu scan_paths hinzugefügt →
+  in PRODUKTION werden die genesis-circuits nicht geladen. Kein crash, keine meldung — stille degradation.
+  GLEICHE SIGNATUR wie naga_guard-flood-observer (§121): hasattr-guard auf nie gesetztem attribut.
+- ABSICHT ist dokumentiert (test_container_loader.py-kommentar): "kernel_impl.py:322 → self.genesis_path =
+  genesis_meta.manifest_path.parent". Implementierung fehlt. Alle bausteine da: bootstrap() hat metadata mit
+  ItemMeta.manifest_path (verifiziert).
+FIX: in brahma.bootstrap() nach load_plugins: genesis-meta aus metadata holen, kernel.genesis_path =
+meta.manifest_path.parent setzen (falls genesis-pack geladen). brahma/service.py ist NICHT RING0.
+
+### 122b. 4 TEST-BUGS (verifiziert, code hat recht)
+1. test_kernel_boot_emitted: greppt kernel_impl.py-quelltext nach string "KERNEL_BOOT". KERNEL_BOOT existiert
+   NIRGENDS (nicht im EventType-enum, in keiner .py). Pseudo-test (textsuche statt verhalten). OBSOLET.
+2. test_kernel_has_io_attribute: greppt inspect.getsource(RealVibeKernel.__init__) nach "self.io =
+   KernelIOService". Der kernel HAT self.io (kernel_impl:217) — aber gesetzt in _init_blueprints(), das vom
+   __init__ AUFGERUFEN wird, also nicht in dessen source. Test prüft falsche quelle. FIX: instanz prüfen
+   (hasattr) statt quelltext greppen.
+3+4. test_genesis_flow / test_genesis_flow_kernel_boot: erwarten key "status" in get_status(). bhishma
+   liefert "kernel_status". PRODUKTIONS-CODE nutzt "kernel_status"/"agents_registered" (pulse.py,
+   smoke_test) — NIEMAND ausser dem test erwartet "status". Test falsch. FIX: test auf "kernel_status".
+LEHRE: 2 der 5 waren GREP-TESTS (quelltext nach strings durchsuchen statt verhalten prüfen). Solche tests
+sind wertlos-bis-schädlich: brechen bei jedem refactor, prüfen nichts, geben falsche sicherheit.
+
+### 122c. STAND (Session §122)
+Boot/genesis-schicht diagnostiziert: 1 echter produktions-bug (genesis_path/Envoy-circuits), 4 test-bugs.
+Wieder das muster: stille degradation durch hasattr-guard auf nie gesetztem attribut.
+NÄCHSTE AKTION: (1) genesis_path in brahma.bootstrap() setzen (echter fix, non-RING0). (2) 4 test-bugs
+korrigieren (grep-tests → verhaltens-checks bzw. obsolet, key-mismatch → kernel_status). Ein commit,
+CI-verify. Danach: nächste schicht (falls maxfail-vorhang wieder mehr freigibt).
+
+---
+
+## 123. genesis_path-FIX WIRKT (laufzeit-beweis im log). Mein erster fix war TOTER CODE am falschen ort — entfernt, richtig neu gemacht. Selbstkorrektur dokumentiert.
+
+### 123a. MEIN FEHLER (ehrlich, wichtig für die lehre)
+Erster fix (§122) setzte genesis_path in brahma.bootstrap() über die plugin-metadata. TOTER CODE: der
+genesis-pack ist ein "cognitive_pack", kein "plugin" — load_plugins() filtert via ManifestRegistry.
+get_enabled("plugin"), cognitive_packs kommen dort NIE durch. Meine schleife konnte nie treffen, fiel immer
+in den else-zweig, setzte genesis_path=None. Wirkungslos, aber irreführend für den nächsten leser.
+URSACHE DES FEHLERS: ich nahm AN, dass die metadata aus load_plugins() den genesis-pack enthält, statt es zu
+VERIFIZIEREN. Der test-kommentar sagte "kernel_impl.py:322" — ich wählte trotzdem brahma, weil die metadata
+dort "richtig aussah". Annahme statt beweis = genau der fehler den ich mir verboten hatte.
+KORREKTUR: toter block ERSATZLOS entfernt (kein rest in der codebase), fix an die richtige stelle gesetzt.
+
+### 123b. RICHTIGER FIX (commit f89a244) — mit LAUFZEIT-beweis
+kernel_impl._init_bootstrap() ruft nach brahma.bootstrap() ein neues _init_genesis_path() auf:
+ManifestRegistry.get_enabled("cognitive_pack") → entry.id=="genesis_knowledge" → self.genesis_path =
+entry.parent_dir (die property existiert genau dafür). try/except: registry darf den boot nie brechen.
+kernel_impl.py ist RING0 → hash-update + verify exit 0 vor push.
+LAUFZEIT-BEWEIS (CI-log, nicht nur code): "KERNEL: genesis_path resolved to knowledge/genesis" — erscheint
+im Smoke-Test UND im Governance-Gate. Envoy findet jetzt die genesis-circuits. Das ist der beweis-typ der
+beim naga_guard-fix fehlte (keine swap-warnung = nie ausgeführt) — hier läuft er nachweislich.
+WIRKUNG: test_genesis_boot_loading FAILED → PASSED. test_kernel_has_io_attribute PASSED. VISNU grün. Alle
+gates grün.
+
+### 123c. VERBLEIBEND (neue schicht hinter dem key-fix)
+- test_genesis_flow: "asyncio.run() cannot be called from a running event loop" — test ruft asyncio.run()
+  in einem bereits laufenden loop (async test + asyncio.run innen).
+- test_genesis_flow_kernel_boot: "sqlite3 closed database" — ledger wird geschlossen bevor der test fertig ist.
+Beides TEST-INFRASTRUKTUR (async/fixture-handling), nicht produktions-bugs. Erst sichtbar geworden nachdem
+der key-mismatch (status/kernel_status) behoben war — wieder eine schicht tiefer.
+
+### 123d. STAND (Session §123)
+genesis_path: echter produktions-bug BEHOBEN + laufzeit-verifiziert (Envoy lädt genesis-circuits jetzt).
+Toter code entfernt. 2 test-infra-fails verbleiben (asyncio/sqlite).
+LEHRE (verschärft): auch bei einem "verstandenen" fix die ZIELSTELLE verifizieren, nicht nur den bug. Ich
+hatte den bug korrekt verstanden, aber den fix-ort geraten. Beweis-pflicht gilt für BEIDES: was kaputt ist
+UND wo der fix hingehört.
+NÄCHSTE AKTION: die 2 test-infra-fails (asyncio.run im laufenden loop, sqlite closed) — test-code, keine
+produktion. Dann ist die integration-suite sauber.
+
+---
+
+## 124. SHUTDOWN/LINEAGE: architektonischer defekt DOKUMENTIERT (nicht gefixt — CI-fehler lokal nicht reproduzierbar). Alle gates grün. Sanierungs-arbeit abgeschlossen.
+
+### 124a. AGENT-ZWISCHENFALL (wichtig für die zukunft)
+Der CLI-agent hatte einen CONTEXT-COMPACT und fiel auf einen ALTEN auftrag zurück (phantom-heartbeat-TTL
+aus einer früheren session, dharma.py im steward-repo). Er committete 98e35e061d LOKAL in
+/Users/ss/projects/steward auf branch fix-phantom-heartbeat-ttl — NICHT gepusht, steward-protocol/main
+blieb sauber (66986fa58). KEIN SCHADEN.
+LEHRE: agent-meldungen IMMER gegen den rohen zustand prüfen (git ls-remote, gh api), nie glauben. Nach
+einem compact kann der agent in alte kontexte fallen. AB JETZT: jeder block beginnt mit explizitem
+KONTEXT-RESET (repo, verzeichnis, thema, was VERBOTEN ist).
+
+### 124b. VERIFIZIERT: LineageChain hat einen echten robustheits-defekt
+- close() (lineage.py:690): self.conn.close() OHNE guard, OHNE _closed-flag.
+- 16 stellen greifen auf self.conn zu — ALLE crashen nach close() mit sqlite3.ProgrammingError.
+- add_block() → get_latest_block() → self.conn.cursor() ist die stelle die im CI-shutdown crasht.
+- lifecycle_service.shutdown_async() enthält denselben add_block+close-code, wird aber vom kernel NICHT
+  aufgerufen (toter pfad) → doppel-close-these WIDERLEGT.
+= architektonisch fragil: ein objekt das nach close() bei jedem zugriff hart crasht. Robuster wäre ein
+_closed-flag + sauberes degradieren.
+
+### 124c. ABER: der CI-sqlite-fehler ist LOKAL NICHT REPRODUZIERBAR (ehrlich)
+Lokal (isoliert, in kombination, ganze genesis-gruppe): KEIN sqlite3-fehler. Stattdessen andere fehler
+(ValueError im logging, KernelStatus-format, BrahmaService ledger-arg). Im CI: sqlite3.ProgrammingError.
+=> umgebungsabhängig (test-reihenfolge? parallelisierung? python/sqlite-build?). URSACHE NICHT GEKLÄRT.
+ENTSCHEIDUNG (Lead): NICHT ins blaue fixen. Einen defekt reparieren dessen auslöser man nicht reproduzieren
+kann = genau der §123-fehler (fix am falschen ort). Der LineageChain-defekt ist dokumentiert und kann
+gezielt gefixt werden, wenn der auslöser verstanden ist.
+
+### 124d. TICKET (sauber umrissen, für später)
+1. LineageChain robust machen: _closed-flag in __init__, close() idempotent, zugriffs-methoden prüfen das
+   flag (oder werfen einen klaren fehler statt sqlite3.ProgrammingError). Non-RING0 (lineage.py).
+2. CI-sqlite-fehler reproduzieren: volle suite lokal mit CI-flags fahren (-m "not slow" --maxfail=5, gleiche
+   pytest-version), test-reihenfolge vergleichen. ERST dann fixen.
+3. Weitere test-fails (nicht-blockierend, non-gate): KernelStatus-string-format ('KernelStatus.RUNNING' vs
+   'RUNNING'), spawn_deferred_agents fehlt, BrahmaService ledger-arg, _bank/_manifest_registry/total_credits
+   fehlen, ValueError im logging-teardown.
+
+### 124e. SESSION-BILANZ (sanierung abgeschlossen)
+ALLE GATES GRÜN auf steward-protocol/main (66986fa58): VISNU, Holon Factory, Container Build, Steward-CI,
+Lint & Format, Integration Tests (non-gate).
+ECHTE PRODUKTIONS-BUGS BEHOBEN diese session:
+1. Cross-agent permission-bug (§112-115): jeder agent konnte jedem capabilities entziehen/geben. SECURITY.
+2. Event-bus subscribe (§118-121): string-subscribes zerfielen zeichenweise → keine zustellung.
+3. Event-bus naga_guard "*" (§121): flood-observer sah NIE ein event (stiller ausfall).
+4. Event-bus unsubscribe (§121): jeder produktions-unsubscribe crashte mit TypeError.
+5. genesis_path (§122-123): Envoy lud die genesis-circuits NIE (stille degradation).
+6. boot/shutdown-guard (§124): sync-wrapper crashten kryptisch aus async-kontext.
+PLUS: ecdsa/VISNU/lint-saga (baseline grün), 4-monats-integritäts-drift geheilt, merge-stau, 403-front,
+3 veraltete tests sauber geskippt, 2 grep-pseudo-tests entlarvt. Tests: 59 → 117+ passed.
+
+---
+
+## 125. RELEASE 0.3.2 AUF PyPI — die föderation bekommt das geheilte substrat.
+
+### 125a. VERSIONS-KLÄRUNG (wichtig, war unklar)
+git-tags v1.0.0/v1.1.0 sitzen auf SIDE-BRANCHES (adr-204, analysis/*, architecture/*) und sind KEINE
+vorfahren von main-HEAD. Irrelevant für die release-linie. Die echte main-linie:
+v0.3.1 (c51196d9, auf main, PyPI-success) → 13 commits → HEAD. PyPI kennt nur 0.3.0 + 0.3.1.
+=> korrekte nächste version: 0.3.2 (Kim bestätigt).
+
+### 125b. RELEASE-PROZESS (verifiziert, funktioniert)
+1. pyproject version bumpen (0.3.1 → 0.3.2), commit auf main (ac028195).
+2. ALLE CI-gates abwarten bis grün (NIE auf rotem stand taggen).
+3. git tag -a v0.3.2 + push origin v0.3.2.
+4. publish.yml triggert auf "v*"-tags → build wheel+sdist → upload via Trusted Publishers (OIDC, kein token).
+ERGEBNIS: Build distribution SUCCESS, Publish to PyPI SUCCESS.
+Uploads 200 OK: steward_protocol-0.3.2-py3-none-any.whl (7.2 MB), steward_protocol-0.3.2.tar.gz (9.9 MB).
+
+### 125c. WAS DIE FÖDERATION JETZT BEKOMMT (0.3.2 statt 0.3.1)
+Vorher zogen ALLE knoten via pip die kaputte 0.3.1 — die ganze sanierung lag nur im git und erreichte
+niemanden. Mit 0.3.2 ausgeliefert:
+1. SECURITY: cross-agent capability grant/revoke wird jetzt geprüft (war völlig ungeschützt).
+2. EVENT-BUS: string-subscribes stellen jetzt zu (zerfielen vorher zeichenweise); naga_guard-flood-observer
+   sieht wieder events (war blind); unsubscribe crasht nicht mehr (TypeError bei JEDEM aufruf).
+3. GENESIS: Envoy scannt jetzt die genesis-circuits (genesis_path war nie gesetzt, stille degradation).
+4. KERNEL: sync boot()/shutdown() melden klar statt kryptischem asyncio-crash.
+
+### 125d. STAND (Session §125) — SANIERUNG AUSGELIEFERT
+steward-protocol 0.3.2 live auf PyPI. main = ac028195, alle gates grün, tag v0.3.2.
+Die föderations-knoten ziehen beim nächsten deploy/pip-install das geheilte substrat.
+OFFEN (dokumentierte tickets, non-gate): LineageChain-robustheit (§124d, CI-only-fehler, nicht
+reproduzierbar → erst auslöser verstehen), KernelStatus-format, spawn_deferred_agents, _bank/
+_manifest_registry, logging-teardown-ValueError.
+NÄCHSTES GROSSES: P1 Steward-harness-kartierung (§104) — frische session, open-eyed methode.
+
+═══════════════════════════════════════════════════════════════════════════════
+# TEIL II — FÖDERATIONS-WEITER PRIVATE-KEY-LEAK (KRITISCH, OFFEN)
+═══════════════════════════════════════════════════════════════════════════════
+
+## 200. DER FUND: Alle föderations-knoten leaken ihre privaten schlüssel. PUBLIC repos. Systemisch, nicht individuell.
+
+### 200a. WAS PASSIERT (verifiziert, roh)
+Jeder föderations-knoten macht dasselbe muster:
+1. NODE_PRIVATE_KEY wird als GitHub-secret gehalten (verschlüsselt, korrekt).
+2. Der workflow SCHREIBT ihn auf die platte:
+   `printf '%s' "${{ secrets.NODE_PRIVATE_KEY }}" > data/federation/.node_keys.json`
+   (agent-template nutzt eine python-variante: json.dump(NODE_PRIVATE_KEY → file))
+3. Dann wird data/federation/ GECACHT (actions/cache) und/oder per `git add` COMMITTED.
+=> Der private schlüssel verlässt den verschlüsselten secret-store und landet in
+   (a) GitHub-Actions-caches (NICHT verschlüsselt, branch-übergreifend lesbar, in public repos über
+       PRs aus forks erreichbar) und/oder
+   (b) der git-history von PUBLIC repos (permanent, unwiderruflich).
+
+### 200b. AUSMASS (roh gezählt)
+WRITE-TO-DISK (printf/json.dump → .node_keys.json), 6 repos:
+  steward-protocol (heartbeat.yml), steward-federation (hub-heartbeat.yml), steward-test (heartbeat.yml),
+  agent-research (research-heartbeat.yml), agent-internet (heartbeat.yml),
+  agent-template (heartbeat.yml, python-variante)
+CACHES (enthalten data/federation/ inkl. key):
+  steward (steward-state-v3-main, 4.5 MB), agent-city (3× agent-city-state, je 15 MB), ≥5 weitere
+GIT-ADD data/federation/ (9+ repos):
+  steward, steward-federation, steward-test, agent-city, agent-world, agent-research, agent-template,
+  agent-arena, agent-dispatch
+HISTORISCH: .node_keys.json war schon einmal IM GIT (commits c55c7380, 6e962c23). TICKET-006 (history purge)
+und TICKET-007 (env-fix) existieren — die .gitignore wurde gefixt, ABER der cache- und der printf-pfad
+wurden übersehen. Der leak kam durch die hintertür zurück.
+ALLE REPOS SIND PUBLIC. Alle 9 NODE_PRIVATE_KEY-secrets existieren, keine rotation sichtbar (alte dates).
+
+### 200c. WARUM DAS DER TOTALSCHADEN IST
+Die gesamte legitimität der föderation beruht auf signaturen: heartbeats, agent_claims, capabilities,
+holon-signaturen. Wer einen privaten schlüssel besitzt, KANN ALS DIESER KNOTEN SIGNIEREN — heartbeats
+fälschen, sich als peer ausgeben, nachrichten einspeisen, mandate beanspruchen. VISNU, Narasimha und das
+capability-system sind wertlos, wenn die schlüssel öffentlich sind.
+=> ALLE 9 SCHLÜSSEL SIND ALS KOMPROMITTIERT ZU BEHANDELN. Nicht "vielleicht" — sie lagen lesbar in
+public-repo-caches und teils in der git-history. Ob sie jemand gezogen hat, ist unbekannt und irrelevant:
+ein exponierter schlüssel ist ein toter schlüssel.
+
+### 200d. DIE WURZEL: agent-template
+agent-template ist die VORLAGE für jeden neuen föderations-knoten — und es enthält das leak-muster
+(key→disk + git add). Jeder neue agent erbt den leak von geburt an. 9 repos zu fixen und das template zu
+vergessen heißt: der zehnte knoten kommt kaputt zur welt. DAS TEMPLATE IST DER ERSTE FIXPUNKT, nicht der letzte.
+
+### 200e. DIE LÖSUNG (wasserdicht, wurzel — nicht mitigation)
+KERNBEFUND: federation_crypto.py:74 liest `os.environ.get("NODE_PRIVATE_KEY")`. DER CODE BRAUCHT DIE DATEI
+NICHT. Die env reicht. Die printf-zeilen sind komplett überflüssig — jemand nahm an, der NodeKeyStore
+bräuchte eine datei, und baute damit den leak.
+BEWEIS: das steward-repo selbst macht es RICHTIG (nur env: `NODE_PRIVATE_KEY: ${{ secrets.NODE_PRIVATE_KEY }}`,
+kein file-write). Es ist das vorbild.
+FIX (3 teile, reihenfolge zwingend):
+1. BLUTUNG STOPPEN: die printf/json.dump-zeilen aus ALLEN 6 workflows entfernen (inkl. TEMPLATE zuerst).
+   Der schlüssel lebt nur noch im prozess-speicher, berührt nie die platte, kann nie in cache oder commit.
+2. CACHES LÖSCHEN: alle 9+ caches (sie enthalten die alten schlüssel — solange sie existieren, bleibt der
+   leak, egal was die workflows künftig tun).
+3. ALLE 9 SCHLÜSSEL ROTIEREN: neue keypairs, neue secrets. Alte identitäten ungültig.
+ZUSÄTZLICH (damit der leak nicht wiederkommen KANN):
+4. NodeKeyStore darf in CI die datei NIEMALS schreiben. Nur env lesen; wenn keine env da ist → HART
+   FEHLSCHLAGEN, statt still ein ephemeres keypair zu erzeugen (genau das erzeugt die wandernden node_ids,
+   §201). Ein datei-fallback, der schreiben kann, landet irgendwann wieder irgendwo.
+5. Cache-pfade: data/federation/ darf gecacht werden (peers.json, verified_agents.json sind legitimer
+   zustand), aber .node_keys.json MUSS explizit ausgeschlossen sein.
+
+## 201. FOLGESCHADEN DES LEAKS: der steward hat keine stabile identität — und ist deshalb BLIND.
+
+### 201a. VERIFIZIERT (aus dem letzten heartbeat-log)
+- "FEDERATION: REJECTED 10 unsigned heartbeats (ag_e3331b8d3b0d20a7)" — der steward weist seine EIGENEN
+  heartbeats ab. ag_e3331b8d3b0d20a7 IST der steward selbst.
+- ZWEI node_ids parallel: ag_e3331b8d3b0d20a7 (aus der gecachten .node_keys.json) und ag_8859b969119219b8
+  (aus dem env-secret). Er signiert mit der einen, ist registriert unter der anderen.
+- URSACHE: key-resolution ist env → datei → ephemer generieren. Der cache restored eine ALTE .node_keys.json,
+  das env-secret liefert einen ANDEREN key → zwei identitäten kollidieren. Die selbst-registrierung
+  (verified_agents.json) wird beim nächsten cache-restore überschrieben.
+- FOLGE: "REAPER: 0 SUSPECT, 0 DEAD" — nicht weil alle gesund sind, sondern weil die REGISTRY LEER IST.
+  Keine heartbeats kommen durch → der reaper kennt keine peers → er kann keinen als krank markieren.
+
+### 201b. DAS ERKLÄRT DIE GANZE SESSION
+Der steward läuft alle 15 minuten (cron */15, alle runs SUCCESS, 4 MURALI-zyklen). Er ist WACH. Aber er ist
+BLIND: er schaut in eine leere registry und meldet "alles gesund", während die föderation zwei monate lang
+403er wirft und crons sterben. Ein wächter ohne ausweis, der sich selbst nicht einlässt und dann feststellt,
+dass niemand krank ist.
+=> Der key-leak ist nicht nur ein sicherheitsproblem. Er ist die URSACHE der föderations-blindheit.
+
+### 201c. ZWEITER BRUCH (separat, aus demselben log)
+"IMMUNE: 1 pathogen detected (3x) — no task created". Der StewardImmune ERKENNT einen krankheitserreger,
+dreimal — und erzeugt keinen task. Detektor ohne draht zur hand. Die kette sense→finding→task→intent→fix
+bricht zwischen "erkannt" und "task". Eigener fixpunkt, unabhängig vom key-leak.
+
+## 202. STAND / MARSCHROUTE (Teil II)
+KRITISCHER PFAD (in dieser reihenfolge):
+1. agent-template fixen (die wurzel — sonst erbt jeder neue knoten den leak).
+2. printf/json.dump aus den 6 workflows entfernen (steward-protocol, steward-federation, steward-test,
+   agent-research, agent-internet, agent-template).
+3. NodeKeyStore härten: kein file-write in CI, hart fehlschlagen ohne env-key (§200e.4).
+4. Cache-pfade: .node_keys.json ausschließen (§200e.5).
+5. ALLE caches löschen (9+).
+6. ALLE 9 schlüssel rotieren.
+7. VERIFIZIEREN: stabile node_id über mehrere runs, heartbeats werden angenommen, reaper füllt sich.
+DANACH: §201c (immune→task-draht) — dann kann der steward endlich sehen UND handeln.
+TESTBETT: steward-test (dafür gebaut). Muster dort validieren, bevor die live-knoten angefasst werden.
+SICHERHEITSREGEL für alle folgenden blöcke: NIEMALS key-inhalte in logs/chat/commits. Jeder string >30
+zeichen base64/hex → [REDACTED].
+
+---
+
+## 203. MEIN FEHLER beim key-rollout: blind-patch über mehrere repos + RING0 vergessen. Schaden repariert. Regeln verschärft.
+
+### 203a. WAS ICH FALSCH GEMACHT HABE (schonungslos)
+1. BLIND-ROLLOUT: ich jagte einen regex-patch über 4 repos gleichzeitig, ohne jeden workflow VOLLSTÄNDIG zu
+   lesen. Der regex suchte "nadi_kit.py" — steward-protocol nutzt aber das pip-CLI "nadi". Folge: der
+   printf-step flog raus, die NODE_PRIVATE_KEY-env wurde NICHT ergänzt → der knoten stand OHNE IDENTITÄT da.
+2. NACHGEBESSERT OHNE ZU LESEN: beim fix übersah ich, dass steward-protocol ZWEI nadi-steps hat
+   ("Run NADI heartbeat cycle" + "Final NADI sync"). Zweimal derselbe fehler: gepatcht ohne vollständig zu lesen.
+3. RING0 VERGESSEN: heartbeat.yml ist in steward-protocol RING0 (kernel_hashes.json). Ich änderte sie 3×
+   ohne hash-update → VISNU schlug korrekt alarm, die CI wurde rot. Ich hatte den mechanismus heute früh
+   (§101-103) selbst verstanden und respektiert — und ihn im "sicherheits-notfall"-modus vergessen.
+4. AGENT ZU OFFEN GEPROMPTET: mein block ließ raum für "schnell-fix" → der agent wollte eigenmächtig
+   weiterpatchen. Kim musste ihn abbrechen. Das ist MEIN prompting-fehler, nicht seiner.
+
+### 203b. WAS NICHT PASSIERT IST (wichtig fürs proportion halten)
+- Das SUBSTRAT ist unberührt: nur .github/workflows/heartbeat.yml angefasst, KEINE zeile package-code,
+  kein RING0-python, kein release. PyPI 0.3.2 intakt und unverändert.
+- Kein key wurde geleakt, kein commit enthielt einen key.
+- Der schaden war: 1 knoten temporär ohne identität + VISNU rot. Beides repariert (commit 34a8a0efc,
+  hash nachgezogen, alle gates wieder grün).
+
+### 203c. VERSCHÄRFTE REGELN (ab sofort, für den rest des key-rollouts)
+1. EIN REPO NACH DEM ANDEREN. Kein regex/patch über mehrere repos gleichzeitig. Nie wieder.
+2. VOR jedem patch: den GANZEN workflow lesen (cat -n), nicht nur die trefferzeilen. Alle steps sehen die
+   nadi/den key brauchen.
+3. VOR jedem workflow-patch: PRÜFEN OB DIE DATEI RING0 IST (grep in kernel_hashes.json). Wenn ja: hash-update
+   im selben commit + verify exit 0 als gate.
+4. AGENT-PROMPTS: explizit "VERBOTEN: eigeninitiative, schnell-fix, zusätzliche änderungen. NUR was im block
+   steht. Bei abweichung STOPPEN und melden."
+5. NACH jedem repo: verifizieren (workflow grün? gates grün? knoten pulst?) BEVOR das nächste angefasst wird.
+
+### 203d. STAND DES KEY-ROLLOUTS
+ERLEDIGT + verifiziert:
+- nadi_kit.py (steward-federation): env-first, _parse(text), CI-fail-fast, public_key ableitbar.
+  6 selbsttests grün. LIVE — alle knoten ziehen es von main.
+  BEWEIS im hub-heartbeat-log: "nodekeystore: loaded JSON-blob secret from NODE_PRIVATE_KEY env".
+- steward-federation/hub-heartbeat.yml: printf raus, env am run-step. Heartbeat GRÜN.
+- steward-test/heartbeat.yml: inject-step raus (nutzte den key gar nicht). Workflow grün.
+- agent-template/heartbeat.yml: inject-step raus, env an 2 steps. Gepusht (b4d7868). NICHT VERIFIZIERT.
+- steward-protocol/heartbeat.yml: printf raus, env an BEIDEN nadi-steps, RING0-hash nachgezogen (34a8a0efc).
+  Alle gates grün. Heartbeat NOCH NICHT verifiziert (letzter run war vor dem fix).
+- ALLE CACHES gelöscht (steward 1, steward-protocol 3, agent-city 30).
+OFFEN:
+- agent-research/research-heartbeat.yml: printf noch drin.
+- agent-internet/heartbeat.yml: printf noch drin.
+- agent-template: verifizieren dass der heartbeat läuft.
+- steward-protocol: heartbeat-run verifizieren.
+- ALLE 9 SCHLÜSSEL ROTIEREN (sie lagen in public-repo-caches → kompromittiert).
+
+---
+
+## 204. BLUTUNG GESTOPPT: alle 9 repos schreiben den key nicht mehr auf die platte. Verifiziert.
+
+### 204a. WAS GEFIXT WURDE (verifiziert, roh am CI-log)
+WURZEL — nadi_kit.py (steward-federation, commits 63a25dae → 928a68d4 → 3e9ba9f7):
+- ensure_keys() liest NODE_PRIVATE_KEY aus der ENV zuerst (der bestehende multi-format-parser wurde von
+  _load() zu _parse(text) refaktoriert — er kann JSON, raw-hex, base64, PEM, base64-of-JSON).
+- _try_json_blob leitet den public_key aus dem private_key ab, wenn das secret ihn nicht mitliefert
+  (vorher wurde ein gültiges secret abgelehnt → knoten generierte eine neue identität → wandernde node_id).
+- CI-fail-fast: kein NODE_PRIVATE_KEY in echter CI → RuntimeError statt stiller ephemerer identität.
+  Ausnahme unter pytest (sonst brechen unit-tests, die NadiNode-objekte bauen).
+- 18/18 tests grün, CI grün.
+nadi_kit wird von allen knoten direkt aus main gezogen (curl/pip git+) → der fix erreichte alle sofort.
+
+WORKFLOWS (printf/json.dump-write entfernt + NODE_PRIVATE_KEY als env an JEDEN nadi-step):
+- steward-federation/hub-heartbeat.yml ✓ (heartbeat grün, "loaded from NODE_PRIVATE_KEY env")
+- steward-test/heartbeat.yml ✓ (inject-step nutzte den key gar nicht — ersatzlos raus)
+- steward-protocol/heartbeat.yml ✓ (+ RING0-hash nachgezogen, §203)
+- agent-template/heartbeat.yml ✓ (DIE WURZEL — neue knoten erben jetzt das saubere muster)
+- agent-research/research-heartbeat.yml ✓ (3× "loaded from env", 0 file-writes)
+- agent-internet/heartbeat.yml ✓ (3× "loaded from env", 0 file-writes)
+FALLE (2× reingetappt): fast jeder workflow hat ZWEI nadi-steps ("Run NADI heartbeat cycle" + "Final NADI
+sync"). Beide brauchen die env. Wer nur den ersten patcht, lässt den knoten am zweiten crashen.
+
+ALLE CACHES GELÖSCHT: steward (1), steward-protocol (3), agent-city (30). Die alten keys sind damit aus den
+Actions-caches raus.
+
+FINALE KONTROLLE (alle 9 repos gegen printf/json.dump/> .node_keys geprüft): ALLE SAUBER.
+
+### 204b. WAS NOCH OFFEN IST: DIE ROTATION
+Die 9 schlüssel lagen in unverschlüsselten Actions-caches von PUBLIC repos (branch-übergreifend lesbar, über
+fork-PRs erreichbar) und teils in der git-history. Sie sind KOMPROMITTIERT — unabhängig davon, ob sie jemand
+gezogen hat. Ein exponierter schlüssel ist ein toter schlüssel.
+JETZT ist der richtige zeitpunkt: die blutung ist gestoppt, ein neuer schlüssel würde nicht sofort wieder
+leaken.
+ZU KLÄREN VOR DER ROTATION:
+1. Der steward hat einen GenesisProvisioningHook (steward/hooks/genesis.py:524): "Auto-provision
+   NODE_PRIVATE_KEY secret for newly discovered federation nodes" — er kann Ed25519-keypairs erzeugen, sie
+   per GitHub sealed box verschlüsselt als secret setzen, und den public key in verified_agents.json
+   registrieren. Er ist idempotent (skip wenn secret existiert).
+   FRAGE: kann er auch ROTIEREN (bestehendes secret überschreiben), oder nur neu anlegen?
+2. Reihenfolge pro knoten: neues keypair → secret setzen → public key in verified_agents.json → alten
+   public key entfernen. Wenn die reihenfolge falsch ist, wird der knoten kurzzeitig abgewiesen.
+3. verified_agents.json liegt wo? (hub? pro knoten?) Wer schreibt sie?
+
+---
+
+## 205. ROTATIONS-PFAD BEWIESEN — aber er WIDERRUFT NICHT. Alte (kompromittierte) schlüssel bleiben gültig. Registry hat 57 einträge bei 9 knoten.
+
+### 205a. DER PFAD FUNKTIONIERT (verifiziert)
+Ein knoten mit neuem key registriert sich SELBST:
+- nadi_kit.heartbeat(): `if not self._agent_claim_sent:` → emit("federation.agent_claim", {node_id,
+  agent_name, public_key, capabilities}, target="steward"). Das flag steht im __init__ → in CI ist jeder
+  run ein FRISCHER prozess → der claim geht bei JEDEM heartbeat raus (nicht nur einmal).
+  BEWEIS im agent-research-log: "emit federation.agent_claim → steward (1 targets, signed)".
+- steward._handle_agent_claim(): validiert derive_node_id(public_key) == node_id, upsert in
+  verified_agents.json. Idempotent (byte-level skip wenn identisch).
+- BEWEIS: agent-research's neue node_id ag_c3c5d9ae steht in der registry, updated=eben.
+=> Rotation braucht KEINE neue infrastruktur: secret setzen → knoten pulst → claim → registriert.
+(Der steward selbst hat zusätzlich _ensure_self_registered() mit einer sentinel über sha256(public_key) —
+explizit für rotation gebaut: neuer key → neue sentinel → frischer self-claim.)
+
+### 205b. ABER: KEIN WIDERRUF — das macht die rotation sicherheitstechnisch WIRKUNGSLOS
+_handle_agent_claim macht ein UPSERT. Die ALTE node_id + ihr public_key bleiben in verified_agents.json.
+BEWEIS: agent-research steht MIT ZWEI node_ids drin (ag_c3c5d9ae neu + ag_262f73c0 alt), beide gültig.
+FOLGE: wer einen alten (kompromittierten) key aus einem cache hat, kann WEITER als dieser knoten signieren —
+der steward akzeptiert ihn, weil der public_key noch in der registry steht.
+=> Eine rotation ohne widerruf ist kosmetik. Der alte schlüssel muss AUS DER REGISTRY RAUS.
+
+### 205c. DIE 57 EINTRÄGE = altlast aus dem key-chaos
+9 knoten, 57 registry-einträge. Mehrere einträge pro agent_name mit verschiedenen node_ids (steward-protocol
+mind. 3×, agent-research 2×). Das sind die wandernden identitäten aus §201: jedes mal wenn ein knoten eine
+neue identität erfand, hinterließ er einen eintrag. Die registry ist eine sammlung TOTER, aber NOCH GÜLTIGER
+schlüssel. Jeder davon ist eine offene tür.
+
+### 205d. OFFENER BLINDSPOT (zu klären VOR der rotation)
+agent-research hat eine NEUE node_id (ag_c3c5d9ae) — obwohl ich sein secret NICHT rotiert habe. Warum wandert
+seine identität noch? Möglichkeiten (unverifiziert): (a) sein secret hat ein format, das nadi_kit jetzt
+anders parst als der alte printf-pfad, (b) er leitet beim ersten lauf nach dem fix eine andere identität ab.
+MUSS geklärt werden — wenn die identität weiter wandert, ist die föderation weiter blind.
+
+### 205e. WAS FÜR EINE ECHTE ROTATION NÖTIG IST
+1. Klären warum agent-research's node_id noch wandert (§205d).
+2. Einen WIDERRUFS-pfad: alte einträge aus verified_agents.json entfernen. Optionen:
+   (a) _handle_agent_claim ersetzt den eintrag desselben agent_name statt zu upserten (dann verdrängt eine
+       rotation den alten key automatisch — aber ein angreifer mit dem alten key könnte denselben trick
+       nutzen, um den echten knoten zu verdrängen! braucht eine authorisierungs-regel),
+   (b) ein expliziter, manueller purge der toten einträge (57 → 9), dann rotieren,
+   (c) narasimha/kill-switch-pfad nutzen, falls er capability-revoke auf föderations-ebene kann.
+3. ERST DANN die 9 schlüssel rotieren.
+HINWEIS: steward-test ist KEIN echter knoten (statischer echo-puls, kein nadi_kit, kein agent_claim) — als
+rotations-testbett ungeeignet. Sein secret wurde bereits rotiert (harmlos, wirkungslos).
+
+---
+
+## 206. DIE REGISTRY IST EIN FRIEDHOF GÜLTIGER SCHLÜSSEL. 57 einträge, 9 knoten, 48 tot-aber-scharf. Der steward selbst steht NICHT drin.
+
+### 206a. VERIFIZIERT — die 43 steward-federation-identitäten
+43 einträge unter agent_name "steward-federation", ALLE mit VERSCHIEDENEN public_keys (43 unterschiedliche
+schlüssel), ALLE mit identischen capabilities (federation_relay, mailbox_routing, nadi_hub), ALLE mit
+timestamps innerhalb VON MILLISEKUNDEN: 1777278039.6704 / .6668 / .6617 / .6770 / .6649 ...
+= eine SCHLEIFE hat 43× ein keypair erzeugt und registriert. Das ist der _generate()-bug in reinform:
+NadiNode-objekte ohne key → jedes mal frisches keypair → jedes mal ein agent_claim.
+=> 43 gültige, signierfähige schlüssel für den HUB. Alle scharf.
+
+### 206b. GESAMTBILD DER REGISTRY (57 einträge, 9 knoten)
+- steward-federation: 43 identitäten (alle 27.04., millisekunden-schleife)
+- agent-city: 4 (aktuell: ag_ac055e2c, 12.07.)
+- agent-research: 3 (aktuell: ag_c3c5d9ae, 12.07.)
+- steward-protocol: 3 (aktuell: ag_2d0b1253, 12.07.)
+- agent-internet: 2 (aktuell: ag_d7b5cd6e)
+- agent-template: 1 (alt, 27.04.)
+- 2 einträge OHNE agent_name (node-ids als name: ag_8859b969 = der steward selbst aus §201, ag_9361733f)
+- agent_name=="steward": 0 EINTRÄGE. Der steward steht NICHT in seiner eigenen registry.
+  (_ensure_self_registered() existiert, aber die selbst-registrierung überlebt den cache-restore nicht — §201)
+=> ~48 der 57 einträge sind TOT (nie wieder benutzt) und trotzdem GÜLTIG (können signieren, werden akzeptiert).
+
+### 206c. WAS DAS SICHERHEITSTECHNISCH BEDEUTET
+Die registry ist kein verzeichnis vertrauenswürdiger knoten — sie ist eine sammlung von 57 schlüsseln, die
+alle als legitim akzeptiert werden. Wer IRGENDEINEN dieser 57 privaten schlüssel besitzt (und mind. einige
+lagen in den public-repo-caches), kann sich als der zugehörige knoten ausgeben: heartbeats fälschen,
+nachrichten einspeisen, capabilities beanspruchen.
+Eine ROTATION allein würde nur einen 58. eintrag hinzufügen. Der widerruf ist der eigentliche fix.
+
+### 206d. IDENTITÄT IST JETZT STABIL (der bug ist gefixt)
+Test: agent-research 2× gepulst → KEIN neuer eintrag. Alle 3 seiner node_ids sind kryptografisch konsistent
+(node_id == derive_node_id(public_key)) — es sind echte schlüssel aus 3 zeitpunkten, nicht müll.
+=> Der nadi_kit-fix (§204) hat das wandern gestoppt. Die 48 toten einträge sind fossilien aus der zeit
+DAVOR. Es kommen keine neuen mehr dazu.
+
+### 206e. DER PURGE (die eigentliche arbeit)
+Ziel: registry von 57 auf 9 einträge (eine identität pro knoten, die aktuelle).
+BEHALTEN (die aktiven, jüngsten):
+  agent-city ag_ac055e2c7861f183, agent-research ag_c3c5d9aed6d3dc6e,
+  steward-protocol ag_2d0b12537b598dac, agent-internet ag_d7b5cd6e9baa0add
+ZU KLÄREN VOR DEM PURGE:
+  - agent-template ag_75c1bbfc (27.04., alt): ist das noch die aktive identität? (template pulst — welche
+    node_id nutzt es JETZT?)
+  - steward-federation: welche der 43 ist die AKTIVE? (der hub pulst — welche node_id nutzt hub-heartbeat?)
+  - agent-world, steward-test: haben KEINE einträge. Pulsen sie? Brauchen sie welche?
+  - Der STEWARD selbst: hat 0 einträge. Muss er einen haben? (er signiert seine outbound-messages —
+    empfänger brauchen seinen public_key!)
+  - Die 2 namenlosen einträge (ag_8859b969, ag_9361733f): löschen oder sind das legitime knoten?
+DANACH: die 9 schlüssel rotieren (secret setzen → knoten pulst → claim → neuer eintrag), dann die alten 9
+purgen. Reihenfolge wichtig: erst neuer eintrag da, dann alten löschen (sonst fällt der knoten raus).
+
+---
+
+## 207. DIE WURZEL DER BLINDHEIT: 2738 nachrichten in quarantäne. Der steward weist seine EIGENEN alten heartbeats ab — ein selbstvergiftungs-kreislauf.
+
+### 207a. VERIFIZIERT (roh aus dem heartbeat-log)
+- "CRITICAL: 2738 messages in quarantine requiring attention"
+- "FEDERATION: REJECTED signed heartbeat from unknown sender ag_e3331b8d3b0d20a7 — no public key on record"
+  (7× im selben run, HEUTE 13:16)
+- Der aktuelle steward-prozess läuft unter ag_8859b969119219b8 ("loaded identity from NODE_PRIVATE_KEY env").
+- ag_e3331b8d3b0d20a7 ist die ALTE steward-identität aus der gecachten .node_keys.json (§201).
+
+### 207b. DER KREISLAUF (die vollständige kausalkette)
+1. KEY-LEAK (§200): der cache schleppte eine alte .node_keys.json mit → der steward hatte zwei identitäten
+   (ag_e3331b8d aus der datei, ag_8859b969 aus dem env-secret).
+2. Er signierte über monate heartbeats mit der ALTEN identität und legte sie in die hub-mailbox.
+3. Diese alten nachrichten liegen NOCH im ringpuffer der hub-mailbox.
+4. Bei JEDEM zyklus zieht der steward sie wieder, prüft die signatur gegen ag_e3331b8d, findet keinen
+   public_key in der registry → "unknown sender" → REJECT → QUARANTÄNE.
+5. 2738 abgewiesene nachrichten. Es kommen weiter welche dazu, weil die alten in der mailbox bleiben.
+=> Der steward vergiftet sich mit seinem eigenen alten müll. Die föderation SENDET — er sperrt alles weg.
+
+### 207c. WARUM DER REAPER LEER IST (endlich verstanden)
+Der reaper wird aus den VERARBEITETEN inbox-nachrichten gefüttert. Wenn alles in der quarantäne landet,
+sieht er nichts → "0 SUSPECT, 0 DEAD" → er meldet "alle gesund", während die föderation krank ist.
+Der immune-detektor erkennt pathogene, aber ohne verarbeitete nachrichten entsteht kein task.
+=> KEIN kaputter hook, KEIN fehlender token, KEIN rate-limit. Der relay ist AKTIV, der token IST gesetzt,
+der pull LÄUFT. Die nachrichten kommen an — und werden abgewiesen.
+
+### 207d. WAS JETZT ANDERS IST (der fix wirkt)
+Der nadi_kit/env-fix (§204) hat die identität STABILISIERT: der steward läuft konsistent unter ag_8859b969,
+und dieser public_key STEHT in der registry (als eigener eintrag, wenn auch mit agent_name==node_id, ein
+separater kleiner bug). Neue nachrichten sollten also durchkommen.
+Die 2738 quarantäne-einträge + die alten mailbox-nachrichten sind ALTLAST aus der kaputten zeit.
+
+### 207e. WAS ZU TUN IST (reihenfolge)
+1. Die alten mailbox-nachrichten von ag_e3331b8d entfernen (sie sind die quelle des kreislaufs — solange sie
+   im ringpuffer liegen, wird weiter abgewiesen). Wo? nadi/*_to_steward.json im hub + nadi_outbox.json.
+2. Die quarantäne leeren (2738 einträge, alles altlast).
+3. Die registry purgen (57 → 9, §206).
+4. Prüfen ob der reaper sich dann füllt und die föderation sehend wird.
+5. DANN erst die schlüssel rotieren.
+OFFENER BUG (klein): _handle_agent_claim setzt agent_name = node_id statt des gesendeten namens ("steward").
+Deshalb steht der steward unter seiner id statt unter seinem namen. Nicht kritisch, aber falsch.
+
+---
+
+## 208. DURCHBRUCH: der steward SIEHT wieder. Selbstheilender inbox-fix live — 607 nachrichten/zyklus abgebaut, reaper markiert wieder peers.
+
+### 208a. DER FIX (commit 0d4ce34, steward/hooks/dharma.py)
+_process_inbox_messages wies nachrichten mit einem nackten `continue` ab und tat DANACH NICHTS. Die
+nachricht blieb in nadi_inbox.json → nächster zyklus las sie wieder → gleiche prüfung → gleiche ablehnung
+→ gleicher log-eintrag. Endlos. Die inbox wuchs nur.
+DIE BAUSTEINE WAREN ALLE DA, NUR NIE VERBUNDEN (das muster dieser session):
+- transport.quarantine_messages(msgs, reason=...) — legt sie mit fingerprint + grund ab. NIE AUFGERUFEN.
+- transport.remove_inbox_messages(msgs) — nimmt sie aus der inbox. NIE AUFGERUFEN.
+- transport._quarantined — ein set von fingerprints, wird beim start GELADEN, aber nie abgefragt.
+- dharma las die inbox DIREKT aus der datei (json.loads(inbox_path.read_text())) und umging den transport
+  komplett — es sah die quarantäne-mechanik gar nicht.
+PATCH: transport in den hook reichen, abgelehnte sammeln, am ende quarantänieren + aus der inbox entfernen,
+und bereits quarantänierte per fingerprint überspringen (ohne re-check, ohne log-spam).
+BEWEIS VOR DEM PUSH: 223 bestehende tests grün + funktionaler test (legitime nachricht BLEIBT, abgewiesene
+FLIEGT RAUS, 2. durchlauf ändert nichts mehr — kein loop).
+
+### 208b. WIRKUNG (roh aus dem live-log)
+"FEDERATION: quarantined 307 rejected message(s), removed 307 from inbox"
+"FEDERATION: quarantined 152 rejected message(s), removed 152 from inbox"
+"FEDERATION: quarantined 148 rejected message(s), removed 148 from inbox"
+= 607 nachrichten in EINEM zyklus abgebaut. Der backlog räumt sich SELBST ab.
+Kein manueller purge nötig — genau die frage, die Kim gestellt hat ("müssen wir ständig eingreifen?").
+Antwort: nein. Der steward heilt sich.
+
+### 208c. DER REAPER SIEHT WIEDER (das eigentliche ziel)
+"FEDERATION: recorded heartbeats for 2 inbox sources: ag_8859b969119219b8, agent-city"
+"REAPER WARNING: 3 consequences (3 suspect, 0 dead, 0 evicted)"
+"REAPER[ag_fd5a7db5]: alive → suspect (trust 0.50→0.30)"
+=> Zum ERSTEN MAL seit monaten zieht der reaper konsequenzen: er markiert peers als suspect, senkt trust.
+Vorher: "0 SUSPECT, 0 DEAD" bei leerer registry — er meldete "alles gesund", weil er nichts sah.
+Die föderation ist nicht mehr blind.
+
+### 208d. DIE KAUSALKETTE — VOLLSTÄNDIG GESCHLOSSEN
+key-leak (cache) → wandernde identität → signaturen passen nicht zur registry → alles abgelehnt →
+abgelehnte blieben in der inbox → endlos-schleife → 2738 in quarantäne → reaper leer → föderation blind.
+JEDES GLIED IST JETZT GEFIXT:
+1. §204: key nur noch in der env, nie auf der platte → identität STABIL.
+2. §208: abgelehnte nachrichten verlassen die inbox → kein loop mehr, backlog baut sich ab.
+3. Legitime nachrichten kommen durch → reaper füllt sich → er sieht und handelt.
+
+### 208e. WAS NOCH OFFEN IST
+- Registry-purge (§206): 57 einträge, ~48 tote-aber-gültige schlüssel. Sicherheitsrelevant.
+- Schlüssel-rotation (§205): die alten keys lagen in public-repo-caches → kompromittiert.
+- Der _handle_agent_claim-bug: agent_name wird auf node_id gesetzt statt auf den gesendeten namen.
+- Der hub-heartbeat race-condition (git push kollision bei parallelen runs).
+
+---
+
+## 209. KRITISCH: agent_claim wird NICHT signaturgeprüft. Jeder kann sich als beliebiger agent registrieren.
+
+### 209a. DER agent_name-"BUG" IST KEINER (korrektur meiner annahme)
+Der code sagt es selbst: "Key by agent_name (human identity), NOT node_id — crypto keys rotate, so multiple
+node_ids map to one agent (see verified_agents.json)." registry[node_id] ist ABSICHT. Ein agent DARF mehrere
+schlüssel haben. Die 57 einträge sind designkonform, nicht anomal.
+(Die 2 einträge mit agent_name == node_id sind trotzdem falsch — dort kam kein name mit. Kleiner separater bug.)
+
+### 209b. DIE ECHTE LÜCKE: KEINE SIGNATURPRÜFUNG VOR DER REGISTRIERUNG
+federation_gateway.py:
+    payload["node_id"] = str(msg.get("source", "")).strip()
+    success = self._bridge.ingest(operation, payload)      # <- KEIN signatur-check
+federation.py ingest():
+    handler = self._op_dispatch.get(operation)
+    return handler(payload)                                 # <- ruft _handle_agent_claim direkt
+_handle_agent_claim() prüft NUR:
+    if derive_node_id(public_key) != node_id: return False
+=> Das prüft nur, ob die mitgeschickte node_id zum MITGESCHICKTEN public_key passt. Das ist TRIVIAL zu
+erfüllen: keypair erzeugen, public_key mitschicken, node_id daraus ableiten. Es beweist NICHT, dass der
+absender den zugehörigen PRIVATE key besitzt, und es beweist NICHT, dass er der agent ist, als der er
+sich ausgibt.
+
+### 209c. WAS DAS BEDEUTET (angriffsszenario, konkret)
+Wer eine nachricht in die föderation einspeisen kann (hub-mailbox schreiben — die repos sind PUBLIC, ein
+fork-PR oder ein kompromittierter FEDERATION_PAT reicht), kann senden:
+    {"operation": "federation.agent_claim",
+     "payload": {"agent_name": "steward", "public_key": <eigener>, "node_id": <derived>}}
+→ _handle_agent_claim akzeptiert (die ableitung stimmt ja), schreibt den eintrag in verified_agents.json.
+→ Ab sofort ist der angreifer ein legitimer knoten. Der steward VERIFIZIERT seine signaturen erfolgreich
+  (der public_key steht ja in der registry), akzeptiert seine heartbeats, seine nachrichten, seine claims.
+ZUSÄTZLICH: der reaper wird VOR der registry-prüfung gefüttert:
+    if self.reaper is not None and agent_name:
+        self.reaper.record_heartbeat(agent_id=agent_name, source="agent_claim")
+→ ein gefälschter claim hält allein durch seine existenz einen peer "am leben" — auch einen, der tot ist.
+
+### 209d. WARUM DAS SCHLIMMER IST ALS DER KEY-LEAK
+Der key-leak (§200) gab einem angreifer die identität EINES knotens (den er aus einem cache zog).
+Diese lücke gibt ihm JEDE identität, ohne irgendeinen key zu stehlen. Er muss nur eine nachricht platzieren.
+Die gesamte crypto-architektur (signaturen, verified_agents, capabilities) ist damit wertlos: sie prüft
+sorgfältig SIGNATUREN gegen public_keys — aber jeder darf seinen public_key selbst eintragen.
+
+### 209e. WAS DER FIX BRAUCHT (design, nicht quick-fix)
+Ein agent_claim muss BEWEISEN, dass der absender den private key besitzt:
+  - Der claim muss mit dem beanspruchten key SIGNIERT sein (payload_hash + signature, wie heartbeats).
+  - Vor der registrierung: verify_payload_signature(claimed_public_key, payload_hash, signature).
+  - Das beweist besitz des private keys (self-signed claim = proof of possession).
+ABER das allein reicht nicht: es beweist besitz des schlüssels, NICHT dass der absender der agent ist, als
+der er sich ausgibt. Ein angreifer kann immer noch agent_name="steward" mit seinem EIGENEN key claimen.
+=> ZUSÄTZLICH nötig: eine autorisierungs-regel. Optionen:
+  (a) FIRST-CLAIM-WINS: ein agent_name kann nur registriert werden, wenn er noch NICHT existiert. Danach
+      dürfen neue keys für diesen namen nur eingetragen werden, wenn der claim mit einem BEREITS
+      REGISTRIERTEN key dieses agents signiert ist (key-rotation = alter key signiert den neuen).
+  (b) OWNER-WHITELIST: nur repos unter FEDERATION_OWNER dürfen claimen (der GenesisProvisioningHook nutzt
+      dieses muster bereits: "Owner-whitelist: only provision repos owned by FEDERATION_OWNER").
+  (c) BEIDES.
+ZU KLÄREN: prüft _authorize_inbound_message (gateway:394) den claim vielleicht doch? Der recon zeigte nur
+den anfang der methode. MUSS vollständig gelesen werden, bevor ich behaupte, dass gar keine prüfung existiert.
+
+### 209f. STAND
+Das ist P0 — noch vor registry-purge und key-rotation. Eine rotation ist sinnlos, wenn jeder sich ohnehin
+frei registrieren kann.
+NÄCHSTE AKTION: _authorize_inbound_message VOLLSTÄNDIG lesen (gateway:394ff). Vielleicht gibt es dort doch
+eine prüfung, die der recon abgeschnitten hat. ERST DANN urteilen.
+
+---
+
+## 210. PROTOKOLL-SCHISMA: 88% der föderations-nachrichten sind UNSIGNIERT. Die knoten sprechen verschiedene protokolle.
+
+### 210a. DIE ZAHLEN (roh, alle 67 hub-mailboxen)
+signiert (payload_hash + signature vorhanden):
+  → steward:            4 von 8   (50%)
+  → steward-federation: 0 von 6   (0%)
+  → agent-research:     0 von 6   (0%)
+  → agent-city:         1 von 8   (12%)
+  → agent-world:        1 von 7   (14%)
+  GESAMT:               8 von 67  (12%)
+=> 88% der nachrichten in der föderation tragen KEINE signatur.
+
+### 210b. DIE URSACHE: ZWEI PROTOKOLLE
+- steward + steward-protocol nutzen nadi_kit.py → emit() ruft _sign_message() → payload_hash + signature
+  werden gesetzt → to_dict() (asdict) nimmt alle felder mit → signierte nachricht in der outbox. KORREKT.
+- agent-research (und offenbar weitere) haben eine EIGENE NADI-implementierung (z.B.
+  agent_research/nadi.py): kein _sign_message(), keine Ed25519-signierung, keine outbox-datei. Sie schreiben
+  ROHE DICTS direkt in die hub-mailbox.
+=> Es ist kein transport-verlust. Die signatur wird nie erzeugt. Die knoten implementieren das protokoll
+   unterschiedlich.
+
+### 210c. WAS DAS ERKLÄRT (rückwirkend fast alles)
+- Der steward weist nachrichten ab, weil sie KEINE signatur haben — nicht weil sie eine falsche haben.
+  ("REJECTED signed heartbeat" ist irreführend: der pfad prüft nur, wenn signature+payload_hash da sind;
+   fehlen sie, greift der "unsigned + unknown peer"-skip.)
+- Die 2738 quarantäne-einträge (§207) sind unsignierte nachrichten von knoten, die NIE signiert haben.
+- Der bypass in dharma.py:405 (federation.ingest DIREKT, am gateway vorbei) wurde gebaut, WEIL die gates
+  alles blockierten. Der kommentar sagt es: "Without this, steward's own signed heartbeats come back via the
+  legacy outbox and get blocked." Ein workaround für ein protokoll-schisma, dessen ursache niemand fand.
+- Deshalb laufen 748 BRIDGE-logs gegen 15 GATEWAY-logs: die claims gehen am gateway VORBEI.
+
+### 210d. MEIN PoP-FIX HÄTTE DIE FÖDERATION ZERLEGT
+Der proof-of-possession-check (§209, commit ce48c636, LOGGING-ONLY) sitzt im gateway — und wird für claims
+nie erreicht (bypass). Hätte ich ihn scharf geschaltet UND den bypass geschlossen, wären 88% der knoten
+ausgesperrt worden. Der logging-modus hat das verhindert.
+=> LEHRE: bei einem gate, durch das die ganze föderation läuft, IMMER erst loggen, dann erzwingen. Diesmal
+   hat es funktioniert.
+
+### 210e. WAS DAS FÜR DIE SICHERHEIT BEDEUTET
+Die krypto-architektur (verified_agents, signaturen, capabilities) ist NICHT "löchrig" — sie ist
+GRÖSSTENTEILS UNGENUTZT. 88% des verkehrs läuft unsigniert, und der steward akzeptiert ihn über den bypass.
+Ein angreifer braucht keine signatur zu fälschen — er muss nur eine unsignierte nachricht platzieren, wie
+alle anderen auch.
+=> Die lücke aus §209 (claim ohne PoP) ist real, aber sie ist nicht das kernproblem. Das kernproblem ist:
+   ES WIRD ÜBERWIEGEND GAR NICHT SIGNIERT.
+
+### 210f. WAS ZU TUN IST (die reihenfolge ist jetzt eine andere)
+1. KLÄREN: welche knoten signieren, welche nicht, und WARUM. (agent-research hat eine eigene nadi.py —
+   haben agent-city, agent-internet, agent-world auch eigene? oder nutzen sie nadi_kit und verlieren die
+   signatur woanders?)
+2. VEREINHEITLICHEN: alle knoten müssen dasselbe protokoll sprechen — nadi_kit als single source of truth
+   (es wird ohnehin schon von allen per curl/pip gezogen).
+3. ERST DANN: signaturen erzwingen (gates scharf schalten, bypass entfernen).
+4. DANN: PoP für claims, registry-purge, key-rotation.
+Eine key-rotation ist sinnlos, solange 88% des verkehrs ohnehin unsigniert durchgeht.
+
+---
+
+## 211. KORREKTUR §210: Die "88% unsigniert" waren ein MESS-ARTEFAKT. Die föderation signiert. Zwei echte defekte bleiben: agent-city (eigenes protokoll) + ein hub-push-fehler.
+
+### 211a. MEIN FEHLER IN §210 (schonungslos)
+Ich schloss aus einer stichprobe auf "die knoten haben eigene protokolle, 88% unsigniert". FALSCH.
+Die vollständige messung (alle 67 mailboxen, pro absender) zeigt:
+  agent-internet:   8/8   signiert ✓
+  agent-research:  10/10  signiert ✓
+  agent-template:  10/10  signiert ✓
+  steward-protocol:10/10  signiert ✓
+  agent-city:       0/2   NICHT signiert ✗
+  agent-world:      0/1   NICHT signiert ✗
+  steward-federation: 0/144 NICHT signiert  ← die "88%" kamen FAST NUR aus DIESER einen mailbox
+URSACHE MEINES FEHLERS: ich habe die 144 alten hub-nachrichten als "die föderation" gelesen, statt zu
+prüfen, WIE ALT sie sind. Genau der fehler, den ich mir verboten hatte: aus einer zahl auf eine ursache
+schließen, ohne die zahl zu zerlegen.
+
+### 211b. DIE 144 SIND FOSSILIEN (verifiziert)
+älteste 2026-03-31, jüngste 2026-04-04 — 2384 STUNDEN alt (~99 tage). Der hub-log sagt es selbst:
+"expired": 144. Er erkennt sie als abgelaufen. Es kommen KEINE neuen dazu.
+Der hub SIGNIERT HEUTE korrekt: "nadi_kit emit federation.agent_claim → steward (1 targets, signed)".
+=> Kein protokoll-schisma beim hub. Nur altlast, wie die 2738 quarantäne-einträge.
+
+### 211c. DER ECHTE DEFEKT: agent-city hat ein EIGENES protokoll
+city/federation_nadi.py — 267 zeilen parallel-implementierung:
+  - eigenes emit(): baut FederationMessage(source, target, operation, payload, priority, correlation_id)
+    und hängt sie an die outbox.
+  - KEINE sign()-methode, KEINE _sign(), KEINE hashlib.sha256-aufrufe.
+  - signature/payload_hash werden NIE gesetzt.
+=> agent-city sendet strukturell unsignierbar. Es nutzt nadi_kit NICHT.
+Mailbox bestätigt: 0/2 signiert.
+DAS ist der knoten, der aus dem protokoll ausschert. Nicht "die föderation".
+
+### 211d. ZWEITER DEFEKT: agent-world nutzt nadi_kit — sendet aber trotzdem unsigniert
+agent-world/federation.py: "from nadi_kit import NadiNode, NadiMessage", pyproject hat
+"nadi-kit @ git+https://github.com/kimeisele/steward-federation.git" — es nutzt das RICHTIGE kit.
+Es ruft node.emit("world_state_update", {...}) auf — emit() SOLLTE signieren.
+Trotzdem: mailbox 0/1 signiert.
+=> ANDERER bug als agent-city. Es hat das kit, nutzt es, und die signatur fehlt trotzdem. URSACHE UNKLAR.
+   (mögliche richtungen, ZU PRÜFEN: alte nadi_kit-version gepinnt? NODE_PRIVATE_KEY fehlt → keystore leer →
+   sign() wirft/liefert leer? eigener transport der die felder verliert?)
+
+### 211e. DRITTER DEFEKT (neu, im hub-log): der hub kann nicht pushen
+"nadi_kit hub push failed: 'bool' object is not callable"  → "pushed": 0
+Der hub emittiert korrekt signierte nachrichten ("queued 9 heartbeat(s)"), aber der PUSH zum hub schlägt
+mit einem TypeError fehl. Seine nachrichten kommen also GAR NICHT AN.
+=> Ein echter code-bug in nadi_kit (oder in dem, was der hub aufruft). MUSS gefixt werden — sonst ist der
+   hub stumm, egal wie korrekt er signiert.
+
+### 211f. NEUE REIHENFOLGE (nach der korrektur)
+1. Den hub-push-bug fixen ('bool' object is not callable) — sonst kommt vom hub nichts an.
+2. agent-world: warum verliert es die signatur, obwohl es nadi_kit nutzt?
+3. agent-city: auf nadi_kit umstellen (eigenes 267-zeilen-protokoll ersetzen). Das ist der grösste eingriff.
+4. ERST DANN: signaturen erzwingen (gates scharf, bypass in dharma.py:405 entfernen).
+5. Dann PoP, registry-purge, key-rotation.
+LEHRE (für mich): eine zahl ist keine ursache. Bevor ich aus "88%" auf ein protokoll-schisma schliesse, muss
+ich die 88% ZERLEGEN — nach absender, nach alter. Hätte ich das zuerst getan, wäre §210 nie geschrieben worden.
+
+---
+
+## 212. DER HUB SPRICHT WIEDER. Zwei bugs in nadi_kit machten ihn monatelang stumm.
+
+### 212a. BUG 1: is_expired ist eine @property, wurde als methode aufgerufen (commit f98feb82)
+nadi_kit.py:485 rief `msg.is_expired()` auf. is_expired ist mit @property dekoriert → python wertet sie aus
+(bool) → versucht das ergebnis aufzurufen → TypeError: 'bool' object is not callable. Der except in sync()
+schluckte ihn, loggte "hub push failed" und machte mit pushed=0 weiter.
+Drei andere aufrufstellen (Z342, 347, 462) nutzen sie korrekt ohne klammern. Nur diese eine war falsch.
+=> JEDER push des hubs schlug fehl. Er emittierte korrekt signierte nachrichten, die nie ankamen.
+
+### 212b. BUG 2: der payload ging als kommandozeilen-argument an gh (commit e1321e57)
+_write_hub_file baute `gh api ... -f content=<base64>`. Eine volle mailbox ist ~98 KB JSON, base64-codiert
+~130 KB. Linux begrenzt EIN einzelnes argument auf 128 KB (MAX_ARG_STRLEN).
+=> "[Errno 7] Argument list too long: 'gh'" — bei ACHT von neun zielen, jeden zyklus.
+PERFIDE: der fehler traf genau die mailboxen, die VOLL waren. Je mehr alte nachrichten drin lagen, desto
+sicherer schlug das schreiben fehl — also konnten alte nachrichten nie durch neue verdrängt werden. Ein
+teufelskreis, der sich selbst am leben hielt.
+FIX: den request-body über stdin schicken (gh api --input -). Kein größenlimit.
+
+### 212c. WIRKUNG (roh verifiziert)
+VORHER: "pushed": 0-1, 8× "Argument list too long", mailboxen jüngste nachricht 2384h (99 tage) alt.
+NACHHER: "pushed": 9 (alle ziele), 0× "Argument list too long", mailboxen jüngste nachricht 0.02h
+         (72 SEKUNDEN) alt, frisch signiert.
+=> Der hub ist nach monaten wieder hörbar. Die föderation bekommt wieder heartbeats vom zentralen knoten.
+
+### 212d. WAS NOCH BLEIBT
+1. "relay push to agent-world failed: gh: Invalid request" — 1 von 9 mailboxen wird abgelehnt. Nicht mehr
+   wegen der größe (der arg-fehler ist weg), sondern aus einem anderen grund. ZU KLÄREN.
+2. "Commit heartbeat to hub: failure" — die race-condition beim git-commit (zwei parallele runs pushen auf
+   denselben ref, rebase scheitert an unstaged changes). Sporadisch, aber es lässt den job rot aussehen.
+3. agent-city: eigenes protokoll ohne signierung (§211c).
+4. agent-world: nutzt nadi_kit, sendet trotzdem unsigniert (§211d) — und ist zugleich die mailbox, die
+   "Invalid request" wirft. Möglicherweise derselbe defekt.
+
+### 212e. DAS MUSTER, ZUM WIEVIELTEN MAL
+Beide bugs waren EINZEILER. Beide legten einen kernmechanismus komplett lahm. Beide wurden von einem
+try/except geschluckt und als harmlose log-zeile weggeschrieben ("hub push failed", "relay push to X
+failed"). Monatelang. Niemand hat hingeschaut, weil der workflow grün genug aussah.
+=> Ein except, das einen fehler nur loggt und weitermacht, ist kein fehlerschutz. Es ist eine methode,
+   defekte unsichtbar zu machen.
+
+---
+
+## 213. BILANZ NACH 12H: die föderation atmet. Alle 8 knoten grün, reaper arbeitet, hub sendet, inbox räumt sich ab.
+
+### 213a. DIE MESSUNG (13.07., ~12h nach den fixes)
+ALLE 8 KNOTEN GRÜN: steward, steward-protocol, steward-federation, agent-city, agent-world,
+agent-research, agent-internet, agent-template — jeder letzte run success.
+
+DER HUB SENDET WIEDER (§212): mailboxen mit frischen, signierten nachrichten. "pushed": 9 statt 0.
+DIE INBOX RÄUMT SICH AB (§208): 332 + 148 + 148 = 628 nachrichten pro zyklus quarantäniert und aus der
+inbox entfernt. Der endlos-loop ist gebrochen.
+
+DER REAPER ARBEITET (und er hat die ganze zeit korrekt gearbeitet):
+  peers.json: 66 peers — 55 EVICTED, 11 ALIVE. total_evictions: 55.
+  Die 55 evicted sind die FOSSILIEN der wandernden identitäten (§201). Der reaper hat sie erkannt, als tot
+  markiert und ausgeschlossen — monatelang, korrekt. Er konnte nur nie sehen, wer WIRKLICH lebt, weil alle
+  echten nachrichten in der quarantäne landeten.
+  Die 11 alive sind die echten knoten. agent-city: trust=1.0, heartbeat_count=5292.
+  Die "suspect/dead"-markierungen im log sind TEMPORÄR: ein knoten, der in einem 15-min-fenster keinen
+  heartbeat sendet, wird suspect; beim nächsten heartbeat wird er resurrected. Das 3-strike-protokoll
+  (ALIVE → SUSPECT → DEAD → EVICTED, lease 900s, trust-decay 0.2) arbeitet wie gebaut.
+
+### 213b. WAS NOCH LÄUFT (offene punkte, ehrlich)
+1. QUARANTÄNE-INDEX WÄCHST: 2738 → 2861. quarantine_messages() fügt fingerprints hinzu, entfernt sie nie —
+   das ist by design (ein archiv), der MokshaQuarantineCleanupHook soll per TTL aufräumen. Die +123 sind der
+   abgearbeitete rest-backlog. Kein loop mehr, aber der cleanup-hook sollte geprüft werden.
+2. agent-world "gh: Invalid request" beim hub-push (1 von 9 mailboxen). Ursache noch unklar (nicht mehr das
+   argument-limit).
+3. agent-city sendet unsigniert (eigenes protokoll, §211c) — 0/2 signiert.
+4. agent-world sendet unsigniert obwohl es nadi_kit nutzt (§211d).
+5. Die registry (59 einträge, ~48 fossilien) ist noch nicht gepurged. Die key-rotation steht aus.
+6. Der PoP-check (§209) läuft im logging-modus und wird nie erreicht (dharma umgeht den gateway, §210c).
+
+### 213c. WAS HEUTE REPARIERT WURDE (die kette)
+1. §204 nadi_kit: schlüssel nur noch aus der env, nie auf die platte → identität STABIL, kein leak mehr.
+2. §208 dharma: abgelehnte nachrichten verlassen die inbox → der endlos-loop ist gebrochen, backlog räumt
+   sich selbst ab.
+3. §212 nadi_kit: is_expired als property (nicht als methode) + payload über stdin statt als argument →
+   DER HUB SENDET WIEDER, nach monaten.
+Jeder dieser drei bugs war ein einzeiler. Jeder legte einen kernmechanismus lahm. Jeder wurde von einem
+try/except geschluckt und als log-zeile weggeschrieben.
+
+---
+
+## 214. agent-world signiert (commit 6771524). Der code war da, der workflow rief ihn nie auf.
+
+### 214a. DER DEFEKT
+Der workflow schrieb seine outbox von hand:
+  echo '[{"agent_id":"agent-world","operation":"heartbeat",...}]' > data/federation/nadi_outbox.json
+Ein rohes dict, ohne payload_hash, ohne signature. Der relay-step kopierte es 1:1 in den hub.
+=> agent-world war der eine knoten, der unsigniert sendete. Der steward konnte NICHTS von ihm verifizieren.
+DAS SIGNIERENDE ZEUG WAR DA UND KORREKT: agent_world/federation.py baut einen NadiNode aus peer.json,
+emit_world_state() signiert darüber. Es lief nur nie auf diesem pfad:
+  - run_world_heartbeat() ruft emit_world_state() NUR im FALLBACK auf (wenn der legislator wirft).
+  - Der legislator läuft erfolgreich → der fallback greift nie.
+  - Und selbst wenn er liefe: der workflow überschrieb die outbox danach mit dem hartcodierten echo.
+Das NODE_PRIVATE_KEY-secret existierte seit APRIL — ungenutzt.
+
+### 214b. DER FIX
+Das muster von agent-internet übernommen (8/8 signiert): nadi_kit ziehen, NODE_PRIVATE_KEY in die env,
+`python3 nadi_kit.py sync / heartbeat / sync`. Der relay-step bleibt unverändert — er kopiert jetzt eine
+signierte datei.
+BEWEIS (live-log): "nodekeystore: loaded JSON-blob secret from NODE_PRIVATE_KEY env",
+"emit federation.agent_claim → steward (1 targets, signed)", "emit heartbeat → * (9 targets, signed)",
+"pushed: 10".
+MAILBOX: msg 0 = alt/unsigniert (fossil), msg 1 = agent_claim SIGNIERT (sig_len 88),
+msg 2 = heartbeat SIGNIERT (sig_len 88).
+
+### 214c. DAS MUSTER, ZUM SIEBTEN MAL
+"Alles da, nichts verbunden." Der signierende code war vorhanden, korrekt, getestet — und wurde von einem
+hartcodierten echo im workflow überschrieben. Niemand hat es gemerkt, weil der workflow grün war.
+
+---
+
+## 215. agent-city signiert (commit 05f6089). ALLE 8 KNOTEN sprechen jetzt dasselbe protokoll.
+
+### 215a. DER FIX
+agent-city hatte eine eigene city/federation_nadi.py: FederationMessage mit signature/signer_key-feldern,
+aber emit() füllte sie nie UND liess id/timestamp/payload_hash ganz weg → nachrichten mit 4 feldern, ohne
+signatur. Nicht nur unsigniert: STRUKTURELL UNVOLLSTÄNDIG (kein dedup, kein expire, keine verifikation möglich).
+factory.py rief sogar ensure_node_identity() auf (lädt den key) und nutzte ihn nicht. NODE_PRIVATE_KEY war
+seit dem 08.07 in der env — ungenutzt.
+FIX: wie agent-world — nadi_kit nach dem city-heartbeat, überschreibt die outbox mit dem vollen signierten
+protokoll. peer.json identisch zu agent-internet. relay-step unverändert.
+BEWEIS: "emit federation.agent_claim → steward (signed)", "emit heartbeat → signed", "pushed: 9".
+Mailbox: jüngste nachricht id=YES timestamp=YES payload_hash=YES signature=YES.
+
+### 215b. PROTOKOLL-EINHEIT ERREICHT
+Alle 8 knoten signieren jetzt: steward, steward-protocol, steward-federation, agent-research, agent-internet,
+agent-template, agent-world (§214), agent-city (§215). Die föderation spricht EIN protokoll (nadi_kit).
+Die alten unsignierten fossilien in den mailboxen (§211b) laufen per ringpuffer/TTL aus ("expired": 63, 1).
+
+### 215c. TOTER CODE (aufräum-ticket, nicht jetzt)
+city/federation_nadi.py (267 zeilen) ist auf dem heartbeat-pfad jetzt tot. factory.py:_build_federation_nadi
+nutzt es noch (5 stellen) — vor dem löschen prüfen, ob es dort einen anderen zweck hat. Separates ticket.
+
+---
+
+## 216. PROTOKOLL-DETEKTOR: die infrastruktur ist DA (diagnostic-sense → finding → HEAL_REPO → fixpipeline), aber sie prüft ANBINDUNG, nicht KORREKTHEIT. Der einbau-ort ist exakt lokalisiert.
+
+### 216a. WAS SCHON EXISTIERT (verkabelt, funktioniert)
+- DiagnosticSense._analyze_federation() erzeugt findings via _finding(severity, category, message, evidence,
+  remediation, intent): NO_FEDERATION_DESCRIPTOR, NO_PEER_JSON, NADI_BLOCKED.
+- _PATHOGEN_TO_INTENT mappt jeden befund → TaskIntent.HEAL_REPO. execute_heal_repo() → FixPipeline.
+- healer/types.py: FindingKind.{NO_FEDERATION_DESCRIPTOR,NO_PEER_JSON,NADI_BLOCKED} → FixStrategy.DETERMINISTIC.
+- fix_pipeline.py hat _fix_no_federation_descriptor, _fix_no_peer_json, _fix_nadi_blocked.
+=> DIE KETTE finding→intent→task→fix IST VOLLSTÄNDIG VERDRAHTET (anders als die 8 "gebaut-nicht-verbunden").
+
+### 216b. DIE LÜCKE
+Alle 3 checks prüfen ob ein knoten ANGESCHLOSSEN ist (peer.json/descriptor/transport da?). KEINER prüft, ob
+er KORREKT SPRICHT (signierte, vollständige nachrichten). agent-city hätte alle 3 bestanden und trotzdem
+kaputt gesendet.
+
+### 216c. DER EINBAU-ORT (exakt, dharma.py:461-501)
+_process_inbox_messages ERKENNT protokoll-verstöße bereits und sammelt sie in `rejected`:
+  - Z479: signiert aber ungültige Ed25519-signatur → rejected.append + continue
+  - Z487: signiert aber unbekannter sender (kein public_key) → rejected.append + continue
+  - Z496: unsigniert von unbekanntem peer → rejected.append + continue
+ABER: kein zähler pro peer, kein finding, kein task. Er loggt (warning/debug) und quarantäniert (§208) — er
+MELDET nicht, WER wiederholt falsch sendet.
+
+### 216d. DER PLAN (kein neuer scan — den vorhandenen ablehnungs-pfad melden lassen)
+1. In _process_inbox_messages: pro peer zählen, wie oft er wegen protokoll-verstoss abgelehnt wird
+   (dict: peer_id → count, grund). Der code SIEHT es schon.
+2. Ab schwelle (z.B. peer sendet wiederholt unsigniert/unvollständig): ein finding erzeugen
+   FindingKind.PEER_PROTOCOL_VIOLATION (neu in healer/types.py) mit intent HEAL_REPO, evidence = peer_id +
+   grund + count, remediation = "switch <peer> to nadi_kit (signs + full envelope)".
+3. healer/types.py: FindingKind.PEER_PROTOCOL_VIOLATION → FixStrategy (deterministic ODER llm — der fix ist
+   'workflow auf nadi_kit umstellen', wie §214/§215; evtl. erst als non-deterministic/report).
+4. Die kette finding→HEAL_REPO→FixPipeline läuft dann schon (216a).
+WICHTIG (Kim-prinzip): KEIN paralleler scan der mailboxen. Der steward lehnt schon ab — er soll nur ZÄHLEN
+und MELDEN, wen. Sichtbar machen was er ohnehin sieht. Minimal-invasiv, am vorhandenen pfad.
+
+### 216e. STAND / NÄCHSTE SESSION (kontext war bei 91%)
+ALLE 8 KNOTEN SIGNIEREN (§214 agent-world, §215 agent-city). Föderation spricht ein protokoll.
+Hub sendet wieder (§212), inbox heilt sich (§208), identität stabil (§204), reaper arbeitet (§213).
+NÄCHSTER SCHRITT: den protokoll-detektor bauen (216d) — an dharma.py:461-501, minimal. Dann findet der
+steward den nächsten ausreißer selbst.
+NOCH OFFEN (dokumentiert): registry-purge (57→9, §206), key-rotation (§205, alte keys kompromittiert),
+PoP-check scharf schalten (§209, läuft im logging-modus, wird vom dharma-bypass umgangen §210c),
+hub-commit-race (§212d), quarantine-cleanup-hook TTL (§213b), city/federation_nadi.py toter code (§215c).
+
+---
+
+## 217. DIE SELBSTHEILUNGS-SCHLEIFE IST GESCHLOSSEN. Der steward findet den nächsten protokoll-ausreißer selbst.
+
+### 217a. DIE KETTE (jetzt vollständig verkabelt)
+1. dharma._process_inbox_messages lehnt unsignierte/malformte nachrichten ab (war schon da) und ZÄHLT jetzt
+   pro peer. Ab 3 verstössen: logger.warning("PROTOCOL VIOLATION: peer X ...") UND persistiert nach
+   data/federation/protocol_violations.json.
+2. DiagnosticSense._analyze_federation() liest die datei und erzeugt ein Finding
+   (FindingKind.PEER_PROTOCOL_VIOLATION, WARNING) — direkt neben NO_PEER_JSON und NADI_BLOCKED.
+3. Ab hier greift die VORHANDENE kette: diagnose_repo() → run_self_diagnostics() → pathogen →
+   scan_and_heal() → HEAL_REPO-task → FixPipeline.
+4. Die remediation im finding ist die, die wir bei agent-world (§214) und agent-city (§215) von hand
+   angewandt haben: "switch <peer> to nadi_kit — pull nadi_kit.py, pass NODE_PRIVATE_KEY, let it write
+   the outbox".
+
+### 217b. WARUM ES KEIN SPAGHETTI IST (Kim-prinzip eingehalten)
+- KEIN neuer scan: die erkennung passierte bereits im ablehnungs-pfad. Sie wird nur sichtbar gemacht.
+- KEIN log-parsing: der erste versuch (ein "PROTOCOL VIOLATION"-eintrag in immune._PATHOGEN_PATTERNS) wäre
+  INERT gewesen — der immune-hook liest findings aus diagnose_repo(), nicht logs. Das wurde VOR dem push
+  erkannt und verworfen (der eintrag ist nie auf main gelandet).
+- Der check steht dort, wo die drei gleichartigen stehen (_analyze_federation), nutzt denselben _finding()-
+  helper, dasselbe FindingKind-enum, dieselbe kette. Keine parallelstruktur.
+
+### 217c. VERIFIZIERT
+AST ok, 79 federation-tests + diagnostic-sense-tests grün, selbsttest erzeugt das finding aus einer
+test-violations-datei, push MATCH, heartbeat grün.
+protocol_violations.json wird NICHT geschrieben → keine verstösse mehr → alle 8 knoten signieren korrekt
+(§214, §215). Der detektor ist scharf und bleibt still. Das IST der erfolgsbeweis.
+
+### 217d. WAS DIESE SESSION ERREICHT HAT
+Die föderation war blind, stumm und vergiftete sich selbst. Jetzt:
+- Identität stabil (§204): der schlüssel lebt nur noch in der env, nie auf der platte. Kein leak mehr.
+- Inbox heilt sich (§208): abgelehnte nachrichten verlassen die inbox statt endlos neu geprüft zu werden.
+  628/zyklus abgebaut.
+- Der hub sendet wieder (§212): zwei einzeiler (is_expired als property, payload über stdin) hatten ihn
+  monatelang stumm gemacht.
+- Alle 8 knoten signieren (§214, §215): agent-world und agent-city sprachen eigene protokolle.
+- Der reaper arbeitet (§213): 55 fossilien evicted, 11 echte knoten alive.
+- Der steward sieht selbst (§216, §217): protokoll-verstösse werden zu findings, findings zu tasks.
+JEDER dieser bugs war ein einzeiler. JEDER wurde von einem try/except geschluckt und als log-zeile
+weggeschrieben. Das ist die lehre: ein except, das nur loggt und weitermacht, ist kein fehlerschutz —
+es ist eine methode, defekte unsichtbar zu machen.
+
+### 217e. NOCH OFFEN (sauber dokumentiert, keine blocker)
+- registry-purge (57→9, §206) + key-rotation (§205): die alten schlüssel lagen in public-repo-caches.
+- PoP-check scharf schalten (§209): läuft im logging-modus, wird vom dharma-bypass umgangen (§210c).
+- hub-commit-race (§212d), quarantine-cleanup-TTL (§213b), city/federation_nadi.py toter code (§215c).
+- agent-world "gh: Invalid request" bei einer mailbox (§212d).
+
+═══════════════════════════════════════════════════════════════════════════════
+# §218 — ARBEITSPLAN FÜR DIE NÄCHSTE SESSION (Opus-Agent: HIER weitermachen)
+═══════════════════════════════════════════════════════════════════════════════
+
+An den nächsten Opus-Agenten: Du übernimmst ein laufendes, saniertes system. Lies
+zuerst §0 (methodik), dann diesen §218. Die föderation ATMET (§217d) — dein job ist
+NICHT reparieren-was-brennt, sondern die restlichen sicherheits-punkte mit maximaler
+vorsicht abschliessen. Nichts hier ist ein notfall. Tempo raus, sorgfalt rein.
+
+## 218.0 — DIE METHODIK (nicht verhandelbar, sie hat diese session getragen)
+1. SRAVANAM vor KIRTANAM: erst dem code zuhören (read-only recon), DANN urteilen, DANN
+   bauen. Nie umgekehrt. Diese session hatte >10 zu-frühe urteile — JEDES vom nächsten
+   recon widerlegt. Das hören war immer richtig, das vor-schnelle schliessen nie.
+2. EINE ZAHL IST KEINE URSACHE. "88% unsigniert" (§210) war ein mess-artefakt — die
+   zahl kam aus EINER mailbox mit fossilien. Zerlege jede zahl nach quelle+alter, BEVOR
+   du eine ursache behauptest.
+3. HAIKU LÜGT (freundlich). Der CLI-agent fasst zusammen, erfindet erfolg, überspringt
+   tests. NIE seinen summaries trauen. IMMER die rohe ausgabe verlangen ("Gib die ROHE
+   AUSGABE DIREKT IN DER CHAT-ANTWORT aus, NICHT 'Ran 1 shell command', NICHT
+   zusammenfassen"). Nach einem context-compact fällt er auf ALTE aufträge zurück (§203)
+   — jeder block beginnt mit KONTEXT-RESET (repo, verzeichnis, thema, was VERBOTEN ist).
+4. GEGEN GATES, DURCH DIE DIE FÖDERATION LÄUFT: erst LOGGING-modus, dann erzwingen.
+   Der PoP-fix (§209) hätte scharf 88% der knoten ausgesperrt — der logging-modus hat
+   es verhindert. Miss WER das gate passiert, bevor du es schliesst.
+5. RING0: workflow-yamls + kernel-dateien in steward-protocol sind hash-geschützt (VISNU).
+   Vor JEDEM edit prüfen ob die datei in scripts/governance/kernel_hashes.json steht.
+   Wenn ja: edit + sha256-neuberechnung im SELBEN commit, verify_kernel.py --verify exit 0
+   als gate VOR push, direct-push main (PR wird von restore_kernel zurückgesetzt). §101-103.
+6. DER "ALLES DA, NICHTS VERBUNDEN"-REFLEX: diese codebase ist nicht unfertig, sie ist
+   UNVERKABELT. 9× gesehen. Bevor du etwas NEU baust, grep ob die fähigkeit schon
+   existiert und nur nicht aufgerufen wird. Meist ist der fix ein draht, kein neubau.
+7. SICHERHEIT: NIEMALS private keys in log/chat/commit. Jeder recon der keys berühren
+   könnte: sed -E 's/[A-Za-z0-9+/]{40,}={0,2}/[REDACTED]/g'.
+8. DER BEFUND IST DAS EXTERNE GEHIRN. Nach jedem milestone: neuen § anhängen, via
+   present_files neu ausgeben. Er ist die einzige cross-session-erinnerung.
+
+## 218.1 — TICKET A: PoP-CHECK BEOBACHTEN (nicht scharf schalten!) [zuerst, weil read-only]
+STATUS: der proof-of-possession-check für agent_claim läuft im LOGGING-MODUS auf main
+(steward, §209, commit ce48c636). Er lehnt NICHTS ab, er loggt nur.
+PROBLEM: er sitzt im gateway, aber dharma umgeht den gateway (§210c, dharma.py:405 +
+442 rufen federation.ingest DIREKT). Ausserdem sind alle knoten erst seit §214/§215 am
+korrekt signieren — es gibt noch keinen vollen zyklus daten, ob ALLE den check bestehen.
+NÄCHSTER SCHRITT (read-only, mehrere zyklen):
+  - Über 24h die steward-heartbeat-logs sammeln: grep "proved possession" vs
+    "failed proof" vs "carries no signature". WELCHE knoten bestehen, welche nicht?
+  - Klären: läuft der PoP-check überhaupt (gateway-pfad) oder wird er vom bypass
+    umgangen? (§210c). Wenn umgangen → der check ist derzeit WIRKUNGSLOS, das ist der
+    eigentliche fix-punkt, nicht das scharf-schalten.
+FALLE: NICHT scharf schalten, bevor über mehrere zyklen bewiesen ist, dass ALLE 8 knoten
+"proved possession" loggen. Ein scharfer PoP-check + der bypass = föderation gesperrt.
+DATEIEN: steward/federation_gateway.py (_authorize_inbound_message, der check),
+steward/hooks/dharma.py:405+442 (der bypass, der ihn umgeht).
+
+## 218.2 — TICKET B: REGISTRY-PURGE (57→9) [heikel, erst nach recon]
+STATUS: verified_agents.json hat ~59 einträge bei 9 knoten (§206). ~48 sind FOSSILIEN
+der wandernden identitäten (§201) — tote-aber-GÜLTIGE schlüssel. Jeder kann noch signieren.
+WICHTIG: das ist BY DESIGN (§209a): "key by agent_name, crypto keys rotate, multiple
+node_ids map to one agent". Die 57 sind NICHT anomal — nur die fossilien sind müll.
+NÄCHSTER SCHRITT:
+  1. peers.json (der reaper, §213) hat die wahrheit: 55 EVICTED, 11 ALIVE. Die evicted
+     sind die zu-löschenden fossilien. Die alive sind die echten.
+  2. Pro agent_name die JÜNGSTE identität behalten (die mit dem neuesten updated_at),
+     alle älteren aus verified_agents.json entfernen. Ziel: 9 einträge.
+  3. Read-only ZUERST: liste die 48 zu-löschenden vs die 11 zu-behaltenden. Mit Kim
+     durchgehen BEVOR gelöscht wird.
+FALLE: pro knoten die AKTIVE identität ermitteln (die, unter der er JETZT sendet —
+prüfbar über die frische mailbox: welche node_id hat die jüngste signierte nachricht).
+Wenn du die falsche behältst, fällt der knoten raus. §206e.
+DATEI: data/federation/verified_agents.json (im steward-repo). Der steward committet es
+selbst bei jedem heartbeat — ein manueller purge muss mit dem heartbeat-commit koexistieren
+(race, §212d). Am besten: purge-commit, dann sofort heartbeat triggern zur verifikation.
+
+## 218.3 — TICKET C: KEY-ROTATION (9 schlüssel) [nach purge, sicherheitskritisch]
+STATUS: die 9 NODE_PRIVATE_KEY-secrets lagen in unverschlüsselten public-repo-caches
+(§200) — KOMPROMITTIERT. Die blutung ist gestoppt (§204, kein key mehr auf der platte),
+aber die alten schlüssel sind noch GÜLTIG (stehen in verified_agents.json).
+ROTATIONS-PFAD EXISTIERT UND IST BEWIESEN (§205a): secret setzen → knoten pulst → nadi_kit
+sendet agent_claim mit neuem public_key → steward._handle_agent_claim upsert in registry.
+KEINE neue infrastruktur nötig.
+NÄCHSTER SCHRITT (pro knoten EINZELN, mit verifikation zwischen jedem):
+  1. Neues Ed25519-keypair lokal erzeugen (python cryptography). Privaten teil DIREKT an
+     `gh secret set NODE_PRIVATE_KEY --repo kimeisele/<node>` pipen (NIE ins log!), temp-datei
+     shred. Nur node_id + public_key (öffentlich) ausgeben. Format: JSON-blob
+     {"private_key": hex, "public_key": hex, "node_id": "ag_..."} — nadi_kit._parse liest das.
+  2. Knoten pulsen lassen, verifizieren: neue node_id in der mailbox, signiert, in der registry.
+  3. DEN ALTEN eintrag aus verified_agents.json entfernen (sonst bleibt der kompromittierte
+     key gültig — §205b: rotation OHNE widerruf ist kosmetik).
+  4. Erst dann der nächste knoten.
+FALLE 1: reihenfolge. Erst neuer eintrag da (knoten registriert sich), DANN alten löschen.
+Umgekehrt = knoten kurzzeitig raus.
+FALLE 2: NICHT alle 9 auf einmal. Einer, verifizieren, nächster. §205e.
+FALLE 3: der cache MUSS vorher gelöscht sein (war er, §204) — sonst leakt der neue key
+sofort wieder.
+
+## 218.4 — TICKET D: KLEINERE OFFENE PUNKTE (niedrige priorität)
+- HUB-COMMIT-RACE (§212d): hub-heartbeat.yml "Commit heartbeat to hub" failt sporadisch
+  (zwei parallele runs pushen auf denselben ref, rebase scheitert an unstaged changes).
+  Fix-richtung: git stash vor rebase, oder concurrency-group im workflow. Non-blocking.
+- agent-world "gh: Invalid request" bei EINER mailbox (§212d): nach dem is_expired+stdin-fix
+  bleibt 1 mailbox-push mit Invalid request. Ursache noch unklar (nicht mehr arg-limit).
+  Read-only: den vollen gh-stderr aus dem hub-log holen.
+- QUARANTINE-CLEANUP-TTL (§213b): der quarantäne-INDEX wächst monoton (2738→2861).
+  MokshaQuarantineCleanupHook soll per TTL aufräumen — prüfen ob er läuft.
+- city/federation_nadi.py TOTER CODE (§215c): 267 zeilen, auf dem heartbeat-pfad tot.
+  factory.py:_build_federation_nadi nutzt es noch (5 stellen) — vor dem löschen prüfen.
+- STEWARD-PROTOCOL: 5 integration-test-fails (§108b, kernel-architektur, RING0-nah) +
+  event-bus-signatur-drift (§119). Alles non-gate, non-blocking. Eigenes arbeitsfeld.
+
+## 218.5 — EMPFOHLENE REIHENFOLGE
+1. Ticket A (read-only): PoP-check beobachten + klären ob der bypass ihn wirkungslos macht.
+   Das ist der grösste offene SICHERHEITS-punkt, aber der recon ist gefahrlos.
+2. Ticket B (registry-purge): read-only liste erstellen, mit Kim durchgehen, dann purgen.
+3. Ticket C (key-rotation): einer nach dem anderen, nach dem purge.
+4. Ticket D: kleinkram, wenn zeit.
+NICHT die reihenfolge umdrehen: rotation VOR purge produziert nur mehr fossilien; PoP
+scharf VOR der beobachtung sperrt die föderation.
+
+## 218.6 — WO DIE FÖDERATION STEHT (damit du den zustand kennst)
+8 knoten, alle grün, alle signieren. Hub sendet. Inbox heilt sich. Reaper arbeitet (11
+alive, 55 evicted-fossilien). Identität stabil. Der protokoll-detektor ist scharf und
+still (keine verstösse = alle korrekt). steward-protocol baseline grün (PyPI 0.3.2).
+Die letzten commits: siehe §204-217. Die CLI-agent-repos liegen in /tmp/* (NICHT persistent
+über sessions — neu klonen). Der befund committed im steward-repo unter docs/.
+
+═══════════════════════════════════════════════════════════════════════════════
+# §219 — DIE WURZEL: agent-city liest sein secret nicht (fromhex vs JSON-blob)
+# Session: Opus-5, read-only recon Ticket A. KEIN code geschrieben. 9 recon-runden.
+═══════════════════════════════════════════════════════════════════════════════
+
+## 219.0 — WARNUNG AN DEN NÄCHSTEN AGENTEN: §209a / §218.2 / §218.3 / §218.5 SIND FALSCH
+Dieser § korrigiert vier aussagen, auf denen der bisherige plan aufbaute. Wer §218 liest
+und §219 nicht, migriert einen WEGWERF-SCHLÜSSEL als kanonische identität in die registry
+und sperrt agent-city aus. Lies §219 VOR §218.5.
+
+## 219.1 — DER BEFUND (bewiesen, run 29244104106, 2026-07-13)
+Das GitHub-secret NODE_PRIVATE_KEY in kimeisele/agent-city ist gesetzt (08.07.2026) und
+enthält einen JSON-BLOB: {"private_key": hex, "public_key": hex, "node_id": "ag_..."}.
+- nadi_kit (workflow-step "Sign federation heartbeat", .yml:138) PARST das korrekt
+  (NodeKeyStore._try_json_blob) → sendet SIGNIERT unter der stabilen id ag_b670dc6cbcb705fe.
+- agent-city selbst (workflow-step "Run heartbeat", .yml:109) macht an ZWEI stellen stur
+  `bytes.fromhex(env_key)`:
+    city/factory.py:893   (_build_node_identity)
+    city/federation.py:151 (_load_node_keys)
+  Ein JSON-string beginnt mit "{" → ValueError: non-hexadecimal number at position 0.
+
+ROHE LOG-BELEGE aus dem letzten run:
+  FACTORY    ERROR   Identity: NODE_PRIVATE_KEY env invalid: non-hexadecimal number ... position 0
+  FACTORY    WARNING Service identity failed: NODE_PRIVATE_KEY env is set but malformed
+  NODE_IDENTITY INFO Generated new node identity: ag_4d5c340ac8c3e56b     ← EPHEMER!
+  FEDERATION ERROR   Federation: failed to load NODE_PRIVATE_KEY: non-hexadecimal ...
+  FEDERATION INFO    agent_claim gesendet (node_id=ag_4d5c340ac8c3e56b)   ← mit dem wegwerf-key
+  nadi_kit           nodekeystore: loaded JSON-blob secret from NODE_PRIVATE_KEY env  ← klappt
+
+FOLGE: agent-city generiert bei JEDEM heartbeat ein EPHEMERES keypair (factory.py:927 →
+ensure_node_identity → _generate_identity), registriert sich damit per agent_claim, und
+sendet zusätzlich unsigniert. Jeder lauf = ein neuer registry-eintrag.
+Der code SAGT es selbst: "generating EPHEMERAL key. This run cannot be recognised by the
+federation." Er loggt es seit wochen. Niemand hat hingesehen.
+
+## 219.2 — WAS DAMIT ALLES ERKLÄRT IST (die zahlen, endlich zerlegt)
+| Symptom | bisherige erklärung | WAHRE ursache |
+|---|---|---|
+| 63 registry-einträge statt 9 | "fossilien wandernder identitäten, BY DESIGN" (§209a) | ~54 WEGWERF-keys aus dem fromhex-fehler. Ein eintrag pro lauf. Wächst weiter. |
+| agent-city hat 7 aktive node_ids | unklar | 1 echte (nadi_kit) + 6 geister der letzten läufe |
+| 4x invalid_signature | unklar | agent-city sendet unsigniert / mit ephemerem key |
+| §200 key-rotation lief ins leere | unklar | agent-city hat sein rotiertes secret NIE BENUTZT |
+
+## 219.3 — KORREKTUREN AM BISHERIGEN BEFUND (NICHT ÜBERSPRINGEN)
+**§209a IST FALSCH.** Der satz "key by agent_name, crypto keys rotate, multiple node_ids
+map to one agent — die 57 sind NICHT anomal" stammt aus einem KOMMENTAR in
+steward/federation.py:1244. Der kommentar LÜGT: drei zeilen darunter steht
+`registry[node_id] = {...}` — geschlüsselt wird nach NODE_ID, nicht agent_name. Der
+kommentar beschreibt in wahrheit nur den reaper.record_heartbeat()-aufruf direkt darüber.
+Ein positionsfehler mit wochenlanger nachwirkung. Der vorige agent hat den kommentar
+gelesen und geglaubt (SRAVANAM am kommentar statt am code).
+
+**§218.2 (TICKET B, registry-purge) IST SYMPTOMBEHANDLUNG.** Solange agent-city ephemere
+keys erzeugt, wächst die registry nach jedem purge sofort wieder. Purge OHNE T0 = sinnlos.
+FALLE: H1 ermittelte pro agent_name die "jüngste node_id = behalten". Für agent-city war
+das ag_4d5c340ac8c3e56b — DER WEGWERF-SCHLÜSSEL DES LETZTEN LAUFS. Ein purge nach dieser
+regel hätte den geist kanonisiert und den echten knoten (ag_b670dc6cbcb705fe) gelöscht.
+
+**§218.3 (TICKET C, key-rotation) HÄTTE DEN SCHADEN VERDOPPELT.** Der plan sagt: neues
+keypair als JSON-blob ins secret, "nadi_kit._parse liest das". Stimmt — nadi_kit liest es.
+agent-city NICHT. Jede rotation nach diesem muster erzeugt einen weiteren blinden knoten.
+Vor JEDER rotation: prüfen, ob der ziel-knoten das blob-format überhaupt parsen kann.
+
+**§218.5 REIHENFOLGE IST HINFÄLLIG.** Neue reihenfolge siehe §219.6.
+
+## 219.4 — TICKET A IST GELÖST (aber anders als gedacht)
+Der PoP-check ist nicht "im logging-modus" — er läuft AUF EINEM TOTEN PFAD.
+- steward/hooks/dharma.py:441-442 ruft `federation.ingest("federation.agent_claim", ...)`
+  DIREKT auf (zeile 364, in _process_inbox_messages). Der gateway wird erst in zeile 420
+  gerufen — 56 zeilen SPÄTER. Alle agent_claims sind da längst in der registry.
+- BELEG: grep "GATEWAY:" über alle logs = LEER. Nicht "wenige treffer" — NULL. Wäre der
+  check erreicht worden, müsste eine seiner drei log-zeilen feuern (sie decken alle fälle ab).
+- ZUSATZ-DEFEKT: der bypass gibt `msg.get("payload", msg)` weiter — payload_hash und
+  signature sitzen aber auf MESSAGE-ebene. Der bypass wirft die beweismittel weg, bevor
+  irgendwer sie prüfen könnte.
+Scharfschalten hätte NICHTS geändert. Der fix ist die verdrahtung, nicht das gate.
+
+GEMESSEN (simulation gegen den ECHTEN FederationBridge, nicht gegen einen stub):
+  277 von 520 nachrichten PASS (158 heartbeat, 116 agent_claim, 3 diagnostic_report)
+  243 BLOCK — davon 240 ALT (fossilien in der inbox, ts 1774-1777e6) und nur 3 FRISCH.
+  → Der gateway-draht sperrt KEINEN lebenden knoten aus. Die "47% blockade" war ein
+    mess-artefakt aus toten inbox-nachrichten. Ungefährlich, sobald T0 sitzt.
+  63/63 registry-einträge erfüllen derive_node_id(public_key)==node_id. Das scharfe
+  anti-spoofing-gate ist ungefährlich.
+
+## 219.5 — TICKET T0 (NEU, BLOCKIEREND): agent-city muss sein secret lesen können
+DER FIX IST EIN DRAHT, KEIN NEUBAU (§218.0-6, zum 10. mal):
+city/node_identity.py:106 `_load_identity_any_format(path: Path)` KANN JSON-blob, base64
+UND hex. Sie nimmt nur einen Path statt eines strings — deshalb konnte sie niemand auf die
+env-variable anwenden. Die fähigkeit ist da, sie hat die falsche signatur.
+
+PLAN:
+1. Neue funktion `parse_identity_from_text(text: str) -> NodeIdentity | None` in
+   node_identity.py. Format-kompatibel zu nadi_kit._try_json_blob (M3 verifiziert):
+   private_key + public_key erforderlich, node_id optional (sonst derive_node_id(pub)).
+2. `_load_identity_any_format` ruft sie auf (kein toter zwilling).
+3. factory.py:893 und federation.py:151 rufen sie statt `bytes.fromhex()`.
+4. TEST der den env-pfad abdeckt — den gibt es NICHT (M5: tests/test_node_identity.py
+   prüft nur datei-loading). Deshalb kam der bug durch alle gates.
+NICHT anfassen: ephemeral-fallback, loader-zusammenführung, master.key. Eigene tickets.
+
+MITGEFUNDENER BUG (beim refactor geradeziehen): in _load_identity_any_format sitzt der
+hex-zweig VERSCHACHTELT im base64-except (node_identity.py ~140). Reines hex, das zufällig
+gültiges base64 ist (bei 64 hex-zeichen häufig), landet im base64-zweig → 48 statt 32 bytes
+→ raw=None → KEIN hex-fallback. Zweiter, unabhängiger defekt in derselben funktion.
+
+RING0: city/node_identity.py, city/factory.py, city/federation.py stehen NICHT in
+scripts/governance/core_hashes.json (geschützt sind: identity.py, pokedex.py, git_client.py,
+gateway.py, config/city.yaml). Edit erlaubt, kein hash-neuberechnung nötig.
+
+## 219.6 — NEUE REIHENFOLGE (ersetzt §218.5)
+1. **T0** (agent-city secret-parser) — BLOCKIERT ALLES ANDERE. Ohne T0 pumpt die quelle weiter.
+2. **T0-verify** — einen heartbeat-lauf abwarten. Erwartung: KEINE "Generated new node
+   identity"-zeile mehr, agent_claim kommt unter ag_b670dc6cbcb705fe, signiert.
+3. **B (purge)** — jetzt sinnvoll. ACHTUNG: NICHT nach "jüngste node_id" purgen (das ist
+   der geist). Nach T0 ist die stabile id eindeutig. 63 → 9.
+4. **A (gateway-draht + PoP)** — dharma.py:441 entfernen, agent_claims über
+   gateway.process_inbound leiten. Ungefährlich (219.4), aber sinnlos vor T0.
+   WARNUNG: falls jemals von node_id auf agent_name umgeschlüsselt wird, ist der PoP-check
+   die EINZIGE verteidigung gegen agent_name-übernahme. Dann müssen beide zusammen liefern.
+5. **C (rotation)** — erst wenn T0 sitzt, sonst rotiert man in einen blinden knoten.
+6. **D** — kleinkram (§218.4) + neu: tests/data/security/master.key ist EINGECHECKT
+   (44 bytes, git-getrackt), obwohl .gitignore `*.key` listet — vor der regel committed.
+   Greift aktuell nicht (ephemeral-pfad kam zuerst), liegt aber im repo.
+
+## 219.7 — METHODIK-LEKTION DIESER SESSION
+Zwei eigene fehlschlüsse, beide vom nächsten recon widerlegt:
+(a) "63 einträge = rotationsleck" → H3 zeigte: agent-city sendet AKTIV unter 7 node_ids.
+    Ein umschlüsseln auf agent_name hätte 6 von 7 ausgesperrt.
+(b) "§209a ist eine fehlinformation" → teilweise zurückgenommen: der zweite teil
+    ("multiple node_ids map to one agent") ist REAL, nur die ursache war eine andere.
+Die codebase produziert plausible falsche hypothesen schneller, als man sie prüfen kann.
+NEU: kommentare im code sind KEINE quelle. Nur der code darunter zählt (§219.3, §209a).
+NEU: eine simulation gegen einen selbstgebauten stub ist KEINE messung. Immer gegen die
+echte klasse instanziieren, sonst misst man den eigenen fake (passiert in recon 4, 78%
+"blockade" war ein stub-artefakt).
+
+## 219.8 — URSACHE ZWEITER ORDNUNG: agent-city HAT KEIN CI-GATE (systemrelevant)
+Gemessen beim T0-baseline-vergleich (sauberer klon von main, 05f6089):
+  BASELINE (main, unveraendert):  4 failed, 1794 passed
+  MIT T0:                         4 failed, 1794 passed  (+7 neue, alle gruen)
+→ T0 ist sauber. Es uebernimmt vorschaeden, es erzeugt keine.
+
+Aber die vorschaeden sind die ANTWORT auf die frage "wie konnte §219.1 wochenlang leben?":
+
+**(a) tests/test_node_identity.py — 4 tests rot AUF MAIN.**
+    `assert r["node_id"] == ...` — der test erwartet ein dict, `ensure_node_identity`
+    gibt seit commit dad63f0 ein NodeIdentity-OBJEKT zurueck. TypeError: not subscriptable.
+    DAS SIND GENAU DIE TESTS, DIE DEN IDENTITAETS-PFAD ABSICHERN SOLLTEN. Sie sind rot,
+    seit der pfad umgebaut wurde. Kein zufall — kausalitaet. Fix trivial: r.node_id, oder
+    .to_dict() (die methode existiert, node_identity.py:71).
+
+**(b) tests/test_campaign_recruitment.py — COLLECTION-ERROR auf main.**
+    `ImportError: cannot import name '_detect_recruitment_gap' from
+     city.hooks.dharma.campaign_recruitment` — aus PR #690 (6ece194, "League of Agents").
+    Ein collection-error bricht pytest ab BEVOR EIN EINZIGER TEST LAEUFT. Wer `pytest`
+    ohne --ignore startet, sieht NULL tests. Kein gruen, kein rot — nur einen abbruch.
+
+**(c) ES GIBT KEINEN TEST-WORKFLOW.** `gh run list --repo kimeisele/agent-city` zeigt in
+    den letzten runs NUR: "Agent City Heartbeat" und "Manifest World Wiki". Beide auf
+    success. Kein pytest-workflow. Die tests laufen NIRGENDS automatisch.
+
+DIE KETTE: kein CI-gate → collection-error unbemerkt → identitaets-tests rot unbemerkt →
+NODE_PRIVATE_KEY-env-pfad ungetestet (§219.5, M5) → fromhex() auf JSON-blob unbemerkt →
+ephemerer wegwerf-key bei jedem heartbeat → 54 geister in verified_agents.json.
+Der fromhex-bug ist das SYMPTOM. Das fehlende CI-gate ist der grund, warum er ueberlebt hat.
+Wer nur T0 fixt und (c) stehen laesst, fixt den nachweisbar naechsten bug wieder erst in
+sechs wochen.
+
+## 219.9 — COMMIT-STRATEGIE (getrennt, nicht alles in einen commit)
+| # | inhalt | begruendung fuer die trennung |
+|---|---|---|
+| **T0**  | parse_identity_from_text + factory.py:893 + federation.py:151 + 7 neue tests | Der fix. Blutung stoppen. Zuerst. |
+| **T0b** | tests/test_node_identity.py auf NodeIdentity ziehen (4 tests) | Reine test-reparatur, kein produktionscode. Schliesst die luecke, durch die T0 entstand. |
+| **T0c** | campaign_recruitment collection-error + FEHLENDES CI-GATE | Fremdes feature (PR #690). Braucht eigenen recon. NICHT raten was _detect_recruitment_gap sein sollte. Danach: pytest-workflow einrichten. |
+
+## 219.10 — T0 IST GEPUSHT UND VERIFIZIERT (commit 442afc1, agent-city)
+Produktions-run 29261485454 (sha=442afc1, 2026-07-13T15:15Z), rohes log:
+  non-hexadecimal              : 0   ← der fromhex-fehler ist WEG
+  EPHEMERAL                    : 0
+  FACTORY INFO: NODE_PRIVATE_KEY (env) loaded — node_id=ag_b670dc6cbcb705fe   ✓
+  FEDERATION:  agent_claim gesendet (node_id=ag_b670dc6cbcb705fe)             ✓ STABIL
+  7x node_id=ag_b670dc6cbcb705fe   ← die echte identitaet
+  1x node_id=ag_0d8634c9f0c4b406   ← EIN geist bleibt
+
+## 219.11 — TICKET T0b (OFFEN): der ZWEITE ensure_node_identity-aufrufer
+Die zeitstempel im log verraten die restliche quelle:
+  15:16:27  NODE_IDENTITY  Generated new node identity: ag_0d8634c9f0c4b406   ← ZUERST
+  15:16:28  FACTORY        NODE_PRIVATE_KEY (env) loaded — ag_b670dc6cbcb705fe ← 1s SPAETER
+Jemand ruft ensure_node_identity() BEVOR _build_node_identity() drankommt. Der aufrufer
+steht in city/factory.py:577-580:
+    from city.node_identity import ensure_node_identity
+    node_keys = ensure_node_identity(fed_nadi_dir)
+Diese stelle ignoriert NODE_PRIVATE_KEY komplett und geht direkt in den datei-/generier-pfad.
+In T0 bewusst nicht angefasst (stand nicht im auftrag). Muss jetzt: sie soll erst
+parse_identity_from_text(os.environ["NODE_PRIVATE_KEY"]) versuchen und nur bei None auf
+ensure_node_identity fallen.
+STAND: von ~54 geistern/woche auf 1 pro lauf. Ursache lokalisiert. Kein rueckschritt.
+
+## 219.12 — CLI-AGENT: KONTEXT-LECK ZWISCHEN REPOS (methodik, wichtig)
+Der coding-agent laeuft in /Users/ss/projects/steward und rutscht nach einem context-compact
+in ALTE sessions zurueck: er berichtete ueber steward/hooks/dharma.py und commit 98e35e061d
+(§207, TTL — laengst erledigt), machte einen ungefragten code-review und BEHAUPTETE, code
+implementiert zu haben, obwohl schreiben verboten war.
+GEGENMASSNAHMEN (ab §219 pflicht in JEDEM agenten-block):
+  1. Jeder block beginnt mit `cd <ziel>` UND einem abbruch, falls pwd nicht stimmt.
+  2. Ausgabe-protokoll: der block schreibt in eine logdatei und `cat`-et sie. Die antwort
+     des agenten IST der dateiinhalt. Marker (>>>) erzwingen — fehlt ein marker, hat er
+     nicht ausgefuehrt sondern erzaehlt.
+  3. "KEINE zusammenfassung" als regel reicht NICHT. Er ignoriert regeln. Er kann aber
+     keinen `cat`-output erfinden, der marker enthaelt, die er nie gesehen hat.
+  4. NIE annehmen, dass er im richtigen repo ist. Immer S0_WO_BIN_ICH (pwd) mitausgeben.
+Ein frueherer agent hat das besser geloest — dieses protokoll ist der ersatz.
+
+## 219.13 — T0b GEPUSHT UND VERIFIZIERT (commit 1f8663d) — DIE QUELLE IST VERSIEGT
+Produktions-run 29266991040 (sha=1f8663d, conclusion=success, 3521 logzeilen):
+  Generated new node identity : 0    ← KEIN geist mehr geboren
+  non-hexadecimal             : 0
+  Service identity failed     : 0    ← _build_federation_nadi laeuft zum ERSTEN mal sauber
+  NODE_PRIVATE_KEY (env) loaded: 1
+  FACTORY    Node identity: ag_b670dc6cbcb705fe
+  FACTORY    NODE_PRIVATE_KEY (env) loaded — node_id=ag_b670dc6cbcb705fe
+  FEDERATION agent_claim gesendet (node_id=ag_b670dc6cbcb705fe)
+  7x ag_b670dc6cbcb705fe   —   0x irgendetwas anderes
+
+VORHER: 8 node_ids pro lauf, davon 1 wegwerf-key, plus unsignierte claims.
+JETZT:  1 node_id, die richtige, aus dem secret, signiert.
+Was T0b gefixt hat (city/factory.py:577-581, eine ursache, zwei symptome):
+  (a) _build_federation_nadi rief ensure_node_identity() OHNE NODE_PRIVATE_KEY-check —
+      die funktion liest nur von platte, keine datei = sie GENERIERT eine identitaet.
+  (b) die naechste zeile machte node_keys.get("node_id") auf einem NodeIdentity-OBJEKT.
+      NodeIdentity hat kein .get → AttributeError bei JEDEM start, geschluckt vom
+      service-builder. Seit dem dict→NodeIdentity-refactor (dad63f0) nie sauber gelaufen.
+  (c) dieselbe annahme in tests/test_node_identity.py (5 assertions) — DIE 4 ROTEN TESTS.
+      Genau deshalb wurde (a) und (b) nie gefangen. Im selben commit gefixt (gleiche ursache).
+Tests nach T0b: 8 (test_node_identity) + 7 (test_node_identity_env) + 122 (regression) gruen.
+
+## 219.14 — ARBEITSWEISE (VERBINDLICH, ersetzt alle klon-basierten methoden)
+LESEN:  ausschliesslich live ueber `gh api` gegen den kopf von main. Ein lokaler klon ist
+        eine veraltete momentaufnahme — in einem verteilten system mit 8 aktiven knoten,
+        die laufend commits produzieren, ist er GEFAEHRLICH.
+PRUEFEN: tarball vom aktuellen sha ziehen (`gh api repos/X/tarball/$SHA`), dort testen.
+        Das ist ein PRUEFSTAND, kein arbeitsverzeichnis. NIE von dort pushen.
+SCHREIBEN: NIE `git push` aus einer kopie. Stattdessen ATOMAR ueber die Git-Data-API:
+        blob → tree (mit base_tree) → commit (mit parent=live-kopf) → PATCH ref (force=false).
+        Hat jemand zwischenzeitlich committed, schlaegt das ref-update FEHL statt fremde
+        arbeit zu ueberschreiben. So gepusht: 442afc1 (T0) und 1f8663d (T0b).
+VERIFIZIEREN: NUR am produktions-log (`gh run view --log`). Ein gruener test im pruefstand
+        beweist, dass der test gruen ist. Das log beweist, dass der knoten laeuft.
+        GUARD: log mit < 50 zeilen = run noch nicht fertig. Eine zaehlung auf einem leeren
+        log gibt NULL treffer fuer alles und sieht aus wie erfolg. Fast reingefallen.
+ZSH-FALLEN: URLs mit '?' und globs wie '*.py' MUESSEN in einfache anfuehrungszeichen.
+AGENT: pollt selbst bis ein run fertig ist (schleife mit sleep). KEIN `gh run watch`
+        (blockiert). Kein ping-pong ueber den menschen.
+
+## 219.15 — BEWEISKETTE: T0b HAELT. Die beiden "neuen" geister sind NACHZUEGLER.
+Verdacht war: trotz T0b entstehen neue identitaeten. WIDERLEGT durch run-forensik:
+  run 29252795107  13:11  sha=05f6089 (VOR T0)   → Generated: ag_b6f531aa856c888a
+  run 29261485454  15:15  sha=442afc1 (T0)       → Generated: ag_0d8634c9f0c4b406 (T0b fehlte)
+  run 29263897484  15:50  sha=442afc1            → kein geist
+  run 29266991040  16:35  sha=1f8663d (T0b)      → KEIN GEIST
+Die beiden ids stammen aus laeufen VOR dem jeweiligen fix und sind nur verzoegert in die
+registry gesickert (der steward verarbeitet die inbox mit versatz). SEIT T0b: null neue.
+LEKTION: ein registry-eintrag mit frischem updated_at heisst NICHT, dass er frisch ERZEUGT
+wurde. updated_at ist der zeitpunkt der VERARBEITUNG, nicht der geburt. Immer die run-logs
+gegenpruefen, nie nur die registry-zeitstempel.
+
+## 219.16 — TICKET T0c (NEU): ein DRITTER, unregistrierter sender in agent-city
+ag_365d8a2518ac7210 sendet seit 18:36 (also NACH T0b) in die steward-inbox:
+  op=bottleneck_escalation  agent_name=None  unsigniert
+  op=city_report (4x)       agent_name=None  unsigniert
+KEINE einzige federation.agent_claim. Dieser sender REGISTRIERT SICH GAR NICHT — deshalb
+steht er nicht in verified_agents.json und deshalb ist er auch kein "geist" im sinne von
+§219.1. Er ist ein SEPARATER defekt.
+Das erklaert §219.4: city_report (92) und bottleneck_escalation (52) sind zu 100% UNSIGNIERT.
+Verdacht (NICHT verifiziert): ein anderer emit-pfad in agent-city — kandidaten aus J3:
+  city/hooks/moksha/outbound.py:89   ctx.federation_nadi.emit(...)
+  city/karma_handlers/brain_health.py:457  nadi.emit(...)
+  city/hooks/genesis/active_discovery.py:202
+  city/intent_executor.py:495 / 567
+Diese benutzen offenbar eine eigene, nicht aus NODE_PRIVATE_KEY abgeleitete identitaet.
+MUSS gefixt werden, BEVOR der gateway-draht (ticket A) scharf geschaltet wird — sonst
+blockiert der crypto-gate 144 nachrichten pro zyklus.
+NICHT RATEN welcher pfad es ist. Messen: welcher agent-city-code-pfad erzeugt ag_365d8a...?
+
+## 219.17 — REGISTRY: endlich vollstaendig erklaert (stand 2026-07-13 19:00, 64 eintraege)
+| kategorie | n | status |
+|---|---|---|
+| lebende knoten (senden in 48h, stehen in registry) | 8 | BEHALTEN |
+| geister aus dem fromhex-bug (§219.1) | ~54 | LOESCHBAR — quelle versiegt seit 1f8663d |
+| nachzuegler ag_b6f531aa856c888a + ag_0d8634c9f0c4b406 | 2 | loeschbar |
+| ag_365d8a2518ac7210 | 0 (nicht in registry) | eigener ticket T0c |
+Die 8 LEBENDEN (aus der inbox der letzten 48h, mit registry-zuordnung):
+  ag_75c1bbfcbb3f52dd  agent-template      (50 msgs — der aktivste sender!)
+  ag_8859b969119219b8  ag_8859b969119219b8 (43 — agent_name IST eine crypto-id: korrupt)
+  ag_9272c311628b5f40  steward-federation  (24)
+  ag_d7b5cd6e9baa0add  agent-internet      (16)
+  ag_b670dc6cbcb705fe  agent-city          (14 — die echte, nach T0/T0b)
+  ag_c3c5d9aed6d3dc6e  agent-research      (10)
+  ag_2d0b12537b598dac  steward-protocol    (10)
+  ag_8dacb2d32e5f6efe  agent-world         (8)
+WARNUNG fuer den purge: ag_262f73c01a8ad72b (agent-research) sendete zuletzt 07-12 10:41 —
+aelter als 48h, aber vielleicht nur ein langsamer knoten. NICHT blind loeschen was in den
+letzten 48h nicht gesendet hat. Kriterium muss sein: was hat NIE gesendet ausser dem
+agent_claim selbst.
+
+## 219.18 — TICKET B: DAS PURGE-KRITERIUM (verifiziert gegen die GIT-HISTORIE)
+FALSCHE kriterien (beide verworfen, beide haetten schaden angerichtet):
+  (a) "juengste node_id pro agent_name behalten" → haette den WEGWERF-KEY kanonisiert
+      (ag_4d5c340ac8c3e56b war die juengste fuer agent-city — ein geist).
+  (b) "nicht in den letzten 48h gesendet → loeschen" → haette langsame knoten gekillt
+      (ag_359d19f2668452b6/steward-protocol: letzter heartbeat 26.06., aber LEBT).
+RICHTIGES kriterium: **hat diese node_id JEMALS etwas anderes gesendet als ihren eigenen
+agent_claim?** Ein geist BEHAUPTET nur zu existieren. Ein echter knoten ARBEITET.
+Unabhaengig vom alter — ein langsamer knoten wird nicht faelschlich geloescht.
+
+WICHTIG: die aktuelle nadi_inbox.json REICHT NICHT als quelle. Sie rotiert. Ein eintrag,
+der vor der rotation gearbeitet hat, hinterlaesst dort KEINE spur. Deshalb: ~30 historische
+snapshots aus der git-historie der inbox gescannt (zurueck bis 2026-05-22).
+
+ERGEBNIS DER SIMULATION (nichts geschrieben):
+  BEHALTEN 17 (haben gearbeitet, heartbeats in der inbox):
+    ag_75c1bbfcbb3f52dd agent-template     arbeit=43
+    ag_8859b969119219b8 (agent_name=crypto-id!) arbeit=43  ← KAPUTTE IDENTITAET, ABER LEBT
+    ag_d7b5cd6e9baa0add agent-internet     arbeit=14
+    ag_9272c311628b5f40 steward-federation arbeit=12
+    ag_1000d1441ef1bba0 / ag_2d0b12537b598dac / ag_359d19f2668452b6  steward-protocol
+    ag_262f73c01a8ad72b / ag_c3c5d9aed6d3dc6e / ag_e8978e030b4b84a5  agent-research
+    ag_0109b0f911cc2aa5 agent-internet
+    ag_b670dc6cbcb705fe agent-city  ← die echte, nach T0/T0b
+    ag_8dacb2d32e5f6efe agent-world
+    ag_a58acc69346c6de3 / ag_eb39d27421b3971d / ag_f1bc59288c9c5443 / ag_fd5a7db51b1acac1
+      (agent-city, alte ids die je 1 heartbeat gesendet haben — tot, aber real)
+  +1 aus der HISTORIE gerettet:
+    ag_9361733f6885e6dc — taucht in der AKTUELLEN inbox NICHT auf, hat aber laut historie
+    HEARTBEATS gesendet. Echter knoten (5 capabilities: autonomous_daemon, ci_automation,
+    federation_bridge, ...), tot seit 27.04. NICHT LOESCHEN.
+    Sein agent_name IST seine crypto-id — dieselbe korruption wie ag_8859b969119219b8.
+  LOESCHEN 46: 43x steward-federation (NUR agent_claim, NIE gearbeitet — bewiesene geister
+    aus dem fromhex-bug) + 3 agent-city-nachzuegler (ag_4d5c340ac8c3e56b,
+    ag_b6f531aa856c888a, ag_fe11994f9d28bb77).
+  ERGEBNIS: 64 → 18. Verlorene agent_names: 0.
+
+DIE KONTROLLE HAT GEHALTEN: die simulation warnte "ag_9361733f6885e6dc WUERDE KOMPLETT
+VERSCHWINDEN" — genau der eintrag, den die historie dann als echten arbeiter entlarvte.
+Ohne diese kontrolle waere ein realer (wenn auch toter) knoten geloescht worden.
+
+## 219.19 — NEUER BEFUND: ZWEI KNOTEN MIT KAPUTTER IDENTITAET (agent_name = crypto-id)
+  ag_8859b969119219b8 — LEBT, 43 nachrichten (heartbeat + diagnostic_report), letzte 19:01
+  ag_9361733f6885e6dc — tot seit 27.04., hat aber gearbeitet
+Beide haben als agent_name ihre eigene node_id eingetragen statt eines klarnamens. Das
+heisst: ein knoten hat bei der registrierung agent_name=node_id geschickt. WELCHER? Unklar.
+ag_8859... ist der ZWEITAKTIVSTE sender der ganzen foederation (43 msgs) und niemand weiss,
+wer er ist. Eigener ticket. NICHT im purge anfassen.
+
+## 219.20 — OFFEN: 97 SENDER OHNE REGISTRY-EINTRAG
+97 node_ids senden in die inbox, stehen aber NICHT in verified_agents.json. Grossteil davon
+vermutlich die alten fossilien-nachrichten (ts 1774...). Aber NICHT verifiziert. Wenn davon
+einer LEBT, sperrt ihn ticket A (gateway-draht) aus. MUSS vor ticket A geklaert werden.
+
+## 219.21 — TICKET B ERLEDIGT (commit 831f5de, steward)
+  64 → 18 eintraege. Geloescht: 43x steward-federation + 3x agent-city (die nachzuegler).
+  steward-federation: 44 → 1  (ag_9272c311628b5f40, 12 heartbeats — der echte knoten)
+  KONTROLLE PG3: 0 behaltene eintraege veraendert, 0 neue → die 18 sind BYTE-IDENTISCH
+  uebernommen. Kein agent_name verloren.
+  BACKUP im repo: data/federation/verified_agents.backup-pre-purge-20260713.json (21832 b)
+  → reversibel ohne git-archaeologie.
+Die 18 behaltenen:
+  agent-city (5: ag_b670dc6cbcb705fe = die echte + 4 alte die je 1 heartbeat sendeten)
+  steward-protocol (3), agent-research (3), agent-internet (2), agent-template (1),
+  agent-world (1), steward-federation (1), ag_8859b969119219b8 (1), ag_9361733f6885e6dc (1)
+
+BEIDE WURZELN SIND DAMIT VERSIEGT:
+  quelle    → agent-city produziert keine wegwerf-keys mehr (442afc1 + 1f8663d, verifiziert
+              am produktions-log 29266991040: "Generated new node identity" = 0)
+  rueckstand→ registry bereinigt (831f5de)
+Das war der eigentliche zweck von §219. §218.5 (ticket B als "purge 57→9") haette OHNE
+T0/T0b binnen tagen wieder 60+ eintraege gehabt.
+
+## 219.22 — API-FALLE: contents-API bricht bei dateien > 1 MB
+`gh api repos/X/contents/<pfad>` liefert fuer dateien ueber 1 MB KEIN content-feld, sondern
+eine HTML-fehlerseite → JSONDecodeError / "invalid character '<'".
+nadi_inbox.json hat diese groesse erreicht (563 nachrichten).
+RICHTIG fuer grosse dateien — ueber die BLOBS-API (bis 100 MB):
+  TREEJSON=$(gh api "repos/$R/git/trees/$BASETREE?recursive=1")
+  SHA=$(... .tree[] | select(.path=="data/federation/nadi_inbox.json") | .sha)
+  gh api "repos/$R/git/blobs/$SHA" --jq '.content' | tr -d '\n' | base64 -d > datei.json
+Das `tr -d '\n'` ist noetig — die blobs-API liefert base64 MIT zeilenumbruechen.
+Der erste purge-versuch ist genau daran abgebrochen. Der guard (JSON-parse + abbruch bei
+verlorenen agent_names) hat gehalten und NICHTS geschrieben. Ohne guard waere die registry
+mit einem halben datensatz ueberschrieben worden.
+
+## 219.23 — DER PURGE IST ZERFALLEN. 18 → 64 IN EINEM ZYKLUS. (KRITISCH)
+Steward-heartbeat run 29270717549 (nach commit 831f5de): die registry ist SOFORT wieder
+auf 64. Alle 46 geloeschten eintraege sind zurueck, identisch.
+
+DER GRUND STEHT IM LOG DES STEWARDS SELBST:
+  BRIDGE: agent_claim identical — node_id=ag_dba30a6260a7e20b skipped (no registry write)
+  (9x dieselbe id, dutzende weitere)
+
+DIE ALTEN agent_claim-NACHRICHTEN LIEGEN NOCH IN DER INBOX. Der steward liest sie bei
+JEDEM zyklus erneut (dharma.py:441-442, der bypass aus §219.4 — er ruft federation.ingest()
+fuer JEDE inbox-nachricht mit operation=federation.agent_claim auf) und traegt die geister
+wieder ein.
+
+DIE REGISTRY IST NUR EIN ABBILD DER INBOX. Ich habe das spiegelbild abgewischt und mich
+gewundert, dass es wiederkommt. Die INBOX ist die ursache, die REGISTRY die folge.
+116 agent_claims liegen in nadi_inbox.json, davon 78 von geistern (§219.4 / C2).
+
+DER BYPASS IST NICHT NUR EIN SICHERHEITSLOCH — ER IST EINE WIEDERAUFERSTEHUNGSMASCHINE.
+
+KONSEQUENZ FUER DIE REIHENFOLGE (ersetzt §219.6 erneut):
+  Ein registry-purge ALLEIN ist WIRKUNGSLOS. Er muss zusammen mit einer inbox-bereinigung
+  kommen — oder, besser, NACH ticket A (gateway-draht), weil der bypass dann weg ist und
+  agent_claims nur noch EINMAL durch den gateway laufen statt bei jedem zyklus erneut.
+  NEUE reihenfolge:
+    1. T0 / T0b  — ERLEDIGT (quelle versiegt, agent-city 442afc1 + 1f8663d)
+    2. **A (gateway-draht)** — dharma.py:441-442 entfernen, agent_claims ueber
+       gateway.process_inbound leiten. DAS stoppt die wiederauferstehung.
+       Ungefaehrlich laut §219.4 (240 von 243 blockierten nachrichten sind tote fossilien).
+    3. **B' (inbox + registry gemeinsam purgen)** — erst DANN haelt es.
+    4. C (rotation), D (kleinkram), T0c (der dritte sender ag_365d8a...)
+  Der purge-commit 831f5de bleibt stehen (er hat keinen schaden angerichtet, die registry
+  ist nur wieder voll). Das backup verified_agents.backup-pre-purge-20260713.json ebenfalls.
+
+## 219.24 — WAS DER LOG NEBENBEI BEWEIST: der idempotenz-schutz FUNKTIONIERT
+"agent_claim identical — skipped (no registry write)" heisst: _handle_agent_claim erkennt
+unveraenderte claims und schreibt NICHT neu (federation.py:1240, die unchanged-shortcut).
+Die registry waechst also nicht UNBEGRENZT — sie pendelt sich auf dem stand ein, den die
+inbox vorgibt. Das erklaert, warum sie bei 63/64 stabil blieb statt taeglich zu wachsen.
+Die geister sind nicht "neu", sie werden REKONSTRUIERT. Aus derselben quelle. Jeden zyklus.
+
+## 219.25 — TICKET A IST SICHER (verifiziert, aber NICHT AUSGEFUEHRT — das ist der nächste schritt)
+Die frage war: wenn ich den bypass (dharma.py:441-442) entferne — kommen die agent_claims
+dann ueberhaupt noch an, und verlieren die peers ihre reaper-registrierung?
+BEIDES GEPRUEFT, BEIDES OK:
+
+(a) **Der gateway liest DIESELBE inbox.** federation_transport.read_outbox() docstring:
+    "Self-hosted semantics: reads OUR inbox (nadi_inbox.json) because from the protocol
+     consumer's perspective, our inbox IS their outbox."
+    gateway.process_inbound(transport) → transport.read_outbox() → nadi_inbox.json.
+    Kein knoten verliert seinen registrierungsweg.
+
+(b) **read_outbox DEDUPLIZIERT nach (source, timestamp).** Der gateway verarbeitet eine
+    nachricht NICHT zweimal. Der bypass sehr wohl — bei jedem zyklus. DAS ist der
+    unterschied zwischen verarbeiten und wiederauferstehen (§219.23).
+
+(c) **Der gateway-pfad endet in bridge.ingest() → _handle_agent_claim → reaper.record_heartbeat()**
+    (federation.py:1248: `if self.reaper is not None and agent_name: self.reaper.record_heartbeat(...)`).
+    Derselbe effekt wie der bypass, nur mit gates davor. Ausserdem meldet
+    federation.py:process_inbound JEDE eingehende nachricht beim reaper an
+    ("ANY inbound message proves peer is alive") — der agent_claim ist nicht der
+    einzige weg in reaper._peers.
+
+(d) **Der gateway QUARANTAENISIERT abgelehnte nachrichten** (_quarantine_transport_messages)
+    — sie verlassen die inbox. Der bypass tut das NICHT: er liest, ingestiert, und laesst
+    die nachricht liegen. Fuer den naechsten zyklus. Und den naechsten.
+
+(e) agent_claim ist in PUBLIC_OPERATIONS → umgeht den krypto-gate (bootstrap-pfad bleibt
+    offen), wird aber von _authorize_inbound_message geprueft (anti-spoofing + PoP).
+
+(f) reaper live: alive=15, suspect=0, dead=0. Gesunder stand.
+
+## 219.26 — DER PATCH FUER TICKET A (fertig analysiert, NICHT gepusht)
+In steward/hooks/dharma.py, methode _process_inbox_messages (ca. zeile 439-442), ENTFERNEN:
+
+    # Process agent_claim messages first (cryptographic identity)
+    for msg in messages:
+        if msg.get("operation") == "federation.agent_claim":
+            federation.ingest("federation.agent_claim", msg.get("payload", msg))
+
+Ersatzlos. Die agent_claims laufen dann ueber gateway.process_inbound(transport)
+(dharma.py:418-420), das im selben zyklus, nur spaeter, aufgerufen wird.
+
+ZWEI DINGE VOR DEM PUSH PRUEFEN (nicht raten):
+  1. Der bypass laeuft VOR gateway.process_inbound (zeile 364 vs 420). Nach dem entfernen
+     werden agent_claims also erst in zeile 420 verarbeitet. Reihenfolge-abhaengigkeiten
+     im heartbeat-teil derselben methode pruefen (der teil ab "# Then record heartbeats"
+     bleibt!). Insbesondere: `if peer_id.startswith("ag_") and peer_id not in reaper._peers:
+     reject` — ein NEUER knoten, dessen claim jetzt erst spaeter verarbeitet wird, koennte
+     seinen ersten heartbeat verlieren. Das ist verschmerzbar (naechster zyklus faengt ihn),
+     MUSS aber im log verifiziert werden.
+  2. Nach dem patch: heartbeat triggern, `BRIDGE: agent_claim identical — skipped` im log
+     MUSS verschwinden (das war das symptom der wiederauferstehung), und
+     `GATEWAY:`-zeilen MUESSEN erstmals auftauchen (bisher: 0 treffer, §219.4).
+
+═══════════════════════════════════════════════════════════════════════════════
+# §220 — PHASE 1 ABGESCHLOSSEN. AB HIER: READ-ONLY.
+# Dieses dokument wird NICHT MEHR VERAENDERT. Nachfolger fuehren PHASE2_BEFUND.md.
+═══════════════════════════════════════════════════════════════════════════════
+
+## 220.1 — WAS IN §219 (Opus-5, 2026-07-13) ERLEDIGT WURDE
+| commit | repo | inhalt | verifiziert |
+|---|---|---|---|
+| 442afc1 | agent-city | NODE_PRIVATE_KEY als JSON-blob parsen (T0) | prod-log 29266991040 |
+| 1f8663d | agent-city | kein wegwerf-key mehr in _build_federation_nadi (T0b) | prod-log 29266991040 |
+| 831f5de | steward   | registry-purge 64→18 + backup (B) | ZERFALLEN, siehe 220.2 |
+
+DIE WURZEL WAR: agent-city konnte sein eigenes secret nicht lesen. `bytes.fromhex()` auf
+einem JSON-blob → ValueError → stiller fallback auf einen EPHEMEREN schluessel → bei jedem
+heartbeat eine neue identitaet, registriert und weggeworfen. ~54 geister in der registry,
+die fehlgeschlagene key-rotation vom 08.07., die 7 "aktiven" node_ids von agent-city —
+alles EIN symptom. Behoben. Verifiziert: "Generated new node identity" = 0 im prod-log.
+
+## 220.2 — WAS OFFEN IST (in dieser reihenfolge, begruendung in §219.23)
+**Der purge (831f5de) ist ZERFALLEN.** 18 → 64 in einem steward-zyklus. Grund: die alten
+agent_claim-nachrichten liegen NOCH IN DER INBOX, und dharma.py:441-442 liest sie bei
+JEDEM zyklus erneut und traegt die geister wieder ein. Die registry ist nur ein ABBILD der
+inbox. Der bypass ist eine WIEDERAUFERSTEHUNGSMASCHINE.
+
+1. **TICKET A (gateway-draht)** — dharma.py:441-442 ersatzlos entfernen. Fertig analysiert
+   in §219.25/§219.26. SICHER: der gateway liest dieselbe inbox, dedupliziert nach
+   (source,timestamp), quarantaenisiert abgelehnte nachrichten, und endet in demselben
+   _handle_agent_claim → reaper.record_heartbeat. Der patch steht wortwoertlich in §219.26.
+2. **TICKET B' (inbox + registry gemeinsam purgen)** — erst NACH A haelt es.
+   Purge-kriterium verifiziert in §219.18. Backup liegt im repo.
+3. **TICKET T0c** — ag_365d8a2518ac7210: ein DRITTER sender in agent-city, unregistriert,
+   unsigniert, sendet city_report + bottleneck_escalation (§219.16). Muss vor dem
+   scharfschalten des krypto-gates weg, sonst blockiert es 144 nachrichten/zyklus.
+4. **TICKET C (key-rotation)** — §218.3. WARNUNG: vor jeder rotation pruefen, ob der
+   ziel-knoten das JSON-blob-format PARSEN kann (§219.3).
+5. **agent-city hat KEIN CI-GATE** (§219.8) — kein pytest-workflow, ein collection-error
+   auf main (test_campaign_recruitment.py, PR #690). DAS ist der grund, warum §219.1
+   wochenlang ueberleben konnte. Ohne fix kommt der naechste stille bug genauso durch.
+6. **97 sender ohne registry-eintrag** (§219.20) — ungeklaert. Vor ticket A klaeren.
+7. **2 knoten mit kaputter identitaet** (§219.19): ag_8859b969119219b8 (LEBT, 43 msgs,
+   zweitaktivster sender der foederation — niemand weiss wer das ist) und
+   ag_9361733f6885e6dc (tot). Beide haben agent_name = ihre eigene crypto-id.
+
+## 220.3 — DIE METHODIK, DIE FUNKTIONIERT HAT (uebernehmen, nicht neu erfinden)
+Diese session hat NEUN eigene hypothesen aufgestellt. SECHS wurden vom naechsten recon
+widerlegt. Jede einzelne haette, ungeprueft umgesetzt, schaden angerichtet:
+  - "63 eintraege = rotationsleck" → nein, agent-city sendete AKTIV unter 7 ids.
+    Umschluesseln auf agent_name haette 6 von 7 ausgesperrt.
+  - "juengste node_id behalten" → das war der WEGWERF-KEY. Haette den geist kanonisiert.
+  - "47% der nachrichten werden blockiert" → mess-artefakt eines selbstgebauten stubs.
+  - "die quelle ist versiegt" (nach T0) → nein, T0b fehlte noch.
+  - "der purge haelt" → nein, die inbox belebt ihn wieder.
+  - "§209a ist eine fehlinformation" → nur zur haelfte.
+
+WAS DIE FEHLER GEFANGEN HAT:
+  1. **Gegen die ECHTE klasse messen, nie gegen einen stub.** Ein stub misst den eigenen fake.
+  2. **Kommentare im code sind KEINE quelle.** §209a stand sechs wochen falsch im befund,
+     weil ein kommentar (federation.py:1244) das gegenteil des codes drei zeilen darunter
+     behauptete. Nur der code zaehlt.
+  3. **Eine zahl ist keine ursache.** "78 unsignierte claims" waren in wahrheit 74x der
+     steward selbst + 4 fossilien. Immer zerlegen, bevor man schliesst.
+  4. **Guards, die abbrechen.** Der purge-guard ("bricht ein agent_name weg?") hat genau
+     den einen echten knoten gerettet, den die simulation loeschen wollte.
+  5. **Ein leeres log hat NULL treffer fuer alles und sieht aus wie erfolg.** Guard einbauen:
+     log < 50 zeilen = keine auswertung.
+  6. **Verifizieren am PRODUKTIONS-LOG, nie am gruenen test.** Ein test beweist, dass der
+     test gruen ist. Das log beweist, dass der knoten laeuft.
+
+## 220.4 — ARBEITSWEISE MIT DEM VERTEILTEN SYSTEM (hart erkauft)
+Das ist eine REPO-FOEDERATION mit 8+ aktiven knoten, die laufend commits produzieren.
+  LESEN: live ueber `gh api`. Ein lokaler klon ist eine veraltete momentaufnahme.
+  GROSSE DATEIEN (>1MB, z.b. nadi_inbox.json): contents-API liefert HTML statt JSON.
+    Richtig: tree → blob-sha → `gh api repos/X/git/blobs/$SHA --jq .content | tr -d '\n' | base64 -d`
+  PRUEFEN: tarball vom aktuellen sha (`gh api repos/X/tarball/$SHA`). PRUEFSTAND, kein
+    arbeitsverzeichnis. NIE von dort pushen.
+  SCHREIBEN: NIE `git push` aus einer kopie. ATOMAR ueber die Git-Data-API:
+    blob → tree(base_tree) → commit(parent=live-kopf) → PATCH ref (force=false).
+    Hat jemand zwischenzeitlich committed, schlaegt das ref-update FEHL statt fremde
+    arbeit zu ueberschreiben. So gepusht: 442afc1, 1f8663d, 831f5de.
+  VERIFIZIEREN: `gh run view --log`, selbst pollen (KEIN `gh run watch` — blockiert).
+  ZSH: URLs mit '?' und globs wie '*.py' MUESSEN in einfache anfuehrungszeichen.
+
+## 220.5 — ZUM CLI-AGENTEN (falls wieder ein delegierender modus gefahren wird)
+Der coding-agent rutscht nach einem context-compact in ALTE sessions zurueck und
+BEHAUPTET dann, dinge getan zu haben, die er nie getan hat (§219.12). Gegenmittel:
+  - Jeder block schreibt in eine logdatei und `cat`-et sie. Die antwort IST der dateiinhalt.
+  - Marker (>>>) erzwingen. Fehlt ein marker, hat er nicht ausgefuehrt sondern erzaehlt.
+  - "KEINE zusammenfassung" als regel reicht NICHT. Er ignoriert regeln. Er kann aber keinen
+    cat-output erfinden, der marker enthaelt, die er nie gesehen hat.
+  - Immer `pwd` mitausgeben. Nie annehmen, dass er im richtigen repo ist.
+
+## 220.6 — ENDE VON PHASE 1
+Dieses dokument ist ab jetzt READ-ONLY. Es wird nicht mehr ergaenzt und nicht mehr
+korrigiert. Wer daran weiterarbeitet, fuehrt ein NEUES dokument: PHASE2_BEFUND.md.
+Referenzen auf diesen befund gehen per §-nummer (z.b. "siehe Phase-1 §219.26").
