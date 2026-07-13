@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "timestamp": 1783936969.1444132,
+  "timestamp": 1783937845.395253,
   "project": {
     "name": "steward",
     "path": "/home/runner/work/steward/steward"
@@ -92,7 +92,7 @@
         "task": "[autonomous] HEALTH_CHECK",
         "outcome": "clean",
         "summary": "Deterministic HEALTH_CHECK: no issues",
-        "timestamp": "2026-07-13T10:01:49.043232+00:00",
+        "timestamp": "2026-07-13T10:16:16.913463+00:00",
         "tokens": 0,
         "rounds": 0,
         "errors": 0,
@@ -103,7 +103,7 @@
         "task": "[autonomous] FEDERATION_HEALTH",
         "outcome": "problem_found",
         "summary": "Deterministic FEDERATION_HEALTH: problem detected",
-        "timestamp": "2026-07-13T10:02:02.433512+00:00",
+        "timestamp": "2026-07-13T10:16:30.119998+00:00",
         "tokens": 0,
         "rounds": 0,
         "errors": 0,
@@ -123,70 +123,64 @@
   "tasks": {
     "pending": [
       {
-        "id": "4a353f0d-580b-49eb-a8f2-30d5d80a5331",
+        "id": "41b91ff7-4a6d-4ba4-b9f6-19be5e357738",
         "title": "[HEALTH_CHECK] Quick Health Check",
         "priority": 70,
         "status": "COMPLETED"
       },
       {
-        "id": "710f21a6-1db3-488d-a30b-9385585f55c7",
+        "id": "153d3b78-bb4e-4fe9-9a53-4b948c4a59fb",
         "title": "[FEDERATION_HEALTH] Federation Health Check",
         "priority": 90,
         "status": "COMPLETED"
       },
       {
-        "id": "35ab63a7-373e-47b6-8332-65d6bf059cd4",
+        "id": "31f6de8b-9578-4711-b540-fd948fdcc54f",
         "title": "[HEAL_REPO] Heal Federation Repos",
         "priority": 90,
         "status": "PENDING"
       },
       {
-        "id": "48281bd3-d66c-44e6-87a6-201056b62be9",
+        "id": "716b2748-0601-4601-a3da-2ffa0e2925ef",
         "title": "[CROSS_REPO_DIAGNOSTIC] Cross-Repo Diagnostic",
         "priority": 70,
         "status": "PENDING"
       },
       {
-        "id": "2357fad3-fde7-451a-84fb-5c82980ac2b2",
+        "id": "08ed1abe-6fcd-4610-ad26-93dc2ab360a5",
         "title": "[SYNTHESIZE_BRIEFING] Synthesize Context Briefing",
         "priority": 70,
         "status": "PENDING"
       },
       {
-        "id": "c3efe7d4-171b-4fbd-9550-c3077417b9f9",
+        "id": "5e14995e-46d0-4db9-81e1-0c801e5cb749",
         "title": "[HEAL_REPO] Peer ag_fd5a7db51b1acac1 \u2014 Kirtan escalation",
         "priority": 90,
         "status": "COMPLETED"
       },
       {
-        "id": "6dfb7c3e-a5dc-43c5-8f12-fc7f8852c07e",
-        "title": "[HEAL_REPO] Peer ag_8859b969119219b8 \u2014 Kirtan escalation",
-        "priority": 90,
-        "status": "COMPLETED"
-      },
-      {
-        "id": "85591dc4-2a97-4779-9a3f-ad4b178135c0",
+        "id": "ccb990a5-6af1-432e-9cba-88031594c2ea",
         "title": "[HEAL_REPO] Peer ag_f1bc59288c9c5443 \u2014 Kirtan escalation",
         "priority": 90,
         "status": "COMPLETED"
       },
       {
-        "id": "eb80869f-7238-4e68-8bb6-0ed293ff1496",
+        "id": "39afaca3-0d39-402a-ad7f-263a64cd5f73",
         "title": "[HEAL_REPO] Peer ag_eb39d27421b3971d \u2014 Kirtan escalation",
         "priority": 90,
-        "status": "PENDING"
+        "status": "COMPLETED"
       }
     ]
   },
   "federation": {
     "total_peers": 66,
     "by_status": {
-      "alive": 10,
-      "evicted": 56
+      "alive": 11,
+      "evicted": 55
     },
-    "avg_trust": 0.24242424242424213,
+    "avg_trust": 0.24848484848484825,
     "total_reaps": 8311,
-    "total_evictions": 116,
+    "total_evictions": 115,
     "lease_ttl_s": 900.0,
     "trust_decay": 0.2,
     "peers": [
@@ -292,6 +286,12 @@
           "descriptor_incomplete",
           "testing"
         ]
+      },
+      {
+        "agent_id": "ag_8859b969119219b8",
+        "status": "alive",
+        "trust": 0.5,
+        "capabilities": []
       }
     ],
     "marketplace": {
@@ -326,13 +326,13 @@
   },
   "campaign": {
     "campaign_id": "federation-stewardship",
-    "all_met": false,
+    "all_met": true,
     "signals": [
       {
         "kind": "federation_healthy",
         "met": true,
         "actual": {
-          "alive": 10,
+          "alive": 11,
           "suspect": 0,
           "dead": 0
         }
@@ -349,13 +349,11 @@
       },
       {
         "kind": "active_missions_at_most",
-        "met": false,
-        "actual": 4
+        "met": true,
+        "actual": 3
       }
     ],
-    "failing": [
-      "active_missions_at_most"
-    ]
+    "failing": []
   },
   "cetana": {
     "alive": true,
