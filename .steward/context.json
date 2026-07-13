@@ -1,12 +1,12 @@
 {
   "version": 1,
-  "timestamp": 1783910829.5062284,
+  "timestamp": 1783911806.455679,
   "project": {
     "name": "steward",
     "path": "/home/runner/work/steward/steward"
   },
   "senses": {
-    "prompt_summary": "\n\n## Environment Perception\nGit: main, 13 dirty, ci=, 0 open PRs\nProject: python\nCode: 200 files, 668 cls, 441 fn, 10 low-cohesion cls (worst: AutonomyEngine LCOM4=6)\nTests: pytest, 92 files, last=unknown\nHealth: 212 source files, 2 smells (2 large, 0 stale)",
+    "prompt_summary": "\n\n## Environment Perception\nGit: main, 12 dirty, ci=, 0 open PRs\nProject: python\nCode: 200 files, 668 cls, 441 fn, 10 low-cohesion cls (worst: AutonomyEngine LCOM4=6)\nTests: pytest, 92 files, last=unknown\nHealth: 212 source files, 2 smells (2 large, 0 stale)",
     "total_pain": 0.16,
     "detail": {
       "srotra": {
@@ -92,7 +92,7 @@
         "task": "[autonomous] HEALTH_CHECK",
         "outcome": "clean",
         "summary": "Deterministic HEALTH_CHECK: no issues",
-        "timestamp": "2026-07-13T02:46:15.775689+00:00",
+        "timestamp": "2026-07-13T03:01:31.231377+00:00",
         "tokens": 0,
         "rounds": 0,
         "errors": 0,
@@ -103,7 +103,7 @@
         "task": "[autonomous] FEDERATION_HEALTH",
         "outcome": "problem_found",
         "summary": "Deterministic FEDERATION_HEALTH: problem detected",
-        "timestamp": "2026-07-13T02:46:20.072674+00:00",
+        "timestamp": "2026-07-13T03:01:38.646526+00:00",
         "tokens": 0,
         "rounds": 0,
         "errors": 0,
@@ -123,52 +123,58 @@
   "tasks": {
     "pending": [
       {
-        "id": "ffd85cf9-93d4-4612-b170-8ca59d2806f0",
+        "id": "7a631aab-75db-4d6d-ac61-8384e7b792b6",
         "title": "[HEALTH_CHECK] Quick Health Check",
         "priority": 70,
         "status": "COMPLETED"
       },
       {
-        "id": "db33effa-33a8-4beb-bb65-ac59182f82e4",
+        "id": "412358f4-208a-4db5-bb8a-ac0b29597398",
         "title": "[FEDERATION_HEALTH] Federation Health Check",
         "priority": 90,
         "status": "COMPLETED"
       },
       {
-        "id": "1c982c2f-b10a-4343-aa46-21967e5cbaaf",
+        "id": "90dadede-5dc8-4571-9166-96d93afb2249",
         "title": "[HEAL_REPO] Heal Federation Repos",
         "priority": 90,
         "status": "PENDING"
       },
       {
-        "id": "1c3aeb41-d676-43c6-b95f-d738f7751c5c",
+        "id": "c6029dd1-aa02-4462-92e8-40e096ca75fe",
         "title": "[CROSS_REPO_DIAGNOSTIC] Cross-Repo Diagnostic",
         "priority": 70,
         "status": "PENDING"
       },
       {
-        "id": "60b457f7-6c0a-498d-8507-f8416c5d3f69",
+        "id": "829d8593-a5f5-4ccb-9100-837a6d826653",
         "title": "[SYNTHESIZE_BRIEFING] Synthesize Context Briefing",
         "priority": 70,
         "status": "PENDING"
       },
       {
-        "id": "942380f6-e852-4a1f-b800-e5fba309c14e",
+        "id": "55715d9d-e5ca-4a62-95c6-e24a061697c8",
         "title": "[HEAL_REPO] Peer ag_fd5a7db51b1acac1 \u2014 Kirtan escalation",
         "priority": 90,
         "status": "COMPLETED"
       },
       {
-        "id": "de02383b-5904-4ab9-a568-2df8acf0acb3",
+        "id": "c8512dc2-ee32-42c9-86b6-83d8c1cdcf75",
+        "title": "[HEAL_REPO] Peer ag_8859b969119219b8 \u2014 Kirtan escalation",
+        "priority": 90,
+        "status": "COMPLETED"
+      },
+      {
+        "id": "7b494797-a92b-441f-b380-8699b8b71d92",
         "title": "[HEAL_REPO] Peer ag_f1bc59288c9c5443 \u2014 Kirtan escalation",
         "priority": 90,
         "status": "COMPLETED"
       },
       {
-        "id": "c021592a-75f4-4a43-b0a0-be92371c5ed0",
+        "id": "9c2bdf0c-922a-4582-a93c-e881a4603366",
         "title": "[HEAL_REPO] Peer ag_eb39d27421b3971d \u2014 Kirtan escalation",
         "priority": 90,
-        "status": "COMPLETED"
+        "status": "PENDING"
       }
     ]
   },
@@ -180,7 +186,7 @@
     },
     "avg_trust": 0.24848484848484825,
     "total_reaps": 8311,
-    "total_evictions": 115,
+    "total_evictions": 116,
     "lease_ttl_s": 900.0,
     "trust_decay": 0.2,
     "peers": [
@@ -326,7 +332,7 @@
   },
   "campaign": {
     "campaign_id": "federation-stewardship",
-    "all_met": true,
+    "all_met": false,
     "signals": [
       {
         "kind": "federation_healthy",
@@ -349,11 +355,13 @@
       },
       {
         "kind": "active_missions_at_most",
-        "met": true,
-        "actual": 3
+        "met": false,
+        "actual": 4
       }
     ],
-    "failing": []
+    "failing": [
+      "active_missions_at_most"
+    ]
   },
   "cetana": {
     "alive": true,
