@@ -223,3 +223,66 @@ Version von Phase 1 liegt: die aktuelle (Stand §220) überschreibt sie.
 ## §6 — LOG
 
 *(Hier deine Einträge. Format: `## §7 — <Titel> (YYYY-MM-DD, commit <sha>)`)*
+
+---
+
+## §7 — PHASE 2 ÜBERNOMMEN: SAUBERE ARBEITSBASIS (2026-07-13, Merge `5ec734361a`)
+
+### Dokumente konserviert
+
+PR `#383` hat das externe Projektgedächtnis auf `main` gesichert:
+
+- Phase 1 liegt vollständig bis §220 unter `docs/PHASE1_BEFUND_steward.md` und bleibt
+  ab jetzt unverändert (read-only).
+- Dieses Phase-2-Dokument ist das einzige fortlaufende Arbeitsjournal.
+- Sieben frühere Spezifikations- und Blueprint-Dokumente liegen unter `specs/`.
+- Alle neun Quelldateien wurden vor dem Commit per SHA-256 byte-identisch verifiziert.
+- `.DS_Store` wurde ausgeschlossen; ein High-confidence Secret-Pattern-Scan hatte null Treffer.
+
+### Saubere Arbeitsumgebung
+
+Der alte Klon `/Users/ss/projects/steward` ist keine Arbeitsbasis: Er stand auf
+`fix-phantom-heartbeat-ttl`, war gegenüber `origin/main` 982 Commits zurück und enthielt
+laufzeitgenerierte, uncommittete Federation-State-Dateien.
+
+Die verbindliche Phase-2-Arbeitsbasis ist:
+
+- Klon: `/Users/ss/projects/steward-phase2`
+- Remote: `git@github.com:kimeisele/steward.git`
+- Recon-Branch: `phase2/live-recon`
+- Ausgangspunkt: Merge `5ec734361a84a3c258459a4b3aebcf911b5e9818`
+
+Vor jedem Ticket wird der Live-Head erneut über GitHub gelesen. Schreibarbeit erfolgt auf
+einem frischen Ticket-Branch vom dann aktuellen `main`, niemals aus dem alten Klon.
+
+### Live-Snapshot vor Übernahme
+
+SHA-genau auf `24ca47e711f18ce30e5a60e13b9c2980e3988bf1` gemessen:
+
+- `verified_agents.json`: 64 Einträge.
+- Der direkte `agent_claim`-Bypass in `dharma.py:439-442` war weiterhin vorhanden.
+- Seit Purge `831f5de` lagen 13 weitere Commits vor; alle waren Heartbeat-State-Syncs.
+- Der Purge war damit weiterhin zerfallen; Ticket A war noch nicht ausgeführt.
+
+### CI-Baseline ist bereits rot
+
+Der Dokumentations-PR änderte ausschließlich Markdown. Trotzdem waren Required Checks rot.
+Vergleich mit dem unmittelbar vorherigen `main`-Run `29281821279` auf demselben Base-SHA
+bewies identische Bestandsfehler:
+
+- Ruff: `Path` und `json` in `steward/hooks/dharma.py` undefiniert.
+- Ruff: `_finding` in `steward/senses/diagnostic_sense.py` undefiniert.
+- Pytest-Collection: `FindingKind.PEER_PROTOCOL_VIOLATION` fehlt.
+
+Security Scan war grün. Der Admin-Bypass für PR `#383` wurde im PR mit dieser Baseline
+dokumentiert; die CI-Defekte wurden nicht als Teil des Dokumentations-Merges kaschiert.
+
+### Sicherheitsgrenze vor Ticket A
+
+Noch kein Produktivcode wurde in Phase 2 geändert. Vor Ticket A bleiben zwei Punkte zwingend:
+
+1. Die in Phase-1 §220.2 genannten 97 Sender ohne Registry-Eintrag live zerlegen und klären.
+2. Die Reihenfolgeabhängigkeit aus Phase-1 §219.26 gegen den echten Codepfad prüfen:
+   Ein neuer Knoten könnte sonst seinen ersten Heartbeat vor Verarbeitung seines Claims verlieren.
+
+Erst danach folgt eine Patch-Entscheidung. Vermutung ist kein Freigabekriterium.
