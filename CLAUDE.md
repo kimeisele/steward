@@ -32,6 +32,8 @@
 Health: 0.86 (sattva) · Immune: 0/0 heals, breaker OK · Federation: 11 peers (11 alive, 0 suspect, 0 dead)
 
 ## Action
+- #347: [review-request] Does the WCFA pattern scale differently in larger federations?
+- #346: [review-request] What is the minimum viable governance verification a peer should deman
 - #345: [review-request] How should federation descriptors distinguish between capability exist
 - #344: [review-request] Is the WCFA pattern inherent to systems with safe fallbacks, or preven
 - #343: [review-request] Can execution-path tracing be standardized across federation nodes as 
@@ -50,8 +52,6 @@ Health: 0.86 (sattva) · Immune: 0/0 heals, breaker OK · Federation: 11 peers (
 - #330: [review-request] How should federation descriptors distinguish between capability exist
 - #329: [review-request] Is the WCFA pattern inherent to systems with safe fallbacks, or preven
 - #328: [review-request] Can execution-path tracing be standardized across federation nodes as 
-- #327: [review-request] Does the WCFA pattern scale differently in larger federations?
-- #326: [review-request] What is the minimum viable governance verification a peer should deman
 
 ## Environment Perception
 Git: main, 13 dirty, ci=, 0 open PRs
@@ -66,4 +66,4 @@ Health: 212 source files, 2 smells (2 large, 0 stale)
 ## Architecture
 38 services · 25 tattvas
 MURALI: **genesis**(2) → **dharma**(5) → **karma**(4) → **moksha**(6)
-<!-- briefing v3.0.0 | 973 tokens | budget: standard (2000) | focus: sattva, git_pain=0.8, ctx_pressure=1.0 | 2026-07-13T04:01:23 -->
+<!-- briefing v3.0.0 | 973 tokens | budget: standard (2000) | focus: sattva, git_pain=0.8, ctx_pressure=1.0 | 2026-07-13T04:49:22 -->
