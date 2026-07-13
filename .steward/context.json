@@ -1,12 +1,12 @@
 {
   "version": 1,
-  "timestamp": 1783949640.1131048,
+  "timestamp": 1783950446.5348873,
   "project": {
     "name": "steward",
     "path": "/home/runner/work/steward/steward"
   },
   "senses": {
-    "prompt_summary": "\n\n## Environment Perception\nGit: main, 11 dirty, ci=, 0 open PRs\nProject: python\nCode: 200 files, 668 cls, 441 fn, 10 low-cohesion cls (worst: AutonomyEngine LCOM4=6)\nTests: pytest, 92 files, last=failed\nHealth: 212 source files, 2 smells (2 large, 0 stale)",
+    "prompt_summary": "\n\n## Environment Perception\nGit: main, 12 dirty, ci=, 0 open PRs\nProject: python\nCode: 200 files, 668 cls, 441 fn, 10 low-cohesion cls (worst: AutonomyEngine LCOM4=6)\nTests: pytest, 92 files, last=failed\nHealth: 212 source files, 2 smells (2 large, 0 stale)",
     "total_pain": 0.3,
     "detail": {
       "srotra": {
@@ -89,10 +89,10 @@
         "buddhi_action": ""
       },
       {
-        "task": "[autonomous] HEALTH_CHECK",
-        "outcome": "clean",
-        "summary": "Deterministic HEALTH_CHECK: no issues",
-        "timestamp": "2026-07-13T13:32:25.559699+00:00",
+        "task": "[autonomous] FEDERATION_HEALTH",
+        "outcome": "problem_found",
+        "summary": "Deterministic FEDERATION_HEALTH: problem detected",
+        "timestamp": "2026-07-13T13:45:57.827376+00:00",
         "tokens": 0,
         "rounds": 0,
         "errors": 0,
@@ -100,78 +100,72 @@
         "buddhi_action": ""
       },
       {
-        "task": "[autonomous] FEDERATION_HEALTH",
-        "outcome": "problem_found",
-        "summary": "Deterministic FEDERATION_HEALTH: problem detected",
-        "timestamp": "2026-07-13T13:32:38.480149+00:00",
-        "tokens": 0,
-        "rounds": 0,
+        "task": "Federation degraded: 3 dead peer(s): ['ag_fd5a7db51b1acac1', 'ag_f1bc59288c9c5443', 'ag_eb39d27421b3971d']; no alive peer with capability 'federation_relay'; no alive peer with capability 'heartbeat_o",
+        "outcome": "success",
+        "summary": "review: 1 rounds, 0 tools",
+        "timestamp": "2026-07-13T13:46:05.735603+00:00",
+        "tokens": 741,
+        "rounds": 1,
         "errors": 0,
         "files_written": [],
-        "buddhi_action": ""
+        "buddhi_action": "review"
       }
     ],
     "stats": {
       "total_sessions": 50,
-      "success_rate": 0.16,
-      "total_tokens": 17170,
+      "success_rate": 0.18,
+      "total_tokens": 17911,
       "total_tool_calls": 6,
-      "avg_tokens_per_session": 343
+      "avg_tokens_per_session": 358
     },
-    "prompt_summary": "Previous sessions in this project:\n  [2026-07-13] clean: [autonomous] HEALTH_CHECK (0 tokens, 0 rounds, files: none)\n  [2026-07-13] problem_found: [autonomous] FEDERATION_HEALTH (0 tokens, 0 rounds, files: none)"
+    "prompt_summary": "Previous sessions in this project:\n  [2026-07-13] problem_found: [autonomous] FEDERATION_HEALTH (0 tokens, 0 rounds, files: none)\n  [2026-07-13] success: Federation degraded: 3 dead peer(s): ['ag_fd5a7db51b1acac1', 'ag_f1bc59288c9c544 (741 tokens, 1 rounds, files: none)"
   },
   "tasks": {
     "pending": [
       {
-        "id": "a89dfbd4-ca63-41b9-999c-1c1698568887",
+        "id": "322cd70e-2e02-4a63-8d9a-8ca7687b21e8",
         "title": "[HEALTH_CHECK] Quick Health Check",
         "priority": 70,
-        "status": "COMPLETED"
+        "status": "PENDING"
       },
       {
-        "id": "41519239-5a28-4cfe-be56-76476ed1a796",
+        "id": "ff0bf07f-1015-4424-a7d5-d80a99d5b300",
         "title": "[FEDERATION_HEALTH] Federation Health Check",
         "priority": 90,
         "status": "COMPLETED"
       },
       {
-        "id": "4197d894-4634-4e72-a499-31c73c3584d9",
+        "id": "63c5233b-d255-4ed9-a532-652cb2a1a3f4",
         "title": "[HEAL_REPO] Heal Federation Repos",
+        "priority": 90,
+        "status": "IN_PROGRESS"
+      },
+      {
+        "id": "f392e751-e1d1-4409-bfbc-421cc12bc0fd",
+        "title": "[CROSS_REPO_DIAGNOSTIC] Cross-Repo Diagnostic",
         "priority": 90,
         "status": "PENDING"
       },
       {
-        "id": "143f3328-90f6-43d7-8362-a3f965d6e035",
-        "title": "[CROSS_REPO_DIAGNOSTIC] Cross-Repo Diagnostic",
-        "priority": 70,
-        "status": "PENDING"
-      },
-      {
-        "id": "b47365f8-90a3-4d9f-b340-94954034d38e",
+        "id": "f40866f5-78b0-4712-898f-0d48a65a7087",
         "title": "[SYNTHESIZE_BRIEFING] Synthesize Context Briefing",
         "priority": 70,
         "status": "PENDING"
       },
       {
-        "id": "c3b879ae-969e-4079-baa4-15af17481ed7",
+        "id": "37243622-e5de-4e8c-a7a6-364c84b65056",
         "title": "[HEAL_REPO] Peer ag_fd5a7db51b1acac1 \u2014 Kirtan escalation",
-        "priority": 90,
-        "status": "IN_PROGRESS"
-      },
-      {
-        "id": "3fe9b7e8-1475-45d8-bcc7-33e94df0ba4c",
-        "title": "[HEAL_REPO] Peer ag_8859b969119219b8 \u2014 Kirtan escalation",
         "priority": 90,
         "status": "PENDING"
       },
       {
-        "id": "2d0f8ace-1b81-4d24-840a-ff676cd4f7a5",
+        "id": "c794d31b-4009-4756-903a-84bf3a19964a",
         "title": "[HEAL_REPO] Peer ag_f1bc59288c9c5443 \u2014 Kirtan escalation",
         "priority": 90,
         "status": "PENDING"
       },
       {
-        "id": "a0628405-cffd-4e4f-9ed3-fdd30612377a",
+        "id": "15fb5ade-0049-4384-bd48-353124a093c8",
         "title": "[HEAL_REPO] Peer ag_eb39d27421b3971d \u2014 Kirtan escalation",
         "priority": 90,
         "status": "PENDING"
@@ -186,7 +180,7 @@
     },
     "avg_trust": 0.24848484848484825,
     "total_reaps": 8313,
-    "total_evictions": 116,
+    "total_evictions": 115,
     "lease_ttl_s": 900.0,
     "trust_decay": 0.2,
     "peers": [
@@ -365,11 +359,11 @@
   },
   "cetana": {
     "alive": true,
-    "total_beats": 10,
-    "frequency_hz": 0.11129900995999997,
-    "phase": "KARMA",
+    "total_beats": 11,
+    "frequency_hz": 0.10790930697199998,
+    "phase": "MOKSHA",
     "consecutive_anomalies": 0,
-    "last_health": 0.8600840156155278,
+    "last_health": 0.8599145615366479,
     "last_guna": "sattva"
   },
   "issues": [
