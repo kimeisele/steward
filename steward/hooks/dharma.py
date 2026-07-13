@@ -533,6 +533,27 @@ class DharmaFederationHook(BasePhaseHook):
         # takes them out of nadi_inbox.json. Both already existed; nothing called them,
         # so every rejected heartbeat was re-read and re-rejected on the next cycle and
         # the inbox only ever grew (Befund 207).
+        # Per-peer protocol violation counter. The rejections above (lines 452-522)
+        # each log which peer failed — but only individually. A peer that
+        # consistently sends unsigned or malformed messages is not "flaky", it's
+        # using the wrong transport (e.g., emit() without nadi_kit signature).
+        # Aggregate here so the immune hook can detect the pattern.
+        if rejected:
+            by_peer: dict[str, int] = {}
+            for _m in rejected:
+                _pid = str(_m.get("agent_id") or _m.get("source") or "?")
+                by_peer[_pid] = by_peer.get(_pid, 0) + 1
+            for _pid, _n in sorted(by_peer.items(), key=lambda kv: -kv[1]):
+                if _n >= 3 and _pid != "?":
+                    logger.warning(
+                        "PROTOCOL VIOLATION: peer %s sent %d unsigned/invalid message(s) "
+                        "this cycle — node is not using nadi_kit (no signature/payload_hash). "
+                        "Remediation: switch %s to nadi_kit.",
+                        _pid,
+                        _n,
+                        _pid,
+                    )
+
         if rejected and transport is not None:
             try:
                 transport.quarantine_messages(rejected, reason='inbox_validation_failed', stage='dharma')
