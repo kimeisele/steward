@@ -104,6 +104,27 @@ class TestGitNadiSyncBasics:
         sync = GitNadiSync(str(agent), sync_interval_s=0)
         assert sync.push() is True
 
+    def test_pull_autostashes_dirty_worktree(self, tmp_path):
+        remote = _init_bare_remote(tmp_path)
+        _seed_remote(remote, tmp_path)
+        agent = tmp_path / "agent"
+        other = tmp_path / "other"
+        _clone_to(remote, agent)
+        _clone_to(remote, other)
+
+        (other / "remote.txt").write_text("remote\n")
+        _git(other, "add", "remote.txt")
+        _git(other, "commit", "-m", "remote advance")
+        _git(other, "push")
+
+        dirty = agent / "nadi_inbox.json"
+        dirty.write_text(json.dumps([{"source": "dirty-local"}]))
+
+        sync = GitNadiSync(str(agent), sync_interval_s=0)
+        assert sync.pull() is True
+        assert json.loads(dirty.read_text()) == [{"source": "dirty-local"}]
+        assert (agent / "remote.txt").read_text() == "remote\n"
+
 
 class TestGitNadiSyncPushRetry:
     """Push with retry on non-fast-forward rejection."""
@@ -166,6 +187,34 @@ class TestGitNadiSyncPushRetry:
         # Verify both files have their content preserved
         inbox_content = json.loads(inbox_a.read_text())
         assert any(m.get("source") == "steward" for m in inbox_content)
+
+    def test_push_retry_autostashes_unrelated_runtime_changes(self, tmp_path):
+        remote = _init_bare_remote(tmp_path)
+        _seed_remote(remote, tmp_path)
+        agent = tmp_path / "agent"
+        other = tmp_path / "other"
+        _clone_to(remote, agent)
+        _clone_to(remote, other)
+
+        runtime_state = agent / "runtime_state.txt"
+        runtime_state.write_text("base\n")
+        _git(agent, "add", "runtime_state.txt")
+        _git(agent, "commit", "-m", "add runtime state")
+        _git(agent, "push")
+        _git(other, "pull", "--rebase")
+
+        runtime_state.write_text("dirty runtime state\n")
+        (agent / "nadi_inbox.json").write_text(json.dumps([{"source": "steward"}]))
+
+        (other / "remote.txt").write_text("remote\n")
+        _git(other, "add", "remote.txt")
+        _git(other, "commit", "-m", "remote advance")
+        _git(other, "push")
+
+        sync = GitNadiSync(str(agent), sync_interval_s=0, max_retries=3)
+        assert sync.push(message="steward runtime sync") is True
+        assert runtime_state.read_text() == "dirty runtime state\n"
+        assert (agent / "remote.txt").read_text() == "remote\n"
 
     def test_push_gives_up_after_max_retries(self, tmp_path):
         """If rebase keeps failing, push gives up after max_retries.
@@ -256,3 +305,23 @@ class TestThrottleDecoupling:
         commit_count = len(log.strip().splitlines())
         # 1 seed + 3 pushes = 4
         assert commit_count == 4
+
+
+class TestHeartbeatRepositoryHygiene:
+    def test_dependency_checkout_is_ignored_and_not_tracked_as_gitlink(self):
+        root = Path(__file__).parents[1]
+        assert ".deps/" in (root / ".gitignore").read_text().splitlines()
+
+        tracked = subprocess.run(
+            ["git", "ls-files", "--stage", ".deps/steward-protocol"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert tracked.stdout == ""
+
+    def test_git_identity_is_configured_before_autonomous_cycle(self):
+        root = Path(__file__).parents[1]
+        workflow = (root / ".github" / "workflows" / "steward-heartbeat.yml").read_text()
+        assert workflow.index("- name: Configure Git") < workflow.index("- name: Run autonomous cycle")
