@@ -1411,3 +1411,173 @@ produktiven Fundament liegen.
 
 Phase 1 bleibt weiterhin unverändert. Jeder Fix erhält einen eigenen Milestone und
 Produktionsbeweis; B' wird nicht erneut geöffnet, solange die 17/322/42-Invarianten halten.
+
+## §14 — HEARTBEAT-GIT-FUNDAMENT REPARIERT UND PRODUKTIV VERIFIZIERT
+
+**Status:** Abgeschlossen. Die beiden in §13 neu belegten Git-Fehler hatten getrennte,
+präzise Ursachen. Beide wurden mit roten Regressionen repariert, über reguläre CI gemergt
+und in einem vollständigen Produktions-Heartbeat ohne die früheren Warnungen verifiziert.
+Phase 1 blieb unverändert und read-only.
+
+### Root Cause 1: GitNadiSync war nicht dirty-worktree-sicher
+
+`GitNadiSync` wird mit `data/federation/` als Arbeitsverzeichnis erzeugt, arbeitet aber im
+übergeordneten Steward-Git-Repository. Während eines Heartbeats verändert der Prozess vor
+dem Sync bereits Registry, Inbox, Seen-State, `.steward/` und weitere Runtime-Dateien.
+
+Der alte Pull-Pfad führte aus:
+
+```text
+git fetch origin --prune
+git rebase origin/HEAD
+```
+
+Der Retry-Pfad führte `git pull --rebase` aus. Beide Befehle verweigern einen Rebase bei
+unstaged oder gestagten Runtime-Änderungen. Das erklärt exakt die zwei Produktionsmeldungen
+`cannot rebase: You have unstaged changes` aus Run `29319661369`.
+
+Zusätzlich setzte der Workflow `user.name` und `user.email` erst im späteren Schritt
+`Commit federation state`. Ein Commit aus `GitNadiSync.push()` während des autonomen Laufs
+kam vorher und konnte deshalb mit `Author identity unknown` / `empty ident name` abbrechen.
+Die Tests hatten das verdeckt, weil `_clone_to()` jedem Test-Clone sofort eine Identität
+konfiguriert.
+
+### Root Cause 2: `.deps/steward-protocol` war ein kaputter Gitlink
+
+Die zweite Checkout-Aktion klont `steward-protocol` nach `.deps/steward-protocol`. Dieser
+Pfad war seit Commit `6e317f70012bd1d816aeb9d9c4ff4bedd52d9903` (Heartbeat `#1014`,
+2026-03-30) versehentlich als mode-`160000` Gitlink im Steward-Tree eingecheckt. Es gab
+jedoch keine `.gitmodules`-Definition.
+
+Damit reproduzierte bereits der echte Cleanup-Befehl lokal den Produktionsfehler:
+
+```text
+$ git submodule foreach --recursive true
+fatal: No url found for submodule path '.deps/steward-protocol' in .gitmodules
+```
+
+Exit-Code: 128. Das war kein fehlender legitimer Submodule-Eintrag, sondern ein über Monate
+mitgeschleppter versehentlicher Gitlink. Eine künstliche `.gitmodules`-Datei wäre deshalb
+der falsche Fix gewesen.
+
+### Rote Regressionen
+
+Vor dem Patch schlugen die neuen Tests wie erwartet fehl:
+
+1. Ein Clone mit remote Advance und lokal schmutziger `nadi_inbox.json` erhielt aus
+   `GitNadiSync.pull()` `False` mit `cannot rebase: You have unstaged changes`.
+2. Der Repository-Hygiene-Test fand keine `.deps/`-Ignore-Regel.
+3. Derselbe Test fand den mode-`160000`-Eintrag weiterhin im Git-Index.
+4. Der Workflow enthielt keinen `Configure Git`-Schritt vor `Run autonomous cycle`.
+5. Eine Push-Retry-Regression hält zusätzlich eine fremde getrackte Runtime-Datei unstaged,
+   während ein konkurrierender Remote-Commit den Rebase-Pfad erzwingt.
+
+Diese Tests prüfen die echten Git-Repositories und echten Git-Befehle, keine Subprocess-
+Stubs.
+
+### Minimaler Patch
+
+Ticket-Commit: `65ed04d8ca94781b4758d8fc78fd5d77b6f96cbb`.
+
+Geändert wurden ausschließlich fünf Pfade:
+
+1. `steward/git_nadi_sync.py`:
+   - initialer Rebase jetzt mit `--autostash`,
+   - Pull-Rebase im Push-Retry ebenfalls mit `--autostash`.
+2. `.github/workflows/steward-heartbeat.yml`:
+   - eigener `Configure Git`-Schritt vor dem autonomen Lauf,
+   - die identische spätere Doppelkonfiguration entfernt.
+3. `.deps/steward-protocol`:
+   - versehentlichen mode-`160000`-Gitlink gelöscht.
+4. `.gitignore`:
+   - `.deps/` dauerhaft ignoriert, damit ein breites zukünftiges Add den Checkout nicht
+     erneut als Gitlink eincheckt.
+5. `tests/test_git_nadi_sync.py`:
+   - Dirty-Pull-, Dirty-Push-Retry-, Workflow-Reihenfolge- und Gitlink-Hygiene-Regressionen.
+
+Nicht geändert wurden GitNadi-Fehlerpropagation, MURALI-Phasenfang, Federation-State,
+Registry, Inbox, Relay, Quarantäne, Secrets oder Phase 1.
+
+### Lokale und CI-Validierung
+
+Lokal:
+
+- `tests/test_git_nadi_sync.py`: 13 passed.
+- Ruff check: grün.
+- Ruff format check: grün.
+- `git submodule foreach --recursive true`: Exit 0.
+- `git ls-files --stage .deps/steward-protocol`: leer.
+- `git check-ignore .deps/steward-protocol`: trifft `.gitignore:.deps/`.
+
+PR `#428` wurde ohne Admin-Bypass gemergt:
+
+- Merge: `ead60c2fbffb621ab12db1bb3af4b9ba52cf3a27`.
+- Required-CI-Run: `29321053042`.
+- Python 3.11: grün.
+- Python 3.12: grün.
+- Lint + Format: grün.
+- Security: grün.
+
+### Produktionsbeweis
+
+Heartbeat-Run `29321214906` wurde auf dem Merge-Stand ausgelöst. Wegen der
+Single-Writer-Queue lief vorher noch Heartbeat `#5340`; der reale Checkout des Beweislaufs
+war deshalb dessen Descendant `76ff08a70aa9b064a7eefe29873b8238fca84cf0`, dessen Parent
+der Merge `ead60c2fbffb621ab12db1bb3af4b9ba52cf3a27` ist.
+
+Der Lauf dauerte 1:50 Minuten. Alle Workflow-Schritte einschließlich beider
+Post-Checkout-Cleanups waren erfolgreich. Es gab keine Annotation.
+
+Der reparierte Mid-Cycle-Pfad lief real:
+
+- `Configure Git`: erfolgreich vor dem autonomen Lauf,
+- `GIT_NADI: push succeeded (attempt 1)`: 1,
+- Zwischencommit: `972f0d8b1fde2645edc25d258dbaf30e12dd5e48`,
+  Nachricht `steward: federation sync`,
+- dessen Parent: `76ff08a70aa9b064a7eefe29873b8238fca84cf0`,
+- finaler Workflow-State-Commit: `8b248ddfb6b09fad520e194ea1975910fab69c9b`,
+- finaler Tree: `e1309ef8c6fc86866c70dbe8f7a01c17286d4c7e`,
+- erfolgreicher finaler `main -> main`-Push: 1.
+
+Harte Logzählung:
+
+- `GIT_NADI: pull failed`: 0,
+- `GIT_NADI: commit failed`: 0,
+- `GIT_NADI: push failed`: 0,
+- `Author identity unknown`: 0,
+- `No url found for submodule`: 0,
+- `failed with exit code 128`: 0,
+- `HEARTBEAT ERROR`: 0,
+- `KARMA dispatch failed`: 0,
+- `Traceback`: 0,
+- `Diagnosis failed`: 0,
+- `CONFLICT`: 0,
+- `detached HEAD`: 0.
+
+Der Live-Tree enthält keinen `.deps/steward-protocol`-Gitlink mehr.
+
+### B'-Invarianten nach dem Fix
+
+Der Git-Fix hat den vorherigen Milestone nicht beschädigt:
+
+- Registry: 17, Blob `1fbb9f659ecfe493b3120ffe5307a3c6db7e6204`.
+- Inbox: 322, Blob `6cf1334520d8e2696844fd8e26f84b812edcad1b`.
+- Seen: 537, Blob `2c4b73b75c7de69a80afe969c1f34b460da406b9`.
+- Hub-Mailbox: weiterhin 42 aktive Nachrichten, Blob
+  `6ba03b51410fea1d08b4f8e2f3ea4e22ab686ce0`.
+- Registry-Geister: 0.
+- lokale Inbox-Geisternachrichten: 0.
+
+### Nächster Arbeitsauftrag
+
+Der konkrete Git-Sync-/Checkout-Milestone ist abgeschlossen. Als nächstes bleibt der bereits
+mehrfach belegte übergeordnete Fehlerkanal: Der Heartbeat fängt Phasenausnahmen, loggt sie
+und kann trotzdem grün enden. Dieser Pfad muss read-only gegen reale Fehlerklassen zerlegt
+werden, bevor Fehlerpropagation geändert wird. Insbesondere ist zu unterscheiden zwischen:
+
+1. kritischen MURALI-Phasenfehlern, die den Workflow rot machen müssen,
+2. explizit degradierbaren Netzwerkpfaden mit belastbarer State-Postcondition,
+3. Post-Action-Warnungen außerhalb des Python-Prozesses.
+
+Erst danach folgen Identitätsnamen-Reparatur, Key-Rotation, Quarantäne-Cleanup und
+Agent-City-GH006 als getrennte Tickets. Phase 1 wird weiterhin nicht verändert.
