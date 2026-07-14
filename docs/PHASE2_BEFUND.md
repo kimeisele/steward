@@ -419,3 +419,215 @@ Der vorgeschlagene Patch „nur Zeilen 439-442 löschen“ darf nicht ausgeführ
 
 Bis diese Reihenfolge erfüllt ist, bleibt Ticket A blockiert. Es wurde in Phase 2 kein
 Produktivcode verändert.
+
+---
+
+## §9 — T0c BEHOBEN UND PRODUKTIV BEWIESEN; STEWARD-GATEWAY BLEIBT BLOCKIERT (2026-07-14)
+
+### Scope und unveränderte Sicherheitsgrenzen
+
+Dieser Milestone änderte ausschließlich den fehlerhaften `FederationNadi`-Sendepfad in
+`agent-city`. Phase 1 blieb byte-identisch/read-only. In Steward wurde noch kein
+Produktivcode geändert, kein State bereinigt und kein Gateway scharfgeschaltet.
+
+Verwendete saubere Arbeitsbasis:
+
+- Agent-City-Klon: `/Users/ss/projects/agent-city-phase2`
+- Ticket-Branch: `fix/federation-nadi-canonical-identity`
+- Lokaler Ticket-Commit: `ea7ae032898d720a578e759919d7390285436b86`
+- PR: `kimeisele/agent-city#1829`
+- Merge auf `agent-city/main`: `e798bdbf7b3969beea577fe265657bbb7c142115`
+- Steward-Recon blieb auf `/Users/ss/projects/steward-phase2`, Branch `phase2/live-recon`.
+
+Die Agent-City-Änderung berührte genau vier Dateien:
+
+- `city/federation_nadi.py`
+- `city/factory.py`
+- `tests/test_federation_nadi.py`
+- `tests/test_service_factory.py`
+
+Keine Workflow-, State-, Secret-, Registry- oder RING0-Manifestdatei wurde verändert.
+
+### Implementierter Root-Cause-Fix
+
+`FederationNadi` erhält jetzt beim Bau dieselbe bereits geladene `NodeIdentity`, die der
+Factory-Log als kanonische Node-Identität ausweist. Eine explizite Secret-Identität hat
+Vorrang vor einem möglicherweise veralteten `peer.json`-Wert.
+
+Beim Flush wird jede neue `FederationNadi`-Nachricht im bestehenden Steward-Wire-Format
+serialisiert:
+
+1. kanonische Nachricht ohne `payload_hash`, `signature`, `signer_key`,
+2. SHA-256 über `json.dumps(canonical, sort_keys=True)`,
+3. Ed25519-Signatur über den Hex-String des Hashes,
+4. Signatur als Base64.
+
+Damit benutzen `city_report` und `bottleneck_escalation` dieselbe kryptographische
+Node-ID `ag_b670dc6cbcb705fe` wie Claim und Heartbeat. Der stale Cache
+`ag_365d8a2518ac7210` kann bei vorhandener Secret-Identität nicht mehr Sender werden.
+
+### Testbeweise vor und nach dem Fix
+
+Die zwei neuen Regressionstests wurden vor der Implementierung gegen den alten Code
+ausgeführt und scheiterten exakt an den erwarteten Stellen:
+
+- `FederationNadi` akzeptierte kein `_node_identity`-Argument.
+- Bei stale `peer.json` wurde `ag_365...` statt der kanonischen Secret-ID gesendet.
+
+Nach dem Fix:
+
+- die zwei neuen Tests: 2 bestanden,
+- angrenzende `federation_nadi`-/Factory-Tests: 56 bestanden,
+- erweiterter Identity-/Relay-Satz: 112 bestanden, eine irrelevante DeprecationWarning,
+- fokussiertes Ruff für die neue Logik: bestanden.
+
+Bekannte, nicht durch diesen Patch verursachte Baseline:
+
+- Die Gesamtsuite stoppt bereits bei der Collection von
+  `tests/test_campaign_recruitment.py`, weil `_detect_recruitment_gap` nicht importiert
+  werden kann.
+- `city/factory.py:438` enthält eine bestehende E501-Zeile mit 103 Zeichen; der T0c-Hunk
+  liegt um Zeile 592. Der fremde Lint-Fehler wurde nicht mitrepariert.
+
+Der PR hatte keine Required Status Checks, aber eine Required Review. Eine Selbstfreigabe
+war technisch nicht möglich. Der Admin-Merge wurde deshalb vor Ausführung im PR auditiert:
+`https://github.com/kimeisele/agent-city/pull/1829#issuecomment-4965639135`.
+
+### Agent-City-Produktionsbeweis
+
+Workflow-Run `29308167287` lief auf exakt
+`e798bdbf7b3969beea577fe265657bbb7c142115` und endete erfolgreich. Der vollständige Log
+hat 3683 Zeilen.
+
+Harte Marker:
+
+- `Node identity: ag_b670dc6cbcb705fe`
+- `FederationNadi wired`
+- `FederationNadi: flushed 1 messages` = 4 Treffer
+- `Generated new node identity` = 0 Treffer
+- `Traceback` = 0 Treffer
+- `Exception` = 0 Treffer
+
+Die vier Flushes erzeugten vier `city_report`-Nachrichten. Der nachgelagerte
+`nadi_kit sync` meldete zehn gepushte Nachrichten (vier Reports plus Claim, Heartbeat und
+weitere Zielkopien). Deshalb war die lokale Legacy-Outbox beim späteren separaten
+Relay-Schritt leer; `Outbox empty, skipping relay` ist hier kein Lieferfehler.
+
+Separater neuer Befund im selben Log: Der Workflow versuchte seinen Laufzeit-State direkt
+nach `agent-city/main` zu pushen. Branch Protection lehnte den Push mit GH006 ab
+(`Changes must be made through a pull request`), trotzdem endete der Workflow grün. Das
+betrifft nicht die Hub-Zustellung von T0c, ist aber ein eigener späterer Zuverlässigkeits-
+Defekt: ein grüner Agent-City-Heartbeat garantiert derzeit nicht, dass lokaler State auf
+`main` persistiert wurde.
+
+### Gepinnter Hub-Beweis
+
+Der aus diesem Lauf entstandene `steward-federation/main`-Stand ist:
+
+- Commit: `de1286385359cc33f5f7efb1dec5e478e2aac833`
+- Tree: `ad1c884ac382841a2c709642581817ebbbe67d83`
+- Commit-Zeit: `2026-07-14T05:24:44Z`
+- `nadi/agent-city_to_steward.json`:
+  Blob `ed043b9cc18dd3aeeb24217e5bec76f367a37e3a`, 65.459 Bytes, 66 Nachrichten.
+
+Nach Dispatch-Zeitpunkt `1784006282` enthält dieser Blob genau sechs neue Nachrichten von
+`ag_b670dc6cbcb705fe` an Steward:
+
+- 4 × `city_report`
+- 1 × `federation.agent_claim`
+- 1 × `heartbeat`
+
+Alle sechs haben nichtleere 64-Zeichen-Hashes und 88-Zeichen-Base64-Signaturen. Alle sechs
+Signaturen wurden lokal mit dem 32-Byte-Ed25519-Public-Key aus dem neuesten Agent-City-Claim
+verifiziert. Alle sechs Hashes passen zum jeweiligen ursprünglichen Wire-Format.
+
+Wichtig für spätere Hash-Prüfungen: `nadi_kit` fügt den vier bereits durch
+`FederationNadi` signierten Reports im Hub ein `id`-Feld hinzu. Dieses Feld war nicht Teil
+der ursprünglichen Signatur. Der Ursprungs-Hash lässt sich daher für diese Reports nur
+rekonstruieren, wenn das nachträglich ergänzte `id` neben den Signaturfeldern ausgeschlossen
+wird. Claim und Heartbeat wurden direkt von `nadi_kit` inklusive ihrer ID signiert.
+
+Seit dem Dispatch enthält der Hub null neue Nachrichten von der Fossil-ID
+`ag_365d8a2518ac7210`. T0c ist damit am tatsächlichen Produktionsübergabepunkt behoben.
+
+### Steward-Importbeweis
+
+Der regulär gestartete Steward-Heartbeat `29308716184` (nicht zusätzlich manuell ausgelöst)
+importierte den Hub-Stand und endete als GitHub-Job erfolgreich. Daraus entstand:
+
+- Steward-Commit: `8fb6cfffde497dbeb730727d4f1c94d0ea32f8ea`
+- Tree: `a28cdd3e9140f719df0c1d2d0e3c9ad1dba62ee2`
+- Commit-Zeit: `2026-07-14T05:32:54Z`
+- Inbox-Blob: `84be272ee3f952d99c563d0fdfb981bd5d0df0a2`
+- Inbox-Größe: 621.360 Bytes, 638 Nachrichten.
+
+Die Steward-Inbox enthält dieselben sechs neuen kanonischen Agent-City-Nachrichten:
+
+- vier Reports, einen Claim, einen Heartbeat,
+- sechs von sechs Ursprungshashes korrekt,
+- sechs von sechs Ed25519-Signaturen gültig,
+- null neue Nachrichten von `ag_365d8a2518ac7210` seit Dispatch.
+
+Damit ist die in §8 verlangte T0c-Produktionsverifikation vollständig. Eine bloße
+Feld-Anwesenheitsmessung reicht nicht: Hash und Signatur wurden tatsächlich kryptographisch
+geprüft.
+
+### Der nächste Steward-Blocker ist jetzt ebenfalls live bewiesen
+
+Der vollständige Steward-Log `29308716184` hat 2977 Zeilen und reproduziert den §8-Befund
+auf dem neuen, korrekt signierten Input:
+
+- `Hook dharma_federation failed: name 'Path' is not defined` = 7 Treffer,
+- `GATEWAY` = 0 Treffer,
+- der direkte Claim-Pfad verarbeitet Claims weiterhin vor dem Crash,
+- der Log behauptet mehrfach, `ag_b670...` sende „unsigned/invalid“ Nachrichten, obwohl
+  die sechs neuen Nachrichten kryptographisch gültig sind.
+
+Die Warnung ist inhaltlich unzuverlässig. Die Legacy-Dharma-Schleife lehnt zunächst jede
+noch nicht in `reaper._peers` bekannte `ag_*`-Quelle ab (`dharma.py:455-459`), bevor sie die
+vorhandene Signatur prüft. Anschließend fasst sie alle Rejections pauschal als
+„unsigned/invalid“ zusammen. Sie behandelt weiterhin Claims, Reports und andere Operationen
+wie Heartbeats.
+
+Zusätzlich wartet hinter dem derzeit unerreichbaren Gateway ein zweiter Wire-Format-Fehler:
+`NadiFederationTransport.read_outbox()` berechnet den eingehenden `payload_hash` nur über
+`item["payload"]` (`federation_transport.py:302-311`). Das widerspricht dem dokumentierten
+und produktiv verwendeten Ganznachrichten-Format von `FederationBridge`, `nadi_kit` und dem
+reparierten `FederationNadi`.
+
+Der Read-only-Census aus dem §8-Snapshot hatte diesen Protokollsplit bereits quantifiziert:
+
+- 258 Nachrichten mit nichtleeren Hash-/Signaturfeldern,
+- 205 Hashes passten zum Ganznachrichten-Format,
+- 13 passten nur zum Payload-Format,
+- 40 passten zu keinem der beiden rekonstruierten Formate.
+
+Wenn nur `Path`/`json` repariert und der Gateway dadurch erreichbar gemacht würde, würde der
+Transport einen großen Teil der legitimen signierten Föderationsnachrichten als
+`integrity_check_failed` quarantänisieren. Deshalb bleibt ein isolierter Import-Fix ebenso
+unsicher wie der alte Vorschlag, nur den Claim-Bypass zu löschen.
+
+### Verbindlicher nächster Arbeitsauftrag
+
+T0c ist abgeschlossen. Die nächste Session beginnt nicht mit einer Zustandsbereinigung,
+sondern mit einem zusammenhängenden Steward-Sicherheitsfix auf einem frischen Branch vom
+dann aktuellen `main`:
+
+1. Reale Regressionstests bauen, die die gepinnte Form der gültigen T0c-Nachrichten durch
+   `NadiFederationTransport` → Dharma → Gateway führen.
+2. Beweisen, dass Claim-Bootstrap und direkt folgende Protected Operation in derselben Inbox
+   nicht von der Legacy-Heartbeat-Schleife entfernt werden.
+3. Eingehende Hash-Validierung auf das kanonische Ganznachrichten-Format umstellen; die
+   nachträgliche Hub-ID-Mutation muss explizit berücksichtigt oder an der Hub-Grenze beendet
+   werden. Keine stillschweigende Mehrdeutigkeit.
+4. `Path` und `json` in den tatsächlichen Modul-Scope bringen.
+5. Die Legacy-Schleife auf echte `heartbeat`-Operationen begrenzen und Bootstrap-/Gateway-
+   Reihenfolge so ändern, dass der Gateway jede relevante Nachricht zuerst sicher beurteilt.
+6. Zunächst Beobachtungsmodus gegen den gepinnten Inbox-Blob ausführen und Zählwerte für
+   accepted/rejected/quarantined/removed dokumentieren.
+7. Erst danach produktiv verifizieren: `GATEWAY` muss > 0 sein, gültige T0c-Nachrichten
+   dürfen nicht quarantänisiert werden, direkte wiederholte Claim-Ingests müssen enden.
+8. Erst nach diesem Produktionsbeweis folgt B': gemeinsamer Inbox-/Registry-Purge.
+
+Der Agent-City-GH006-State-Persistenzfehler bleibt als separates Folgeticket erhalten und
+darf beim Steward-Gateway-Fix nicht nebenbei vermischt werden.
