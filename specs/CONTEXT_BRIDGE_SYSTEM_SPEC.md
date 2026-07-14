@@ -436,6 +436,7 @@ Ein leeres Dict oder eine leere Liste ist kein zulässiger Universal-Fallback.
 | CB-20 | Konflikte zwischen Operatorauftrag, Arbeitsstand, Live-Signal und Backlog ungelöst | Architekturdefizit | deterministischer Text, aber falsche Handlungspriorität |
 | CB-21 | Heartbeat installiert `steward-protocol` vom jeweils aktuellen Default-Branch ohne Commit-Pin | Workflow und Produktionslog belegt | Cross-Repo-Typverträge können zwischen Steward-Commits driften und sind ohne Protocol-Provenance nicht reproduzierbar |
 | CB-22 | Issue-Reader liefert nur Nummer und Titel, während der Renderer nicht gelieferte Labels erwartet; Eligibility und Prioritätsmetadaten fehlen | Code, Live-Issue-Inventar und Produktionsoutput belegt | untrusted Neuigkeit ersetzt kuratierte Relevanz; Labels suggerieren eine nicht existierende Auswahl |
+| CB-23 | `PHASE2_CURRENT` besitzt keinen maschinenprüfbaren Rollen-, Freshness-, Review- oder Konfliktvertrag und enthält imperative Prosa sowie lokale absolute Pfade | Git-Historie, Inhalt und fehlende Call-Sites belegt | content-addressierter Snapshot kann fälschlich als aktuelle autoritative Anweisung oder PUBLIC_SAFE-Text erscheinen |
 
 ---
 
@@ -648,6 +649,12 @@ Vorläufiger Vertrag:
 - Ob zusätzlich eine kompakte maschinenlesbare Zusammenfassung extrahiert wird, bleibt
   bis Feature-Spec 02 offen.
 
+OQ-15 präzisiert: Content-Addressing, Review-Provenance, Referenzintegrität, Freshness und
+semantischer Konflikt sind getrennte Statusachsen. Der aktuelle Blob darf wegen
+imperativer Prosa und lokalen absoluten Pfaden nicht roh in Root-Dateien übernommen
+werden. Ohne authentifizierte Operatorquelle lautet der Session-Auftragsstatus
+`operator_unknown`, nicht der aus dem Cockpit rekonstruierte Work-Claim.
+
 Ein stabiler Dokumentpfad ist kein verbotener Hardcode. Er verleiht dem Dokument jedoch
 keine höhere Autorität. Verboten sind volatile
 Produktionswerte, Identitäten, Owner, Branch-Heads oder Aufgabeninhalte im Quellcode.
@@ -663,7 +670,9 @@ für Menschen sichtbar mindestens unterscheiden:
 - `snapshot_id` des einmal assemblierten Eingabemodells,
 - `payload_hash` des gemeinsamen semantischen Kerns,
 - Consumer-Format/Schema-Version,
-- Status jeder verwendeten Quelle: `valid`, `unavailable`, `invalid`, `stale`, `unsafe`,
+- Status jeder verwendeten Quelle nach dem vollständigen OQ-13-Vertrag, insbesondere
+  `valid`, `empty`, `not_configured`, `unavailable`, `invalid`, `stale`, `unsafe` oder
+  `unsupported`,
 - Publikationszeit als Provenance, nicht als alleinige Freshness-Wahrheit,
 - Hinweis, ob der Output deterministisch oder LLM-beteiligt ist.
 
@@ -910,7 +919,7 @@ muss ein menschlich reviewter Minimal-Fallback feststehen, der:
 | OQ-12 | GESCHLOSSEN: Welche dynamischen Felder sind öffentlich zulässig und welchem C0-C4-Typ gehören sie an? | Evidence-Paket OQ-12/OQ-05; PUBLIC_SAFE-Allowlist und Default-Deny-Feldmatrix entschieden |
 | OQ-13 | GESCHLOSSEN: Welche Quellen sind required, optional oder publish-blocking? | Evidence-Paket OQ-13; Vertragsquellen blockieren, Beobachtungsquellen degradieren ehrlich statt als gesunde Leere |
 | OQ-14 | TEILGESCHLOSSEN: Welcher reale Kill-Switch stoppt geplante, manuelle und bereits laufende Publisher? | Evidence-Paket OQ-06/OQ-14; manueller Disable/Force-Cancel/Revocation/Fence-Pfad belegt, Operations-Drill und dauerhafter Schalter offen |
-| OQ-15 | Wie wird ein veralteter oder manipulierter Current-Phase-Arbeitsstand erkannt und angezeigt? | verhindert neue Single-Point-of-Failure-Semantik |
+| OQ-15 | GESCHLOSSEN: Wie wird ein veralteter oder manipulierter Current-Phase-Arbeitsstand erkannt und angezeigt? | Evidence-Paket OQ-15; Git-Integrität, Review-Provenance, Referenzintegrität, Freshness und semantischer Konflikt bleiben getrennte Statusachsen |
 | OQ-16 | GESCHLOSSEN: Welche Prozesspfade können außerhalb des Heartbeat-Workflows parallel publizieren? | Evidence-Paket OQ-01/OQ-16; zwei Root-Writer, Git-NADI-Nebenpublisher, Post-Step und interner Cetana-/Workflow-Mehrfachdispatch belegt |
 | OQ-17 | GESCHLOSSEN: Ist das Repository und sind alle einbezogenen Issue-/Federation-Daten öffentlich? | Evidence-Paket OQ-17; Root-Output ist immer PUBLIC_SAFE, privilegierte/runtime Daten default-deny |
 | OQ-18 | GESCHLOSSEN: Welche einzelne reviewte Quelldatei definiert den statischen Verfassungskern, und ist `.steward/conventions.md` dafür in Inhalt und Governance geeignet? | Evidence-Paket OQ-18/OQ-07; bestehender Pfad bleibt einzige Quelle, aktueller Inhalt ist vor Härtung nicht freigegeben |
