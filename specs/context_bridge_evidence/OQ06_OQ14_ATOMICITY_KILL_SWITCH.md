@@ -1,10 +1,10 @@
 # OQ-06 / OQ-14 — ATOMICITY, STOP UND RECOVERY
 
 > **Status OQ-06:** EVIDENCE COMPLETE — vorhandene Garantien und erforderlicher Vertrag entschieden
-> **Status OQ-14:** EVIDENCE PARTIAL — realer manueller Containment-Pfad belegt, Drill und dauerhafter Mechanismus offen
+> **Status OQ-14:** EVIDENCE COMPLETE — zweistufiger Stop-/Fence-/Recovery-Vertrag entschieden; Drill ist G2-Aktivierungsgate
 > **Untersuchungsdatum:** 2026-07-14
-> **Steward-Head:** `02938251c2c28389340dede8d9e125ba05af17ab`
-> **Steward-Tree:** `7b622d34d476137e42dc1f79892754e13107fba0`
+> **Steward-Head:** `18e39055ca347366cd265e9e40c472a81733c80e`
+> **Steward-Tree:** `6c6623a8c6b5f04de9d5f660cead8a76d77a2131`
 > **Scope:** Dateischreib-, Lock-, Prozessstop-, Credential- und Recovery-Semantik. Keine
 > Änderung an Produktivcode, Workflow, Secrets oder Repository-Settings.
 
@@ -224,7 +224,7 @@ Ein einzelner Schritt reicht nicht:
 
 ---
 
-## 9. OQ-14 — vorläufiger manueller Containment-Vertrag
+## 9. OQ-14 — manueller Containment-Vertrag
 
 Ein heute real ausführbarer Notstopp muss in dieser Reihenfolge erfolgen:
 
@@ -234,39 +234,78 @@ Ein heute real ausführbarer Notstopp muss in dieser Reihenfolge erfolgen:
 2. **Aktive Arbeit stoppen:** queued und in-progress Runs erneut listen; wegen
    `if: always()` für nicht zuverlässig stoppende Runs den offiziellen Force-Cancel-
    Endpoint verwenden; bis zum terminalen Status pollen.
-3. **Push-Autorität entziehen:** `FEDERATION_PAT` beim tatsächlichen Aussteller widerrufen
+3. **Ausstehende Delivery stoppen:** alle von der Context-Bridge erzeugten offenen PRs
+   inventarisieren, Auto-Merge deaktivieren und die PRs schließen beziehungsweise durch
+   einen Remote-Fence unmergebar machen. Ein bereits grüner PR kann sonst nach Ende des
+   Writer-Prozesses weiterleben.
+4. **Push-Autorität entziehen:** `FEDERATION_PAT` beim tatsächlichen Aussteller widerrufen
    oder rotieren und danach das Repository-Secret entfernen/ersetzen. Secret-Löschung
    allein ist keine Revocation des Tokens.
-4. **Remote fence setzen:** Main-Schreibbarkeit so einschränken, dass der bisherige
-   Automation-Principal keine Direct-Push-/Check-Bypass-Wirkung mehr besitzt; konkrete
-   Branch-/Ruleset-Änderung benötigt eine reviewte Governance-Operations-Spec.
-5. **Zustand prüfen:** Main-Head und alle seit Start des Incidents erzeugten Commits gegen
+5. **Remote fence setzen:** Der durch OQ-07 entschiedene PR-only-Branchschutz muss auch
+   Admins erfassen und besitzt keinen Automation-Bypass. Bei noch nicht migrierter
+   Produktion ist dieser Fence als Incidentmaßnahme vor jedem Wiederanlauf herzustellen.
+6. **Zustand prüfen:** Main-Head und alle seit Start des Incidents erzeugten Commits gegen
    erlaubte Pfade und Blobs verifizieren.
-6. **Sicherer Fallback:** bei invalidem Root-Context nur den menschlich reviewten statischen
+7. **Sicherer Fallback:** bei invalidem Root-Context nur den menschlich reviewten statischen
    Minimalvertrag publizieren; keine alte dynamische Agenda als aktuell restaurieren.
-7. **Wiederanlauf:** erst nach Root-Cause-Fix, Contract-Checks, Credential-Minimierung und
+8. **Wiederanlauf:** erst nach Root-Cause-Fix, Contract-Checks, Credential-Minimierung und
    expliziter menschlicher Freigabe Workflow und Writer wieder aktivieren.
 
 Diese Schritte sind ein Containment-Runbook, kein bereits getesteter Ein-Klick-Kill-Switch.
 
 ---
 
-## 10. Warum OQ-14 noch nicht geschlossen ist
+## 10. Dauerhafter Publisher-Kill-Switch
 
-- Der Disable-/Force-Cancel-/Revocation-Ablauf wurde aus Sicherheitsgründen nicht
-  destruktiv gegen Produktion ausgeführt.
-- Der Principal und Aussteller von `FEDERATION_PAT` sind unbekannt.
-- Es existiert kein minimal privilegierter, publisher-spezifischer Credential-Vertrag.
-- Es existiert kein in-repo Feature-Flag, das alle lokalen Writer und Delivery-Pfade vor
-  jeder Seiteneffektgrenze fail-closed stoppt.
-- Ein Branch-/Ruleset-Fence ist wegen OQ-07 noch nicht als konkrete, getestete
-  Governance-Topologie entschieden.
-- Der statische Minimal-Fallback ist konzeptionell beschrieben, aber noch nicht als
-  reviewtes Artefakt und Drill verifiziert.
+Der spätere kanonische Publisher benötigt zusätzlich zum Incident-Runbook einen
+fail-closed Schalter:
 
-OQ-14 kann erst schließen, wenn ein kontrollierter Operations-Drill mindestens Disable,
-Run-Inventar, Force-Cancel-Semantik, Credential-Revocation/Fence und sicheren Wiederanlauf
-belegt. Dieser Drill darf nicht beiläufig während der G0-Recon erfolgen.
+1. Kanonische Root-Publikation ist ohne explizite Aktivierung deaktiviert.
+2. Jeder kanonische Einstieg prüft denselben typisierten Modus vor Snapshot/Write und
+   erneut vor PR-/Git-Delivery.
+3. Zulässige Modi sind mindestens `disabled`, `preview` und `canonical`; unbekannt,
+   fehlend oder ungültig bedeutet `disabled`.
+4. `disabled` verbietet Root-Writes, Generationserfolg, Delivery-Branch-Push, PR-Erzeugung
+   und Auto-Merge-Aktivierung. Read-only Diagnose bleibt möglich.
+5. Der Schalter darf nicht aus Issues, Tasks, Senses, Federation oder LLM-Text stammen.
+6. Die Aktivierungsquelle und ihre Änderung gehören zum geschützten Governance-Scope aus
+   OQ-07; ein Runtime-/Repository-Variable darf als schneller zusätzlicher Disable-Key
+   dienen, aber nicht allein die geschützte Aktivierungsentscheidung ersetzen.
+7. Ein während eines Runs geänderter Remote-Schalter ist kein Beweis, dass der laufende
+   Prozess ihn sieht. Bereits laufende Jobs und PRs werden deshalb weiterhin über
+   Force-Cancel und PR-Fence gestoppt.
+8. Wiederanlauf erfordert eine neue Generation; ein vor dem Stop vorbereiteter Snapshot
+   darf nicht nachträglich ausgeliefert werden.
+
+Die genaue Konfigurationsdatei, Variable und Abfrage-API werden in der Operations-/Delivery-
+Feature-Spec festgelegt. Ein einzelnes ungeschütztes Environment-Flag ist nicht
+ausreichend.
+
+---
+
+## 10A. Gate-Grenze: Entscheidung in G0, Drill in G2
+
+Der bisherige Text erzeugte einen unauflösbaren Zirkelschluss:
+
+- G0 ist ausdrücklich read-only und verbietet Workflow-, Secret- und
+  Repository-Settings-Änderungen.
+- Der geforderte echte Drill benötigt genau solche kontrollierten Operationen.
+- Gleichzeitig sollte der nicht ausgeführte Drill G0 blockieren.
+
+Die korrigierte Gate-Grenze lautet:
+
+- **G0:** vorhandene Stop-Oberflächen, Lücken, Reihenfolge, Remote-Fence, Safe-Fallback-
+  Semantik und dauerhafter Kill-Switch-Vertrag sind evidence-basiert entschieden.
+- **G1:** die einzelne Operations-/Delivery-Feature-Spec benennt exakte APIs, Principals,
+  Modi, Branches, Checks, PR-Erkennung, Recovery-Schritte und Abbruchkriterien.
+- **G2 vor Aktivierung:** in einem kontrollierten, reversiblen Drill werden Disable,
+  Run-Inventar, Force-Cancel, ausstehende PRs, Remote-Fence, Credential-Containment,
+  Fallback und sicherer Wiederanlauf tatsächlich verifiziert.
+
+Kein automatischer kanonischer Publish darf vor bestandenem Drill aktiviert werden. Die
+Verschiebung lockert den Sicherheitsvertrag nicht; sie legt den destruktiven Beweis an
+die erste Phase, in der die zu testende Implementierung und ihre Betriebsoberflächen
+überhaupt existieren.
 
 ---
 
@@ -301,10 +340,11 @@ belegt. Dieser Drill darf nicht beiläufig während der G0-Recon erfolgen.
 ## 13. Gate-Wirkung
 
 - OQ-06 ist geschlossen.
-- OQ-14 bleibt teilweise offen.
-- OQ-07 bleibt bis OQ-14 und der Delivery-Governance teilweise offen.
-- G0 bleibt offen.
+- OQ-14 ist als Architektur- und Operationsvertrag geschlossen.
+- Der reale Drill bleibt verpflichtendes G2-Aktivierungsgate und ist nicht vorweggenommen.
+- Nach Abschluss von OQ-07 sind alle achtzehn OQ-Fragen evidence-basiert geschlossen;
+  G0 ist damit review-ready, aber noch nicht reviewt oder freigegeben.
 - Keine Lock-, Writer-, Workflow-, Secret-, Branchschutz- oder Recovery-Änderung ist aus
   diesem Evidence-Paket freigegeben.
-- Der nächste isolierte Recon ist OQ-12/OQ-05: Feldklassen, Normalisierung, Hash-Domains
-  und semantische Commitwürdigkeit.
+- Der nächste Schritt ist die konsolidierte G0-Schlussprüfung der Master-Spec, nicht ein
+  Produktivdrill.

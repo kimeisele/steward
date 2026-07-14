@@ -719,7 +719,9 @@ schema-versioniert sein.
 
 Die bestehende GitHub-Actions-Concurrency schützt nur gleichnamige Workflow-Läufe. Sie ist
 noch kein Beweis gegen manuelle, lokale oder anderweitig gestartete Publisher. Locking,
-Crash-Recovery, Filesystem-Annahmen und Parallelprozesse bleiben G0-Blocker.
+Crash-Recovery, Filesystem-Annahmen und Parallelprozesse waren deshalb G0-Fragen; ihr
+Garantievertrag ist durch OQ-06/OQ-14 entschieden, Implementierung und Drill bleiben
+G1/G2-Arbeit.
 
 Zwei unabhängige Root-Dateien können auf üblichen Dateisystemen nicht als echte atomare
 Gruppe ersetzt werden. Der Vertrag verspricht daher nur atomare Ersetzung je Datei,
@@ -931,7 +933,7 @@ muss ein menschlich reviewter Minimal-Fallback feststehen, der:
 | OQ-11 | GESCHLOSSEN: Welche Discovery-, Hierarchie-, Prioritäts- und Include-Regeln gelten aktuell für Claude Code und Codex? | Evidence-Paket OQ-11; byte-identischer Root-Inhalt bleibt Default |
 | OQ-12 | GESCHLOSSEN: Welche dynamischen Felder sind öffentlich zulässig und welchem C0-C4-Typ gehören sie an? | Evidence-Paket OQ-12/OQ-05; PUBLIC_SAFE-Allowlist und Default-Deny-Feldmatrix entschieden |
 | OQ-13 | GESCHLOSSEN: Welche Quellen sind required, optional oder publish-blocking? | Evidence-Paket OQ-13; Vertragsquellen blockieren, Beobachtungsquellen degradieren ehrlich statt als gesunde Leere |
-| OQ-14 | TEILGESCHLOSSEN: Welcher reale Kill-Switch stoppt geplante, manuelle und bereits laufende Publisher? | Evidence-Paket OQ-06/OQ-14; manueller Disable/Force-Cancel/Revocation/Fence-Pfad belegt, Operations-Drill und dauerhafter Schalter offen |
+| OQ-14 | GESCHLOSSEN: Welcher reale Kill-Switch stoppt geplante, manuelle und bereits laufende Publisher? | Evidence-Paket OQ-06/OQ-14; zweistufiger Disable/Force-Cancel/PR-Fence/Revocation-Vertrag plus fail-closed Publishermodus entschieden, realer Drill bleibt G2-Aktivierungsgate |
 | OQ-15 | GESCHLOSSEN: Wie wird ein veralteter oder manipulierter Current-Phase-Arbeitsstand erkannt und angezeigt? | Evidence-Paket OQ-15; Git-Integrität, Review-Provenance, Referenzintegrität, Freshness und semantischer Konflikt bleiben getrennte Statusachsen |
 | OQ-16 | GESCHLOSSEN: Welche Prozesspfade können außerhalb des Heartbeat-Workflows parallel publizieren? | Evidence-Paket OQ-01/OQ-16; zwei Root-Writer, Git-NADI-Nebenpublisher, Post-Step und interner Cetana-/Workflow-Mehrfachdispatch belegt |
 | OQ-17 | GESCHLOSSEN: Ist das Repository und sind alle einbezogenen Issue-/Federation-Daten öffentlich? | Evidence-Paket OQ-17; Root-Output ist immer PUBLIC_SAFE, privilegierte/runtime Daten default-deny |
@@ -952,12 +954,13 @@ muss ein menschlich reviewter Minimal-Fallback feststehen, der:
 - statischer Verfassungskern klar vom dynamischen Datenblock getrennt?
 - Consumer-Verträge statt Bytegleichheitsannahme belegt?
 - Transaktions-, Concurrency- und Provenance-Vertrag entscheidungsreif?
-- Safe Fallback und realer Kill-Switch verifiziert?
+- Safe-Fallback-, Kill-Switch- und aktueller Containment-Vertrag entscheidungsreif?
 - C0-C4-Feldklassifikation und Source-Fehlerklassen vollständig?
 
-**Aktueller Status:** OFFEN.
-**Freigabewirkung:** BLOCKIERT, solange die noch offenen OQ-Fragen und G0-Sicherheitsfragen nicht
-mit Beweisen oder expliziten, reviewten Entscheidungen geschlossen sind.
+**Aktueller Status:** REVIEW-READY — alle OQ-Fragen evidence-basiert geschlossen; finale
+G0-Schlussprüfung noch nicht erfolgt.
+**Freigabewirkung:** IMPLEMENTIERUNG WEITERHIN BLOCKIERT, bis die konsolidierte
+Master-Spec ausdrücklich reviewt und G0 freigegeben ist.
 
 ### Gate G1 — Feature-Spec Review
 
@@ -974,6 +977,10 @@ Für jedes Feature existiert eine eigene ausführbare Spec mit:
 ### Gate G2 — Implementierungsfreigabe
 
 Erst nach expliziter Freigabe einer einzelnen Feature-Spec darf Code geändert werden.
+Automatischer kanonischer Publish darf zusätzlich erst aktiviert werden, nachdem ein
+kontrollierter Operations-Drill Disable, Run-Inventar, Force-Cancel, ausstehende
+Delivery-PRs, Remote-Fence, Credential-Containment, Safe Fallback und Wiederanlauf positiv
+belegt hat.
 
 **Aktueller Status:** GESPERRT.
 
@@ -1001,7 +1008,7 @@ offenen Fragen und jede Feature-Spec dürfen sie widerlegen oder verfeinern.
 
 | Reviewpunkt | Aufnahme in DRAFT 0.2 | Status |
 |---|---|---|
-| Prompt Injection / Trust Boundaries | §§0B, 3.5-3.8, I-13/I-17, adversariale Fixtures | als G0-Blocker aufgenommen |
+| Prompt Injection / Trust Boundaries | §§0B, 3.5-3.8, I-13/I-17, adversariale Fixtures | G0-Vertrag evidence-basiert entschieden; Implementierung gesperrt |
 | Byteidentität nicht bewiesen | Z2, I-01, Option E, OQ-11 | zur reversiblen Hypothese herabgestuft |
 | Atomicity / Concurrency | §8.3, I-15, OQ-06/OQ-16 | Garantievertrag und Writer-Landschaft entschieden; Implementierung weiterhin gesperrt |
 | semantische Änderung undefiniert | §8.4, OQ-05/OQ-12 | C0-C4-Modell, PUBLIC_SAFE-Feldmatrix und Hash-/Committrigger entschieden |
@@ -1012,7 +1019,7 @@ offenen Fragen und jede Feature-Spec dürfen sie widerlegen oder verfeinern.
 | Befund und Schlussfolgerung vermischt | §2.1, CB-01, §2.4 | Beweisart/Erreichbarkeit/Wirkung getrennt |
 | Feature-Reihenfolge / E2E | §9 Feature 00/01 | Publisher und Delivery gemeinsamer Exit-Vertrag |
 | adversariale Tests fehlen | §10.3 | verpflichtender Fixture-Katalog aufgenommen |
-| Rollback unbestimmt | §§11.1-11.2, OQ-14 | Kill-Switch und Safe Fallback G0-Blocker |
+| Rollback unbestimmt | §§11.1-11.2, OQ-14 | Kill-Switch-/Fallback-Vertrag entschieden; realer Drill bleibt G2-Aktivierungsgate |
 | `AGENTS.md` Governance-Blast-Radius | Z8, Option E, Feature 00, OQ-07/OQ-18 | statischer Kern und Review-Gates gefordert |
 | ein Publisher ist keine Wahrheit | §§0B, 8.5 | Konflikte werden angezeigt, nicht verschmolzen |
 | `PHASE2_CURRENT` als Single Point of Failure | §§0A/0B, I-16, OQ-15 | ausdrücklich keine SSOT; optional/degradierbar |
