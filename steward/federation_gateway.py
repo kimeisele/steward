@@ -92,10 +92,9 @@ class GatewayStats:
         }
 
 
-# Replay protection — sliding timestamp window + per-source LRU of seen hashes.
-# Window is generous enough to absorb clock skew and NADI relay latency, tight
-# enough that an attacker cannot stockpile signed messages.
-_REPLAY_WINDOW_S: float = 300.0  # ±5 minutes
+# Replay protection — federation-TTL window + per-source LRU of seen hashes.
+# The relay cadence is 15 minutes, so the window must cover multiple cycles.
+_REPLAY_WINDOW_S: float = 7200.0
 _REPLAY_CACHE_PER_SOURCE: int = 256  # LRU size per source — bounds memory
 
 
@@ -405,6 +404,8 @@ class FederationGateway(GatewayProtocol):
             # Verify node_id matches derived ID from public_key (prevent tampering)
             if derive_node_id(public_key) != node_id:
                 return False, "identity_spoofing_attempt", "gateway_authorization"
+            if str(msg.get("source", "")).strip() != node_id:
+                return False, "identity_spoofing_attempt", "gateway_authorization"
             # Proof of possession: the claim must be signed with the very key it
             # claims. Without this, anyone who can drop a message into the hub can
             # register under any agent_name with a key they just made up — and the
@@ -418,17 +419,9 @@ class FederationGateway(GatewayProtocol):
             payload_hash = str(msg.get("payload_hash", "")).strip()
             signature = str(msg.get("signature", "")).strip()
             if not payload_hash or not signature:
-                logger.warning(
-                    "GATEWAY: agent_claim from %s carries no signature — "
-                    "proof of possession missing (not yet enforced)",
-                    node_id,
-                )
+                return False, "claim_proof_missing", "gateway_authorization"
             elif not verify_payload_signature(public_key, payload_hash, signature):
-                logger.warning(
-                    "GATEWAY: agent_claim from %s failed proof of possession — "
-                    "signature does not match the claimed public key (not yet enforced)",
-                    node_id,
-                )
+                return False, "claim_proof_invalid", "gateway_authorization"
             else:
                 logger.info("GATEWAY: agent_claim from %s proved possession of its key", node_id)
         if operation in PUBLIC_OPERATIONS:
@@ -503,6 +496,15 @@ class FederationGateway(GatewayProtocol):
             logger.warning("GATEWAY: read_outbox failed: %s", e)
             self._stats.errors += 1
             return 0
+
+        messages = sorted(
+            messages,
+            key=lambda message: (
+                0
+                if isinstance(message, dict) and message.get("operation") == "federation.agent_claim"
+                else 1
+            ),
+        )
 
         processed = 0
         for msg in messages:
@@ -623,6 +625,18 @@ class FederationGateway(GatewayProtocol):
                     "operation": msg.get("operation", ""),
                 },
             )
+        if messages and hasattr(transport, "remove_inbox_messages"):
+            try:
+                removed = transport.remove_inbox_messages(messages)
+                if isinstance(removed, int):
+                    logger.info(
+                        "GATEWAY INBOUND: consumed %d terminal message(s), removed %d from inbox",
+                        len(messages),
+                        removed,
+                    )
+            except Exception:
+                self._stats.errors += 1
+                logger.exception("GATEWAY INBOUND: failed to remove terminal messages from inbox")
         return processed
 
     # ── Observability ─────────────────────────────────────────────

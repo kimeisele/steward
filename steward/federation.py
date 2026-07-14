@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from steward.federation_crypto import derive_node_id, sign_payload_hash
+from steward.federation_crypto import canonical_message_hash, derive_node_id, sign_payload_hash
 from vibe_core.mahamantra.federation.types import FederationMessage
 
 logger = logging.getLogger("STEWARD.FEDERATION")
@@ -515,8 +515,8 @@ class FederationBridge:
         steward-federation/nadi_kit's _sign_message — wire format compatible
         with steward.federation_crypto.verify_payload_signature.
         """
-        canonical = {k: v for k, v in msg.items() if k not in ("payload_hash", "signature")}
-        payload_hash = hashlib.sha256(json.dumps(canonical, sort_keys=True).encode("utf-8")).hexdigest()
+        canonical = {k: v for k, v in msg.items() if k not in ("payload_hash", "signature", "signer_key")}
+        payload_hash = canonical_message_hash(canonical)
         signature = sign_payload_hash(identity["private_key"], payload_hash)
         return {**canonical, "payload_hash": payload_hash, "signature": signature}
 

@@ -7,7 +7,7 @@ import json
 from unittest.mock import MagicMock
 
 from steward.federation import FederationBridge
-from steward.federation_crypto import NodeKeyStore, sign_payload_hash
+from steward.federation_crypto import NodeKeyStore, canonical_message_hash, sign_payload_hash
 from steward.federation_gateway import FederationGateway, _is_a2a, _is_nadi
 from steward.federation_transport import NadiFederationTransport
 from steward.services import SVC_TASK_MANAGER
@@ -524,22 +524,15 @@ class TestProcessInbound:
             "reward": 108,
             "description": "Fix CI",
         }
-        (tmp_path / "nadi_inbox.json").write_text(
-            json.dumps(
-                [
-                    {
-                        "source": "node-x",
-                        "target": "steward",
-                        "operation": "governance_bounty",
-                        "payload": payload,
-                        "message_id": "gov-1",
-                        "payload_hash": __import__("hashlib")
-                        .sha256(json.dumps(payload, sort_keys=True).encode())
-                        .hexdigest(),
-                    }
-                ]
-            )
-        )
+        message = {
+            "source": "node-x",
+            "target": "steward",
+            "operation": "governance_bounty",
+            "payload": payload,
+            "message_id": "gov-1",
+        }
+        message["payload_hash"] = canonical_message_hash(message)
+        (tmp_path / "nadi_inbox.json").write_text(json.dumps([message]))
         bridge = FederationBridge(agent_id="steward", verified_agents_path=tmp_path / "verified_agents.json")
         gw = FederationGateway(bridge=bridge)
 
@@ -554,6 +547,7 @@ class TestProcessInbound:
         # the signature against, so we must reject.
         assert record["stage"] == "crypto_verification"
         assert record["reason"] == "unknown_sender"
+        assert json.loads((tmp_path / "nadi_inbox.json").read_text()) == []
 
     def test_unverified_sender_public_operation_is_allowed(self, tmp_path):
         transport = NadiFederationTransport(str(tmp_path))
@@ -568,22 +562,17 @@ class TestProcessInbound:
             "public_key": node_x_keys.public_key,
             "capabilities": ["infra"],
         }
-        (tmp_path / "nadi_inbox.json").write_text(
-            json.dumps(
-                [
-                    {
-                        "source": node_x_keys.node_id,
-                        "target": "steward",
-                        "operation": "federation.agent_claim",
-                        "payload": payload,
-                        "message_id": "claim-1",
-                        "payload_hash": __import__("hashlib")
-                        .sha256(json.dumps(payload, sort_keys=True).encode())
-                        .hexdigest(),
-                    }
-                ]
-            )
+        message = _sign_outbound(
+            {
+                "source": node_x_keys.node_id,
+                "target": "steward",
+                "operation": "federation.agent_claim",
+                "payload": payload,
+                "message_id": "claim-1",
+            },
+            node_x_keys,
         )
+        (tmp_path / "nadi_inbox.json").write_text(json.dumps([message]))
         bridge = FederationBridge(agent_id="steward", verified_agents_path=tmp_path / "verified_agents.json")
         gw = FederationGateway(bridge=bridge)
 
@@ -621,16 +610,16 @@ class TestProcessInbound:
         (tmp_path / "nadi_inbox.json").write_text(
             json.dumps(
                 [
-                    {
-                        "source": node_x_keys.node_id,
-                        "target": "steward",
-                        "operation": "governance_bounty",
-                        "payload": gov_payload,
-                        "message_id": "gov-a",
-                        "payload_hash": __import__("hashlib")
-                        .sha256(json.dumps(gov_payload, sort_keys=True).encode())
-                        .hexdigest(),
-                    }
+                    _sign_outbound(
+                        {
+                            "source": node_x_keys.node_id,
+                            "target": "steward",
+                            "operation": "governance_bounty",
+                            "payload": gov_payload,
+                            "message_id": "gov-a",
+                        },
+                        node_x_keys,
+                    )
                 ]
             )
         )
@@ -639,16 +628,16 @@ class TestProcessInbound:
         (tmp_path / "nadi_inbox.json").write_text(
             json.dumps(
                 [
-                    {
-                        "source": node_x_keys.node_id,
-                        "target": "steward",
-                        "operation": "federation.agent_claim",
-                        "payload": claim_payload,
-                        "message_id": "claim-b",
-                        "payload_hash": __import__("hashlib")
-                        .sha256(json.dumps(claim_payload, sort_keys=True).encode())
-                        .hexdigest(),
-                    }
+                    _sign_outbound(
+                        {
+                            "source": node_x_keys.node_id,
+                            "target": "steward",
+                            "operation": "federation.agent_claim",
+                            "payload": claim_payload,
+                            "message_id": "claim-b",
+                        },
+                        node_x_keys,
+                    )
                 ]
             )
         )
@@ -657,21 +646,16 @@ class TestProcessInbound:
         (tmp_path / "nadi_inbox.json").write_text(
             json.dumps(
                 [
-                    {
-                        "source": node_x_keys.node_id,
-                        "target": "steward",
-                        "operation": "governance_bounty",
-                        "payload": gov_payload,
-                        "message_id": "gov-c",
-                        "timestamp": __import__("time").time(),
-                        "payload_hash": __import__("hashlib")
-                        .sha256(json.dumps(gov_payload, sort_keys=True).encode())
-                        .hexdigest(),
-                        "signature": sign_payload_hash(
-                            node_x_keys.private_key,
-                            __import__("hashlib").sha256(json.dumps(gov_payload, sort_keys=True).encode()).hexdigest(),
-                        ),
-                    }
+                    _sign_outbound(
+                        {
+                            "source": node_x_keys.node_id,
+                            "target": "steward",
+                            "operation": "governance_bounty",
+                            "payload": gov_payload,
+                            "message_id": "gov-c",
+                        },
+                        node_x_keys,
+                    )
                 ]
             )
         )
@@ -703,23 +687,16 @@ class TestProcessInbound:
             "reward": 108,
             "description": "Fix CI",
         }
-        (tmp_path / "nadi_inbox.json").write_text(
-            json.dumps(
-                [
-                    {
-                        "source": node_x_keys.node_id,
-                        "target": "steward",
-                        "operation": "governance_bounty",
-                        "payload": gov_payload,
-                        "message_id": "gov-bad",
-                        "payload_hash": __import__("hashlib")
-                        .sha256(json.dumps(gov_payload, sort_keys=True).encode())
-                        .hexdigest(),
-                        "signature": "deadbeef",
-                    }
-                ]
-            )
-        )
+        message = {
+            "source": node_x_keys.node_id,
+            "target": "steward",
+            "operation": "governance_bounty",
+            "payload": gov_payload,
+            "message_id": "gov-bad",
+        }
+        message["payload_hash"] = canonical_message_hash(message)
+        message["signature"] = "deadbeef"
+        (tmp_path / "nadi_inbox.json").write_text(json.dumps([message]))
         bridge = FederationBridge(agent_id="steward", verified_agents_path=tmp_path / "verified_agents.json")
         gw = FederationGateway(bridge=bridge)
 
@@ -780,14 +757,16 @@ class TestProcessInbound:
             "public_key": node_a_keys.public_key,
             "capabilities": ["bounty_hunter", "infrastructure"],
         }
-        message = {
-            "source": node_a_keys.node_id,
-            "target": "node-b",
-            "operation": "federation.agent_claim",
-            "payload": payload,
-            "message_id": "claim-1",
-            "payload_hash": __import__("hashlib").sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest(),
-        }
+        message = _sign_outbound(
+            {
+                "source": node_a_keys.node_id,
+                "target": "node-b",
+                "operation": "federation.agent_claim",
+                "payload": payload,
+                "message_id": "claim-1",
+            },
+            node_a_keys,
+        )
         (node_b / "nadi_inbox.json").write_text(json.dumps([message]))
 
         processed = gw_b.process_inbound(transport_b)
@@ -797,6 +776,75 @@ class TestProcessInbound:
         assert registry[node_a_keys.node_id]["public_key"] == node_a_keys.public_key
         # Capabilities are normalised (set + sort) by the handler now
         assert sorted(registry[node_a_keys.node_id]["capabilities"]) == ["bounty_hunter", "infrastructure"]
+
+    def test_real_dharma_transport_gateway_claim_then_city_report(self, tmp_path):
+        from steward.hooks.dharma import DharmaFederationHook
+        from steward.reaper import HeartbeatReaper
+
+        transport = NadiFederationTransport(str(tmp_path))
+        node_keys = NodeKeyStore(tmp_path / "agent-city" / ".node_keys.json")
+        node_keys.ensure_keys()
+        reaper = HeartbeatReaper()
+        bridge = FederationBridge(
+            agent_id="steward",
+            reaper=reaper,
+            verified_agents_path=tmp_path / "verified_agents.json",
+        )
+        gateway = FederationGateway(bridge=bridge, reaper=reaper)
+        claim = _sign_outbound(
+            {
+                "id": "claim-signed-by-nadi-kit",
+                "source": node_keys.node_id,
+                "target": "steward",
+                "operation": "federation.agent_claim",
+                "payload": {
+                    "agent_name": "agent-city",
+                    "node_id": node_keys.node_id,
+                    "public_key": node_keys.public_key,
+                    "capabilities": ["city_governance"],
+                },
+            },
+            node_keys,
+        )
+        report = _sign_outbound(
+            {
+                "source": node_keys.node_id,
+                "target": "steward",
+                "operation": "city_report",
+                "payload": {
+                    "alive": 3,
+                    "population": 3,
+                    "chain_valid": True,
+                    "heartbeat": 42,
+                    "mission_results": [],
+                    "pr_results": [],
+                    "active_campaigns": [],
+                    "origin_phase": "moksha",
+                },
+                "priority": 1,
+                "correlation_id": "",
+                "ttl_s": 7200.0,
+            },
+            node_keys,
+        )
+        report["id"] = "hub-added-after-signing"
+        messages = [report, claim]
+        inbox = tmp_path / "nadi_inbox.json"
+        inbox.write_text(json.dumps(messages))
+
+        DharmaFederationHook()._process_inbox_messages(messages, reaper, bridge, transport)
+
+        assert not (tmp_path / "verified_agents.json").exists()
+        assert json.loads(inbox.read_text()) == messages
+        assert gateway.process_inbound(transport) == 2
+        assert json.loads(inbox.read_text()) == []
+        registry = json.loads((tmp_path / "verified_agents.json").read_text())
+        assert registry[node_keys.node_id]["public_key"] == node_keys.public_key
+        assert reaper.get_peer("agent-city") is not None
+        quarantine_records = [
+            path for path in (tmp_path / "quarantine").glob("*.json") if path.name != "index.json"
+        ]
+        assert quarantine_records == []
 
     def test_spoofed_agent_claim_is_quarantined_for_identity_spoofing(self, tmp_path):
         node_b = tmp_path / "node-b"
@@ -812,18 +860,16 @@ class TestProcessInbound:
             "public_key": attacker_keys.public_key,
             "capabilities": ["governance"],
         }
-        message = {
-            "source": "ag_world_gov",
-            "target": "node-b",
-            "operation": "federation.agent_claim",
-            "payload": payload,
-            "message_id": "claim-spoof",
-            "payload_hash": __import__("hashlib").sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest(),
-            "signature": sign_payload_hash(
-                attacker_keys.private_key,
-                __import__("hashlib").sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest(),
-            ),
-        }
+        message = _sign_outbound(
+            {
+                "source": "ag_world_gov",
+                "target": "node-b",
+                "operation": "federation.agent_claim",
+                "payload": payload,
+                "message_id": "claim-spoof",
+            },
+            attacker_keys,
+        )
         (node_b / "nadi_inbox.json").write_text(json.dumps([message]))
 
         assert gw_b.process_inbound(transport_b) == 0
@@ -893,15 +939,34 @@ class TestReplayProtection:
         keys.ensure_keys()
         bridge = _verified_mock_bridge(keys)
         gw = FederationGateway(bridge=bridge)
-        # Timestamp 1 hour in the past — outside the ±5min window
+        # Timestamp 3 hours in the past — outside the federation TTL window
         stale = _sign_outbound(
-            {"operation": "heartbeat", "source": keys.node_id, "payload": {}, "timestamp": time.time() - 3600},
+            {"operation": "heartbeat", "source": keys.node_id, "payload": {}, "timestamp": time.time() - 10800},
             keys,
         )
         processed = gw.process_inbound(self._make_transport([stale]))
 
         assert processed == 0
         bridge.ingest.assert_not_called()
+
+    def test_message_delayed_by_heartbeat_cadence_is_allowed(self, tmp_path):
+        keys = NodeKeyStore(tmp_path / "k" / ".node_keys.json")
+        keys.ensure_keys()
+        bridge = _verified_mock_bridge(keys)
+        gw = FederationGateway(bridge=bridge)
+        delayed = _sign_outbound(
+            {
+                "operation": "heartbeat",
+                "source": keys.node_id,
+                "payload": {},
+                "timestamp": time.time() - 900,
+                "ttl_s": 7200.0,
+            },
+            keys,
+        )
+
+        assert gw.process_inbound(self._make_transport([delayed])) == 1
+        bridge.ingest.assert_called_once()
 
     def test_message_without_timestamp_is_blocked(self, tmp_path):
         keys = NodeKeyStore(tmp_path / "k" / ".node_keys.json")
@@ -930,8 +995,30 @@ class TestReplayProtection:
         keys.ensure_keys()
         bridge = _verified_mock_bridge(keys)
         gw = FederationGateway(bridge=bridge)
-        # No timestamp, no signature — agent_claim is bootstrap and not subject
-        # to replay protection (it's idempotent at the handler level)
+        claim = _sign_outbound(
+            {
+                "operation": "federation.agent_claim",
+                "source": keys.node_id,
+                "payload": {
+                    "agent_name": "k",
+                    "node_id": keys.node_id,
+                    "public_key": keys.public_key,
+                    "capabilities": [],
+                },
+            },
+            keys,
+        )
+        # Send twice: second should still be accepted at the gateway level
+        # (the handler dedupes by node_id + content hash internally)
+        transport = self._make_transport([claim, claim])
+        processed = gw.process_inbound(transport)
+        assert processed == 2
+
+    def test_unsigned_agent_claim_is_rejected(self, tmp_path):
+        keys = NodeKeyStore(tmp_path / "k" / ".node_keys.json")
+        keys.ensure_keys()
+        bridge = _verified_mock_bridge(keys)
+        gw = FederationGateway(bridge=bridge)
         claim = {
             "operation": "federation.agent_claim",
             "source": keys.node_id,
@@ -942,11 +1029,9 @@ class TestReplayProtection:
                 "capabilities": [],
             },
         }
-        # Send twice: second should still be accepted at the gateway level
-        # (the handler dedupes by node_id + content hash internally)
-        transport = self._make_transport([claim, claim])
-        processed = gw.process_inbound(transport)
-        assert processed == 2
+
+        assert gw.process_inbound(self._make_transport([claim])) == 0
+        bridge.ingest.assert_not_called()
 
 
 import time  # noqa: E402  — used only by replay tests above

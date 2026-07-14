@@ -7,8 +7,10 @@ observe health → reap dead peers → purge expired slots → broadcast heartbe
 
 from __future__ import annotations
 
+import json
 import logging
 import time
+from pathlib import Path
 
 from steward.hooks.genesis import _get_federation_owner
 from steward.phase_hook import DHARMA, BasePhaseHook, PhaseContext
@@ -349,26 +351,6 @@ class DharmaFederationHook(BasePhaseHook):
         if git_sync is not None:
             git_sync.pull()
 
-        # Process inbound messages: agent_claim + heartbeats
-        import json
-        from pathlib import Path
-
-        inbox_path = Path("data/federation/nadi_inbox.json")
-        if inbox_path.exists():
-            try:
-                messages = json.loads(inbox_path.read_text())
-                reaper = ServiceRegistry.get(SVC_REAPER)
-                federation = ServiceRegistry.get(SVC_FEDERATION)
-                transport = ServiceRegistry.get(SVC_FEDERATION_TRANSPORT)
-                if reaper is not None and federation is not None:
-                    self._process_inbox_messages(messages, reaper, federation, transport)
-            except (json.JSONDecodeError, OSError) as e:
-                # Was silently swallowed — a corrupt/unreadable inbox made the whole
-                # federation look silent with no trace. Behaviour unchanged (skip this
-                # cycle's inbox), but now visible. Narrowing the try scope is tracked
-                # separately (the block also wraps record_heartbeat).
-                logger.error("DHARMA: could not process nadi_inbox (%s) — skipping this cycle: %s", type(e).__name__, e)
-
         # Check for stale delivery receipts — messages that were pushed
         # but never implicitly confirmed by a response from the target.
         # This closes the fire-and-forget gap: agent-internet defines
@@ -436,12 +418,9 @@ class DharmaFederationHook(BasePhaseHook):
         # forever, and the inbox never shrinks (Befund 207).
         rejected: list = []
         seen_bad = getattr(transport, "_quarantined", set()) if transport is not None else set()
-        # Process agent_claim messages first (cryptographic identity)
         for msg in messages:
-            if msg.get("operation") == "federation.agent_claim":
-                federation.ingest("federation.agent_claim", msg.get("payload", msg))
-        # Then record heartbeats
-        for msg in messages:
+            if msg.get("operation") != "heartbeat":
+                continue
             # Prefer agent_id (human-readable identity) over source (node crypto ID)
             # Already refused in an earlier cycle: drop it without re-checking or
             # re-logging, but make sure it leaves the inbox this time.
