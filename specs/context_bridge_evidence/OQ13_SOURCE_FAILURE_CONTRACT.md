@@ -164,7 +164,8 @@ Die folgenden Quellen sind für einen statisch sicheren Root-Vertrag nicht zwing
 Zusätzliche bereits entschiedene Begrenzungen:
 
 - Sessions bleiben unabhängig vom Readerstatus aus dem Root-Payload ausgeschlossen.
-- GitHub-Issues bleiben bis OQ-04 aus dem Root-Payload ausgeschlossen.
+- GitHub-Issues bleiben nach OQ-04 standardmäßig aus dem Root-Payload ausgeschlossen;
+  aktuell ist mangels reviewter Eligibility-Konfiguration kein Einzel-Issue qualifiziert.
 - Tasks dürfen nach dem geschlossenen OQ-03 nur getrennte, validierte Statusaggregate
   beitragen; freie Titel bleiben untrusted und default-deny.
 - `PHASE2_CURRENT` bleibt bis OQ-02/OQ-15 ein optionaler, widerlegbarer Verweis.

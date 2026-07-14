@@ -131,8 +131,8 @@ Schemafelder sind `default-deny` und machen die Quelle für diesen Feldpfad sich
 | `cetana.last_health/last_guna` | normalisierte Health-Klasse | C2/C3 | Duplikat zu Health vermeiden |
 | `cetana.phase/frequency_hz/total_beats` | keine Root-Anzeige | C4 | volatile Laufzeitdiagnose |
 | `cetana.consecutive_anomalies` | Anomalieklasse | C1/C3 | Schwellenwechsel publishwürdig |
-| `issues[*].number` | nur mit OQ-04-Auswahl | C2 | Nummer allein harmlos, Queuevertrag noch offen |
-| `issues[*].title/labels` | vorläufig keine Root-Übernahme | C2/unsafe | untrusted; bis OQ-04 und Sanitization default-deny |
+| `issues[*].number` | nur für OQ-04-eligible Kandidaten | C2 | stabile Referenz; aktuelle Eligibility mangels reviewter Konfiguration null |
+| `issues[*].title/labels` | neutralisierte Backlog-Beobachtung | C2/unsafe | OQ-04: nur konfigurierte Kandidaten; Titel und Labels bleiben untrusted/default-deny außerhalb Allowlist |
 
 ---
 
@@ -233,7 +233,8 @@ OQ-12 ist geschlossen:
 - Freie Prosa, lokale Pfade, Sessions, IDs, Einzeltrust und ungefilterte externe Texte
   bleiben default-deny.
 - Neue Felder werden nicht automatisch publiziert.
-- Issues bleiben bis OQ-04 vollständig aus dem kanonischen Root-Actionblock ausgeschlossen.
+- Issues bleiben nach OQ-04 standardmäßig aus dem kanonischen Root-Actionblock
+  ausgeschlossen; aktuell existiert keine reviewte Eligibility-Konfiguration.
 - Tasks dürfen nach OQ-03 nur als validierte, getrennte Statusaggregate erscheinen;
   freie Titel bleiben default-deny.
 - C0 stammt ausschließlich aus `.steward/conventions.md`.
@@ -258,8 +259,7 @@ OQ-05 ist geschlossen:
 
 - OQ-12 ist geschlossen.
 - OQ-05 ist geschlossen.
-- OQ-03 ist durch das eigene Evidence-Paket geschlossen; OQ-04 bleibt notwendiger
-  Detailvertrag für Issues.
+- OQ-03 und OQ-04 sind durch eigene Evidence-Pakete geschlossen.
 - G0 bleibt offen.
 - Keine Renderer-, Hash-, Context- oder Workflow-Implementierung ist freigegeben.
 - OQ-13 ist durch das eigene Evidence-Paket geschlossen.

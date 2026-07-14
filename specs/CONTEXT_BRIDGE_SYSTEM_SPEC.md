@@ -3,7 +3,7 @@
 > **Status:** DRAFT 0.3 — FÜR READ-ONLY G0-EVIDENCE FREIGEGEBEN; IMPLEMENTIERUNG GESPERRT
 > **Datum:** 2026-07-14
 > **Produktionsbasis:** `kimeisele/steward` auf
-> `b7e3aa3ca519bd1b3cfe233aa2bc7a4fcb9a31cb`
+> `b2b633cb7f7e9e0f0b2164527034c2426541b7a7`
 > **Zweck:** Verbindlichen technischen Vertrag für die dynamische Bereitstellung von
 > Projektkontext an wechselnde Anthropic-, OpenAI- und interne Steward-Agenten schaffen.
 > **Sperre:** Aus diesem Dokument darf noch kein Produktivpatch abgeleitet werden. Erst
@@ -435,6 +435,7 @@ Ein leeres Dict oder eine leere Liste ist kein zulässiger Universal-Fallback.
 | CB-19 | kein verifizierter Kill-Switch oder Safe Fallback | Operationsdefizit | fehlerhafte Governance publiziert weiter |
 | CB-20 | Konflikte zwischen Operatorauftrag, Arbeitsstand, Live-Signal und Backlog ungelöst | Architekturdefizit | deterministischer Text, aber falsche Handlungspriorität |
 | CB-21 | Heartbeat installiert `steward-protocol` vom jeweils aktuellen Default-Branch ohne Commit-Pin | Workflow und Produktionslog belegt | Cross-Repo-Typverträge können zwischen Steward-Commits driften und sind ohne Protocol-Provenance nicht reproduzierbar |
+| CB-22 | Issue-Reader liefert nur Nummer und Titel, während der Renderer nicht gelieferte Labels erwartet; Eligibility und Prioritätsmetadaten fehlen | Code, Live-Issue-Inventar und Produktionsoutput belegt | untrusted Neuigkeit ersetzt kuratierte Relevanz; Labels suggerieren eine nicht existierende Auswahl |
 
 ---
 
@@ -898,7 +899,7 @@ muss ein menschlich reviewter Minimal-Fallback feststehen, der:
 | OQ-01 | GESCHLOSSEN: Wie wird der bestehende LLM-Schreibpfad auf Preview/Annotation begrenzt, ohne unbekannte produktive Caller zu brechen? | Evidence-Paket OQ-01/OQ-16; Toolname bleibt, kanonische und beliebige Dateiwrites scheitern explizit fail-closed |
 | OQ-02 | Soll Current Phase Work State nur auf `PHASE2_CURRENT` verweisen oder einen sanitizten, nichtautoritativen Ausschnitt übernehmen? | Tokenbudget, Injection und Veraltungsrisiko |
 | OQ-03 | GESCHLOSSEN: Welche TaskStatus-Typen liefert der echte TaskManager dauerhaft: Enum, String oder gemischt? | Evidence-Paket OQ-03; Runtime ist kanonischer `TaskStatus`-Enum, Persistenz/Context sind uppercase Strings, Protocol-Commit muss Provenance tragen |
-| OQ-04 | Nach welcher Regel werden GitHub-Issues begrenzt und priorisiert? | verhindert willkürliche Agenda |
+| OQ-04 | GESCHLOSSEN: Nach welcher Regel werden GitHub-Issues begrenzt und priorisiert? | Evidence-Paket OQ-04; Issues bleiben nichtautoritative Backlog-Beobachtungen, aktuelle Eligibility ist null, spätere Kandidaten benötigen reviewte Konfiguration und harte Begrenzung |
 | OQ-05 | GESCHLOSSEN: Welche Briefing-Änderungen sind semantisch commitwürdig? | Evidence-Paket OQ-12/OQ-05; `payload_hash` und C1–C4-Trigger entschieden |
 | OQ-06 | GESCHLOSSEN: Welche Lock-, Tempfile-, Rename-, fsync- und Recovery-Semantik trägt das tatsächliche Dateisystem und die Prozesslandschaft? | Evidence-Paket OQ-06/OQ-14; per-Pfad Atomicity, Doppel-Lock, Generationserkennung und Recovery-Vertrag entschieden |
 | OQ-07 | TEILGESCHLOSSEN: Welche Core-File-, CODEOWNERS-, Reviewer- und Diff-Gates schützen `AGENTS.md`, `CLAUDE.md` und die statische Verfassungsquelle? | Evidence-Paket OQ-18/OQ-07; Writer-Landschaft durch OQ-16 belegt, Enforcement-Topologie bleibt durch OQ-14 und Delivery-Governance blockiert |
