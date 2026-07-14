@@ -891,7 +891,7 @@ muss ein menschlich reviewter Minimal-Fallback feststehen, der:
 | OQ-03 | Welche TaskStatus-Typen liefert der echte TaskManager dauerhaft: Enum, String oder gemischt? | verhindert erneuten Filter-Placebo |
 | OQ-04 | Nach welcher Regel werden GitHub-Issues begrenzt und priorisiert? | verhindert willkürliche Agenda |
 | OQ-05 | Welche Briefing-Änderungen sind semantisch commitwürdig? | verhindert Heartbeat-Commitrauschen |
-| OQ-06 | Welche Lock-, Tempfile-, Rename-, fsync- und Recovery-Semantik trägt das tatsächliche Dateisystem und die Prozesslandschaft? | lokale Konsistenz und Race-Sicherheit |
+| OQ-06 | GESCHLOSSEN: Welche Lock-, Tempfile-, Rename-, fsync- und Recovery-Semantik trägt das tatsächliche Dateisystem und die Prozesslandschaft? | Evidence-Paket OQ-06/OQ-14; per-Pfad Atomicity, Doppel-Lock, Generationserkennung und Recovery-Vertrag entschieden |
 | OQ-07 | TEILGESCHLOSSEN: Welche Core-File-, CODEOWNERS-, Reviewer- und Diff-Gates schützen `AGENTS.md`, `CLAUDE.md` und die statische Verfassungsquelle? | Evidence-Paket OQ-18/OQ-07; Writer-Landschaft durch OQ-16 belegt, Enforcement-Topologie bleibt durch OQ-14 und Delivery-Governance blockiert |
 | OQ-08 | Ist die Formulierung „You are Steward“ für externe Maintainer zulässig? | Rollen- und Sicherheitsklarheit |
 | OQ-09 | Wann und wie wird der derzeit tote interne Instruction-Loader behandelt? | Scope-Trennung; kein versehentlicher Prompt-Umbau |
@@ -899,7 +899,7 @@ muss ein menschlich reviewter Minimal-Fallback feststehen, der:
 | OQ-11 | GESCHLOSSEN: Welche Discovery-, Hierarchie-, Prioritäts- und Include-Regeln gelten aktuell für Claude Code und Codex? | Evidence-Paket OQ-11; byte-identischer Root-Inhalt bleibt Default |
 | OQ-12 | Welche dynamischen Felder sind öffentlich zulässig und welchem C0-C4-Typ gehören sie an? | Datenminimierung und semantischer Hash |
 | OQ-13 | Welche Quellen sind required, optional oder publish-blocking? | ehrliche Degradation statt gesunder Leere |
-| OQ-14 | Welcher reale Kill-Switch stoppt geplante, manuelle und bereits laufende Publisher? | ausführbarer Rollback |
+| OQ-14 | TEILGESCHLOSSEN: Welcher reale Kill-Switch stoppt geplante, manuelle und bereits laufende Publisher? | Evidence-Paket OQ-06/OQ-14; manueller Disable/Force-Cancel/Revocation/Fence-Pfad belegt, Operations-Drill und dauerhafter Schalter offen |
 | OQ-15 | Wie wird ein veralteter oder manipulierter Current-Phase-Arbeitsstand erkannt und angezeigt? | verhindert neue Single-Point-of-Failure-Semantik |
 | OQ-16 | GESCHLOSSEN: Welche Prozesspfade können außerhalb des Heartbeat-Workflows parallel publizieren? | Evidence-Paket OQ-01/OQ-16; zwei Root-Writer, Git-NADI-Nebenpublisher, Post-Step und interner Cetana-/Workflow-Mehrfachdispatch belegt |
 | OQ-17 | GESCHLOSSEN: Ist das Repository und sind alle einbezogenen Issue-/Federation-Daten öffentlich? | Evidence-Paket OQ-17; Root-Output ist immer PUBLIC_SAFE, privilegierte/runtime Daten default-deny |
@@ -971,7 +971,7 @@ offenen Fragen und jede Feature-Spec dürfen sie widerlegen oder verfeinern.
 |---|---|---|
 | Prompt Injection / Trust Boundaries | §§0B, 3.5-3.8, I-13/I-17, adversariale Fixtures | als G0-Blocker aufgenommen |
 | Byteidentität nicht bewiesen | Z2, I-01, Option E, OQ-11 | zur reversiblen Hypothese herabgestuft |
-| Atomicity / Concurrency | §8.3, I-15, OQ-06/OQ-16 | Vertrag offen, Implementation blockiert |
+| Atomicity / Concurrency | §8.3, I-15, OQ-06/OQ-16 | Garantievertrag und Writer-Landschaft entschieden; Implementierung weiterhin gesperrt |
 | semantische Änderung undefiniert | §8.4, OQ-05/OQ-12 | C0-C4-Modell eingeführt, Feldmapping offen |
 | Provenance zu schwach | §8.2, I-14 | Sicherheitsvertrag statt Footer |
 | LLM-Publikationspfad | T5, I-09, OQ-01 | fail-closed Preview-Vertrag entschieden; Implementierung weiterhin gesperrt |
