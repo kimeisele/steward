@@ -891,3 +891,158 @@ Die sichere Reihenfolge ab diesem Stand ist:
 
 Keine dieser Arbeiten darf Phase 1 verändern. Jeder abgeschlossene Milestone wird als neuer
 Paragraph in diesem Phase-2-Dokument mit Commit-, Blob-, Run- und Testbeweisen angehängt.
+
+---
+
+## §11 — STEWARD-CI UND PRODUKTIVER KARMA-PFAD WIEDERHERGESTELLT (2026-07-14)
+
+### Ergebnis
+
+Der in §10 dokumentierte Steward-CI/KARMA-Blocker ist behoben. PR
+`kimeisele/steward#419` wurde ohne Admin-Bypass mit allen vier Required Checks grün gemergt.
+Der nachgelagerte Produktions-Heartbeat dispatchte KARMA wieder ohne den früheren
+`PEER_PROTOCOL_VIOLATION`-/`_finding`-Fehler.
+
+- PR: `https://github.com/kimeisele/steward/pull/419`
+- Ticket-Commit: `7a6d038758ef6d4f7abf097facc3c3fa8405fc9b`
+- Merge: `2614bb5dbb99ce686f0a02e91567d79d1fac8cb6`
+- sauberer Klon: `/Users/ss/projects/steward-gateway-phase2`
+- Branch: `fix/steward-ci-karma-baseline`
+
+Phase 1 blieb unverändert/read-only.
+
+### Root Cause
+
+Beide Fehler kamen aus demselben historischen Commit
+`20f04b3f5c5f66681340e3410686953d7565996e`. Dieser sollte persistierte
+`protocol_violations.json`-Einträge in Findings und anschließend Self-Healing-Arbeit
+überführen, implementierte den Pfad aber nur teilweise:
+
+1. `steward/healer/types.py` referenzierte
+   `FindingKind.PEER_PROTOCOL_VIOLATION`, obwohl der Enum-Wert nie in
+   `diagnostic_sense.py` angelegt worden war. Folge: `AttributeError` bereits beim Import
+   des Healers; Pytest konnte `tests/test_healer.py` nicht sammeln; produktives KARMA
+   scheiterte am selben Importpfad.
+2. `_analyze_federation()` rief einen nicht existierenden `_finding`-Helper auf. Folge:
+   Ruff F821 und bei vorhandener `protocol_violations.json` ein echter `NameError`.
+3. Der neue Typ war als `DETERMINISTIC` klassifiziert, obwohl kein registrierter Fixer
+   existierte. Der Healer hätte das Finding als fixbar gezählt und anschließend still
+   übersprungen.
+
+### Rote Beweise vor dem Fix
+
+Zwei gezielte Regressionen wurden vor der Implementierung ausgeführt:
+
+- Eine echte `data/federation/protocol_violations.json` mit Peer `ag_malformed` ließ
+  `_analyze_federation()` exakt mit `NameError: _finding is not defined` scheitern.
+- Die Healer-Registry-Tests konnten wegen des fehlenden Enum-Werts nicht gesammelt werden;
+  der Import endete mit `AttributeError: FindingKind has no attribute
+  PEER_PROTOCOL_VIOLATION`.
+
+### Minimaler Fix
+
+Der Verhaltensfix änderte nur vier Dateien:
+
+- `steward/senses/diagnostic_sense.py`
+  - Enum-Wert `PEER_PROTOCOL_VIOLATION = "peer_protocol_violation"`,
+  - vorhandene `Finding`-Dataclass direkt statt eines erfundenen Helpers,
+  - `file="data/federation/protocol_violations.json"`, damit das Finding seine Quelle
+    korrekt benennt.
+- `steward/healer/types.py`
+  - Klassifikation `SKIP` statt `DETERMINISTIC`, solange kein sicherer Cross-Repo-Fixer
+    existiert.
+- `tests/test_diagnostic_sense.py`
+  - realer Violation-Dateitest für Kind, Severity, Datei, Peer-Detail und Fix-Hinweis.
+- `tests/test_healer_fixers.py`
+  - Registry-Invariante dynamisch gemacht: Jeder künftig als `DETERMINISTIC`
+    klassifizierte Enum-Wert muss tatsächlich einen registrierten Fixer besitzen.
+
+Es wurde bewusst kein spekulativer Cross-Repo-Autofixer gebaut. Ein Finding darf sichtbar
+sein, ohne fälschlich automatische Reparierbarkeit zu behaupten.
+
+### Format-Gate
+
+Der erste PR-CI-Anlauf bewies, dass Ruff-Semantikcheck und Security bereits grün waren,
+deckte aber im separaten `ruff format --check` fünf rein semantikerhaltende Formatdifferenzen
+auf:
+
+- eine überzählige Leerzeile im neuen Diagnosepfad,
+- vier ältere Zeilen aus dem Gateway-Milestone in
+  `federation_gateway.py`, `hooks/dharma.py`,
+  `test_federation_gateway.py`, `test_federation_transport.py`.
+
+Der veraltete lange CI-Lauf wurde abgebrochen. Ausschließlich der exakte Ruff-Formatter-Diff
+wurde übernommen: Zeilenumbruch, Quote-Normalisierung und Leerzeile; kein Verhalten.
+Danach meldete der vollständige Formatter: `208 files already formatted`.
+
+### Testbeweise
+
+Nach dem Verhaltensfix:
+
+- neue Regressionen: 3 bestanden,
+- Diagnostic-/Healer-Gruppe: 171 bestanden,
+- Diagnostic-/Healer-/Gateway-/Transport-Gruppe nach Formatkorrektur: 249 bestanden,
+- vollständiges Ruff (`steward/ tests/`): grün,
+- vollständiger Ruff-Formatcheck: grün.
+
+Die lokale Gesamtsuite wurde vollständig bis zum Ende ausgeführt:
+
+- 2120 bestanden,
+- 13 übersprungen,
+- 551 DeprecationWarnings,
+- Exit-Code 0,
+- Laufzeit 1014,31 Sekunden.
+
+Der Lauf war langsam, aber nicht festgefahren. Ein erster Durchlauf war bei 87 Prozent auf
+HITL-Wunsch unterbrochen worden; der anschließend neu gestartete vollständige Lauf lieferte
+den obigen Endstand.
+
+### Required-CI vollständig grün
+
+Finaler PR-CI-Lauf: `29316757855`.
+
+- Tests Python 3.11: `SUCCESS`,
+- Tests Python 3.12: `SUCCESS`,
+- Lint inklusive Ruff-Formatcheck: `SUCCESS`,
+- Security Scan: `SUCCESS`.
+
+Damit war erstmals seit Beginn des Gateway-Milestones kein Admin-Bypass nötig. PR #419
+wurde regulär über die Required Checks gemergt.
+
+### Produktionsbeweis
+
+Post-Merge-Heartbeat `29317006330` lief auf exakt
+`2614bb5dbb99ce686f0a02e91567d79d1fac8cb6` erfolgreich. Vollständiger Log: 781 Zeilen.
+
+Harte Zählwerte:
+
+- `PEER_PROTOCOL_VIOLATION`-Fehler: 0,
+- `name '_finding' is not defined`: 0,
+- `HEARTBEAT ERROR`: 0,
+- `KARMA dispatch failed`: 0,
+- `Traceback`: 0,
+- `Diagnosis failed`: 0,
+- `GATEWAY`: 2,
+- erfolgreicher Push nach `main`: 1.
+
+Der Log enthält `KARMA: 4 pending task(s), dispatching next`. Der früher beim Import
+abbrechende produktive Pfad erreicht damit wieder die tatsächliche Dispatch-Logik.
+
+Der resultierende State-Commit ist
+`087c2c9804972f4ecdc682f979886ea2418e8da4`, Tree
+`d05c23058cca26c09a4ae275ded950f2d37850c4`.
+
+### Nächster Arbeitsauftrag
+
+Der §10-Punkt „Steward-CI und KARMA sind real defekt“ ist abgeschlossen. Als Nächstes gilt
+wieder die dort festgelegte Reihenfolge:
+
+1. neuen Live-Head und State-Blobs pinnen,
+2. B' vollständig read-only vorbereiten,
+3. aktive signierte Identitäten pro Repo aus frischen Mailbox-Nachrichten bestimmen,
+4. exakte Keep/Delete-Liste für Registry und Inbox erzeugen,
+5. erst nach diesem Beweis Inbox und Registry atomar bereinigen,
+6. zwei nachfolgende Heartbeats auf ausbleibende Wiederauferstehung prüfen.
+
+Key-Rotation, `ag_8859b969119219b8`, Quarantäne-Cleanup und Agent-City-GH006 bleiben danach
+separate Folgetickets. Phase 1 wird weiterhin nicht verändert.
