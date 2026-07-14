@@ -1046,3 +1046,195 @@ wieder die dort festgelegte Reihenfolge:
 
 Key-Rotation, `ag_8859b969119219b8`, Quarantäne-Cleanup und Agent-City-GH006 bleiben danach
 separate Folgetickets. Phase 1 wird weiterhin nicht verändert.
+
+## §12 — B' READ-ONLY-CENSUS: 17 KEEP, 43 DELETE, ABER DREI STATE-FLÄCHEN
+
+**Status:** Read-only-Analyse abgeschlossen. Es wurde keine Registry-, Inbox-, Hub-Mailbox-,
+Workflow- oder Secret-Datei verändert. Phase 1 blieb byte-identisch und read-only.
+
+### Gepinnter Live-Snapshot
+
+Alle Zählungen dieses Paragraphen beziehen sich ausschließlich auf unveränderliche
+Git-Objekte, nicht auf einen lokalen Working Tree.
+
+Steward (`kimeisele/steward`):
+
+- Erfasst: `2026-07-14T08:34:51Z`.
+- Head: `345656aeea8008ca502beb65d699b345c73d6fa3` (`heartbeat #5332`).
+- Tree: `f855601ffe9764322e22b89cba9a76e751c40624`.
+- Registry: Blob `9b0cd4aef4b4ecbab2d37496d2a5e44d82388bc3`, 60 Einträge.
+- Inbox: Blob `977a15376eed56eff8e2fb45d4283b0bcd5d0d39`, 464 Nachrichten.
+- Relay-Seen: Blob `e2c44ad4e170e18adb493993f13876f9dcc50c6c`, 462 UUIDs.
+- Quarantäne-Index: Blob `efbc7d4253de0799b40fcc8e8bf1961accb2a319`,
+  2.765 Fingerprints.
+- Peers: Blob `fcfcc574b6ed26848796e29667798d84a20037e7`.
+
+Hub (`kimeisele/steward-federation`):
+
+- Erfasst: `2026-07-14T08:36:34Z`.
+- Head: `f4d8dd5600b0f7a91eb793d354a15fd7d364b29c`.
+- Tree: `3960b7aa5f5ce71891041f7e66c506a236512091`.
+- Mailbox `nadi/steward-federation_to_steward.json`: Blob
+  `f64b4193cec7d90e7f7de317ff97024a51e73d1e`, 144 Nachrichten.
+
+### Das verifizierte Purge-Kriterium bleibt konservativ
+
+Phase-1 §219.18 bleibt fachlich bindend: Eine Node-ID wird nicht wegen ihres Alters und
+nicht zugunsten der jüngsten ID desselben Namens gelöscht. Gelöscht werden nur die bereits
+historisch als Wegwerfidentitäten bewiesenen IDs. Der aktuelle Census wendet die alte Liste
+nicht blind an, sondern schneidet sie mit dem gepinnten Live-Zustand und prüft die heutigen
+aktiven Schlüssel erneut.
+
+Ergebnis am Snapshot: 60 Registry-Einträge teilen sich in **17 KEEP** und **43 DELETE**.
+Die drei früher gelöschten Agent-City-Nachzügler `ag_4d5c340ac8c3e56b`,
+`ag_b6f531aa856c888a` und `ag_fe11994f9d28bb77` sind heute bereits abwesend und deshalb
+kein Bestandteil der aktuellen 43er-Löschmenge.
+
+### Acht heute aktive Identitäten sind kryptographisch belegt
+
+Für jeden produktiven Hauptknoten wurde die neueste Nachricht seiner an Steward gerichteten
+Hub-Mailbox geprüft. Gültig bedeutet gleichzeitig:
+
+1. der kanonische Nachrichten-Hash stimmt (`canonical` oder bei einer vor dem Hub
+   signierten UUID `canonical_pre_hub_id`),
+2. die Ed25519-Signatur verifiziert gegen den Registry-Public-Key,
+3. `derive_node_id(public_key) == source`,
+4. die Nachricht stammt aus dem gepinnten Hub-Blob.
+
+| Repo | aktive Node-ID | neuester gültiger Beleg (UTC) | gültig / Mailbox |
+|---|---|---:|---:|
+| `agent-city` | `ag_b670dc6cbcb705fe` | 2026-07-14 08:34:53 | 51 / 75 |
+| `agent-internet` | `ag_d7b5cd6e9baa0add` | 2026-07-14 06:29:32 | 8 / 8 |
+| `agent-research` | `ag_c3c5d9aed6d3dc6e` | 2026-07-14 08:29:54 | 10 / 10 |
+| `agent-template` | `ag_75c1bbfcbb3f52dd` | 2026-07-14 06:32:35 | 48 / 48 |
+| `agent-world` | `ag_8dacb2d32e5f6efe` | 2026-07-14 07:25:18 | 26 / 27 |
+| `steward-federation` | `ag_9272c311628b5f40` | 2026-07-14 07:29:06 | 42 / 144 |
+| `steward-protocol` | `ag_2d0b12537b598dac` | 2026-07-14 08:00:21 | 10 / 10 |
+| `steward` | `ag_8859b969119219b8` | 2026-07-14 08:35:01 | 144 / 144 |
+
+Damit ist zugleich die offene Zuordnung von `ag_8859b969119219b8` enger gefasst: Der
+Schlüssel ist der aktuell produktiv sendende Steward-Schlüssel. Sein Registry-`agent_name`
+ist weiterhin korrupt und darf nicht im Purge nebenbei umbenannt werden; die
+Identitätsreparatur bleibt ein separates Ticket.
+
+### Exakte KEEP-Liste
+
+Die 17 Einträge werden byte-identisch übernommen:
+
+- Frisch aktiv und signiert: `ag_b670dc6cbcb705fe`, `ag_d7b5cd6e9baa0add`,
+  `ag_c3c5d9aed6d3dc6e`, `ag_75c1bbfcbb3f52dd`, `ag_8dacb2d32e5f6efe`,
+  `ag_9272c311628b5f40`, `ag_2d0b12537b598dac`, `ag_8859b969119219b8`.
+- Historisch arbeitend, aktuell nicht kanonisch: `ag_0109b0f911cc2aa5`,
+  `ag_1000d1441ef1bba0`, `ag_262f73c01a8ad72b`, `ag_359d19f2668452b6`,
+  `ag_e8978e030b4b84a5`, `ag_eb39d27421b3971d`, `ag_f1bc59288c9c5443`,
+  `ag_fd5a7db51b1acac1`.
+- Historisch durch Heartbeats gerettet: `ag_9361733f6885e6dc`. Im Parent von
+  `b3667961141cc69278b16442b65684dfa97946f4` liegen sechs Heartbeats dieser ID;
+  Signatur und `derive_node_id` verifizieren gegen den heute erhaltenen Public-Key. Der
+  alte Envelope-Hash ist nach Hub-Anreicherung nicht mehr kanonisch, daher ist dies kein
+  heutiger Aktivitätsbeleg, wohl aber ein zusätzlicher Grund, die ID konservativ zu behalten.
+
+Von den acht historisch arbeitenden, nicht aktiven IDs haben fünf im aktuellen Inbox-Blob
+zusammen 43 vollständig kanonische, gültig signierte Heartbeats. Die drei alten
+Agent-City-IDs besitzen je einen unsignierten Legacy-Heartbeat. Sie werden nicht als aktiv
+bezeichnet, aber gemäß §219.18 auch nicht ohne separates Stilllegungs- oder
+Rotationsverfahren gelöscht.
+
+### Exakte Registry-DELETE-Liste
+
+Die 43 aktuellen Steward-Federation-Wegwerfidentitäten sind:
+
+```text
+ag_00ccfe2b454fb6f0 ag_017e3df3740d8389 ag_0984e25e9803bda4
+ag_1ea7e36195885120 ag_1f446832593c93f6 ag_256aa684d918b765
+ag_2759d5944dac6577 ag_27b984b7a016bb27 ag_2a3b75ff97603421
+ag_2e2df6092c174f84 ag_3245f3204f2614e2 ag_33b8af431f0101c2
+ag_37fe0c178b7018e7 ag_440fcb373dc044dc ag_444d6ab161f45b4f
+ag_490282ca0a96e428 ag_4950e45a4ef88d0f ag_4ac0fba37679c496
+ag_5dd5f67b07558ecd ag_6c5412fedddf35c6 ag_70ad7e881292e463
+ag_7dd9872f00fd8ea7 ag_838b9b94e052ebc2 ag_853aef8d4eac46f9
+ag_8c08b90f541cd971 ag_8d26410a5cd1b24f ag_91b9a4cc583dbfe2
+ag_a2ad95372a39b9c7 ag_a90fc6bb1a6ba956 ag_ac31bf8fa1cb2cf9
+ag_b20d7ef483fc8c4f ag_b6b375ec44ec2651 ag_ca4cfa6b165001d2
+ag_d001b79ca182815d ag_d2e8f0a8b7295967 ag_d4b805663701f589
+ag_d6eac544b527e58d ag_dba30a6260a7e20b ag_e0b89f4e185ab574
+ag_eb96cdd4e436c31c ag_eef1f6add4c7d4e3 ag_fcbfa849673f1295
+ag_fd277a13a6961c20
+```
+
+Alle 43 gehören zu `agent_name=steward-federation`, alle 43 wurden bereits in Phase 1
+historisch auf den defekten Ephemeral-Key-Pfad zurückgeführt, und keiner ist die heute
+signierende ID `ag_9272c311628b5f40`.
+
+### Exakte lokale Inbox-DELETE-Liste als Regel
+
+Die lokale Inbox enthält exakt **144** zu diesen 43 IDs gehörende Nachrichten:
+
+- 72 `federation.agent_claim`,
+- 72 `heartbeat`,
+- alle mit Legacy-`source=steward-federation`,
+- alle mit einer der 43 DELETE-IDs in `payload.node_id` oder im Top-Level-`node_id`,
+- 43 unterschiedliche eingebettete Node-IDs,
+- 144 UUIDs, davon 104 heute im Seen-Store und 40 nicht mehr im aktuellen Hub-Mailbox-Blob.
+
+Die spätere Transformation darf deshalb nicht pauschal alle unregistrierten Sender oder alle
+alten Nachrichten löschen. Sie entfernt nur Nachrichten, deren eingebettete Node-ID in der
+43er-DELETE-Menge liegt. Ergebnis am Snapshot: Inbox 464 → 320. Insbesondere T0c-Nachrichten,
+die alte reale Agent-City-ID `ag_a58acc69346c6de3`, Quarantäne und fremde Operationen bleiben
+unangetastet.
+
+### Neuer Fundament-Befund: Zwei Dateien reichen langfristig nicht
+
+Im aktuellen Hub-Blob `nadi/steward-federation_to_steward.json` liegen weiterhin **102**
+dieser Geisternachrichten (51 Claims + 51 Heartbeats) neben 42 gültig signierten Nachrichten
+der aktiven ID. Alle 102 Hub-UUIDs stehen heute im persistenten Seen-Store. Das verhindert
+eine sofortige Wiederholung, ist aber keine dauerhafte Löschgarantie:
+
+- `steward/federation_relay.py` begrenzt `MAX_SEEN_IDS` auf 4.096,
+- die Hub-Mailbox ist ein Ringpuffer von 144 Nachrichten,
+- ein gestoppter Hub-Sender könnte seine alten Nachrichten im Ring belassen,
+- nach Verdrängung ihrer UUIDs aus dem Seen-Store würde der Steward sie erneut importieren.
+
+Der frühere Plan „Registry + lokale Inbox“ wäre daher zeitlich stabil, aber nicht strukturell
+abgeschlossen. **B' muss drei State-Flächen umfassen:**
+
+1. upstream die 102 bewiesenen Geisternachrichten aus genau
+   `nadi/steward-federation_to_steward.json` entfernen und die 42 aktiven Nachrichten
+   byte-identisch erhalten,
+2. downstream die 144 lokalen Geisternachrichten entfernen,
+3. gleichzeitig im Steward-Commit die 43 Registry-Einträge entfernen und alle 17 KEEP-
+   Einträge byte-identisch erhalten.
+
+Die 102 Hub-Nachrichten sind vollständig im Seen-Store; die 40 zusätzlichen lokalen UUIDs
+sind im aktuellen Hub-Blob nicht vorhanden. Nach Schritt 1 besitzt damit keine bekannte
+upstream Quelle mehr einen löschbaren Claim.
+
+### Ausführungs-, Guard- und Rollback-Vertrag für B'
+
+B' darf erst gegen einen neuen Live-Snapshot ausgeführt werden. Der sichere Ablauf ist:
+
+1. Steward- und Hub-Head, Trees und alle drei Ziel-Blobs erneut pinnen.
+2. Census neu berechnen. Abbruch bei unbekannter neuer Registry-ID, neuer aktiver Node-ID,
+   verlorenem `agent_name`, veränderter KEEP-Payload oder einem Hub-Kandidaten ohne bereits
+   persistierte UUID.
+3. Hub-Mailbox zuerst über ihren exakten Blob-SHA bereinigen. Ein konkurrierender Writer
+   muss den Update-Versuch mit SHA-Konflikt stoppen; danach neu pinnen und neu rechnen.
+4. Steward-Registry und Steward-Inbox in **einem** Commit auf demselben Live-Parent
+   schreiben. Kein separater Registry-Commit.
+5. `relay_seen_ids.json`, Quarantäne, Peers, Workflows und Code nicht verändern.
+6. Direkt nach jedem Push die resultierenden Blobs erneut laden und die Sollmengen prüfen.
+7. Zwei vollständige nachfolgende Steward-Heartbeats abwarten. Erwartung: Registry bleibt
+   17, kein DELETE-Claim kehrt zurück, aktive acht Signaturpfade bleiben sichtbar, Gateway-
+   und KARMA-Fehler bleiben null.
+
+Rollback ist ohne Datenverlust möglich: Die gepinnten Parent-Commits und die oben genannten
+Blob-SHAs enthalten die vollständigen Vorzustände. Bei einer verletzten Postcondition werden
+Hub-Mailbox, Steward-Inbox und Registry aus diesen Blobs durch neue Revert-Commits
+wiederhergestellt; keine Force-Pushes und keine History-Rewrites.
+
+### Nächster Arbeitsauftrag
+
+Der read-only Gate ist erfüllt, aber die Zahlen müssen unmittelbar vor dem Schreibvorgang
+neu bestätigt werden. Danach B' exakt nach dem Drei-Flächen-Vertrag ausführen und zwei
+Produktionszyklen verifizieren. Erst nach diesem Beweis folgen Identitätsnamen-Reparatur,
+Key-Rotation, Quarantäne-Cleanup und Agent-City-GH006 als getrennte Tickets.
