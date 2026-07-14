@@ -1238,3 +1238,176 @@ Der read-only Gate ist erfüllt, aber die Zahlen müssen unmittelbar vor dem Sch
 neu bestätigt werden. Danach B' exakt nach dem Drei-Flächen-Vertrag ausführen und zwei
 Produktionszyklen verifizieren. Erst nach diesem Beweis folgen Identitätsnamen-Reparatur,
 Key-Rotation, Quarantäne-Cleanup und Agent-City-GH006 als getrennte Tickets.
+
+## §13 — B' AUSGEFÜHRT UND ÜBER ZWEI PRODUKTIONSZYKLEN STABIL
+
+**Status:** Abgeschlossen. Die bewiesenen Steward-Federation-Wegwerfidentitäten sind aus
+der upstream Hub-Mailbox, der lokalen Steward-Inbox und der Steward-Registry entfernt.
+Zwei nachfolgende Heartbeats haben keine Wiederauferstehung erzeugt. Phase 1 blieb
+unverändert und read-only.
+
+### Re-Census unmittelbar vor dem Schreiben
+
+Der §12-Snapshot wurde nicht blind geschrieben. Direkt vor B' wurden beide Repos erneut
+über Live-Refs, Trees und Blobs gepinnt.
+
+Finaler Steward-Parent:
+
+- Head: `f79138606b8538dfb80168e99bd689711df918bd`.
+- Tree: `8cb8cba2462582a4addccd99f02d2a1ecc886b54`.
+- Registry-Blob: `9b0cd4aef4b4ecbab2d37496d2a5e44d82388bc3`, weiterhin 60.
+- Inbox-Blob: `c6c8c0f4edbe468e45ce5c56ba259d2f7d826c08`, inzwischen 466.
+- Seen-Blob: `c673dc1dd208d572eb7092d296cbfeb862097111`, inzwischen 493.
+
+Die Registry war semantisch und als Blob identisch zum §12-Census. Die zwei zusätzlichen
+Inbox-Nachrichten waren keine DELETE-Kandidaten. Alle Guards wurden neu berechnet:
+
+- Registry: 60 → 17, exakt 43 bewiesene IDs entfernt.
+- lokale Inbox: 466 → 322, exakt 144 Nachrichten entfernt.
+- Operationen der lokalen Löschmenge: 72 Claims + 72 Heartbeats.
+- `agent_name`-Menge vor und nach dem Filter identisch.
+- alle 17 KEEP-Payloads semantisch identisch.
+- Relay-Seen, Quarantäne, Peers, Workflows und Code nicht Teil des Steward-Commits.
+
+### Parallelitätsguard hat real ausgelöst
+
+Der erste Hub-Schreibversuch wurde vor jeder Mutation abgebrochen, weil der gepinnte Head
+`17af2eb38eb24ccac8c0d0a5b8cc0fff669187cc` inzwischen nach
+`de3dfe56cb91a81928aa01a80f0042a0439fd9fd` weitergelaufen war. Es wurde nicht forciert,
+nicht überschrieben und nicht auf einem veralteten Tree weitergearbeitet.
+
+Nach neuem Pin blieb der Ziel-Blob identisch. Die 102 Hub-Kandidaten wurden erneut gegen
+den jetzt 493 UUIDs großen Seen-Store geprüft; alle 102 waren persistent gesehen. Die 42
+KEEP-Nachrichten verifizierten erneut vollständig gegen `ag_9272c311628b5f40`.
+
+Das ist Produktionsbeweis für den §12-Vertrag: Ein konkurrierender Writer führt zum
+Re-Census, nicht zum Last-Writer-Wins-Verlust.
+
+### Upstream-Schritt im Hub
+
+In `kimeisele/steward-federation` wurde ausschließlich
+`nadi/steward-federation_to_steward.json` verändert:
+
+- Commit: `018250711cf1f4acdd43b5b57b40ff347632436c`.
+- Vorheriger Blob: `f64b4193cec7d90e7f7de317ff97024a51e73d1e`.
+- Neuer Blob: `6ba03b51410fea1d08b4f8e2f3ea4e22ab686ce0`.
+- Mailbox: 144 → 42.
+- Gelöscht: 51 Geister-Claims + 51 Geister-Heartbeats.
+- Erhalten: 42 kanonische, gültig signierte Nachrichten ausschließlich von
+  `ag_9272c311628b5f40`.
+
+Nach beiden Steward-Zyklen lag der Hub-Blob weiterhin unverändert auf
+`6ba03b51410fea1d08b4f8e2f3ea4e22ab686ce0`. Der damalige Hub-Head
+`a76d75d2196f775ea7cd84fed314cf32df519f3a` war 33 Commits Descendant des Purge-Commits;
+der Upstream-Purge wurde also nicht von der weiterlaufenden Föderation überschrieben.
+
+### Atomarer Downstream-Schritt im Steward
+
+Registry und Inbox wurden in genau einem Commit auf demselben Parent geschrieben:
+
+- Commit: `39c265a650cf1b443a26870b382696916322c22e`.
+- Parent: `f79138606b8538dfb80168e99bd689711df918bd`.
+- Tree: `ac621b91dcd3f94dc7ee400da1721a4661000ae2`.
+- Registry: Blob `9b0cd4aef4b4ecbab2d37496d2a5e44d82388bc3` →
+  `1fbb9f659ecfe493b3120ffe5307a3c6db7e6204`, 60 → 17.
+- Inbox: Blob `c6c8c0f4edbe468e45ce5c56ba259d2f7d826c08` →
+  `6cf1334520d8e2696844fd8e26f84b812edcad1b`, 466 → 322.
+- Seen-Blob blieb `c673dc1dd208d572eb7092d296cbfeb862097111`.
+
+Unmittelbar nach dem Ref-Update lieferte die API einmal kurz einen nicht passenden Head.
+Die anschließende Abstammungs- und Blobprüfung zeigte jedoch den exakten Commit als Live-
+Head; das war API-Konsistenz, kein verlorener oder konkurrierender Commit. Erst nach diesem
+Beweis wurde der Schritt als erfolgreich gewertet.
+
+### Produktionszyklus 1
+
+Run `29319661369`:
+
+- Start-Head: exakt der B'-Commit `39c265a650cf1b443a26870b382696916322c22e`.
+- Ergebnis: erfolgreich in 4:07 Minuten.
+- State-Commit: `373f8668b7d480f85742090772f47f48d11b27d2`.
+- Registry-Blob blieb `1fbb9f659ecfe493b3120ffe5307a3c6db7e6204`, 17.
+- Inbox-Blob blieb `6cf1334520d8e2696844fd8e26f84b812edcad1b`, 322.
+- Seen-Blob wurde `e42041365cd6751be4dfbb6d37609e24ecba186c`, 511.
+- Geister in Registry: 0.
+- Geisternachrichten in Inbox: 0.
+- aktive Hub-ID `ag_9272c311628b5f40` weiterhin registriert.
+- Hub-Mailbox wurde als 42 Nachrichten gelesen.
+- vier neue Nachrichten wurden gezogen und vom Gateway terminal verarbeitet; sie blieben
+  deshalb nicht in der Inbox.
+- erfolgreicher `main -> main`-Push: 1.
+
+Harte Logzählung:
+
+- `HEARTBEAT ERROR`: 0,
+- `KARMA dispatch failed`: 0,
+- `Traceback`: 0,
+- `Diagnosis failed`: 0,
+- `CONFLICT`: 0,
+- `detached HEAD`: 0,
+- beide exemplarisch geprüften Geister-IDs: 0.
+
+### Produktionszyklus 2
+
+Run `29319982831`:
+
+- Start-Head: `373f8668b7d480f85742090772f47f48d11b27d2`.
+- Ergebnis: erfolgreich in 1:55 Minuten.
+- State-Commit: `951542ebfb44092b81b89130de5df9527b635d10`.
+- Tree: `e4709bae52208809accc84810bab5e4163594017`.
+- Registry: weiterhin 17, Blob `1fbb9f659ecfe493b3120ffe5307a3c6db7e6204`.
+- Inbox: weiterhin 322, Blob `6cf1334520d8e2696844fd8e26f84b812edcad1b`.
+- Seen: weiterhin 511, Blob `e42041365cd6751be4dfbb6d37609e24ecba186c`.
+- Geister in Registry und Inbox: jeweils 0.
+- Hub-Mailbox zweimal als 42 Nachrichten gelesen.
+- `KARMA` erreichte zweimal die Dispatch-Logik.
+- erfolgreicher `main -> main`-Push: 1.
+
+Harte Logzählung:
+
+- `HEARTBEAT ERROR`: 0,
+- `KARMA dispatch failed`: 0,
+- `Traceback`: 0,
+- `Diagnosis failed`: 0,
+- `CONFLICT`: 0,
+- `detached HEAD`: 0,
+- `GIT_NADI: pull failed`: 0,
+- `GIT_NADI: commit failed`: 0,
+- beide exemplarisch geprüften Geister-IDs: 0.
+
+Damit ist die §12-Postcondition über zwei vollständige, aufeinanderfolgende
+Produktionszyklen erfüllt. B' ist abgeschlossen.
+
+### Zwei getrennte neue Fundament-Befunde
+
+B' selbst ist stabil, aber die vollständigen Logs zeigen zwei weitere Risse, die nicht in
+den Purge hineingepatcht werden dürfen:
+
+1. Im ersten Zyklus meldete `GIT_NADI_SYNC` zweimal einen gescheiterten Rebase-Pull wegen
+   unstaged/index changes und einmal einen gescheiterten Commit wegen fehlender Git-Autor-
+   Identität (`fatal: empty ident name`). Der zweite Zyklus traf den Pfad nicht erneut. Das
+   ist kein B'-Rollbackgrund, weil der abschließende Workflow-State-Push erfolgreich war;
+   es ist aber ein echter intermittierender Synchronisationsdefekt.
+2. Beide Zyklen endeten in `Post Checkout steward` mit
+   `fatal: No url found for submodule path '.deps/steward-protocol' in .gitmodules` und der
+   Annotation `git failed with exit code 128`. Der Job blieb grün. Das ist ein reproduzierbar
+   maskierter Checkout-/Cleanup-Defekt, kein Node.js-Hinweis und kein Purge-Symptom.
+
+Diese Warnungen werden ausdrücklich nicht als „grün, also egal“ klassifiziert. Sie sind der
+nächste Read-only-Recon-Auftrag, weil beide an Git-Zustand und Fehlerpropagation im
+produktiven Fundament liegen.
+
+### Nächster Arbeitsauftrag
+
+1. `GIT_NADI_SYNC`-Reihenfolge, Arbeitsbaum-Mutationen und Git-Autor-Konfiguration gegen die
+   beiden Produktionslogs bis zur Ursache verfolgen.
+2. Den `.deps/steward-protocol`-Post-Checkout-Fehler gegen die zwei Checkout-Schritte und
+   deren Cleanup-Verhalten reproduzieren; kein blindes `.gitmodules`-Workaround.
+3. Prüfen, warum beide Fehlerkanäle den Heartbeat grün lassen, und den kleinsten gemeinsamen
+   Fix mit roten Regressionen definieren.
+4. Erst danach die separaten offenen Tickets Identitätsnamen-Reparatur,
+   Heartbeat-Fehlerpropagation, Key-Rotation, Quarantäne-Cleanup und Agent-City-GH006 neu
+   priorisieren.
+
+Phase 1 bleibt weiterhin unverändert. Jeder Fix erhält einen eigenen Milestone und
+Produktionsbeweis; B' wird nicht erneut geöffnet, solange die 17/322/42-Invarianten halten.
