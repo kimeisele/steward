@@ -302,9 +302,7 @@ class TestNadiFederationTransport:
             "message_id": "msg-1",
         }
         inbound["payload_hash"] = hashlib.sha256(json.dumps(inbound, sort_keys=True).encode()).hexdigest()
-        inbox_path.write_text(
-            json.dumps([inbound])
-        )
+        inbox_path.write_text(json.dumps([inbound]))
 
         # read_outbox reads from nadi_inbox.json (inbound messages)
         messages = transport.read_outbox()

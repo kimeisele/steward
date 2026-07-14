@@ -332,6 +332,21 @@ class TestFederationAnalysis:
         assert "code_analysis" in caps
         assert "ci_automation" in caps
 
+    def test_protocol_violations_become_actionable_findings(self, tmp_path):
+        federation = tmp_path / "data" / "federation"
+        federation.mkdir(parents=True)
+        (federation / "protocol_violations.json").write_text(
+            json.dumps({"observed_at": 123.0, "peers": {"ag_malformed": 4}})
+        )
+
+        findings, _, _, _, _ = _analyze_federation(tmp_path)
+
+        violation = next(finding for finding in findings if finding.kind.value == "peer_protocol_violation")
+        assert violation.severity == Severity.WARNING
+        assert violation.file == "data/federation/protocol_violations.json"
+        assert "ag_malformed" in violation.detail
+        assert "nadi_kit" in violation.fix_hint
+
 
 # ── Full Diagnostic ──────────────────────────────────────────────────
 

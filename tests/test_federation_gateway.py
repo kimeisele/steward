@@ -841,9 +841,7 @@ class TestProcessInbound:
         registry = json.loads((tmp_path / "verified_agents.json").read_text())
         assert registry[node_keys.node_id]["public_key"] == node_keys.public_key
         assert reaper.get_peer("agent-city") is not None
-        quarantine_records = [
-            path for path in (tmp_path / "quarantine").glob("*.json") if path.name != "index.json"
-        ]
+        quarantine_records = [path for path in (tmp_path / "quarantine").glob("*.json") if path.name != "index.json"]
         assert quarantine_records == []
 
     def test_spoofed_agent_claim_is_quarantined_for_identity_spoofing(self, tmp_path):

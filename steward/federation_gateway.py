@@ -500,9 +500,7 @@ class FederationGateway(GatewayProtocol):
         messages = sorted(
             messages,
             key=lambda message: (
-                0
-                if isinstance(message, dict) and message.get("operation") == "federation.agent_claim"
-                else 1
+                0 if isinstance(message, dict) and message.get("operation") == "federation.agent_claim" else 1
             ),
         )
 

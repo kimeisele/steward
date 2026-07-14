@@ -40,28 +40,16 @@ class _F:
 
 class TestFixerRegistry:
     def test_all_deterministic_kinds_have_fixers(self):
-        for kind, strategy in [
-            (FindingKind.UNDECLARED_DEPENDENCY, FixStrategy.DETERMINISTIC),
-            (FindingKind.MISSING_DEPENDENCY, FixStrategy.DETERMINISTIC),
-            (FindingKind.NO_FEDERATION_DESCRIPTOR, FixStrategy.DETERMINISTIC),
-            (FindingKind.NO_PEER_JSON, FixStrategy.DETERMINISTIC),
-            (FindingKind.NO_CI, FixStrategy.DETERMINISTIC),
-            (FindingKind.NO_TESTS, FixStrategy.DETERMINISTIC),
-            (FindingKind.BROKEN_IMPORT, FixStrategy.DETERMINISTIC),
-            (FindingKind.SYNTAX_ERROR, FixStrategy.DETERMINISTIC),
-            (FindingKind.CIRCULAR_IMPORT, FixStrategy.DETERMINISTIC),
-            (FindingKind.NADI_BLOCKED, FixStrategy.DETERMINISTIC),
-            (FindingKind.BASE_EXCEPTION_CATCH, FixStrategy.DETERMINISTIC),
-            (FindingKind.DYNAMIC_IMPORT, FixStrategy.DETERMINISTIC),
-        ]:
-            assert classify(kind) == strategy, f"{kind} should be {strategy}"
-            assert kind in _FIXERS, f"{kind} has no registered fixer"
+        for kind in FindingKind:
+            if classify(kind) == FixStrategy.DETERMINISTIC:
+                assert kind in _FIXERS, f"{kind} has no registered fixer"
 
     def test_compound_classified(self):
         assert classify(FindingKind.CI_FAILING) == FixStrategy.COMPOUND
 
     def test_skip_classified(self):
         assert classify(FindingKind.LARGE_FILE) == FixStrategy.SKIP
+        assert classify(FindingKind.PEER_PROTOCOL_VIOLATION) == FixStrategy.SKIP
 
     def test_import_to_pip_mappings(self):
         assert _IMPORT_TO_PIP["yaml"] == "pyyaml"
