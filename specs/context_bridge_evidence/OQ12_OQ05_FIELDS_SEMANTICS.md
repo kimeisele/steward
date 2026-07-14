@@ -104,8 +104,8 @@ Schemafelder sind `default-deny` und machen die Quelle für diesen Feldpfad sich
 | `sessions.recent[*].*` | keine | C4/unsafe | deny; Aufgaben, Zeit und Zusammenfassungen sind nicht Root-Kontext |
 | `sessions.stats.*` | höchstens grobe Diagnose | C3 | default aus Root ausgeschlossen; kein Action-Signal |
 | `tasks.pending[*].id` | keine | C4/internal | deny |
-| `tasks.pending[*].title` | keine freie Übernahme | C2/unsafe | deny bis Status- und Trust-Vertrag OQ-03 geschlossen |
-| `tasks.pending[*].status` | Statusklassen-/Count-Aggregat | C2 | nur bekannte Enum-Normalisierung |
+| `tasks.pending[*].title` | keine freie Übernahme | C2/unsafe | deny; OQ-03 schließt den Statusvertrag, nicht den Trust-/Sanitization-Vertrag freier Titel |
+| `tasks.pending[*].status` | Statusklassen-/Count-Aggregat | C2 | OQ-03: Runtime-Enum über `.value` normalisieren; nur bekannte kanonische uppercase Werte |
 | `tasks.pending[*].priority` | priorisierte Count-Aggregation | C2/C3 | clamp/validate; keine automatische Operatoragenda |
 | `federation.peers[*].agent_id` | standardmäßig keine Einzelliste | C2/unsafe | deny im Root; Identitätskonflikt separat C1 |
 | `federation.peers[*].capabilities` | keine freie Liste | C3/unsafe | deny; externe Descriptor-Daten |
@@ -234,7 +234,8 @@ OQ-12 ist geschlossen:
   bleiben default-deny.
 - Neue Felder werden nicht automatisch publiziert.
 - Issues bleiben bis OQ-04 vollständig aus dem kanonischen Root-Actionblock ausgeschlossen.
-- Tasks dürfen bis OQ-03 nur als validierte Statusaggregate erscheinen.
+- Tasks dürfen nach OQ-03 nur als validierte, getrennte Statusaggregate erscheinen;
+  freie Titel bleiben default-deny.
 - C0 stammt ausschließlich aus `.steward/conventions.md`.
 
 ---
@@ -257,8 +258,8 @@ OQ-05 ist geschlossen:
 
 - OQ-12 ist geschlossen.
 - OQ-05 ist geschlossen.
-- OQ-03 und OQ-04 bleiben notwendige Detailverträge für Tasks und Issues.
+- OQ-03 ist durch das eigene Evidence-Paket geschlossen; OQ-04 bleibt notwendiger
+  Detailvertrag für Issues.
 - G0 bleibt offen.
 - Keine Renderer-, Hash-, Context- oder Workflow-Implementierung ist freigegeben.
-- Nächster isolierter Recon: OQ-13 — required/optional/publish-blocking Quellen und
-  ehrliche Fehlerklassen.
+- OQ-13 ist durch das eigene Evidence-Paket geschlossen.

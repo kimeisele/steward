@@ -434,6 +434,7 @@ Ein leeres Dict oder eine leere Liste ist kein zulässiger Universal-Fallback.
 | CB-18 | Provenance unterscheidet canonical/preview/degraded nicht ausreichend | Outputbefund | Agent kann Herkunft und Gültigkeit nicht bewerten |
 | CB-19 | kein verifizierter Kill-Switch oder Safe Fallback | Operationsdefizit | fehlerhafte Governance publiziert weiter |
 | CB-20 | Konflikte zwischen Operatorauftrag, Arbeitsstand, Live-Signal und Backlog ungelöst | Architekturdefizit | deterministischer Text, aber falsche Handlungspriorität |
+| CB-21 | Heartbeat installiert `steward-protocol` vom jeweils aktuellen Default-Branch ohne Commit-Pin | Workflow und Produktionslog belegt | Cross-Repo-Typverträge können zwischen Steward-Commits driften und sind ohne Protocol-Provenance nicht reproduzierbar |
 
 ---
 
@@ -896,7 +897,7 @@ muss ein menschlich reviewter Minimal-Fallback feststehen, der:
 |---|---|---|
 | OQ-01 | GESCHLOSSEN: Wie wird der bestehende LLM-Schreibpfad auf Preview/Annotation begrenzt, ohne unbekannte produktive Caller zu brechen? | Evidence-Paket OQ-01/OQ-16; Toolname bleibt, kanonische und beliebige Dateiwrites scheitern explizit fail-closed |
 | OQ-02 | Soll Current Phase Work State nur auf `PHASE2_CURRENT` verweisen oder einen sanitizten, nichtautoritativen Ausschnitt übernehmen? | Tokenbudget, Injection und Veraltungsrisiko |
-| OQ-03 | Welche TaskStatus-Typen liefert der echte TaskManager dauerhaft: Enum, String oder gemischt? | verhindert erneuten Filter-Placebo |
+| OQ-03 | GESCHLOSSEN: Welche TaskStatus-Typen liefert der echte TaskManager dauerhaft: Enum, String oder gemischt? | Evidence-Paket OQ-03; Runtime ist kanonischer `TaskStatus`-Enum, Persistenz/Context sind uppercase Strings, Protocol-Commit muss Provenance tragen |
 | OQ-04 | Nach welcher Regel werden GitHub-Issues begrenzt und priorisiert? | verhindert willkürliche Agenda |
 | OQ-05 | GESCHLOSSEN: Welche Briefing-Änderungen sind semantisch commitwürdig? | Evidence-Paket OQ-12/OQ-05; `payload_hash` und C1–C4-Trigger entschieden |
 | OQ-06 | GESCHLOSSEN: Welche Lock-, Tempfile-, Rename-, fsync- und Recovery-Semantik trägt das tatsächliche Dateisystem und die Prozesslandschaft? | Evidence-Paket OQ-06/OQ-14; per-Pfad Atomicity, Doppel-Lock, Generationserkennung und Recovery-Vertrag entschieden |

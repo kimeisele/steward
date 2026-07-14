@@ -165,7 +165,8 @@ Zusätzliche bereits entschiedene Begrenzungen:
 
 - Sessions bleiben unabhängig vom Readerstatus aus dem Root-Payload ausgeschlossen.
 - GitHub-Issues bleiben bis OQ-04 aus dem Root-Payload ausgeschlossen.
-- Tasks dürfen bis OQ-03 höchstens validierte Aggregate beitragen.
+- Tasks dürfen nach dem geschlossenen OQ-03 nur getrennte, validierte Statusaggregate
+  beitragen; freie Titel bleiben untrusted und default-deny.
 - `PHASE2_CURRENT` bleibt bis OQ-02/OQ-15 ein optionaler, widerlegbarer Verweis.
 - Der aktuelle Operatorauftrag bleibt externe Laufzeitautorität und wird nicht aus
   diesen Quellen rekonstruiert.
