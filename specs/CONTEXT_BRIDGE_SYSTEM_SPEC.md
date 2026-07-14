@@ -391,14 +391,22 @@ Felder, maximale Länge, Sanitization, Fallback und Veröffentlichungsrisiko.
 | Zustand | Bedeutung | Publish-Verhalten |
 |---|---|---|
 | `valid` | Quelle verfügbar, Schema und Werte valide | Daten dürfen nach Trust-Policy einfließen |
-| `unavailable` | optionale Quelle nicht erreichbar | degradierter Marker; keine erfundene Leere |
+| `empty` | erfolgreicher, valider Read ohne fachliche Datensätze | ehrliche Leere; nicht mit Fehler gleichsetzen |
+| `not_configured` | Quelle ist für diesen Laufmodus nachweislich nicht eingerichtet | als nicht konfiguriert kennzeichnen; keine Verfügbarkeitsaussage erfinden |
+| `unavailable` | konfigurierte Quelle nicht erreichbar | degradierter Marker; keine erfundene Leere |
 | `invalid` | Quelle vorhanden, aber Typ/Schema/Inhalt widersprüchlich | Quelle isolieren; Fehler sichtbar machen |
 | `stale` | Alter/Freshness-Grenze nachweislich überschritten | als stale markieren; nicht als aktuell darstellen |
 | `unsafe` | Injection-, Leak-, Symlink- oder Pfadprüfung fehlgeschlagen | kanonischen Publish blockieren |
-| `required_missing` | für sicheren Vertrag notwendige Quelle fehlt | kanonischen Publish blockieren oder verifizierten Safe Fallback verwenden |
+| `unsupported` | Schema, Enum oder Feldversion wird nicht verstanden | unbekannten Teil default-deny; je nach Sicherheitsrelevanz degradieren oder blockieren |
+| `required_missing` | für sicheren Vertrag notwendige Vertragsquelle fehlt | normalen dynamischen Publish blockieren oder verifizierten Safe Fallback verwenden |
 
-Welche Quellen required oder optional sind, ist vor Feature-Spec 01 explizit
-festzulegen. Ein leeres Dict ist kein zulässiger Universal-Fallback.
+Required sind nicht pauschal alle Live-Beobachtungen, sondern der sicherheitsrelevante
+Publikationsvertrag: validierter Verfassungskern oder verifizierter Safe Fallback,
+Repository-/Generator-/Schemabezug, normalisiertes Modell, Hash-/Provenancebildung,
+PUBLIC_SAFE-Validierung und Output-Validierung. Live-Quellen sind observational und
+dürfen ausfallen, ohne dass daraus ein gesunder Zustand oder eine leere Agenda erfunden
+wird. Die vollständige Entscheidung und Source-Matrix steht im Evidence-Paket OQ-13.
+Ein leeres Dict oder eine leere Liste ist kein zulässiger Universal-Fallback.
 
 ---
 
@@ -898,7 +906,7 @@ muss ein menschlich reviewter Minimal-Fallback feststehen, der:
 | OQ-10 | Sollen die versehentlich getrackten `.steward/.atomic_*.tmp`-Dateien separat bereinigt werden? | Hygieneproblem, aber nicht in Context-Feature hineinziehen |
 | OQ-11 | GESCHLOSSEN: Welche Discovery-, Hierarchie-, Prioritäts- und Include-Regeln gelten aktuell für Claude Code und Codex? | Evidence-Paket OQ-11; byte-identischer Root-Inhalt bleibt Default |
 | OQ-12 | GESCHLOSSEN: Welche dynamischen Felder sind öffentlich zulässig und welchem C0-C4-Typ gehören sie an? | Evidence-Paket OQ-12/OQ-05; PUBLIC_SAFE-Allowlist und Default-Deny-Feldmatrix entschieden |
-| OQ-13 | Welche Quellen sind required, optional oder publish-blocking? | ehrliche Degradation statt gesunder Leere |
+| OQ-13 | GESCHLOSSEN: Welche Quellen sind required, optional oder publish-blocking? | Evidence-Paket OQ-13; Vertragsquellen blockieren, Beobachtungsquellen degradieren ehrlich statt als gesunde Leere |
 | OQ-14 | TEILGESCHLOSSEN: Welcher reale Kill-Switch stoppt geplante, manuelle und bereits laufende Publisher? | Evidence-Paket OQ-06/OQ-14; manueller Disable/Force-Cancel/Revocation/Fence-Pfad belegt, Operations-Drill und dauerhafter Schalter offen |
 | OQ-15 | Wie wird ein veralteter oder manipulierter Current-Phase-Arbeitsstand erkannt und angezeigt? | verhindert neue Single-Point-of-Failure-Semantik |
 | OQ-16 | GESCHLOSSEN: Welche Prozesspfade können außerhalb des Heartbeat-Workflows parallel publizieren? | Evidence-Paket OQ-01/OQ-16; zwei Root-Writer, Git-NADI-Nebenpublisher, Post-Step und interner Cetana-/Workflow-Mehrfachdispatch belegt |
