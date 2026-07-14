@@ -885,7 +885,7 @@ muss ein menschlich reviewter Minimal-Fallback feststehen, der:
 | OQ-04 | Nach welcher Regel werden GitHub-Issues begrenzt und priorisiert? | verhindert willkürliche Agenda |
 | OQ-05 | Welche Briefing-Änderungen sind semantisch commitwürdig? | verhindert Heartbeat-Commitrauschen |
 | OQ-06 | Welche Lock-, Tempfile-, Rename-, fsync- und Recovery-Semantik trägt das tatsächliche Dateisystem und die Prozesslandschaft? | lokale Konsistenz und Race-Sicherheit |
-| OQ-07 | Welche Core-File-, CODEOWNERS-, Reviewer- und Diff-Gates schützen `AGENTS.md`, `CLAUDE.md` und die statische Verfassungsquelle? | Governance und Blast-Radius |
+| OQ-07 | TEILGESCHLOSSEN: Welche Core-File-, CODEOWNERS-, Reviewer- und Diff-Gates schützen `AGENTS.md`, `CLAUDE.md` und die statische Verfassungsquelle? | Evidence-Paket OQ-18/OQ-07; Schutzvertrag entschieden, Enforcement-Topologie durch OQ-14/OQ-16 blockiert |
 | OQ-08 | Ist die Formulierung „You are Steward“ für externe Maintainer zulässig? | Rollen- und Sicherheitsklarheit |
 | OQ-09 | Wann und wie wird der derzeit tote interne Instruction-Loader behandelt? | Scope-Trennung; kein versehentlicher Prompt-Umbau |
 | OQ-10 | Sollen die versehentlich getrackten `.steward/.atomic_*.tmp`-Dateien separat bereinigt werden? | Hygieneproblem, aber nicht in Context-Feature hineinziehen |
@@ -896,7 +896,7 @@ muss ein menschlich reviewter Minimal-Fallback feststehen, der:
 | OQ-15 | Wie wird ein veralteter oder manipulierter Current-Phase-Arbeitsstand erkannt und angezeigt? | verhindert neue Single-Point-of-Failure-Semantik |
 | OQ-16 | Welche Prozesspfade können außerhalb des Heartbeat-Workflows parallel publizieren? | vollständiges Concurrency-Modell |
 | OQ-17 | GESCHLOSSEN: Ist das Repository und sind alle einbezogenen Issue-/Federation-Daten öffentlich? | Evidence-Paket OQ-17; Root-Output ist immer PUBLIC_SAFE, privilegierte/runtime Daten default-deny |
-| OQ-18 | Welche einzelne reviewte Quelldatei definiert den statischen Verfassungskern, und ist `.steward/conventions.md` dafür in Inhalt und Governance geeignet? | verhindert neue manuelle Drift und ungeprüfte Rollenregeln |
+| OQ-18 | GESCHLOSSEN: Welche einzelne reviewte Quelldatei definiert den statischen Verfassungskern, und ist `.steward/conventions.md` dafür in Inhalt und Governance geeignet? | Evidence-Paket OQ-18/OQ-07; bestehender Pfad bleibt einzige Quelle, aktueller Inhalt ist vor Härtung nicht freigegeben |
 
 ---
 
