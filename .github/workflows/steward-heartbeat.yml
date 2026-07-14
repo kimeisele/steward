@@ -97,7 +97,7 @@ jobs:
           git add -- data/federation/
           if ! git diff --cached --quiet; then
             git commit -m "chore: heartbeat #${{ github.run_number }} state sync"
-            git pull --rebase origin main
+            git pull --rebase --autostash origin main
             git remote set-url origin https://x-access-token:${{ secrets.FEDERATION_PAT }}@github.com/kimeisele/steward.git
             git push
           fi
