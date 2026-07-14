@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "timestamp": 1784010430.3532996,
+  "timestamp": 1784010792.2124038,
   "project": {
     "name": "steward",
     "path": "/home/runner/work/steward/steward"
@@ -100,72 +100,48 @@
         "buddhi_action": ""
       },
       {
-        "task": "[autonomous] FEDERATION_HEALTH",
-        "outcome": "problem_found",
-        "summary": "Deterministic FEDERATION_HEALTH: problem detected",
-        "timestamp": "2026-07-14T06:25:31.833205+00:00",
-        "tokens": 0,
-        "rounds": 0,
+        "task": "Fix bottleneck: agent_population",
+        "outcome": "success",
+        "summary": "implement: 1 rounds, 0 tools",
+        "timestamp": "2026-07-14T06:31:39.918530+00:00",
+        "tokens": 531,
+        "rounds": 1,
         "errors": 0,
         "files_written": [],
-        "buddhi_action": ""
+        "buddhi_action": "implement"
       }
     ],
     "stats": {
       "total_sessions": 50,
-      "success_rate": 0.16,
-      "total_tokens": 17170,
+      "success_rate": 0.18,
+      "total_tokens": 17701,
       "total_tool_calls": 6,
-      "avg_tokens_per_session": 343
+      "avg_tokens_per_session": 354
     },
-    "prompt_summary": "Previous sessions in this project:\n  [2026-07-12] problem_found: [autonomous] FEDERATION_HEALTH (0 tokens, 0 rounds, files: none)\n  [2026-07-14] problem_found: [autonomous] FEDERATION_HEALTH (0 tokens, 0 rounds, files: none)"
+    "prompt_summary": "Previous sessions in this project:\n  [2026-07-12] problem_found: [autonomous] FEDERATION_HEALTH (0 tokens, 0 rounds, files: none)\n  [2026-07-14] success: Fix bottleneck: agent_population (531 tokens, 1 rounds, files: none)"
   },
   "tasks": {
     "pending": [
       {
-        "id": "220d6935-0c66-493f-b916-20e2986bc248",
-        "title": "[HEALTH_CHECK] Quick Health Check",
+        "id": "0ae9fd69-3c94-4b94-83ac-01d56812007d",
+        "title": "[FED:agent-city] Fix bottleneck: agent_population",
         "priority": 70,
-        "status": "PENDING"
-      },
-      {
-        "id": "a00eaa00-7397-47ba-ae94-f91f02847e31",
-        "title": "[FEDERATION_HEALTH] Federation Health Check",
-        "priority": 90,
         "status": "COMPLETED"
       },
       {
-        "id": "1043678a-ce82-4589-8b8f-69cf16cfcb36",
-        "title": "[HEAL_REPO] Heal Federation Repos",
+        "id": "cd195215-d080-4227-89ea-e8e08ed219f7",
+        "title": "[HEAL_REPO] Peer ag_fd5a7db51b1acac1 \u2014 Kirtan escalation",
         "priority": 90,
         "status": "IN_PROGRESS"
       },
       {
-        "id": "784033b7-2d1a-4d54-9bdb-f6deaea72c11",
-        "title": "[CROSS_REPO_DIAGNOSTIC] Cross-Repo Diagnostic",
-        "priority": 90,
-        "status": "PENDING"
-      },
-      {
-        "id": "f28e094f-2fbd-432d-89ba-7a135580eb1a",
-        "title": "[SYNTHESIZE_BRIEFING] Synthesize Context Briefing",
-        "priority": 70,
-        "status": "PENDING"
-      },
-      {
-        "id": "0ca7ac59-9653-46fe-ba89-db6052bce256",
-        "title": "[HEAL_REPO] Peer ag_fd5a7db51b1acac1 \u2014 Kirtan escalation",
-        "priority": 90,
-        "status": "PENDING"
-      },
-      {
-        "id": "fceeb31e-bc6a-4351-a28f-9db96f60aa4a",
+        "id": "d323e82c-3d04-476e-b3f5-65dd113866da",
         "title": "[HEAL_REPO] Peer ag_f1bc59288c9c5443 \u2014 Kirtan escalation",
         "priority": 90,
         "status": "PENDING"
       },
       {
-        "id": "72e950e1-cc9c-49d5-b42e-fcc153cff96c",
+        "id": "ca28c3b0-db85-486e-8576-03c9b363c2b8",
         "title": "[HEAL_REPO] Peer ag_eb39d27421b3971d \u2014 Kirtan escalation",
         "priority": 90,
         "status": "PENDING"
@@ -173,12 +149,12 @@
     ]
   },
   "federation": {
-    "total_peers": 66,
+    "total_peers": 68,
     "by_status": {
-      "alive": 11,
+      "alive": 13,
       "evicted": 55
     },
-    "avg_trust": 0.24393939393939365,
+    "avg_trust": 0.2566176470588233,
     "total_reaps": 8313,
     "total_evictions": 115,
     "lease_ttl_s": 900.0,
@@ -189,11 +165,16 @@
         "status": "alive",
         "trust": 1.0,
         "capabilities": [
+          "city_governance",
           "code_execution",
           "economy",
           "federation_bridge",
+          "federation_relay",
           "governance",
-          "immigration"
+          "heartbeat_observer",
+          "immigration",
+          "multi_agent_runtime",
+          "wiki_publishing"
         ]
       },
       {
@@ -252,8 +233,13 @@
         "status": "alive",
         "trust": 1.0,
         "capabilities": [
+          "authority-projection",
           "descriptor_incomplete",
-          "projection_host"
+          "federation-discovery",
+          "lotus-addressing",
+          "nadi-relay",
+          "projection_host",
+          "semantic-search"
         ]
       },
       {
@@ -290,7 +276,7 @@
       {
         "agent_id": "ag_8859b969119219b8",
         "status": "alive",
-        "trust": 0.2,
+        "trust": 0.55,
         "capabilities": [
           "autonomous_daemon",
           "ci_automation",
@@ -298,6 +284,18 @@
           "federation_bridge",
           "task_execution"
         ]
+      },
+      {
+        "agent_id": "ag_b670dc6cbcb705fe",
+        "status": "alive",
+        "trust": 0.5,
+        "capabilities": []
+      },
+      {
+        "agent_id": "ag_d7b5cd6e9baa0add",
+        "status": "alive",
+        "trust": 0.5,
+        "capabilities": []
       }
     ],
     "marketplace": {
@@ -309,13 +307,13 @@
       "default_ttl_s": 600.0
     },
     "gateway": {
-      "total_requests": 6,
+      "total_requests": 25,
       "by_protocol": {
-        "nadi": 6
+        "nadi": 25
       },
       "rejected_parse": 0,
       "rejected_validate": 0,
-      "errors": 13,
+      "errors": 10,
       "pending_signals": 0
     }
   },
@@ -334,13 +332,13 @@
   },
   "campaign": {
     "campaign_id": "federation-stewardship",
-    "all_met": false,
+    "all_met": true,
     "signals": [
       {
         "kind": "federation_healthy",
         "met": true,
         "actual": {
-          "alive": 11,
+          "alive": 13,
           "suspect": 0,
           "dead": 0
         }
@@ -357,13 +355,11 @@
       },
       {
         "kind": "active_missions_at_most",
-        "met": false,
-        "actual": 7
+        "met": true,
+        "actual": 3
       }
     ],
-    "failing": [
-      "active_missions_at_most"
-    ]
+    "failing": []
   },
   "cetana": {
     "alive": true,
@@ -371,7 +367,7 @@
     "frequency_hz": 0.10790930697199998,
     "phase": "MOKSHA",
     "consecutive_anomalies": 0,
-    "last_health": 0.8600780156155277,
+    "last_health": 0.8600909331490312,
     "last_guna": "sattva"
   },
   "issues": [
