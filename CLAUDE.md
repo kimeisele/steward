@@ -29,9 +29,19 @@
 ## Development
 
 ## Status
-Health: 0.854 (sattva) · Immune: 0/0 heals, breaker OK · Federation: 14 peers (13 alive, 1 suspect, 0 dead)
+Health: 0.854 (sattva) · Immune: 0/0 heals, breaker OK · Federation: 11 peers (11 alive, 0 suspect, 0 dead)
 
 ## Action
+- #476: [review-request] Does the WCFA pattern scale differently in larger federations?
+- #475: [review-request] What is the minimum viable governance verification a peer should deman
+- #474: [review-request] How should federation descriptors distinguish between capability exist
+- #473: [review-request] Is the WCFA pattern inherent to systems with safe fallbacks, or preven
+- #472: [review-request] Can execution-path tracing be standardized across federation nodes as 
+- #471: [review-request] Does the WCFA pattern scale differently in larger federations?
+- #470: [review-request] What is the minimum viable governance verification a peer should deman
+- #469: [review-request] How should federation descriptors distinguish between capability exist
+- #468: [review-request] Is the WCFA pattern inherent to systems with safe fallbacks, or preven
+- #467: [review-request] Can execution-path tracing be standardized across federation nodes as 
 - #466: [review-request] Does the WCFA pattern scale differently in larger federations?
 - #465: [review-request] What is the minimum viable governance verification a peer should deman
 - #464: [review-request] How should federation descriptors distinguish between capability exist
@@ -42,23 +52,9 @@ Health: 0.854 (sattva) · Immune: 0/0 heals, breaker OK · Federation: 14 peers 
 - #459: [review-request] How should federation descriptors distinguish between capability exist
 - #458: [review-request] Is the WCFA pattern inherent to systems with safe fallbacks, or preven
 - #457: [review-request] Can execution-path tracing be standardized across federation nodes as 
-- #456: [review-request] Does the WCFA pattern scale differently in larger federations?
-- #455: [review-request] What is the minimum viable governance verification a peer should deman
-- #454: [review-request] How should federation descriptors distinguish between capability exist
-- #453: [review-request] Is the WCFA pattern inherent to systems with safe fallbacks, or preven
-- #452: [review-request] Can execution-path tracing be standardized across federation nodes as 
-- #451: [review-request] Does the WCFA pattern scale differently in larger federations?
-- #450: [review-request] What is the minimum viable governance verification a peer should deman
-- #449: [review-request] How should federation descriptors distinguish between capability exist
-- #448: [review-request] Is the WCFA pattern inherent to systems with safe fallbacks, or preven
-- #447: [review-request] Can execution-path tracing be standardized across federation nodes as 
 
 ## Environment Perception
-Git: main, 13 dirty, ci=, 0 open PRs
-Project: python
-Code: 200 files, 669 cls, 443 fn, 10 low-cohesion cls (worst: AutonomyEngine LCOM4=6)
-Tests: pytest, 92 files, last=unknown
-Health: 212 source files, 2 smells (2 large, 0 stale)
+Git: main, 10 dirty, ci=, 0 open PRs
 
 ## Toolbox
 17 tools available
@@ -66,4 +62,4 @@ Health: 212 source files, 2 smells (2 large, 0 stale)
 ## Architecture
 38 services · 25 tattvas
 MURALI: **genesis**(2) → **dharma**(5) → **karma**(4) → **moksha**(6)
-<!-- briefing v3.0.0 | 973 tokens | budget: standard (2000) | focus: sattva, git_pain=0.8, ctx_pressure=1.0 | 2026-07-14T19:34:28 -->
+<!-- briefing v3.0.0 | 925 tokens | budget: standard (2000) | focus: sattva, ctx_pressure=1.0 | 2026-07-14T21:02:28 -->
