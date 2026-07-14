@@ -29,7 +29,7 @@
 ## Development
 
 ## Status
-Health: 0.854 (sattva) · Immune: 0/0 heals, breaker OK · Federation: 11 peers (11 alive, 0 suspect, 0 dead)
+Health: 0.854 (sattva) · Immune: 0/0 heals, breaker OK · Federation: 13 peers (13 alive, 0 suspect, 0 dead)
 
 ## Action
 - #476: [review-request] Does the WCFA pattern scale differently in larger federations?
@@ -54,7 +54,7 @@ Health: 0.854 (sattva) · Immune: 0/0 heals, breaker OK · Federation: 11 peers 
 - #457: [review-request] Can execution-path tracing be standardized across federation nodes as 
 
 ## Environment Perception
-Git: main, 10 dirty, ci=, 0 open PRs
+Git: main, 8 dirty, ci=, 0 open PRs
 
 ## Toolbox
 17 tools available
@@ -62,4 +62,4 @@ Git: main, 10 dirty, ci=, 0 open PRs
 ## Architecture
 38 services · 25 tattvas
 MURALI: **genesis**(2) → **dharma**(5) → **karma**(4) → **moksha**(6)
-<!-- briefing v3.0.0 | 925 tokens | budget: standard (2000) | focus: sattva, ctx_pressure=1.0 | 2026-07-14T21:02:28 -->
+<!-- briefing v3.0.0 | 925 tokens | budget: standard (2000) | focus: sattva, ctx_pressure=1.0 | 2026-07-14T21:13:45 -->
