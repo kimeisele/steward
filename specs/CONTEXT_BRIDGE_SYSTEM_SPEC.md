@@ -3,7 +3,7 @@
 > **Status:** DRAFT 0.3 — FÜR READ-ONLY G0-EVIDENCE FREIGEGEBEN; IMPLEMENTIERUNG GESPERRT
 > **Datum:** 2026-07-14
 > **Produktionsbasis:** `kimeisele/steward` auf
-> `b2b633cb7f7e9e0f0b2164527034c2426541b7a7`
+> `85c4799b3f045f53012679f2c6ba6a960270b530`
 > **Zweck:** Verbindlichen technischen Vertrag für die dynamische Bereitstellung von
 > Projektkontext an wechselnde Anthropic-, OpenAI- und interne Steward-Agenten schaffen.
 > **Sperre:** Aus diesem Dokument darf noch kein Produktivpatch abgeleitet werden. Erst
@@ -437,6 +437,8 @@ Ein leeres Dict oder eine leere Liste ist kein zulässiger Universal-Fallback.
 | CB-21 | Heartbeat installiert `steward-protocol` vom jeweils aktuellen Default-Branch ohne Commit-Pin | Workflow und Produktionslog belegt | Cross-Repo-Typverträge können zwischen Steward-Commits driften und sind ohne Protocol-Provenance nicht reproduzierbar |
 | CB-22 | Issue-Reader liefert nur Nummer und Titel, während der Renderer nicht gelieferte Labels erwartet; Eligibility und Prioritätsmetadaten fehlen | Code, Live-Issue-Inventar und Produktionsoutput belegt | untrusted Neuigkeit ersetzt kuratierte Relevanz; Labels suggerieren eine nicht existierende Auswahl |
 | CB-23 | `PHASE2_CURRENT` besitzt keinen maschinenprüfbaren Rollen-, Freshness-, Review- oder Konfliktvertrag und enthält imperative Prosa sowie lokale absolute Pfade | Git-Historie, Inhalt und fehlende Call-Sites belegt | content-addressierter Snapshot kann fälschlich als aktuelle autoritative Anweisung oder PUBLIC_SAFE-Text erscheinen |
+| CB-24 | `.steward/conventions.md` sagt dem externen Consumer „You are Steward“ und „Your North Star“, obwohl Root-Dateien derzeit nicht vom internen StewardAgent geladen werden | Consumer-, Call-Site- und Promptbeweis | Engineering-Agent kann Runtime-Rolle, Identität und Handlungsautorität fälschlich übernehmen |
+| CB-25 | `OrientationStage` behandelt den vermeintlichen statischen Verfassungskern als komprimierbar und entfernt bei niedrigem Fokus dessen Text bis auf leere Überschriften | Code, Tests und Produktionsblob belegt | Rollen-, Trust- und Schutzregeln hängen vom dynamischen Focus-/Budgetzustand ab |
 
 ---
 
@@ -549,6 +551,8 @@ Session-Auftrag zu kennen oder zu repräsentieren.
 | I-17 | Dynamische Daten dürfen keine rohe Markdown-Dokumentstruktur kontrollieren | Sanitization-/Injection-Test |
 | I-18 | Die verbindliche Phase-1-read-only-Regel gehört zum statischen Verfassungskern und hängt nicht von `PHASE2_CURRENT` ab | Constitution-Contract- und Missing-Continuity-Test |
 | I-19 | Kanonische Root-Context-Dateien werden als PUBLIC-Release-Artefakte behandelt und enthalten nur bedingungslos öffentlich geeignete Allowlist-Felder | Public-data Contract, unauthenticated artifact audit und negative private-source fixtures |
+| I-20 | Root-Dateien identifizieren den Consumer als externen Engineering-/Maintenance-Agenten und das Projekt in dritter Person; sie weisen dem Consumer nie Runtime-, Node- oder Federation-Identität zu | Rollen-Contract-Test und negative Impersonation-Fixtures |
+| I-21 | Der minimale C0-Kern einschließlich Rollen- und Trust-Grenze ist nicht focus-/health-/budgetkomprimierbar; optionale Architekturorientierung darf separat komprimieren | Minimalbudget-, Degradation- und Produktionsblob-Test |
 
 ---
 
@@ -917,7 +921,7 @@ muss ein menschlich reviewter Minimal-Fallback feststehen, der:
 | OQ-05 | GESCHLOSSEN: Welche Briefing-Änderungen sind semantisch commitwürdig? | Evidence-Paket OQ-12/OQ-05; `payload_hash` und C1–C4-Trigger entschieden |
 | OQ-06 | GESCHLOSSEN: Welche Lock-, Tempfile-, Rename-, fsync- und Recovery-Semantik trägt das tatsächliche Dateisystem und die Prozesslandschaft? | Evidence-Paket OQ-06/OQ-14; per-Pfad Atomicity, Doppel-Lock, Generationserkennung und Recovery-Vertrag entschieden |
 | OQ-07 | TEILGESCHLOSSEN: Welche Core-File-, CODEOWNERS-, Reviewer- und Diff-Gates schützen `AGENTS.md`, `CLAUDE.md` und die statische Verfassungsquelle? | Evidence-Paket OQ-18/OQ-07; Writer-Landschaft durch OQ-16 belegt, Enforcement-Topologie bleibt durch OQ-14 und Delivery-Governance blockiert |
-| OQ-08 | Ist die Formulierung „You are Steward“ für externe Maintainer zulässig? | Rollen- und Sicherheitsklarheit |
+| OQ-08 | GESCHLOSSEN: Ist die Formulierung „You are Steward“ für externe Maintainer zulässig? | Evidence-Paket OQ-08; unzulässig in Root-Dateien, klare Trennung zwischen Projekt-, Runtime-, Consumer- und Operatoridentität; C0 darf nicht komprimieren |
 | OQ-09 | Wann und wie wird der derzeit tote interne Instruction-Loader behandelt? | Scope-Trennung; kein versehentlicher Prompt-Umbau |
 | OQ-10 | Sollen die versehentlich getrackten `.steward/.atomic_*.tmp`-Dateien separat bereinigt werden? | Hygieneproblem, aber nicht in Context-Feature hineinziehen |
 | OQ-11 | GESCHLOSSEN: Welche Discovery-, Hierarchie-, Prioritäts- und Include-Regeln gelten aktuell für Claude Code und Codex? | Evidence-Paket OQ-11; byte-identischer Root-Inhalt bleibt Default |
