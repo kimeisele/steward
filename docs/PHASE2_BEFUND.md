@@ -4,6 +4,9 @@
 **Dieses Dokument pflegst DU.** PHASE1_BEFUND_steward.md ist READ-ONLY — nur lesen,
 nie ändern. Referenzen dorthin per §-Nummer ("Phase-1 §219.26").
 
+**Fresh Session:** Zuerst `docs/PHASE2_CURRENT.md` lesen. Diese Datei ist das kurze,
+rollierende Cockpit; der vorliegende Befund bleibt das ausführliche Beweisarchiv.
+
 ---
 
 ## §1 — ORIENTIERUNG: WO DU BIST, WAS LÄUFT
