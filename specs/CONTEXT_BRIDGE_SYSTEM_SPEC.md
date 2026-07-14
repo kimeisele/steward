@@ -439,6 +439,7 @@ Ein leeres Dict oder eine leere Liste ist kein zulässiger Universal-Fallback.
 | CB-23 | `PHASE2_CURRENT` besitzt keinen maschinenprüfbaren Rollen-, Freshness-, Review- oder Konfliktvertrag und enthält imperative Prosa sowie lokale absolute Pfade | Git-Historie, Inhalt und fehlende Call-Sites belegt | content-addressierter Snapshot kann fälschlich als aktuelle autoritative Anweisung oder PUBLIC_SAFE-Text erscheinen |
 | CB-24 | `.steward/conventions.md` sagt dem externen Consumer „You are Steward“ und „Your North Star“, obwohl Root-Dateien derzeit nicht vom internen StewardAgent geladen werden | Consumer-, Call-Site- und Promptbeweis | Engineering-Agent kann Runtime-Rolle, Identität und Handlungsautorität fälschlich übernehmen |
 | CB-25 | `OrientationStage` behandelt den vermeintlichen statischen Verfassungskern als komprimierbar und entfernt bei niedrigem Fokus dessen Text bis auf leere Überschriften | Code, Tests und Produktionsblob belegt | Rollen-, Trust- und Schutzregeln hängen vom dynamischen Focus-/Budgetzustand ab |
+| CB-26 | der private `_load_project_instructions()`-Helper und seine direkten Tests suggerieren weiterhin unterstützte Root-Instruktionsinjektion, obwohl diese Verdrahtung 2026 bewusst aus dem Runtime-Prompt entfernt wurde | Git-Historie, aktueller Call-Graph und Testvertrag belegt | spätere Maintainer können externen Engineering-Context versehentlich wieder als internen Steward-Systemprompt aktivieren |
 
 ---
 
@@ -553,6 +554,7 @@ Session-Auftrag zu kennen oder zu repräsentieren.
 | I-19 | Kanonische Root-Context-Dateien werden als PUBLIC-Release-Artefakte behandelt und enthalten nur bedingungslos öffentlich geeignete Allowlist-Felder | Public-data Contract, unauthenticated artifact audit und negative private-source fixtures |
 | I-20 | Root-Dateien identifizieren den Consumer als externen Engineering-/Maintenance-Agenten und das Projekt in dritter Person; sie weisen dem Consumer nie Runtime-, Node- oder Federation-Identität zu | Rollen-Contract-Test und negative Impersonation-Fixtures |
 | I-21 | Der minimale C0-Kern einschließlich Rollen- und Trust-Grenze ist nicht focus-/health-/budgetkomprimierbar; optionale Architekturorientierung darf separat komprimieren | Minimalbudget-, Degradation- und Produktionsblob-Test |
+| I-22 | Der interne `StewardAgent` lädt kanonische Root-Engineering-Dateien nicht automatisch in seinen Systemprompt; eine künftige Runtime-Instruktionsquelle benötigt einen separaten Trust-, Rollen- und Promptvertrag | negativer Runtime-Prompt-Test und Call-Graph-Prüfung |
 
 ---
 
@@ -922,7 +924,7 @@ muss ein menschlich reviewter Minimal-Fallback feststehen, der:
 | OQ-06 | GESCHLOSSEN: Welche Lock-, Tempfile-, Rename-, fsync- und Recovery-Semantik trägt das tatsächliche Dateisystem und die Prozesslandschaft? | Evidence-Paket OQ-06/OQ-14; per-Pfad Atomicity, Doppel-Lock, Generationserkennung und Recovery-Vertrag entschieden |
 | OQ-07 | TEILGESCHLOSSEN: Welche Core-File-, CODEOWNERS-, Reviewer- und Diff-Gates schützen `AGENTS.md`, `CLAUDE.md` und die statische Verfassungsquelle? | Evidence-Paket OQ-18/OQ-07; Writer-Landschaft durch OQ-16 belegt, Enforcement-Topologie bleibt durch OQ-14 und Delivery-Governance blockiert |
 | OQ-08 | GESCHLOSSEN: Ist die Formulierung „You are Steward“ für externe Maintainer zulässig? | Evidence-Paket OQ-08; unzulässig in Root-Dateien, klare Trennung zwischen Projekt-, Runtime-, Consumer- und Operatoridentität; C0 darf nicht komprimieren |
-| OQ-09 | Wann und wie wird der derzeit tote interne Instruction-Loader behandelt? | Scope-Trennung; kein versehentlicher Prompt-Umbau |
+| OQ-09 | GESCHLOSSEN: Wann und wie wird der derzeit tote interne Instruction-Loader behandelt? | Evidence-Paket OQ-09; bewusst entkoppelten Helper nicht wiederverdrahten, nach G0 separat samt direkten Tests verhaltensneutral entfernen |
 | OQ-10 | Sollen die versehentlich getrackten `.steward/.atomic_*.tmp`-Dateien separat bereinigt werden? | Hygieneproblem, aber nicht in Context-Feature hineinziehen |
 | OQ-11 | GESCHLOSSEN: Welche Discovery-, Hierarchie-, Prioritäts- und Include-Regeln gelten aktuell für Claude Code und Codex? | Evidence-Paket OQ-11; byte-identischer Root-Inhalt bleibt Default |
 | OQ-12 | GESCHLOSSEN: Welche dynamischen Felder sind öffentlich zulässig und welchem C0-C4-Typ gehören sie an? | Evidence-Paket OQ-12/OQ-05; PUBLIC_SAFE-Allowlist und Default-Deny-Feldmatrix entschieden |
