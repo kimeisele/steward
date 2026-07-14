@@ -1,7 +1,7 @@
 # OQ-18 / OQ-07 — VERFASSUNGSQUELLE UND GOVERNANCE
 
 > **Status OQ-18:** EVIDENCE COMPLETE — Quelldatei entschieden, Härtung vor Nutzung zwingend
-> **Status OQ-07:** EVIDENCE PARTIAL — Schutzvertrag entschieden, Enforcement-Topologie durch OQ-14/OQ-16 blockiert
+> **Status OQ-07:** EVIDENCE PARTIAL — Schutzvertrag entschieden, Enforcement-Topologie durch OQ-14 und Delivery-Governance blockiert
 > **Untersuchungsdatum:** 2026-07-14
 > **Steward-Head:** `02938251c2c28389340dede8d9e125ba05af17ab`
 > **Steward-Tree:** `7b622d34d476137e42dc1f79892754e13107fba0`
@@ -278,8 +278,9 @@ Der Schutzvertrag ist klar, seine sichere Delivery-Topologie noch nicht:
    im konkreten persönlichen Public-Repo sicher verfügbar ist.
 5. Die Identität und Reichweite des hinter `FEDERATION_PAT` stehenden Principals ist aus
    dem Repository nicht belegbar.
-6. Die vollständige Menge paralleler Publisher ist Gegenstand von OQ-16.
-7. Stop-, Bypass- und Recovery-Semantik ist Gegenstand von OQ-14.
+6. Die vollständige Menge paralleler Publisher wurde durch OQ-16 belegt; insbesondere
+   `GitNadiSync` und der Workflow-Post-Step bilden getrennte Delivery-Wege.
+7. Stop-, Bypass- und Recovery-Semantik ist weiterhin Gegenstand von OQ-14.
 
 Darum bleibt offen, ob der Zielzustand über:
 
@@ -290,9 +291,9 @@ Darum bleibt offen, ob der Zielzustand über:
 
 erreicht wird. Diese Optionen sind keine Implementierungsfreigabe.
 
-**Abhängigkeit:** OQ-07 kann erst nach OQ-14 und OQ-16 final geschlossen werden. Eine
-Feature-Spec darf bis dahin weder `CODEOWNERS` noch Branchschutz oder Workflow-Bypass als
-isolierten Schnellpatch behandeln.
+**Abhängigkeit:** OQ-07 kann erst nach OQ-14 und einer reviewten Entscheidung über die
+Delivery-Governance final geschlossen werden. Eine Feature-Spec darf bis dahin weder
+`CODEOWNERS` noch Branchschutz oder Workflow-Bypass als isolierten Schnellpatch behandeln.
 
 ---
 
@@ -323,14 +324,15 @@ isolierten Schnellpatch behandeln.
 - Ein fehlender PR in der Commit-API beweist keinen fehlenden informellen menschlichen
   Blick außerhalb GitHubs.
 - Die endgültige menschliche Code-Owner-Identität ist nicht technisch ableitbar.
-- Die vollständige Writer-Menge bleibt bis OQ-16 offen.
+- Die Writer-Menge ist im Evidence-Paket OQ-01/OQ-16 dokumentiert; externe, nicht im
+  Repository sichtbare Prozesse bleiben naturgemäß unbelegbar.
 
 ---
 
 ## 14. Gate-Wirkung
 
 - OQ-18 ist geschlossen.
-- OQ-07 ist auf einen verbindlichen Schutzvertrag und die Abhängigkeiten OQ-14/OQ-16
+- OQ-07 ist auf einen verbindlichen Schutzvertrag, OQ-14 und die Delivery-Governance
   reduziert, aber noch nicht final geschlossen.
 - G0 bleibt offen.
 - Keine Code-, Workflow-, CODEOWNERS-, Branchschutz- oder Ruleset-Änderung ist aus diesem

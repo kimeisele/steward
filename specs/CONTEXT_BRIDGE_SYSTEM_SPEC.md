@@ -3,7 +3,7 @@
 > **Status:** DRAFT 0.3 — FÜR READ-ONLY G0-EVIDENCE FREIGEGEBEN; IMPLEMENTIERUNG GESPERRT
 > **Datum:** 2026-07-14
 > **Produktionsbasis:** `kimeisele/steward` auf
-> `5e2966adad885cb90fdf4807567bec68abf0f68f`
+> `02938251c2c28389340dede8d9e125ba05af17ab`
 > **Zweck:** Verbindlichen technischen Vertrag für die dynamische Bereitstellung von
 > Projektkontext an wechselnde Anthropic-, OpenAI- und interne Steward-Agenten schaffen.
 > **Sperre:** Aus diesem Dokument darf noch kein Produktivpatch abgeleitet werden. Erst
@@ -115,9 +115,9 @@ scheinbar konfliktfreien „Wahrheit“ verschmelzen.
 
 | Objekt | Produktionsstand | Beobachtung |
 |---|---|---|
-| Repository-Head | `5e2966adad885cb90fdf4807567bec68abf0f68f` | Heartbeat `#5345` |
-| `CLAUDE.md` | letzter Commit `76ff08a70aa9b064a7eefe29873b8238fca84cf0` | seit Heartbeat `#5340` nicht mehr aktualisiert |
-| `.steward/context.json` | letzter Commit `5e2966adad885cb90fdf4807567bec68abf0f68f` | läuft bis Heartbeat `#5345` weiter |
+| Repository-Head | `02938251c2c28389340dede8d9e125ba05af17ab` | Heartbeat `#5351`; Tree `7b622d34d476137e42dc1f79892754e13107fba0` |
+| `CLAUDE.md` | Blob `a240cd5468a4bc53c1f9e3c18f4b8be7cdc7abe7` | im vorherigen Commit `576d5fda6e4b858e0b19b8632201baafa762db4d` durch `GitNadiSync` unbeabsichtigt mitpubliziert |
+| `.steward/context.json` | Blob `b6268d7cf867576004ab090ab8a2ae714c2b836a` | Heartbeat-Post-Step aktualisiert nach separatem Git-NADI-Commit weiter |
 | `AGENTS.md` | nicht vorhanden | Codex erhält keinen repo-eigenen Root-Vertrag |
 | `docs/PHASE2_CURRENT.md` | Blob `cb3e85c6a02bc776c2611bced87c6e9bf96ee995` | kuratierter Arbeitsstand der aktuellen Phase; keine SSOT |
 | `docs/PHASE2_BEFUND.md` | vorhanden | ausführliches, fortlaufendes externes Gehirn |
@@ -135,7 +135,7 @@ scheinbar konfliktfreien „Wahrheit“ verschmelzen.
 | CLI-Reader | `steward/__main__.py` | zeigt `CLAUDE.md`, wenn Datei-MTime jünger als eine Stunde ist |
 | Stale-Detektor | `steward/intent_handlers.py` | vergleicht MTimes von `context.json` und `CLAUDE.md` |
 | Interner Instruction-Loader | `steward/agent.py` | definiert Loader für `.steward/instructions.md` und `CLAUDE.md`; produktiv unaufgerufen |
-| Delivery | `.github/workflows/steward-heartbeat.yml` | committed explizit `.steward/` und `data/federation/`, nicht Root-Kontextdateien |
+| Delivery | `.github/workflows/steward-heartbeat.yml`, `steward/git_nadi_sync.py` | Workflow-Post-Step staged explizit State; Git-NADI-Nebenpfad kann per Fallback den gesamten Worktree committen und direkt pushen |
 
 ### 1.3 Beweisregeln für spätere Änderungen
 
@@ -180,14 +180,21 @@ git pull --rebase --autostash
 git push
 ```
 
+Dieser Post-Step ist nicht die einzige Produktionsgrenze. `MokshaFederationHook` kann
+vorher `GitNadiSync.push()` ausführen. Dessen fehlgeschlagenes enges Staging fällt auf
+`git add -A` zurück und hat in Heartbeat `#5351` nachweislich `CLAUDE.md` sowie fremden
+State in einem separaten Commit auf `main` publiziert.
+
 Folge auf dem aktuellen Produktionsstand:
 
-- `.steward/context.json` wird committed.
-- Root-`CLAUDE.md` wird nicht explizit staged.
-- Eine neu erzeugte `AGENTS.md` würde ebenfalls nicht staged.
-- Seit der Staging-Härtung besteht eine nachgewiesene **Publikationslücke**: Der
-  `CLAUDE.md`-Blob ist älter als der `context.json`-Blob. Ob jeder neuere Context eine
-  semantisch relevante Briefing-Änderung erzeugt hätte, ist damit noch nicht bewiesen.
+- `.steward/context.json` wird über mindestens zwei Commitpfade berührt.
+- Root-`CLAUDE.md` wird im Workflow-Post-Step nicht explizit staged, kann aber über den
+  Git-NADI-Nebenpfad unbeabsichtigt remote gelangen.
+- Eine neu erzeugte `AGENTS.md` wäre im Post-Step nicht erfasst, könnte aber ebenfalls von
+  einem überbreiten Worktree-Staging aufgenommen werden.
+- Die zuvor beobachtete Root-Staleness war ein realer Snapshot, aber keine dauerhafte
+  Delivery-Garantie. Der stärkere aktuelle Befund ist eine unkontrollierte Multi-Writer-
+  und Multi-Delivery-Landschaft.
 
 ### 2.2 Optionaler LLM-Pfad
 
@@ -399,7 +406,7 @@ festzulegen. Ein leeres Dict ist kein zulässiger Universal-Fallback.
 
 | ID | Problem | Beweisstatus | Risiko |
 |---|---|---|---|
-| CB-01 | `CLAUDE.md` wird nach Staging-Härtung nicht explizit staged; älterer Root-Blob als Context beobachtet | Code plus Produktion belegt; semantische Differenz offen | potenziell veraltete neue Sessions |
+| CB-01 | Root-Dateien werden im Workflow-Post-Step nicht explizit staged, können aber über `GitNadiSync` per Worktree-Fallback unbeabsichtigt publiziert werden | Code plus Produktionsrun `#5351` belegt | unkontrollierte Root-Governance, gemischte Snapshots und potenziell veraltete oder ungeprüfte Sessions |
 | CB-02 | `AGENTS.md` fehlt vollständig | Produktion belegt | Codex erhält keinen dynamischen Repo-Vertrag |
 | CB-03 | zwei unabhängige Briefing-Publisher | Code belegt | Format- und Inhaltsdrift |
 | CB-04 | Phase-2-Cockpit fehlt im Context-Graph | Code-/Output-belegt | Verlust der operativen Kontinuität |
@@ -879,13 +886,13 @@ muss ein menschlich reviewter Minimal-Fallback feststehen, der:
 
 | ID | Frage | Warum entscheidend |
 |---|---|---|
-| OQ-01 | Wie wird der bestehende LLM-Schreibpfad auf Preview/Annotation begrenzt, ohne unbekannte produktive Caller zu brechen? | LLM-Publikationsverbot ist entschieden; Migration noch nicht |
+| OQ-01 | GESCHLOSSEN: Wie wird der bestehende LLM-Schreibpfad auf Preview/Annotation begrenzt, ohne unbekannte produktive Caller zu brechen? | Evidence-Paket OQ-01/OQ-16; Toolname bleibt, kanonische und beliebige Dateiwrites scheitern explizit fail-closed |
 | OQ-02 | Soll Current Phase Work State nur auf `PHASE2_CURRENT` verweisen oder einen sanitizten, nichtautoritativen Ausschnitt übernehmen? | Tokenbudget, Injection und Veraltungsrisiko |
 | OQ-03 | Welche TaskStatus-Typen liefert der echte TaskManager dauerhaft: Enum, String oder gemischt? | verhindert erneuten Filter-Placebo |
 | OQ-04 | Nach welcher Regel werden GitHub-Issues begrenzt und priorisiert? | verhindert willkürliche Agenda |
 | OQ-05 | Welche Briefing-Änderungen sind semantisch commitwürdig? | verhindert Heartbeat-Commitrauschen |
 | OQ-06 | Welche Lock-, Tempfile-, Rename-, fsync- und Recovery-Semantik trägt das tatsächliche Dateisystem und die Prozesslandschaft? | lokale Konsistenz und Race-Sicherheit |
-| OQ-07 | TEILGESCHLOSSEN: Welche Core-File-, CODEOWNERS-, Reviewer- und Diff-Gates schützen `AGENTS.md`, `CLAUDE.md` und die statische Verfassungsquelle? | Evidence-Paket OQ-18/OQ-07; Schutzvertrag entschieden, Enforcement-Topologie durch OQ-14/OQ-16 blockiert |
+| OQ-07 | TEILGESCHLOSSEN: Welche Core-File-, CODEOWNERS-, Reviewer- und Diff-Gates schützen `AGENTS.md`, `CLAUDE.md` und die statische Verfassungsquelle? | Evidence-Paket OQ-18/OQ-07; Writer-Landschaft durch OQ-16 belegt, Enforcement-Topologie bleibt durch OQ-14 und Delivery-Governance blockiert |
 | OQ-08 | Ist die Formulierung „You are Steward“ für externe Maintainer zulässig? | Rollen- und Sicherheitsklarheit |
 | OQ-09 | Wann und wie wird der derzeit tote interne Instruction-Loader behandelt? | Scope-Trennung; kein versehentlicher Prompt-Umbau |
 | OQ-10 | Sollen die versehentlich getrackten `.steward/.atomic_*.tmp`-Dateien separat bereinigt werden? | Hygieneproblem, aber nicht in Context-Feature hineinziehen |
@@ -894,7 +901,7 @@ muss ein menschlich reviewter Minimal-Fallback feststehen, der:
 | OQ-13 | Welche Quellen sind required, optional oder publish-blocking? | ehrliche Degradation statt gesunder Leere |
 | OQ-14 | Welcher reale Kill-Switch stoppt geplante, manuelle und bereits laufende Publisher? | ausführbarer Rollback |
 | OQ-15 | Wie wird ein veralteter oder manipulierter Current-Phase-Arbeitsstand erkannt und angezeigt? | verhindert neue Single-Point-of-Failure-Semantik |
-| OQ-16 | Welche Prozesspfade können außerhalb des Heartbeat-Workflows parallel publizieren? | vollständiges Concurrency-Modell |
+| OQ-16 | GESCHLOSSEN: Welche Prozesspfade können außerhalb des Heartbeat-Workflows parallel publizieren? | Evidence-Paket OQ-01/OQ-16; zwei Root-Writer, Git-NADI-Nebenpublisher, Post-Step und interner Cetana-/Workflow-Mehrfachdispatch belegt |
 | OQ-17 | GESCHLOSSEN: Ist das Repository und sind alle einbezogenen Issue-/Federation-Daten öffentlich? | Evidence-Paket OQ-17; Root-Output ist immer PUBLIC_SAFE, privilegierte/runtime Daten default-deny |
 | OQ-18 | GESCHLOSSEN: Welche einzelne reviewte Quelldatei definiert den statischen Verfassungskern, und ist `.steward/conventions.md` dafür in Inhalt und Governance geeignet? | Evidence-Paket OQ-18/OQ-07; bestehender Pfad bleibt einzige Quelle, aktueller Inhalt ist vor Härtung nicht freigegeben |
 
@@ -967,7 +974,7 @@ offenen Fragen und jede Feature-Spec dürfen sie widerlegen oder verfeinern.
 | Atomicity / Concurrency | §8.3, I-15, OQ-06/OQ-16 | Vertrag offen, Implementation blockiert |
 | semantische Änderung undefiniert | §8.4, OQ-05/OQ-12 | C0-C4-Modell eingeführt, Feldmapping offen |
 | Provenance zu schwach | §8.2, I-14 | Sicherheitsvertrag statt Footer |
-| LLM-Publikationspfad | T5, I-09, OQ-01 | kanonische Publikation verboten; Migration offen |
+| LLM-Publikationspfad | T5, I-09, OQ-01 | fail-closed Preview-Vertrag entschieden; Implementierung weiterhin gesperrt |
 | sensible Nicht-Secret-Daten | §3.7, I-06, OQ-17 | Allowlisting verpflichtend |
 | Fehler / sichtbare Degradation | §3.8, I-08, OQ-13 | sechs Zustände eingeführt |
 | Befund und Schlussfolgerung vermischt | §2.1, CB-01, §2.4 | Beweisart/Erreichbarkeit/Wirkung getrennt |
