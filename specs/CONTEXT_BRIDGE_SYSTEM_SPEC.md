@@ -644,10 +644,13 @@ Vorläufiger Vertrag:
 - `docs/PHASE2_CURRENT.md` ist ein stabiler Pfad zum rollierenden Arbeitsstand dieser
   Phase, aber keine SSOT, keine Verfassung und kein alleiniger Handlungsauftrag.
 - Die Datei selbst bleibt kuratiert und wird nicht vom Heartbeat überschrieben.
-- Die Bridge darf auf die Datei als optionale kuratierte Orientierung verweisen und muss
-  Alter, Commitbezug oder fehlende Verfügbarkeit ehrlich ausweisen.
-- Ob zusätzlich eine kompakte maschinenlesbare Zusammenfassung extrahiert wird, bleibt
-  bis Feature-Spec 02 offen.
+- Die Bridge rendert eine kleine typisierte Reference Card mit Pfad, Blob, Basisbezug,
+  Rollen- und OQ-15-Status. Sie übernimmt keinen freien Markdown-Ausschnitt.
+- Ein optionaler kompakter Work-Claim darf ausschließlich aus versionierten, co-located
+  Metadaten derselben Datei stammen; ohne diese Metadaten bleibt es beim degradierten
+  Verweis ohne behaupteten aktuellen Auftrag.
+- Weder ein Claude-`@`-Import noch ein anderer automatischer Full-File-Include ist Teil
+  des gemeinsamen Consumer-Vertrags.
 
 OQ-15 präzisiert: Content-Addressing, Review-Provenance, Referenzintegrität, Freshness und
 semantischer Konflikt sind getrennte Statusachsen. Der aktuelle Blob darf wegen
@@ -768,11 +771,13 @@ Git-Delivery.
 **Hinweis:** Publisher und Delivery bleiben getrennte Codeänderungen, teilen aber einen
 untrennbaren End-to-End-Abnahmevertrag; keine lokale „fertig“-Behauptung ohne Delivery-Test.
 
-### Feature-Spec 02 — Current-Phase Work-State Reference
+### Feature-Spec 02 — Current-Phase Reference Card
 
-**Scope:** optionaler, als nichtautoritativ markierter Verweis auf `PHASE2_CURRENT` sowie
-Freshness-/Missing-/Conflict-Semantik. Die Phase-1-read-only-Regel wird hier nur angezeigt,
-nicht erzeugt; ihre Autorität stammt aus dem statischen Verfassungskern.
+**Scope:** optionale, typisierte und nichtautoritative Reference Card für
+`PHASE2_CURRENT` mit co-located Metadaten sowie Freshness-/Missing-/Conflict-Semantik.
+Keine freie Markdown-Extraktion und kein automatischer File-Include. Die Phase-1-read-
+only-Regel wird hier nur angezeigt, nicht erzeugt; ihre Autorität stammt aus dem
+statischen Verfassungskern.
 **Nicht enthalten:** TaskManager- oder Issue-Logik.
 **Voraussichtliche Berührungsfläche:** `briefing_stages.py`, optional eine kleine
 Context-Quelle, Tests und `.steward/conventions.md` nur bei belegter Notwendigkeit.
@@ -906,7 +911,7 @@ muss ein menschlich reviewter Minimal-Fallback feststehen, der:
 | ID | Frage | Warum entscheidend |
 |---|---|---|
 | OQ-01 | GESCHLOSSEN: Wie wird der bestehende LLM-Schreibpfad auf Preview/Annotation begrenzt, ohne unbekannte produktive Caller zu brechen? | Evidence-Paket OQ-01/OQ-16; Toolname bleibt, kanonische und beliebige Dateiwrites scheitern explizit fail-closed |
-| OQ-02 | Soll Current Phase Work State nur auf `PHASE2_CURRENT` verweisen oder einen sanitizten, nichtautoritativen Ausschnitt übernehmen? | Tokenbudget, Injection und Veraltungsrisiko |
+| OQ-02 | GESCHLOSSEN: Soll Current Phase Work State nur auf `PHASE2_CURRENT` verweisen oder einen sanitizten, nichtautoritativen Ausschnitt übernehmen? | Evidence-Paket OQ-02; typisierte Reference Card plus optionaler Metadaten-Claim, niemals freie Markdown-Extraktion oder Full-File-Include |
 | OQ-03 | GESCHLOSSEN: Welche TaskStatus-Typen liefert der echte TaskManager dauerhaft: Enum, String oder gemischt? | Evidence-Paket OQ-03; Runtime ist kanonischer `TaskStatus`-Enum, Persistenz/Context sind uppercase Strings, Protocol-Commit muss Provenance tragen |
 | OQ-04 | GESCHLOSSEN: Nach welcher Regel werden GitHub-Issues begrenzt und priorisiert? | Evidence-Paket OQ-04; Issues bleiben nichtautoritative Backlog-Beobachtungen, aktuelle Eligibility ist null, spätere Kandidaten benötigen reviewte Konfiguration und harte Begrenzung |
 | OQ-05 | GESCHLOSSEN: Welche Briefing-Änderungen sind semantisch commitwürdig? | Evidence-Paket OQ-12/OQ-05; `payload_hash` und C1–C4-Trigger entschieden |
