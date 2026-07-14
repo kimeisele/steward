@@ -26,7 +26,12 @@ import time
 import uuid
 from pathlib import Path
 
-from steward.federation_crypto import NodeKeyStore, sign_payload_hash
+from steward.federation_crypto import (
+    NodeKeyStore,
+    canonical_message_hash,
+    inbound_message_hash_format,
+    sign_payload_hash,
+)
 from vibe_core.mahamantra.federation.types import FederationMessage
 
 logger = logging.getLogger("STEWARD.FEDERATION.TRANSPORT")
@@ -80,13 +85,8 @@ class NadiFederationTransport:
         encoded = json.dumps(payload, sort_keys=True, default=str)
         return hashlib.sha256(encoded.encode()).hexdigest()
 
-    def _payload_hash(self, payload: object) -> str:
-        serialized = self._serialize_message(payload)
-        encoded = json.dumps(serialized, sort_keys=True, default=str)
-        return hashlib.sha256(encoded.encode()).hexdigest()
-
     def _with_integrity_fields(self, payload: dict) -> dict:
-        """Attach integrity fields (legacy path) UNLESS the message is
+        """Attach canonical integrity fields UNLESS the message is
         already signed by an upstream layer.
 
         FederationBridge.flush_outbound (TICKET-007 #54) signs every
@@ -96,20 +96,17 @@ class NadiFederationTransport:
         three fields are populated, this transport must NOT overwrite
         them — doing so produced ghost-identity emissions for cycles.
 
-        The legacy file-based-key path is preserved only for messages
+        The file-based-key path is preserved only for messages
         that arrive without signing (back-compat for any code that
         still constructs raw FederationMessage dicts and hands them to
         the transport directly).
         """
         enriched = dict(payload)
         if enriched.get("source") and enriched.get("payload_hash") and enriched.get("signature"):
-            # Pre-signed by FederationBridge — only stamp a message_id if missing.
-            enriched.setdefault("message_id", str(uuid.uuid4()))
             return enriched
-        # Legacy path: payload-scoped hash, transport signs with file-based key
         enriched["source"] = self.node_id
         enriched["message_id"] = str(uuid.uuid4())
-        enriched["payload_hash"] = self._payload_hash(enriched.get("payload", {}))
+        enriched["payload_hash"] = canonical_message_hash(enriched)
         enriched["signature"] = sign_payload_hash(self.private_key, enriched["payload_hash"])
         return enriched
 
@@ -301,8 +298,7 @@ class NadiFederationTransport:
                         continue
                 expected_hash = str(item.get("payload_hash", "")).strip()
                 if expected_hash:
-                    actual_hash = self._payload_hash(item.get("payload", {}))
-                    if actual_hash != expected_hash:
+                    if inbound_message_hash_format(item) is None:
                         self.quarantine_messages(
                             [item],
                             reason="integrity_check_failed",

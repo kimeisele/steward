@@ -12,10 +12,32 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey,
 
 logger = logging.getLogger("STEWARD.FEDERATION_CRYPTO")
 
+_MESSAGE_INTEGRITY_FIELDS = frozenset({"payload_hash", "signature", "signer_key"})
+
 
 def derive_node_id(public_key_hex: str, length: int = 16) -> str:
     digest = hashlib.sha256(str(public_key_hex).encode()).hexdigest()
     return f"ag_{digest[:length]}"
+
+
+def canonical_message_hash(message: dict, *, exclude_hub_id: bool = False) -> str:
+    excluded = set(_MESSAGE_INTEGRITY_FIELDS)
+    if exclude_hub_id:
+        excluded.add("id")
+    canonical = {key: value for key, value in message.items() if key not in excluded}
+    encoded = json.dumps(canonical, sort_keys=True, default=str)
+    return hashlib.sha256(encoded.encode()).hexdigest()
+
+
+def inbound_message_hash_format(message: dict) -> str | None:
+    expected_hash = str(message.get("payload_hash", "")).strip()
+    if not expected_hash:
+        return None
+    if canonical_message_hash(message) == expected_hash:
+        return "canonical"
+    if "id" in message and canonical_message_hash(message, exclude_hub_id=True) == expected_hash:
+        return "canonical_pre_hub_id"
+    return None
 
 
 def _load_from_hex_or_json(text: str) -> tuple[str, str, str] | None:

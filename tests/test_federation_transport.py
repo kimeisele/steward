@@ -231,6 +231,50 @@ class TestNadiFederationTransport:
         assert record["stage"] == "transport_inbound_verify"
         assert record["reason"] == "integrity_check_failed"
 
+    def test_read_outbox_accepts_canonical_message_hash_before_hub_id(self, tmp_path):
+        transport = NadiFederationTransport(str(tmp_path))
+        canonical = {
+            "source": "ag_sender",
+            "target": "steward",
+            "operation": "city_report",
+            "payload": {"alive": 3, "chain_valid": True},
+            "priority": 1,
+            "correlation_id": "",
+            "timestamp": time.time(),
+            "ttl_s": 7200.0,
+        }
+        payload_hash = hashlib.sha256(json.dumps(canonical, sort_keys=True).encode()).hexdigest()
+        delivered = {
+            **canonical,
+            "payload_hash": payload_hash,
+            "signature": "signed-upstream",
+            "id": "hub-added-after-signing",
+        }
+        (tmp_path / "nadi_inbox.json").write_text(json.dumps([delivered]))
+
+        assert transport.read_outbox() == [delivered]
+
+    def test_read_outbox_rejects_tampered_canonical_envelope(self, tmp_path):
+        transport = NadiFederationTransport(str(tmp_path))
+        canonical = {
+            "source": "ag_sender",
+            "target": "steward",
+            "operation": "city_report",
+            "payload": {"alive": 3, "chain_valid": True},
+            "timestamp": time.time(),
+            "ttl_s": 7200.0,
+        }
+        payload_hash = hashlib.sha256(json.dumps(canonical, sort_keys=True).encode()).hexdigest()
+        tampered = {
+            **canonical,
+            "operation": "governance_bounty",
+            "payload_hash": payload_hash,
+            "signature": "signed-upstream",
+        }
+        (tmp_path / "nadi_inbox.json").write_text(json.dumps([tampered]))
+
+        assert transport.read_outbox() == []
+
     def test_round_trip_via_nadi_files(self, tmp_path):
         """Write outbound, simulate inbound, read back."""
         transport = NadiFederationTransport(str(tmp_path))
@@ -250,19 +294,16 @@ class TestNadiFederationTransport:
         # Simulate another agent delivering messages to our inbox
         inbox_path = tmp_path / "nadi_inbox.json"
         payload = {"task_title": "fix tests", "pr_url": "https://github.com/test/pr/1"}
+        inbound = {
+            "source": "agent-city",
+            "target": "steward",
+            "operation": "task_completed",
+            "payload": payload,
+            "message_id": "msg-1",
+        }
+        inbound["payload_hash"] = hashlib.sha256(json.dumps(inbound, sort_keys=True).encode()).hexdigest()
         inbox_path.write_text(
-            json.dumps(
-                [
-                    {
-                        "source": "agent-city",
-                        "target": "steward",
-                        "operation": "task_completed",
-                        "payload": payload,
-                        "message_id": "msg-1",
-                        "payload_hash": hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest(),
-                    }
-                ]
-            )
+            json.dumps([inbound])
         )
 
         # read_outbox reads from nadi_inbox.json (inbound messages)
@@ -274,19 +315,17 @@ class TestNadiFederationTransport:
     def test_read_outbox_quarantines_malformed_items(self, tmp_path):
         transport = NadiFederationTransport(str(tmp_path))
         inbox_path = tmp_path / "nadi_inbox.json"
-        heartbeat_payload = {}
+        heartbeat = {
+            "source": "agent-city",
+            "operation": "heartbeat",
+            "payload": {},
+            "message_id": "msg-1",
+        }
+        heartbeat["payload_hash"] = hashlib.sha256(json.dumps(heartbeat, sort_keys=True).encode()).hexdigest()
         inbox_path.write_text(
             json.dumps(
                 [
-                    {
-                        "source": "agent-city",
-                        "operation": "heartbeat",
-                        "payload": heartbeat_payload,
-                        "message_id": "msg-1",
-                        "payload_hash": hashlib.sha256(
-                            json.dumps(heartbeat_payload, sort_keys=True).encode()
-                        ).hexdigest(),
-                    },
+                    heartbeat,
                     {"source": "agent-city", "payload": {}},
                     "not-a-dict",
                 ]

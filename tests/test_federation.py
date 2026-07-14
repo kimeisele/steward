@@ -1647,7 +1647,7 @@ class TestFederationInboxTTLFilter:
         DharmaFederationHook()._process_inbox_messages([msg], r, None)
         assert r.get_peer("phantom-no-ts").last_seen == base
 
-    def test_agent_claim_unaffected_by_ttl(self):
+    def test_agent_claim_is_left_for_gateway(self):
         import time
 
         from steward.hooks.dharma import DharmaFederationHook
@@ -1670,4 +1670,4 @@ class TestFederationInboxTTLFilter:
             "timestamp": time.time() - 99999.0,
         }
         DharmaFederationHook()._process_inbox_messages([claim], HeartbeatReaper(), fed)
-        assert fed.ingested == [("federation.agent_claim", {"agent_id": "claimant"})]
+        assert fed.ingested == []
