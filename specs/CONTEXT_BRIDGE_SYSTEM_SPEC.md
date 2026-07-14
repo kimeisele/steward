@@ -3,7 +3,7 @@
 > **Status:** DRAFT 0.3 — FÜR READ-ONLY G0-EVIDENCE FREIGEGEBEN; IMPLEMENTIERUNG GESPERRT
 > **Datum:** 2026-07-14
 > **Produktionsbasis:** `kimeisele/steward` auf
-> `85c4799b3f045f53012679f2c6ba6a960270b530`
+> `18e39055ca347366cd265e9e40c472a81733c80e`
 > **Zweck:** Verbindlichen technischen Vertrag für die dynamische Bereitstellung von
 > Projektkontext an wechselnde Anthropic-, OpenAI- und interne Steward-Agenten schaffen.
 > **Sperre:** Aus diesem Dokument darf noch kein Produktivpatch abgeleitet werden. Erst
@@ -440,6 +440,7 @@ Ein leeres Dict oder eine leere Liste ist kein zulässiger Universal-Fallback.
 | CB-24 | `.steward/conventions.md` sagt dem externen Consumer „You are Steward“ und „Your North Star“, obwohl Root-Dateien derzeit nicht vom internen StewardAgent geladen werden | Consumer-, Call-Site- und Promptbeweis | Engineering-Agent kann Runtime-Rolle, Identität und Handlungsautorität fälschlich übernehmen |
 | CB-25 | `OrientationStage` behandelt den vermeintlichen statischen Verfassungskern als komprimierbar und entfernt bei niedrigem Fokus dessen Text bis auf leere Überschriften | Code, Tests und Produktionsblob belegt | Rollen-, Trust- und Schutzregeln hängen vom dynamischen Focus-/Budgetzustand ab |
 | CB-26 | der private `_load_project_instructions()`-Helper und seine direkten Tests suggerieren weiterhin unterstützte Root-Instruktionsinjektion, obwohl diese Verdrahtung 2026 bewusst aus dem Runtime-Prompt entfernt wurde | Git-Historie, aktueller Call-Graph und Testvertrag belegt | spätere Maintainer können externen Engineering-Context versehentlich wieder als internen Steward-Systemprompt aktivieren |
+| CB-27 | zwei abgebrochene Protocol-Atomic-Writes wurden durch das historische `git add -f .steward/` als `.atomic_*.tmp` committed und bleiben trotz heutiger Ignore-Regel im öffentlichen Tree | Blob-, Writer-, Workflow- und Git-Historie belegt | internes Memory-Snapshot-Artefakt und Runner-Pfade erscheinen als scheinbar legitimer Repository-State; getrackter Müll bleibt durch `git add -u` persistent |
 
 ---
 
@@ -555,6 +556,7 @@ Session-Auftrag zu kennen oder zu repräsentieren.
 | I-20 | Root-Dateien identifizieren den Consumer als externen Engineering-/Maintenance-Agenten und das Projekt in dritter Person; sie weisen dem Consumer nie Runtime-, Node- oder Federation-Identität zu | Rollen-Contract-Test und negative Impersonation-Fixtures |
 | I-21 | Der minimale C0-Kern einschließlich Rollen- und Trust-Grenze ist nicht focus-/health-/budgetkomprimierbar; optionale Architekturorientierung darf separat komprimieren | Minimalbudget-, Degradation- und Produktionsblob-Test |
 | I-22 | Der interne `StewardAgent` lädt kanonische Root-Engineering-Dateien nicht automatisch in seinen Systemprompt; eine künftige Runtime-Instruktionsquelle benötigt einen separaten Trust-, Rollen- und Promptvertrag | negativer Runtime-Prompt-Test und Call-Graph-Prüfung |
+| I-23 | Atomic-Tempdateien sind lokale, unvollständige Writer-Artefakte und dürfen weder als kanonischer State interpretiert noch durch Workflow-Staging in Git ausgeliefert werden | getrackte-Pfad-Prüfung, Ignore-/Staging-Test und negativer Artifact-Test |
 
 ---
 
@@ -925,7 +927,7 @@ muss ein menschlich reviewter Minimal-Fallback feststehen, der:
 | OQ-07 | TEILGESCHLOSSEN: Welche Core-File-, CODEOWNERS-, Reviewer- und Diff-Gates schützen `AGENTS.md`, `CLAUDE.md` und die statische Verfassungsquelle? | Evidence-Paket OQ-18/OQ-07; Writer-Landschaft durch OQ-16 belegt, Enforcement-Topologie bleibt durch OQ-14 und Delivery-Governance blockiert |
 | OQ-08 | GESCHLOSSEN: Ist die Formulierung „You are Steward“ für externe Maintainer zulässig? | Evidence-Paket OQ-08; unzulässig in Root-Dateien, klare Trennung zwischen Projekt-, Runtime-, Consumer- und Operatoridentität; C0 darf nicht komprimieren |
 | OQ-09 | GESCHLOSSEN: Wann und wie wird der derzeit tote interne Instruction-Loader behandelt? | Evidence-Paket OQ-09; bewusst entkoppelten Helper nicht wiederverdrahten, nach G0 separat samt direkten Tests verhaltensneutral entfernen |
-| OQ-10 | Sollen die versehentlich getrackten `.steward/.atomic_*.tmp`-Dateien separat bereinigt werden? | Hygieneproblem, aber nicht in Context-Feature hineinziehen |
+| OQ-10 | GESCHLOSSEN: Sollen die versehentlich getrackten `.steward/.atomic_*.tmp`-Dateien separat bereinigt werden? | Evidence-Paket OQ-10; beide Tree-Artefakte in eigenem Hygiene-PR löschen, kein Context-/Writer-Patch und ohne Secret-Befund kein History-Rewrite |
 | OQ-11 | GESCHLOSSEN: Welche Discovery-, Hierarchie-, Prioritäts- und Include-Regeln gelten aktuell für Claude Code und Codex? | Evidence-Paket OQ-11; byte-identischer Root-Inhalt bleibt Default |
 | OQ-12 | GESCHLOSSEN: Welche dynamischen Felder sind öffentlich zulässig und welchem C0-C4-Typ gehören sie an? | Evidence-Paket OQ-12/OQ-05; PUBLIC_SAFE-Allowlist und Default-Deny-Feldmatrix entschieden |
 | OQ-13 | GESCHLOSSEN: Welche Quellen sind required, optional oder publish-blocking? | Evidence-Paket OQ-13; Vertragsquellen blockieren, Beobachtungsquellen degradieren ehrlich statt als gesunde Leere |
