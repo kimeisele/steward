@@ -71,7 +71,7 @@ class GitNadiSync:
         try:
             self._run_git("fetch", "origin", "--prune")
             # Rebase local changes on top of remote
-            self._run_git("rebase", "origin/HEAD")
+            self._run_git("rebase", "--autostash", "origin/HEAD")
             self._last_pull = time.monotonic()
             logger.debug("GIT_NADI: pull succeeded")
             return True
@@ -173,7 +173,7 @@ class GitNadiSync:
     def _rebase_and_retry(self) -> bool:
         """Pull --rebase to resolve non-fast-forward. Returns True if clean."""
         try:
-            self._run_git("pull", "--rebase")
+            self._run_git("pull", "--rebase", "--autostash")
             return True
         except subprocess.CalledProcessError:
             # Rebase conflict — abort and give up
