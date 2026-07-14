@@ -141,6 +141,61 @@ class TestPullFromHub:
         assert "heartbeat" in ops
         assert "pr_review_request" in ops
 
+    def test_pull_deduplicates_uuid_across_relay_processes(self, tmp_path):
+        message = {
+            "id": "persistent-message-id",
+            "source": "agent-city",
+            "target": "steward",
+            "timestamp": 200,
+            "operation": "city_report",
+        }
+
+        def build_relay():
+            with patch.dict("os.environ", {"GITHUB_TOKEN": "tok"}):
+                return GitHubFederationRelay(
+                    agent_id="steward",
+                    local_inbox=tmp_path / "inbox.json",
+                )
+
+        first = build_relay()
+        with patch("urllib.request.urlopen", side_effect=OSError("skip mailbox scan")):
+            with patch.object(first, "_get_file", side_effect=[([message], "sha1"), ([], "sha2")]):
+                assert first.pull_from_hub() == 1
+
+        (tmp_path / "inbox.json").write_text("[]")
+        second = build_relay()
+        with patch("urllib.request.urlopen", side_effect=OSError("skip mailbox scan")):
+            with patch.object(second, "_get_file", side_effect=[([message], "sha1"), ([], "sha2")]):
+                assert second.pull_from_hub() == 0
+
+        assert json.loads((tmp_path / "relay_seen_ids.json").read_text()) == ["persistent-message-id"]
+
+    def test_pull_recovers_from_corrupt_persistent_seen_ids(self, tmp_path):
+        (tmp_path / "relay_seen_ids.json").write_text("not-json")
+        message = {
+            "id": "message-after-corruption",
+            "source": "agent-city",
+            "target": "steward",
+            "timestamp": 201,
+        }
+        with patch.dict("os.environ", {"GITHUB_TOKEN": "tok"}):
+            relay = GitHubFederationRelay(agent_id="steward", local_inbox=tmp_path / "inbox.json")
+        with patch("urllib.request.urlopen", side_effect=OSError("skip mailbox scan")):
+            with patch.object(relay, "_get_file", side_effect=[([message], "sha1"), ([], "sha2")]):
+                assert relay.pull_from_hub() == 1
+
+        assert json.loads((tmp_path / "relay_seen_ids.json").read_text()) == ["message-after-corruption"]
+
+    def test_persistent_seen_ids_are_bounded(self, tmp_path):
+        from steward.federation_relay import MAX_SEEN_IDS
+
+        stored_ids = [f"message-{index}" for index in range(MAX_SEEN_IDS + 1)]
+        (tmp_path / "relay_seen_ids.json").write_text(json.dumps(stored_ids))
+        with patch.dict("os.environ", {"GITHUB_TOKEN": "tok"}):
+            relay = GitHubFederationRelay(agent_id="steward", local_inbox=tmp_path / "inbox.json")
+
+        assert list(relay._seen_ids) == stored_ids[-MAX_SEEN_IDS:]
+
 
 class TestPushToHub:
     def test_no_token_returns_zero(self):

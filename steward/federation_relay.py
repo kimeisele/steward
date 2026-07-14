@@ -35,6 +35,7 @@ DEFAULT_HUB_REPO = "kimeisele/steward-federation"
 GITHUB_API = "https://api.github.com"
 MIN_RELAY_INTERVAL_S = 60
 NADI_BUFFER_SIZE = 144
+MAX_SEEN_IDS = 4096
 
 
 class DeliveryReceipt:
@@ -98,6 +99,7 @@ class GitHubFederationRelay:
         self._hub_repo = hub_repo
         self._local_outbox = local_outbox or Path("data/federation/nadi_outbox.json")
         self._local_inbox = local_inbox or Path("data/federation/nadi_inbox.json")
+        self._seen_ids_path = self._local_inbox.with_name("relay_seen_ids.json")
         self._reaper = reaper
         self._token = self._load_token()
         self._last_pull: float = 0.0
@@ -105,7 +107,7 @@ class GitHubFederationRelay:
         self._pull_count: int = 0
         self._push_count: int = 0
         self._errors: int = 0
-        self._seen_ids: set[str] = set()  # UUID dedup
+        self._seen_ids = self._load_seen_ids()
         self._pending_receipts: list[DeliveryReceipt] = []  # unconfirmed deliveries
 
     @property
@@ -224,12 +226,13 @@ class GitHubFederationRelay:
         local = self._read_local_inbox()
         existing_keys = {(m.get("source", ""), m.get("timestamp", 0)) for m in local}
 
+        seen_ids_before_pull = set(self._seen_ids)
         for m in all_messages:
             msg_id = m.get("id", "")
             if msg_id and msg_id in self._seen_ids:
                 continue
             if msg_id:
-                self._seen_ids.add(msg_id)
+                self._seen_ids[msg_id] = None
 
             key = (m.get("source", ""), m.get("timestamp", 0))
             if key in existing_keys:
@@ -249,6 +252,9 @@ class GitHubFederationRelay:
                 if not receipt.confirmed and receipt.target in responding_peers:
                     receipt.confirmed = True
                     logger.debug("RELAY: delivery confirmed for batch %s → %s", receipt.batch_id, receipt.target)
+
+        if set(self._seen_ids) != seen_ids_before_pull:
+            self._write_seen_ids()
 
         self._last_pull = time.monotonic()
         self._pull_count += len(new_msgs)
@@ -403,6 +409,28 @@ class GitHubFederationRelay:
         tmp = self._local_inbox.with_suffix(".tmp")
         tmp.write_text(json.dumps(messages, indent=2))
         tmp.rename(self._local_inbox)
+
+    def _load_seen_ids(self) -> dict[str, None]:
+        if not self._seen_ids_path.exists():
+            return {}
+        try:
+            raw = json.loads(self._seen_ids_path.read_text())
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.warning("RELAY: cannot read persistent seen IDs: %s", exc)
+            return {}
+        if not isinstance(raw, list):
+            logger.warning("RELAY: persistent seen IDs must be a JSON list")
+            return {}
+        valid_ids = [msg_id for msg_id in raw if isinstance(msg_id, str) and msg_id]
+        return dict.fromkeys(valid_ids[-MAX_SEEN_IDS:])
+
+    def _write_seen_ids(self) -> None:
+        while len(self._seen_ids) > MAX_SEEN_IDS:
+            self._seen_ids.pop(next(iter(self._seen_ids)))
+        self._seen_ids_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self._seen_ids_path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(list(self._seen_ids), indent=2))
+        tmp.rename(self._seen_ids_path)
 
     def pending_receipts(self) -> list[DeliveryReceipt]:
         """Unconfirmed delivery receipts (for escalation by DHARMA phase)."""
