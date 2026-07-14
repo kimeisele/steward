@@ -550,12 +550,12 @@ class DharmaFederationHook(BasePhaseHook):
 
         if rejected and transport is not None:
             try:
-                transport.quarantine_messages(rejected, reason='inbox_validation_failed', stage='dharma')
+                transport.quarantine_messages(rejected, reason="inbox_validation_failed", stage="dharma")
                 removed = transport.remove_inbox_messages(rejected)
                 logger.info(
-                    'FEDERATION: quarantined %d rejected message(s), removed %d from inbox',
+                    "FEDERATION: quarantined %d rejected message(s), removed %d from inbox",
                     len(rejected),
                     removed,
                 )
             except Exception as e:
-                logger.error('FEDERATION: could not quarantine rejected messages: %s', e)
+                logger.error("FEDERATION: could not quarantine rejected messages: %s", e)
