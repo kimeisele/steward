@@ -29,6 +29,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.FEDERATION_PAT }}
+          ref: main
+          fetch-depth: 0
 
       - name: Checkout steward-protocol
         uses: actions/checkout@v4
@@ -46,18 +48,6 @@ jobs:
         run: |
           pip install -e .deps/steward-protocol
           pip install -e ".[dev]"
-
-      - name: Restore state
-        uses: actions/cache@v4
-        with:
-          path: |
-            .steward/
-            data/federation/
-          # v2 generation — invalidates pre-TICKET-008 caches that contained the
-          # ghost ag_e3331b8d3b0d20a7 entry. See issue forensics for context.
-          key: steward-state-v3-main
-          restore-keys: |
-            steward-state-v3-
 
       - name: Run autonomous cycle
         env:
@@ -103,19 +93,11 @@ jobs:
           # NEVER use -f here. The previous `git add -f` overrode .gitignore
           # and re-leaked data/federation/.node_keys.json (the steward private
           # key) on every cycle, undoing the TICKET-006 history purge.
-          git add .steward/ data/federation/ || true
-          git diff --cached --quiet || {
+          git add -u -- .steward/ data/federation/
+          git add -- data/federation/
+          if ! git diff --cached --quiet; then
             git commit -m "chore: heartbeat #${{ github.run_number }} state sync"
-            git pull --rebase origin main --autostash || git reset --hard origin/main
+            git pull --rebase origin main
             git remote set-url origin https://x-access-token:${{ secrets.FEDERATION_PAT }}@github.com/kimeisele/steward.git
-            git push || true
-          }
-
-      - name: Save state
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            .steward/
-            data/federation/
-          key: steward-state-v3-main
+            git push
+          fi
