@@ -1,6 +1,6 @@
 # CONTEXT-BRIDGE — MASTER-SYSTEMSPEZIFIKATION
 
-> **Status:** DRAFT 0.3 — FÜR READ-ONLY G0-EVIDENCE FREIGEGEBEN; IMPLEMENTIERUNG GESPERRT
+> **Status:** DRAFT 0.4 — G0 FREIGEGEBEN FÜR FEATURE-SPEZIFIKATIONEN; IMPLEMENTIERUNG GESPERRT
 > **Datum:** 2026-07-14
 > **Produktionsbasis:** `kimeisele/steward` auf
 > `18e39055ca347366cd265e9e40c472a81733c80e`
@@ -611,9 +611,9 @@ Prompt-Injection kann nicht den statischen Vertrag strukturell ersetzen; gemeins
 Semantik ohne erzwungene ewige Byteidentität.
 **Risiken:** Blockgrenzen und Merge-/Publikationssemantik müssen hart getestet werden;
 statischer Kern darf nicht an mehreren Stellen manuell driften.
-**Bewertung:** BEVORZUGTE SICHERHEITSHYPOTHESE, noch nicht freigegeben.
+**Bewertung:** ANGENOMMENE G0-ARCHITEKTUR; konkrete Implementierung bleibt G1/G2-pflichtig.
 
-### Vorläufige Architekturentscheidung AD-01
+### Verbindliche Architekturentscheidung AD-01
 
 Option E ersetzt die zu starke Präferenz für Option C aus DRAFT 0.1. Der gemeinsame
 semantische Kern bleibt verpflichtend. OQ-11 hat unterschiedliche Discovery-Verträge,
@@ -624,7 +624,7 @@ weiterhin experimentell zu belegen.
 
 ---
 
-## 8. VORLÄUFIGER OUTPUT-VERTRAG
+## 8. SEMANTISCHER OUTPUT-VERTRAG
 
 Die genaue Wortwahl wird in einer eigenen Continuity-Feature-Spec beschlossen. Die
 kanonische Reihenfolge soll semantisch sein:
@@ -647,7 +647,7 @@ noch der aktuelle Phasen-Arbeitsstand dürfen einen neuen Operatorauftrag erfind
 
 ### 8.1 Kontinuitätsquelle
 
-Vorläufiger Vertrag:
+Verbindlicher G0-Vertrag:
 
 - `docs/PHASE2_CURRENT.md` ist ein stabiler Pfad zum rollierenden Arbeitsstand dieser
   Phase, aber keine SSOT, keine Verfassung und kein alleiniger Handlungsauftrag.
@@ -732,7 +732,7 @@ deterministische Reparatur und den gemeinsamen Git-Commit als Remote-Transaktion
 
 „Semantisch unverändert“ wird nicht über eine pauschale Ignore-Liste definiert.
 
-| Klasse | Beispiele | Vorläufige Delivery-Semantik |
+| Klasse | Beispiele | Delivery-Semantik |
 |---|---|---|
 | C0 — Constitution | Schutzregel, Trust-Policy, Consumer-Vertrag | nur menschlich reviewter PR; nie Heartbeat-Autowrite |
 | C1 — Safety Critical | critical/degraded/unsafe, Quellenvalidität, Identity-Konflikt | sofort publishwürdig; darf nicht wegdedupliziert werden |
@@ -805,10 +805,14 @@ TaskManager-/Status-Tests.
 **Scope:** Feldklassifikation C0-C4, Normalisierung, Snapshot-/Payload-Hash,
 persistente Inhaltsprüfung statt MTime- oder rein prozesslokaler Dedup-Annahme.
 **Nicht enthalten:** allgemeine Heartbeat-Fehlerpropagation.
-**Voraussichtliche Berührungsfläche:** erst nach Feature 00/01 festzulegen.
+**Voraussichtliche Berührungsfläche:** nach Feature 00 und vor Publisher-Implementation
+festzulegen; Feature 01 konsumiert das hier definierte kanonische Modell und die
+Hash-Domains.
 
-Die Reihenfolge ist `00 -> 01 -> 02/03 -> 04`. Feature 01 darf trotz Aufteilung in kleine
+Die Reihenfolge ist `00 -> 04 -> 01 -> 02/03`. Feature 01 darf trotz Aufteilung in kleine
 Commits erst nach gemeinsamer End-to-End-Produktionsabnahme als abgeschlossen gelten.
+Feature 04 darf keine Root-Datei publizieren; es liefert ausschließlich das kanonische
+Modell, die Normalisierung und Hash-/Dedup-Verträge für Feature 01.
 
 ---
 
@@ -888,19 +892,17 @@ Für jede Feature-Spec gilt:
    auslösen, Ursache belegen und Revert-PR statt improvisierter Hotfix-Kaskade nutzen.
 10. Ergebnis in `PHASE2_CURRENT` und `PHASE2_BEFUND` dokumentieren.
 
-### 11.1 Noch fehlender Stop-Vertrag
+### 11.1 Entschiedener Stop-Vertrag
 
-„Heartbeat stoppen“ ist auf dem aktuellen Spec-Stand keine ausführbare Anweisung. Vor G1
-muss read-only belegt werden:
+OQ-14 belegt den aktuellen manuellen Disable-/Force-Cancel-/PR-Fence-/Credential-
+Containment-Pfad und entscheidet einen zusätzlichen fail-closed Publishermodus. Die
+Operations-/Delivery-Feature-Spec muss die exakten APIs, Principals, Modi und
+Wiederanlaufschritte festlegen.
 
-- welcher existierende Kill-Switch geplante und manuelle Runs verhindert,
-- welche Berechtigung dafür nötig ist,
-- wie bereits laufende Jobs behandelt werden,
-- wie Parallelpublisher gestoppt werden,
-- wie und durch wen der Betrieb wieder freigegeben wird.
-
-Existiert kein geeigneter Mechanismus, ist dessen minimale Ergänzung eine eigene
-Operations-Spec und Voraussetzung für automatischen Context-Publish.
+Der reale kontrollierte Drill gehört zu G2: Kein automatischer kanonischer Publish darf
+aktiviert werden, bevor neue Starts, laufende Jobs, ausstehende Delivery-PRs,
+Remote-Fence, Credential-Containment, Safe Fallback und Wiederanlauf positiv verifiziert
+sind.
 
 ### 11.2 Safe Fallback
 
@@ -916,7 +918,7 @@ muss ein menschlich reviewter Minimal-Fallback feststehen, der:
 
 ---
 
-## 12. OFFENE FRAGEN — IMPLEMENTIERUNG BLEIBT BIS ZUR KLÄRUNG GESPERRT
+## 12. GESCHLOSSENE G0-FRAGEN — IMPLEMENTIERUNG BLEIBT G1/G2-GESPERRT
 
 | ID | Frage | Warum entscheidend |
 |---|---|---|
@@ -957,10 +959,11 @@ muss ein menschlich reviewter Minimal-Fallback feststehen, der:
 - Safe-Fallback-, Kill-Switch- und aktueller Containment-Vertrag entscheidungsreif?
 - C0-C4-Feldklassifikation und Source-Fehlerklassen vollständig?
 
-**Aktueller Status:** REVIEW-READY — alle OQ-Fragen evidence-basiert geschlossen; finale
-G0-Schlussprüfung noch nicht erfolgt.
-**Freigabewirkung:** IMPLEMENTIERUNG WEITERHIN BLOCKIERT, bis die konsolidierte
-Master-Spec ausdrücklich reviewt und G0 freigegeben ist.
+**Aktueller Status:** FREIGEGEBEN am 2026-07-14 nach konsolidierter Schlussprüfung; alle
+18 OQ-Fragen sind evidence-basiert geschlossen.
+**Freigabewirkung:** Ausschließlich Erstellung und Review der getrennten Feature-Specs
+sind freigegeben. Produktcode, Tests, Workflows, Root-Dateien und Repository-Settings
+bleiben bis G1 und der jeweiligen expliziten G2-Freigabe gesperrt.
 
 ### Gate G1 — Feature-Spec Review
 
@@ -986,7 +989,7 @@ belegt hat.
 
 ---
 
-## 14. VORLÄUFIGE EMPFEHLUNG
+## 14. G0-EMPFEHLUNG
 
 Die bestehende Context-Bridge soll nicht ersetzt werden. Der robuste Weg ist:
 
@@ -1004,7 +1007,7 @@ offenen Fragen und jede Feature-Spec dürfen sie widerlegen oder verfeinern.
 
 ---
 
-## 15. REVIEW-TRACEABILITY DRAFT 0.2
+## 15. REVIEW-TRACEABILITY DRAFT 0.2 BIS 0.4
 
 | Reviewpunkt | Aufnahme in DRAFT 0.2 | Status |
 |---|---|---|
@@ -1026,5 +1029,6 @@ offenen Fragen und jede Feature-Spec dürfen sie widerlegen oder verfeinern.
 
 ---
 
-*DRAFT 0.3 endet hier. Freigegeben ist nur die read-only Evidence-Phase. Keine
-Codeänderung, kein Implementierungs-Commit und kein Implementierungs-PR ohne G0/G1/G2.*
+*DRAFT 0.4 endet hier. G0 erlaubt ausschließlich getrennte Feature-Spezifikationen.
+Keine Codeänderung, kein Implementierungs-Commit und kein Implementierungs-PR ohne die
+jeweilige G1- und explizite G2-Freigabe.*
