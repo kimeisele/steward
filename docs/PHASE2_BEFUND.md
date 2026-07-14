@@ -631,3 +631,263 @@ dann aktuellen `main`:
 
 Der Agent-City-GH006-State-Persistenzfehler bleibt als separates Folgeticket erhalten und
 darf beim Steward-Gateway-Fix nicht nebenbei vermischt werden.
+
+---
+
+## §10 — GATEWAY, CROSS-PROCESS-DEDUPLIZIERUNG UND STATE-QUELLE PRODUKTIV BEWIESEN (2026-07-14)
+
+### Ergebnis in einem Satz
+
+Der Steward verarbeitet Föderationseingang jetzt ausschließlich über den fail-closed
+Gateway, akzeptiert das produktive kanonische Ganznachrichtenformat, entfernt terminal
+beurteilte Nachrichten, dedupliziert Hub-UUIDs über Workflow-Prozessgrenzen und benutzt den
+Git-Stand statt eines veralteten Actions-Caches als einzige persistente State-Quelle.
+
+Dieser Milestone brauchte drei Steward-PRs, weil jede Produktionsverifikation einen tiefer
+liegenden, vorher nicht sichtbaren Persistenzfehler offengelegt hat:
+
+| PR | Merge | Inhalt |
+|---|---|---|
+| `kimeisele/steward#409` | `69dc052641a9364c828dd62d725f79904adbd2df` | kanonischer Transport, Gateway-Rewire, Claim-Reihenfolge, terminale Inbox-Entfernung |
+| `kimeisele/steward#415` | `3bf1c656ea5737b6bb60b8d4724c9826321d24d8` | persistenter, begrenzter Relay-Seen-Store |
+| `kimeisele/steward#416` | `35e1f716870a95a731467aefcb2d4d6a30654216` | Git als einzige Heartbeat-State-Quelle, kein Cache-Rewind, kein stiller State-Verlust |
+| `kimeisele/steward#417` | `c53f58b043c7467ffbd5f3cb6212fc4f013cfc52` | Autostash für Laufzeitänderungen beim fail-closed Rebase |
+
+Phase 1 blieb byte-identisch und read-only. Der Code wurde ausschließlich im sauberen Klon
+`/Users/ss/projects/steward-gateway-phase2` bearbeitet. Das ursprüngliche Arbeitsverzeichnis
+`/Users/ss/projects/steward` wurde nicht als Codebasis benutzt.
+
+### PR #409 — zusammenhängender Gateway-Fix
+
+Ticket A konnte nicht als der in Phase-1 §219.26 vorgeschlagene Vierzeiler ausgeführt werden.
+§8/§9 hatten bereits bewiesen, dass dadurch legitime T0c-Nachrichten verloren gegangen
+wären. Der tatsächliche Fix änderte acht Dateien und hielt die sicherheitskritischen Teile
+zusammen:
+
+1. `steward/federation_crypto.py`
+   - gemeinsame Funktion `canonical_message_hash`,
+   - Ausschluss nur von `payload_hash`, `signature`, `signer_key`,
+   - explizite Kompatibilität für die vom Hub nachträglich ergänzte `id`.
+2. `steward/federation_transport.py`
+   - eingehende Prüfung gegen den kanonischen Ganznachrichtenhash statt Payload-only,
+   - ausgehende Roh-Nachrichten im selben Format signieren,
+   - bereits signierte Nachrichten nicht mehr durch eine nachträgliche `message_id` mutieren.
+3. `steward/federation.py`
+   - Bridge-Signierung benutzt dieselbe gemeinsame Hashfunktion.
+4. `steward/hooks/dharma.py`
+   - direkte produktive Inbox-Verarbeitung entfernt; der Gateway ist der einzige Eingang,
+   - Legacy-Helfer auf echte Heartbeat-Operationen begrenzt,
+   - `Path` und `json` in den realen Modul-Scope gebracht.
+5. `steward/federation_gateway.py`
+   - Replay-Fenster auf 7200 Sekunden an die 15-Minuten-Kadenz angepasst,
+   - Claim-Quelle muss der beanspruchten `node_id` entsprechen,
+   - unsignierte/ungültige Claims scheitern fail-closed,
+   - Claims werden vor geschützten Operationen verarbeitet,
+   - terminal beurteilte Nachrichten verlassen die Inbox.
+6. Tests
+   - Payload-only-Fixtures auf das produktive Wire-Format migriert,
+   - echter Dharma → Transport → Gateway-Test mit umgekehrter Claim/Nachrichten-Reihenfolge.
+
+Der Beobachtungslauf gegen den gepinnten Inbox-Blob
+`84be272ee3f952d99c563d0fdfb981bd5d0df0a2` umfasste 638 Nachrichten:
+
+- 616 abgelaufen und unangetastet,
+- 22 live und terminal,
+- 11 akzeptiert: vier T0c-Reports plus sieben signierte Claims,
+- 11 quarantänisiert: vier `claim_proof_missing`, vier `invalid_signature`, drei
+  `unknown_sender`,
+- 22 aus der simulierten Inbox entfernt.
+
+### Tests und bekannte Baseline für PR #409/#415
+
+Vor Merge von PR #409:
+
+- fünf zentrale Mutationstests bestanden,
+- Federation-Gruppe: 157 bestanden,
+- Federation + Quarantine + Relay: 184 bestanden,
+- fokussiertes Ruff bestanden.
+
+Nach dem Rebase auf den damaligen Live-Head blieb die vollständige Suite bereits bei einer
+fremden Collection-Störung stehen:
+
+- `FindingKind.PEER_PROTOCOL_VIOLATION` fehlt,
+- Ruff meldet zusätzlich das fremde undefinierte `_finding` in
+  `steward/senses/diagnostic_sense.py:733`.
+
+Der exakte Base-CI-Lauf `29309450561` und PR-CI-Lauf `29309998002` zeigten dieselben
+Fehler. Security war grün. Der Admin-Merge wurde deshalb mit Audit-Kommentar dokumentiert,
+nicht als grüner CI-Zustand ausgegeben.
+
+Für PR #415 wurde zuerst ein roter Regressionstest geschrieben: Relay-Prozess 1 importiert
+eine UUID, der Gateway entfernt sie aus der lokalen Inbox, Relay-Prozess 2 sieht dieselbe
+unveränderte Hub-Nachricht. Vor dem Fix importierte Prozess 2 sie erneut.
+
+Der Fix persistiert bis zu 4096 UUIDs atomar in
+`data/federation/relay_seen_ids.json`, lädt sie bei jedem Prozessstart und erholt sich bei
+fehlendem oder beschädigtem JSON fail-safe. Danach:
+
+- Relay-Suite: 23 bestanden,
+- Federation/Transport/Gateway/Quarantine/Relay: 187 bestanden,
+- fokussiertes Ruff bestanden,
+- PR-CI `29310834627`: nur dieselben beiden bekannten Base-Defekte; Security grün.
+
+### Erster Gateway-Produktionsbeweis
+
+Der erste Post-#409-Heartbeat `29310261212` lief auf exakt
+`69dc052641a9364c828dd62d725f79904adbd2df` erfolgreich.
+
+Harte Logbeweise:
+
+- `GATEWAY` = 20 Treffer,
+- `Path`-`NameError` = 0,
+- `Traceback` = 0,
+- vier gültige T0c-Reports akzeptiert,
+- ein Report erzeugte eine Bottleneck-Task,
+- sieben signierte Claims bewiesen Schlüsselbesitz,
+- vier unsignierte Claims scheiterten mit `claim_proof_missing`,
+- eine stale Quelle scheiterte mit `unknown_sender`,
+- 17 terminale Nachrichten im ersten und 5 im zweiten Pull entfernt.
+
+Der resultierende State-Commit war
+`0ff688a9b894842d2f8cdb887eb8a27fb755d747`. Die vier T0c-Reports waren aus der Live-Inbox
+entfernt; die kanonische ID `ag_b670dc6cbcb705fe` war registriert, die stale ID
+`ag_365d8a2518ac7210` nicht.
+
+### Warum PR #415 allein produktiv noch nicht genügte
+
+Der persistente Seen-Store war im Python-Code korrekt, aber der Workflow überschrieb ihn
+beim nächsten Prozessstart mit altem State. Die Produktionsversuche machten das sichtbar:
+
+1. Run `29310913347` erzeugte lokal `relay_seen_ids.json`, kollidierte aber mit einem
+   vorher gestarteten Heartbeat-State-Commit. `git pull --rebase` konfliktierte; der
+   Fallback `git reset --hard origin/main` ließ einen Detached HEAD zurück; `git push || true`
+   schluckte den Fehler. Der Workflow wurde trotzdem grün und der neue State ging verloren.
+2. Der konfliktfreie Run `29311061314` commitete den Store als
+   `ea5a11214e04167bf2f96f2351c9d166e8fd8f9f`.
+3. Der nächste Prozess `29311282157` restaurierte trotzdem wieder den alten Cache und
+   beurteilte vier kanonische Reports erneut. Das war **kein** erfolgreicher
+   Cross-Process-Nachweis.
+
+Die Ursache war `.github/workflows/steward-heartbeat.yml`:
+
+- `actions/cache@v4` restaurierte `.steward/` und `data/federation/`,
+- Exact-Key: `steward-state-v3-main`,
+- Cache-ID: `5676693628`,
+- erstellt: `2026-07-12T09:19:29Z`,
+- Größe: 171.911 Bytes,
+- Actions-Caches sind für denselben Key unveränderlich,
+- jeder spätere Save meldete `Unable to reserve cache with key ...`,
+- der zwei Tage alte Snapshot überschrieb dadurch bei jedem Zyklus Registry, Inbox,
+  Quarantäne und den neuen Seen-Store.
+
+Damit war der Cache selbst eine zweite, stale State-Datenbank. Git-Commits sahen gesund aus,
+aber der nächste Prozess begann nicht mit diesem Git-State.
+
+### PR #416/#417 — Git ist wieder die einzige Wahrheit
+
+PR #416 änderte nur den Heartbeat-Workflow:
+
+- Checkout explizit auf den bei Ausführung aktuellen `main` mit voller History,
+- Restore- und Save-Cache-Schritte vollständig entfernt,
+- getrackte `.steward`-/Federation-Dateien und neue nicht ignorierte Federation-Dateien
+  ohne `-f` stagen,
+- kein `reset --hard`-Fallback,
+- kein `git push || true`,
+- Rebase- oder Pushfehler machen den Workflow sichtbar rot.
+
+Nach dem Merge wurde ausschließlich der belegte alte Cache `5676693628` per API gelöscht.
+Die Abfrage für `steward-state-v3-main` liefert seitdem `0` Caches.
+
+Der erste Post-#416-Run `29311896422` wurde korrekt rot: Der State-Commit entstand lokal,
+aber `git pull --rebase` verweigerte wegen nicht gestagter Laufzeitänderungen aus dem
+Editable-Install. Vorher wäre derselbe Fehler maskiert worden. PR #417 stellte deshalb nur
+`--autostash` wieder her, ohne Reset oder Fehlerunterdrückung.
+
+### Finaler Zwei-Prozess-Produktionsbeweis
+
+**Prozess 1:** Run `29312320867`, vier Zyklen, finaler Workflow-Head
+`c53f58b043c7467ffbd5f3cb6212fc4f013cfc52`.
+
+- Restore-State-Schritt: 0,
+- Save-State-Schritt: 0,
+- Cache-Hit: 0,
+- `operation=city_report`: 0,
+- `GATEWAY REPLAY`: 0,
+- Rebase-Konflikt: 0,
+- Detached-HEAD-Fehler: 0,
+- Autostash erstellt und angewandt,
+- Push nach `main`: 1,
+- State-Commit: `2865a5d1f411548cf07b9f64c14e6b763285463b`.
+
+**Prozess 2:** Run `29312678752`, eigener Workflow-Prozess, ein Zyklus, Start-Head
+`2865a5d1f411548cf07b9f64c14e6b763285463b`.
+
+- Restore-State-Schritt: 0,
+- Save-State-Schritt: 0,
+- Cache-Hit: 0,
+- `operation=city_report`: 0,
+- `GATEWAY REPLAY`: 0,
+- `reason=replay_detected`: 0,
+- Rebase-Konflikt: 0,
+- Detached-HEAD-Fehler: 0,
+- Autostash erstellt und angewandt,
+- Push nach `main`: 1,
+- finaler State-Commit: `4cdf1f0634b18f5ff26fc95b7efa163c5a978285`.
+
+Finaler Live-Tree:
+
+- Commit: `4cdf1f0634b18f5ff26fc95b7efa163c5a978285`
+- Tree: `56ca00cf73e20272d88a48937d52bacab856af15`
+- `relay_seen_ids.json`: 375 UUIDs
+- alle vier T0c-Report-UUIDs im Seen-Store
+- bekannte T0c-Report-UUIDs in der Inbox: 0
+- Inbox: 446 Nachrichten
+- Registry: 56 Einträge
+- `ag_b670dc6cbcb705fe` registriert
+- `ag_365d8a2518ac7210` nicht registriert
+- alter Actions-Cache: 0
+
+Die vier explizit über Prozessgrenzen bewiesenen UUIDs sind:
+
+- `9e1c5b51-c2ee-4cd6-b859-cec4fccb4c66`
+- `3ab70778-938f-4cce-8d91-871b037737a7`
+- `b29d12a8-3d48-442f-8290-15622b1079a9`
+- `face3300-a642-4be1-abfd-ad07157300a8`
+
+Damit ist der zuvor offene Exactly-once-Milestone für unveränderte Hub-UUIDs erfüllt.
+
+### Was weiterhin offen ist
+
+1. **B' ist jetzt technisch freigegeben, aber noch nicht ausgeführt.** Inbox und Registry
+   müssen gemeinsam nach einem neuen Live-Census bereinigt werden. Die Registry hat noch 56
+   Einträge. Vor jeder Löschung aktive Identitäten aus frischen signierten Mailbox-Nachrichten
+   ableiten; keine alte Liste blind anwenden.
+2. **Steward-CI und KARMA sind real defekt.**
+   `FindingKind.PEER_PROTOCOL_VIOLATION` fehlt und stoppt Tests sowie Teile des produktiven
+   KARMA-Pfads. `_finding` ist in `diagnostic_sense.py:733` undefiniert und blockiert Ruff.
+   Diese beiden Defekte waren Base-Fehler aller drei PRs und wurden nicht kaschiert.
+3. **Der Heartbeat fängt Phasenfehler weiterhin ab.** Ein grüner Job kann deshalb trotz
+   `HEARTBEAT ERROR KARMA failed` enden. State-Pushfehler sind jetzt sichtbar; semantische
+   Phasenfehler sind es noch nicht.
+4. **`ag_8859b969119219b8` bleibt ungeklärt.** Seine `diagnostic_report`- und
+   `task_completed`-Operationen erreichen den Gateway, werden aber von der Bridge abgelehnt.
+5. **Quarantäne-Cleanup und Key-Rotation** bleiben nach Phase-1 §218 offen.
+6. **Agent-City GH006-State-Persistenz** aus §9 bleibt ein separates Ticket.
+
+### Verbindlicher nächster Arbeitsauftrag
+
+Die sichere Reihenfolge ab diesem Stand ist:
+
+1. Live-Head und alle relevanten State-Blobs erneut pinnen.
+2. Die beiden bekannten Steward-CI/KARMA-Baselinefehler read-only bis zur Ursache verfolgen
+   und mit roten Regressionstests reparieren. Weitere sicherheitskritische PRs sollen nicht
+   dauerhaft Admin-Bypasses benötigen.
+3. Danach B' zunächst read-only vorbereiten:
+   - aktive signierte Sender pro Repo bestimmen,
+   - exakte Keep/Delete-Liste für Registry und Inbox erzeugen,
+   - sicherstellen, dass Claims/UUIDs im Seen-Store eine Wiederauferstehung verhindern.
+4. B' atomar gegen den dann aktuellen Live-Head ausführen und sofort zwei Heartbeats prüfen.
+5. Erst danach Key-Rotation Knoten für Knoten nach Phase-1 §218.3.
+
+Keine dieser Arbeiten darf Phase 1 verändern. Jeder abgeschlossene Milestone wird als neuer
+Paragraph in diesem Phase-2-Dokument mit Commit-, Blob-, Run- und Testbeweisen angehängt.
