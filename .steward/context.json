@@ -1,12 +1,12 @@
 {
   "version": 1,
-  "timestamp": 1784009104.5965784,
+  "timestamp": 1784009853.6696773,
   "project": {
     "name": "steward",
     "path": "/home/runner/work/steward/steward"
   },
   "senses": {
-    "prompt_summary": "\n\n## Environment Perception\nGit: main, 13 dirty, ci=success, 0 open PRs\nProject: python\nCode: 200 files, 668 cls, 443 fn, 10 low-cohesion cls (worst: AutonomyEngine LCOM4=6)\nTests: pytest, 92 files, last=failed\nHealth: 212 source files, 2 smells (2 large, 0 stale)",
+    "prompt_summary": "\n\n## Environment Perception\nGit: main, 14 dirty, ci=, 0 open PRs\nProject: python\nCode: 200 files, 668 cls, 443 fn, 10 low-cohesion cls (worst: AutonomyEngine LCOM4=6)\nTests: pytest, 92 files, last=failed\nHealth: 212 source files, 2 smells (2 large, 0 stale)",
     "total_pain": 0.3,
     "detail": {
       "srotra": {
@@ -56,6 +56,17 @@
   "sessions": {
     "recent": [
       {
+        "task": "[autonomous] CROSS_REPO_DIAGNOSTIC",
+        "outcome": "clean",
+        "summary": "Deterministic CROSS_REPO_DIAGNOSTIC: no issues",
+        "timestamp": "2026-07-12T09:17:25.157535+00:00",
+        "tokens": 0,
+        "rounds": 0,
+        "errors": 0,
+        "files_written": [],
+        "buddhi_action": ""
+      },
+      {
         "task": "[autonomous] SYNTHESIZE_BRIEFING",
         "outcome": "clean",
         "summary": "Deterministic SYNTHESIZE_BRIEFING: no issues",
@@ -98,48 +109,54 @@
         "errors": 0,
         "files_written": [],
         "buddhi_action": ""
-      },
-      {
-        "task": "Fix bottleneck: agent_population",
-        "outcome": "success",
-        "summary": "implement: 1 rounds, 0 tools",
-        "timestamp": "2026-07-14T06:04:58.295594+00:00",
-        "tokens": 528,
-        "rounds": 1,
-        "errors": 0,
-        "files_written": [],
-        "buddhi_action": "implement"
       }
     ],
     "stats": {
       "total_sessions": 50,
-      "success_rate": 0.18,
-      "total_tokens": 17698,
+      "success_rate": 0.16,
+      "total_tokens": 17170,
       "total_tool_calls": 6,
-      "avg_tokens_per_session": 353
+      "avg_tokens_per_session": 343
     },
-    "prompt_summary": "Previous sessions in this project:\n  [2026-07-12] problem_found: [autonomous] FEDERATION_HEALTH (0 tokens, 0 rounds, files: none)\n  [2026-07-14] success: Fix bottleneck: agent_population (528 tokens, 1 rounds, files: none)"
+    "prompt_summary": "Previous sessions in this project:\n  [2026-07-12] clean: [autonomous] HEALTH_CHECK (0 tokens, 0 rounds, files: none)\n  [2026-07-12] problem_found: [autonomous] FEDERATION_HEALTH (0 tokens, 0 rounds, files: none)"
   },
   "tasks": {
     "pending": [
       {
-        "id": "36c8118e-af05-49b1-8586-717c07303c3f",
+        "id": "5acbc154-bea5-4771-8d31-ecc1ae267813",
         "title": "[FED:agent-city] Fix bottleneck: agent_population",
         "priority": 70,
         "status": "COMPLETED"
+      },
+      {
+        "id": "ff8a9b7c-5872-4d9d-8abb-fb2261b371e8",
+        "title": "[HEAL_REPO] Peer ag_fd5a7db51b1acac1 \u2014 Kirtan escalation",
+        "priority": 90,
+        "status": "IN_PROGRESS"
+      },
+      {
+        "id": "e5f1bbf3-9e2c-4055-b1df-90847031c9ef",
+        "title": "[HEAL_REPO] Peer ag_f1bc59288c9c5443 \u2014 Kirtan escalation",
+        "priority": 90,
+        "status": "PENDING"
+      },
+      {
+        "id": "212d81b0-8d79-4ae8-85f1-1dafa7484cc8",
+        "title": "[HEAL_REPO] Peer ag_eb39d27421b3971d \u2014 Kirtan escalation",
+        "priority": 90,
+        "status": "PENDING"
       }
     ]
   },
   "federation": {
     "total_peers": 71,
     "by_status": {
-      "alive": 15,
-      "evicted": 52,
-      "dead": 4
+      "alive": 16,
+      "evicted": 55
     },
-    "avg_trust": 0.26056338028168985,
-    "total_reaps": 8308,
-    "total_evictions": 112,
+    "avg_trust": 0.2661971830985913,
+    "total_reaps": 8313,
+    "total_evictions": 115,
     "lease_ttl_s": 900.0,
     "trust_decay": 0.2,
     "peers": [
@@ -232,8 +249,10 @@
         "capabilities": [
           "authority_feed",
           "cross_domain_analysis",
+          "federation_relay",
           "open_inquiry",
           "projection",
+          "research",
           "research_synthesis"
         ]
       },
@@ -244,6 +263,18 @@
         "capabilities": [
           "descriptor_incomplete",
           "testing"
+        ]
+      },
+      {
+        "agent_id": "ag_8859b969119219b8",
+        "status": "alive",
+        "trust": 0.5,
+        "capabilities": [
+          "autonomous_daemon",
+          "ci_automation",
+          "code_analysis",
+          "federation_bridge",
+          "task_execution"
         ]
       },
       {
@@ -259,7 +290,7 @@
         "capabilities": []
       },
       {
-        "agent_id": "ag_75c1bbfcbb3f52dd",
+        "agent_id": "ag_c3c5d9aed6d3dc6e",
         "status": "alive",
         "trust": 0.5,
         "capabilities": []
@@ -286,13 +317,13 @@
       "default_ttl_s": 600.0
     },
     "gateway": {
-      "total_requests": 11,
+      "total_requests": 33,
       "by_protocol": {
-        "nadi": 11
+        "nadi": 33
       },
       "rejected_parse": 0,
       "rejected_validate": 0,
-      "errors": 11,
+      "errors": 20,
       "pending_signals": 0
     }
   },
@@ -311,15 +342,15 @@
   },
   "campaign": {
     "campaign_id": "federation-stewardship",
-    "all_met": false,
+    "all_met": true,
     "signals": [
       {
         "kind": "federation_healthy",
-        "met": false,
+        "met": true,
         "actual": {
-          "alive": 15,
+          "alive": 16,
           "suspect": 0,
-          "dead": 4
+          "dead": 0
         }
       },
       {
@@ -335,23 +366,41 @@
       {
         "kind": "active_missions_at_most",
         "met": true,
-        "actual": 0
+        "actual": 3
       }
     ],
-    "failing": [
-      "federation_healthy"
-    ]
+    "failing": []
   },
   "cetana": {
     "alive": true,
-    "total_beats": 4,
-    "frequency_hz": 0.23719999999999994,
-    "phase": "GENESIS",
+    "total_beats": 11,
+    "frequency_hz": 0.10790930697199998,
+    "phase": "MOKSHA",
     "consecutive_anomalies": 0,
-    "last_health": 0.8600320023013137,
+    "last_health": 0.8601452521704993,
     "last_guna": "sattva"
   },
   "issues": [
+    {
+      "number": 414,
+      "title": "[review-request] Does the WCFA pattern scale differently in larger federations?"
+    },
+    {
+      "number": 413,
+      "title": "[review-request] What is the minimum viable governance verification a peer should deman"
+    },
+    {
+      "number": 412,
+      "title": "[review-request] How should federation descriptors distinguish between capability exist"
+    },
+    {
+      "number": 411,
+      "title": "[review-request] Is the WCFA pattern inherent to systems with safe fallbacks, or preven"
+    },
+    {
+      "number": 410,
+      "title": "[review-request] Can execution-path tracing be standardized across federation nodes as "
+    },
     {
       "number": 408,
       "title": "[review-request] Does the WCFA pattern scale differently in larger federations?"
@@ -410,26 +459,6 @@
     },
     {
       "number": 394,
-      "title": "[review-request] Can execution-path tracing be standardized across federation nodes as "
-    },
-    {
-      "number": 393,
-      "title": "[review-request] Does the WCFA pattern scale differently in larger federations?"
-    },
-    {
-      "number": 392,
-      "title": "[review-request] What is the minimum viable governance verification a peer should deman"
-    },
-    {
-      "number": 391,
-      "title": "[review-request] How should federation descriptors distinguish between capability exist"
-    },
-    {
-      "number": 390,
-      "title": "[review-request] Is the WCFA pattern inherent to systems with safe fallbacks, or preven"
-    },
-    {
-      "number": 389,
       "title": "[review-request] Can execution-path tracing be standardized across federation nodes as "
     }
   ]
