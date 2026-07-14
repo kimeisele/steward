@@ -3,7 +3,7 @@
 > **Status:** DRAFT 0.3 — FÜR READ-ONLY G0-EVIDENCE FREIGEGEBEN; IMPLEMENTIERUNG GESPERRT
 > **Datum:** 2026-07-14
 > **Produktionsbasis:** `kimeisele/steward` auf
-> `02938251c2c28389340dede8d9e125ba05af17ab`
+> `b7e3aa3ca519bd1b3cfe233aa2bc7a4fcb9a31cb`
 > **Zweck:** Verbindlichen technischen Vertrag für die dynamische Bereitstellung von
 > Projektkontext an wechselnde Anthropic-, OpenAI- und interne Steward-Agenten schaffen.
 > **Sperre:** Aus diesem Dokument darf noch kein Produktivpatch abgeleitet werden. Erst
@@ -115,9 +115,9 @@ scheinbar konfliktfreien „Wahrheit“ verschmelzen.
 
 | Objekt | Produktionsstand | Beobachtung |
 |---|---|---|
-| Repository-Head | `02938251c2c28389340dede8d9e125ba05af17ab` | Heartbeat `#5351`; Tree `7b622d34d476137e42dc1f79892754e13107fba0` |
-| `CLAUDE.md` | Blob `a240cd5468a4bc53c1f9e3c18f4b8be7cdc7abe7` | im vorherigen Commit `576d5fda6e4b858e0b19b8632201baafa762db4d` durch `GitNadiSync` unbeabsichtigt mitpubliziert |
-| `.steward/context.json` | Blob `b6268d7cf867576004ab090ab8a2ae714c2b836a` | Heartbeat-Post-Step aktualisiert nach separatem Git-NADI-Commit weiter |
+| Repository-Head | `b7e3aa3ca519bd1b3cfe233aa2bc7a4fcb9a31cb` | Tree `a6043e8fcdbc8dcd673221e3e41412e3870729ec` |
+| `CLAUDE.md` | Blob `a240cd5468a4bc53c1f9e3c18f4b8be7cdc7abe7` | seit dem in OQ-16 belegten Git-NADI-Publish unverändert; keine verlässliche semantische Deduplizierung bewiesen |
+| `.steward/context.json` | Blob `32843a45fccd3bd57566ff3779168d8ff87bc068` | Rohsnapshot läuft weiter und enthält stark volatile sowie nicht PUBLIC_SAFE Felder |
 | `AGENTS.md` | nicht vorhanden | Codex erhält keinen repo-eigenen Root-Vertrag |
 | `docs/PHASE2_CURRENT.md` | Blob `cb3e85c6a02bc776c2611bced87c6e9bf96ee995` | kuratierter Arbeitsstand der aktuellen Phase; keine SSOT |
 | `docs/PHASE2_BEFUND.md` | vorhanden | ausführliches, fortlaufendes externes Gehirn |
@@ -890,14 +890,14 @@ muss ein menschlich reviewter Minimal-Fallback feststehen, der:
 | OQ-02 | Soll Current Phase Work State nur auf `PHASE2_CURRENT` verweisen oder einen sanitizten, nichtautoritativen Ausschnitt übernehmen? | Tokenbudget, Injection und Veraltungsrisiko |
 | OQ-03 | Welche TaskStatus-Typen liefert der echte TaskManager dauerhaft: Enum, String oder gemischt? | verhindert erneuten Filter-Placebo |
 | OQ-04 | Nach welcher Regel werden GitHub-Issues begrenzt und priorisiert? | verhindert willkürliche Agenda |
-| OQ-05 | Welche Briefing-Änderungen sind semantisch commitwürdig? | verhindert Heartbeat-Commitrauschen |
+| OQ-05 | GESCHLOSSEN: Welche Briefing-Änderungen sind semantisch commitwürdig? | Evidence-Paket OQ-12/OQ-05; `payload_hash` und C1–C4-Trigger entschieden |
 | OQ-06 | GESCHLOSSEN: Welche Lock-, Tempfile-, Rename-, fsync- und Recovery-Semantik trägt das tatsächliche Dateisystem und die Prozesslandschaft? | Evidence-Paket OQ-06/OQ-14; per-Pfad Atomicity, Doppel-Lock, Generationserkennung und Recovery-Vertrag entschieden |
 | OQ-07 | TEILGESCHLOSSEN: Welche Core-File-, CODEOWNERS-, Reviewer- und Diff-Gates schützen `AGENTS.md`, `CLAUDE.md` und die statische Verfassungsquelle? | Evidence-Paket OQ-18/OQ-07; Writer-Landschaft durch OQ-16 belegt, Enforcement-Topologie bleibt durch OQ-14 und Delivery-Governance blockiert |
 | OQ-08 | Ist die Formulierung „You are Steward“ für externe Maintainer zulässig? | Rollen- und Sicherheitsklarheit |
 | OQ-09 | Wann und wie wird der derzeit tote interne Instruction-Loader behandelt? | Scope-Trennung; kein versehentlicher Prompt-Umbau |
 | OQ-10 | Sollen die versehentlich getrackten `.steward/.atomic_*.tmp`-Dateien separat bereinigt werden? | Hygieneproblem, aber nicht in Context-Feature hineinziehen |
 | OQ-11 | GESCHLOSSEN: Welche Discovery-, Hierarchie-, Prioritäts- und Include-Regeln gelten aktuell für Claude Code und Codex? | Evidence-Paket OQ-11; byte-identischer Root-Inhalt bleibt Default |
-| OQ-12 | Welche dynamischen Felder sind öffentlich zulässig und welchem C0-C4-Typ gehören sie an? | Datenminimierung und semantischer Hash |
+| OQ-12 | GESCHLOSSEN: Welche dynamischen Felder sind öffentlich zulässig und welchem C0-C4-Typ gehören sie an? | Evidence-Paket OQ-12/OQ-05; PUBLIC_SAFE-Allowlist und Default-Deny-Feldmatrix entschieden |
 | OQ-13 | Welche Quellen sind required, optional oder publish-blocking? | ehrliche Degradation statt gesunder Leere |
 | OQ-14 | TEILGESCHLOSSEN: Welcher reale Kill-Switch stoppt geplante, manuelle und bereits laufende Publisher? | Evidence-Paket OQ-06/OQ-14; manueller Disable/Force-Cancel/Revocation/Fence-Pfad belegt, Operations-Drill und dauerhafter Schalter offen |
 | OQ-15 | Wie wird ein veralteter oder manipulierter Current-Phase-Arbeitsstand erkannt und angezeigt? | verhindert neue Single-Point-of-Failure-Semantik |
@@ -972,7 +972,7 @@ offenen Fragen und jede Feature-Spec dürfen sie widerlegen oder verfeinern.
 | Prompt Injection / Trust Boundaries | §§0B, 3.5-3.8, I-13/I-17, adversariale Fixtures | als G0-Blocker aufgenommen |
 | Byteidentität nicht bewiesen | Z2, I-01, Option E, OQ-11 | zur reversiblen Hypothese herabgestuft |
 | Atomicity / Concurrency | §8.3, I-15, OQ-06/OQ-16 | Garantievertrag und Writer-Landschaft entschieden; Implementierung weiterhin gesperrt |
-| semantische Änderung undefiniert | §8.4, OQ-05/OQ-12 | C0-C4-Modell eingeführt, Feldmapping offen |
+| semantische Änderung undefiniert | §8.4, OQ-05/OQ-12 | C0-C4-Modell, PUBLIC_SAFE-Feldmatrix und Hash-/Committrigger entschieden |
 | Provenance zu schwach | §8.2, I-14 | Sicherheitsvertrag statt Footer |
 | LLM-Publikationspfad | T5, I-09, OQ-01 | fail-closed Preview-Vertrag entschieden; Implementierung weiterhin gesperrt |
 | sensible Nicht-Secret-Daten | §3.7, I-06, OQ-17 | Allowlisting verpflichtend |
