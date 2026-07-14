@@ -29,9 +29,14 @@
 ## Development
 
 ## Status
-Health: 0.854 (sattva) · Immune: 0/0 heals, breaker OK · Federation: 13 peers (13 alive, 0 suspect, 0 dead)
+Health: 0.853 (sattva) · Immune: 0/0 heals, breaker OK · Federation: 13 peers (13 alive, 0 suspect, 0 dead)
 
 ## Action
+- #481: [review-request] Does the WCFA pattern scale differently in larger federations?
+- #480: [review-request] What is the minimum viable governance verification a peer should deman
+- #479: [review-request] How should federation descriptors distinguish between capability exist
+- #478: [review-request] Is the WCFA pattern inherent to systems with safe fallbacks, or preven
+- #477: [review-request] Can execution-path tracing be standardized across federation nodes as 
 - #476: [review-request] Does the WCFA pattern scale differently in larger federations?
 - #475: [review-request] What is the minimum viable governance verification a peer should deman
 - #474: [review-request] How should federation descriptors distinguish between capability exist
@@ -47,14 +52,9 @@ Health: 0.854 (sattva) · Immune: 0/0 heals, breaker OK · Federation: 13 peers 
 - #464: [review-request] How should federation descriptors distinguish between capability exist
 - #463: [review-request] Is the WCFA pattern inherent to systems with safe fallbacks, or preven
 - #462: [review-request] Can execution-path tracing be standardized across federation nodes as 
-- #461: [review-request] Does the WCFA pattern scale differently in larger federations?
-- #460: [review-request] What is the minimum viable governance verification a peer should deman
-- #459: [review-request] How should federation descriptors distinguish between capability exist
-- #458: [review-request] Is the WCFA pattern inherent to systems with safe fallbacks, or preven
-- #457: [review-request] Can execution-path tracing be standardized across federation nodes as 
 
 ## Environment Perception
-Git: main, 8 dirty, ci=, 0 open PRs
+Git: main, 10 dirty, ci=, 0 open PRs
 
 ## Toolbox
 17 tools available
@@ -62,4 +62,4 @@ Git: main, 8 dirty, ci=, 0 open PRs
 ## Architecture
 38 services · 25 tattvas
 MURALI: **genesis**(2) → **dharma**(5) → **karma**(4) → **moksha**(6)
-<!-- briefing v3.0.0 | 925 tokens | budget: standard (2000) | focus: sattva, ctx_pressure=1.0 | 2026-07-14T21:13:45 -->
+<!-- briefing v3.0.0 | 925 tokens | budget: standard (2000) | focus: sattva, ctx_pressure=1.0 | 2026-07-14T22:47:43 -->
