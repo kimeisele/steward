@@ -1,10 +1,10 @@
 # OQ-18 / OQ-07 — VERFASSUNGSQUELLE UND GOVERNANCE
 
 > **Status OQ-18:** EVIDENCE COMPLETE — Quelldatei entschieden, Härtung vor Nutzung zwingend
-> **Status OQ-07:** EVIDENCE PARTIAL — Schutzvertrag entschieden, Enforcement-Topologie durch OQ-14 und Delivery-Governance blockiert
+> **Status OQ-07:** EVIDENCE COMPLETE — PR-only-/Code-Owner-/Contract-Check-Topologie entschieden
 > **Untersuchungsdatum:** 2026-07-14
-> **Steward-Head:** `02938251c2c28389340dede8d9e125ba05af17ab`
-> **Steward-Tree:** `7b622d34d476137e42dc1f79892754e13107fba0`
+> **Steward-Head:** `18e39055ca347366cd265e9e40c472a81733c80e`
+> **Steward-Tree:** `6c6623a8c6b5f04de9d5f660cead8a76d77a2131`
 > **Scope:** Statische Verfassungsquelle, bestehende Writer, GitHub-Governance und
 > Schutzanforderungen. Keine Änderung an Produktivcode, Workflow oder Repository-Settings.
 
@@ -234,11 +234,10 @@ Folgende Mindestgarantien sind entschieden:
 
 ### 10.3 Governance-kritischer technischer Scope
 
-Mindestens folgende Flächen gehören zum späteren Schutz- und Reviewmodell:
+Mindestens folgende **menschlich gepflegte** Flächen gehören zum späteren Code-Owner-
+Schutz:
 
 - `.steward/conventions.md`
-- `CLAUDE.md`
-- `AGENTS.md`
 - `.github/CODEOWNERS` beziehungsweise der tatsächlich gewählte CODEOWNERS-Pfad
 - `.github/workflows/steward-heartbeat.yml`
 - `steward/briefing.py`
@@ -246,6 +245,14 @@ Mindestens folgende Flächen gehören zum späteren Schutz- und Reviewmodell:
 - `steward/hooks/moksha_bridge.py`
 - `steward/tools/synthesize_briefing.py`
 - die noch zu definierenden Context-Bridge-Contract-Tests
+
+`CLAUDE.md` und `AGENTS.md` sind dagegen generierte Outputs. Ein Code-Owner-Review auf
+Dateiebene würde bei jedem zulässigen dynamischen Update einen Menschen blockierend in
+den Heartbeat-Pfad setzen. Diese beiden Dateien werden deshalb durch verpflichtende
+Contract-Checks geschützt, die C0-Identität, Blockgrenzen, PUBLIC_SAFE-Schema,
+Provenance und erlaubten Diff-Scope prüfen. Eine Änderung außerhalb dieses Vertrags muss
+fail-closed sein. GitHub-`CODEOWNERS` kann keine Teilbereiche einer Datei schützen und
+darf nicht als Ersatz für diesen Check dargestellt werden.
 
 `steward/pr_gate.py::CORE_FILES` kann später als zusätzliche Observability an denselben
 Scope angeglichen werden. Es bleibt ausdrücklich kein Enforcement-Mechanismus.
@@ -266,34 +273,88 @@ nicht aus Federation-Peers oder Repository-Daten erraten werden.
 
 ---
 
-## 11. Warum OQ-07 noch nicht vollständig geschlossen ist
+## 11. Finaler Live-Recon und Delivery-Entscheidung
 
-Der Schutzvertrag ist klar, seine sichere Delivery-Topologie noch nicht:
+Der erneute Live-Recon am 2026-07-14 belegt unverändert:
 
-1. Der Heartbeat pusht aktuell automatisch direkt auf `main`.
-2. Eine globale Pull-Request-Pflicht würde diesen Pfad ohne Bypass stoppen.
-3. Ein unbeschränkter Bypass für `FEDERATION_PAT` würde wiederum auch Änderungen an der
-   statischen Verfassung und den Root-Verträgen erlauben.
-4. Die untersuchten GitHub-Einstellungen belegen noch keinen pfadbegrenzten Bypass, der
-   im konkreten persönlichen Public-Repo sicher verfügbar ist.
-5. Die Identität und Reichweite des hinter `FEDERATION_PAT` stehenden Principals ist aus
-   dem Repository nicht belegbar.
-6. Die vollständige Menge paralleler Publisher wurde durch OQ-16 belegt; insbesondere
-   `GitNadiSync` und der Workflow-Post-Step bilden getrennte Delivery-Wege.
-7. Stop-, Bypass- und Recovery-Semantik ist weiterhin Gegenstand von OQ-14.
+- keine `CODEOWNERS`-Datei,
+- kein aktives Ruleset,
+- keine Pull-Request- oder Reviewpflicht auf `main`,
+- `enforce_admins=false`,
+- nur drei erforderliche CI-Checks,
+- Auto-Merge auf Repositoryebene deaktiviert,
+- genau einen direkt eingetragenen Collaborator: den persönlichen Repositoryowner mit
+  Adminrechten,
+- keine offenen Pull Requests.
 
-Darum bleibt offen, ob der Zielzustand über:
+GitHubs dokumentierter Plattformvertrag ergänzt:
 
-- globalen PR-only-Main mit verändertem Heartbeat-Delivery-Modell,
-- einen minimal privilegierten GitHub-App-Writer,
-- getrennte State-/Publikationsbranches,
-- oder einen anderen nachweisbar pfadbegrenzten Mechanismus
+1. Code Owner benötigen Write-Rechte.
+2. Pull-Request-Autoren können ihren eigenen PR nicht freigeben.
+3. `required_approving_review_count=0` ist zulässig, während
+   `require_code_owner_reviews=true` gezielt nur Änderungen an owned Pfaden blockiert.
+4. Auto-Merge kann in einem öffentlichen persönlichen Repository nach bestandenen Checks
+   und erforderlichen Reviews ausführen.
+5. Branch-Protection-Bypass-Akteure können nur bei organization-owned Repositories
+   ausgewählt werden.
+6. Branchschutz kann Admins einschließen; ohne diese Option bleibt der Owner ein Bypass.
 
-erreicht wird. Diese Optionen sind keine Implementierungsfreigabe.
+Daraus folgt die verbindliche Topologie:
 
-**Abhängigkeit:** OQ-07 kann erst nach OQ-14 und einer reviewten Entscheidung über die
-Delivery-Governance final geschlossen werden. Eine Feature-Spec darf bis dahin weder
-`CODEOWNERS` noch Branchschutz oder Workflow-Bypass als isolierten Schnellpatch behandeln.
+### 11.1 `main` ohne Automation-Bypass
+
+- `main` wird PR-only.
+- Branchschutz gilt auch für Administratoren.
+- Heartbeat, PAT, GitHub Actions und interne Writer erhalten keinen Direct-Push-Bypass.
+- Force-Push und Branchlöschung bleiben verboten.
+- Der aktuelle direkte Heartbeat-Push muss vor Aktivierung dieser Regel durch einen
+  branch-/PR-basierten Delivery-Pfad ersetzt werden.
+
+Ein globaler Automation-Bypass wird verworfen. Git-Credentials autorisieren keine
+einzelnen Dateipfade; ein Bypass für State würde auch Governance-Dateien erreichbar
+machen.
+
+### 11.2 Selektiver Human-Review
+
+- PR-Review-Schutz verwendet `required_approving_review_count=0` und
+  `require_code_owner_reviews=true`.
+- `.github/CODEOWNERS` besitzt sich selbst und alle menschlich gepflegten
+  Governance-/Publisher-/Workflow-/Contract-Test-Pfade.
+- Reviews werden nach neuen Commits verworfen.
+- Generierte Root-Ausgaben sind nicht dateiweit codeowned, sondern unterliegen dem
+  required Context-Bridge-Contract-Check.
+
+Diese Trennung verhindert sowohl Human-in-the-loop bei jedem Heartbeat als auch
+unreviewte Änderungen am Ursprung des Agentenvertrags.
+
+### 11.3 Automatische Delivery
+
+- Der Heartbeat publiziert auf einen nicht geschützten, eindeutig generierten Branch und
+  erstellt beziehungsweise aktualisiert einen PR.
+- Der PR darf nur den separat allowlisteten generierten Delivery-Scope enthalten.
+- Ein auf dem geschützten Base-Branch definierter Required Check validiert Autor,
+  Pfadscope, C0, C1-Schema, Provenance, Payload-/Snapshotbindung und Secret-/Injection-
+  Grenzen.
+- Erst nach grünen Checks und erfüllten Code-Owner-Regeln darf Auto-Merge ausführen.
+- Der Publisher kann die Schutzlogik nicht im selben PR ändern, ohne dadurch einen owned
+  Pfad und verpflichtenden Human-Review auszulösen.
+
+Die exakte Branchbenennung, Checknamen und GitHub-API-Sequenz gehören in die Delivery-
+Feature-Spec. Die Sicherheitsentscheidung selbst ist damit getroffen.
+
+### 11.4 Zwei-Principal-Precondition
+
+Der aktuelle einzelne Collaborator kann einen selbst erstellten Governance-PR nicht als
+Code Owner genehmigen. Vor Aktivierung muss deshalb ein realer Zwei-Principal-Pfad
+belegt sein:
+
+- Governance-PR wird von einem getrennten, begrenzten Author-Principal erstellt und vom
+  menschlichen Owner freigegeben, oder
+- ein zweiter ausdrücklich autorisierter menschlicher Collaborator übernimmt den Review.
+
+Die Identität wird nicht aus Federation-Peers erraten. Ohne positiv getesteten
+Author/Reviewer-Split darf der Code-Owner-Gate nicht scharfgeschaltet und auch nicht durch
+Admin-Bypass abgeschwächt werden.
 
 ---
 
@@ -324,6 +385,8 @@ Delivery-Governance final geschlossen werden. Eine Feature-Spec darf bis dahin w
 - Ein fehlender PR in der Commit-API beweist keinen fehlenden informellen menschlichen
   Blick außerhalb GitHubs.
 - Die endgültige menschliche Code-Owner-Identität ist nicht technisch ableitbar.
+- Welcher zweite Author-/Reviewer-Principal eingesetzt wird, ist noch keine
+  Repositorytatsache und bleibt ein explizites G1-Deployment-Input.
 - Die Writer-Menge ist im Evidence-Paket OQ-01/OQ-16 dokumentiert; externe, nicht im
   Repository sichtbare Prozesse bleiben naturgemäß unbelegbar.
 
@@ -332,10 +395,10 @@ Delivery-Governance final geschlossen werden. Eine Feature-Spec darf bis dahin w
 ## 14. Gate-Wirkung
 
 - OQ-18 ist geschlossen.
-- OQ-07 ist auf einen verbindlichen Schutzvertrag, OQ-14 und die Delivery-Governance
-  reduziert, aber noch nicht final geschlossen.
-- G0 bleibt offen.
+- OQ-07 ist mit einer konkreten PR-only-/Code-Owner-/Contract-Check-Topologie geschlossen.
+- OQ-14 und damit G0 bleiben offen; der Operations-Drill ist von der
+  Governance-Architektur getrennt.
 - Keine Code-, Workflow-, CODEOWNERS-, Branchschutz- oder Ruleset-Änderung ist aus diesem
   Evidence-Paket freigegeben.
-- Der nächste sinnvolle isolierte Recon ist OQ-01/OQ-16: vollständige Publisher- und
-  Caller-Landschaft. Danach kann OQ-14 die Stop-/Bypass-/Recovery-Realität schließen.
+- Vor jeder Aktivierung müssen Feature-Spec, Zwei-Principal-Precondition, Required-Check-
+  Namen, Migrationsreihenfolge und Rollback positiv reviewt sein.
