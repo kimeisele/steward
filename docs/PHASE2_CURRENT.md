@@ -209,65 +209,48 @@ live pinnen, weil die Föderation weiterläuft.
 - Der exakte Source-Kandidat ist geschlossen: 1.860 C0-Bytes aus Feature 00, leeres
   versioniertes Orientation-Payload, 2.023 Source-Bytes, erwarteter Git-Blob
   `f428d5856a5c525e002c301890777748effbeb4e`.
-- Slice C ist **implementierungsblockiert**: Das öffentliche Repo besitzt genau einen
-  Collaborator (`kimeisele`), keine Einladungen, keine Reviews, keine CODEOWNERS, keinen
-  PR-Review-Schutz, `enforce_admins=false` und keinen Check
-  `Context Constitution Attestation`.
-- Ein heute gemergter Source-PR wäre später nicht als commitgebundene menschlich reviewte
-  Attestation verwendbar. `.steward/conventions.md` bleibt deshalb exakt auf Blob
+- Der Slice-C-G2-Live-Befund bleibt korrekt: genau ein Collaborator, kein unabhängiger
+  GitHub-Reviewbeweis und Source weiterhin Blob
   `29829be4f77dcaebf970a8ee872de299f0357f1c`.
+- Die daraus abgeleitete Pflicht zu einem zweiten Menschen war für die reale
+  Single-Owner-Topologie zu streng. Governance Amendment 01 ersetzt sie durch einen
+  gebundenen Operator-HITL-Vertrag; automatische Publication bleibt gesperrt.
 - Normative Dokumente: `specs/CONTEXT_BRIDGE_SYSTEM_SPEC.md`,
-  `specs/CONTEXT_BRIDGE_FEATURE_00.md`, `specs/CONTEXT_BRIDGE_FEATURE_04.md` und
+  `specs/CONTEXT_BRIDGE_FEATURE_00.md`, `specs/CONTEXT_BRIDGE_FEATURE_01.md`,
+  `specs/CONTEXT_BRIDGE_FEATURE_04.md`,
+  `specs/CONTEXT_BRIDGE_GOVERNANCE_AMENDMENT_01.md` und
   `specs/context_bridge_evidence/**`.
-- Ausführlicher Beweis: `PHASE2_BEFUND.md` §§15–18.
+- Ausführlicher Beweis: `PHASE2_BEFUND.md` §§15–19.
 
-## 6. Exakt nächster Auftrag: Constitution-Governance-Sequenzspec
+## 6. Exakt nächster Auftrag: Governance-Amendment reviewen
 
-**Keine Constitution-, Setting-, CODEOWNERS- oder Workflowänderung.** Der Slice-C-G2-Recon
-ist abgeschlossen und blockiert den Implementierungsstart. Als nächstes ist ausschließlich
-eine eigene read-only Spec-/Governance-Sequenzkorrektur zulässig.
+**Keine Constitution-, Root-, Produkt-, Workflow-, Setting- oder Runtime-State-Änderung.**
+Der nächste zulässige Schritt ist ausschließlich der Review und Merge des specs-only
+`CONTEXT_BRIDGE_GOVERNANCE_AMENDMENT_01.md` samt den chirurgischen Normkorrekturen.
 
-Bekannter Ausgangspunkt:
+Der Vertrag trennt:
 
-- Feature 01 §15 ordnet die menschlich reviewte Source-Migration in Schnitt C ein.
-- Der geschlossene Attestation-Vertrag verlangt für genau diesen Source-PR einen anderen
-  menschlichen Reviewer, CODEOWNERS-/Branchschutz-Evidence und den commitgebundenen Check
-  `Context Constitution Attestation` aus geschützter Base.
-- Feature 01 §15.9 ordnet CODEOWNERS, Branchschutz und Governance-Drill erst Schnitt I zu.
-- Damit ist C-vor-I am heutigen Live-Zustand nicht ausführbar, ohne wertlose oder
-  rückwirkend erfundene Attestation-Evidence zu erzeugen.
-- Fehlende Governance blockiert normale default-off Produktvorbereitung nicht pauschal,
-  aber ausdrücklich die als „menschlich reviewt“ definierte Constitution-Migration.
+- den alleinigen menschlichen Operator als Entscheidungsautorität,
+- den Coding-Agenten als technische Delegation, nicht als zweiten Principal,
+- CI/Git als Beweis für Bytes, Scope, Checks und unveränderten Head,
+- die explizite Chat-/CLI-Freigabe als prozeduralen `single_owner_hitl`-Beleg.
 
-Read-only-Arbeitsauftrag:
+Nach einem regulär geprüften Merge darf Slice C in einem **separaten** Source-/Test-PR
+vorbereitet werden. Dieser PR wird auf finalem Head eingefroren und erst nach einem
+Reviewpaket sowie der exakten Operatorfreigabe
+`APPROVE CONSTITUTION <head_sha> <source_blob> <c0_sha256>` gemergt. Jeder weitere Commit
+verwirft die Freigabe.
 
-1. Aktuellen Feature-01-Vertrag, Slice-C-G2, Attestation-Recon und GitHub-Live-Governance
-   gegeneinander pinnen.
-2. Einen minimalen prerequisite Governance-Schnitt **vor C** spezifizieren: anderer Human-
-   Principal, CODEOWNERS, Reviewschutz, stale dismissal, Admin-Enforcement und geschützter
-   Constitution-Check.
-3. Weitergehende Delivery-/Aktivierungs-Governance in Schnitt I belassen; keinen Mega-
-   Governance-Patch entwerfen.
-4. Exakte Settings-, Workflow-/Testpfade, Author-/Reviewer-Reihenfolge, Failure-/Rollback-
-   Vertrag und Operationsdrill definieren.
-5. Den Spec-Entwurf adversarial reviewen. Noch nichts implementieren und niemanden
-   eigenmächtig einladen.
-
-Externe harte Precondition: Vor einem Governance- oder Source-PR muss ein konkreter,
-vertrauenswürdiger zweiter menschlicher GitHub-Principal benannt und als Collaborator
-verfügbar sein. Ein Bot, Agent, zweiter lokaler Gitautor oder derselbe Account ist ungültig.
-
-Abbruchkriterium: Keine Source-, Root-, Produkt-, Workflow-, CODEOWNERS-, Setting-,
-Publisher-, Recovery-, Delivery- oder Aktivierungsänderung vor reviewter Sequenzspec und
-realer Human-Principal-Precondition.
+Abbruchkriterium: Kein Slice-C-Source-PR vor Merge dieses Amendments; keine Root-,
+Publisher-, Recovery-, Delivery- oder Aktivierungsänderung im Governance- oder Source-PR.
 
 ## 7. Offene Agenda nach Feature-Spec 01
 
 Reihenfolge ist vorläufig und muss jeweils durch neuen Live-Recon bestätigt werden:
 
-1. Feature 01 erst nach geschlossener Governance-Sequenzkorrektur weiterführen; Schnitt C
-   bleibt bis zum realen zweiten Human-Principal blockiert. Danach weiter strikt nach den
-   in §15 definierten Einzelschnitten und
+1. Governance Amendment 01 nach gebundenem Operatorreview mergen; danach Schnitt C als
+   separaten Source-/Test-PR vorbereiten, einfrieren und erneut explizit vom Operator
+   freigeben lassen. Danach weiter strikt nach den in §15 definierten Einzelschnitten und
    jeweils eigenem aktuellem G2 implementieren; erst nach Required Checks, Governance und
    Operations-Drill aktivieren.
 2. Danach Feature 02 (Current-Phase Reference Card) und Feature 03 (Action Signal
@@ -314,11 +297,12 @@ Produktionslogs und neuere Phase-2-Beweise haben Vorrang. Widersprüche werden i
 explizit korrigiert, niemals durch blindes Befolgen alter Aussagen.
 
 Feature 01 ist G1-freigegeben; Schnitte A und B sind implementiert und verifiziert.
-Slice-C-G2 ist abgeschlossen, aber der Implementierungsstart ist blockiert: genau ein
-GitHub-Collaborator, kein Review-Schutz/CODEOWNERS/Attestation-Check und kein anderer
-menschlicher Reviewer. Der nächste Auftrag ist ausschließlich die read-only Constitution-
-Governance-Sequenzspec aus PHASE2_CURRENT §6. Verändere noch keine Constitution-, Root-,
-Produkt-, Workflow-, CODEOWNERS-, Setting-, Publisher-, Recovery-, Delivery- oder
-Aktivierungsfläche. Erfinde keinen zweiten Reviewer. Pflege PHASE2_CURRENT als
-widerlegbares Cockpit und PHASE2_BEFUND als ausführliches externes Gehirn.
+Slice-C-G2 ist abgeschlossen. Die frühere Zwei-Principal-Precondition war für die reale
+Single-Owner-Topologie zu streng und wird durch Governance Amendment 01 korrigiert. Prüfe
+zuerst dessen Merge- und Reviewstatus. Vor einem Slice-C-Source-PR muss das Amendment
+regulär gemergt sein. Ein späterer Source-PR bleibt bis zum eingefrorenen HITL-Reviewpaket
+und der exakten Operatorfreigabe ungemergt. Verändere dabei keine Root-, Produkt-,
+Workflow-, Setting-, Publisher-, Recovery-, Delivery- oder Aktivierungsfläche. Pflege
+PHASE2_CURRENT als widerlegbares Cockpit und PHASE2_BEFUND als ausführliches externes
+Gehirn.
 ```

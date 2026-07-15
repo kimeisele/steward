@@ -523,19 +523,19 @@ Contract-Test-Pfaden muss er offline und deterministisch mindestens prüfen:
     Neutral oder scheinbar gesunde Leere.
 
 Der Check verwendet weder Netzwerk, LLM, Live-Federation noch ungepinnte externe
-Dependencies. Seine eigene Workflow-/Validator-/Fixture-Fläche ist Code-Owner-geschützt.
+Dependencies. Seine eigene Workflow-/Validator-/Fixture-Fläche ist durch PR-only
+Änderungen und Required Checks geschützt.
 
 ---
 
 ## 13. Governance-Zielvertrag
 
-### 13.1 Menschlich gepflegte Code-Owner-Pfade
+### 13.1 Menschlich gepflegte Governance-Pfade
 
-Mindestens folgende Flächen benötigen eine ausdrückliche menschliche CODEOWNERS-
-Zuordnung:
+Mindestens folgende Flächen sind governance-relevant und dürfen nur über PR plus passende
+Contract-Checks geändert werden:
 
 - `/.steward/conventions.md`
-- `/.github/CODEOWNERS`
 - der spätere Contract-Check-Workflow und Validator,
 - `/steward/briefing.py`
 - `/steward/briefing_stages.py`
@@ -546,21 +546,22 @@ Zuordnung:
 - `specs/CONTEXT_BRIDGE_SYSTEM_SPEC.md`
 - `specs/CONTEXT_BRIDGE_FEATURE_*.md`
 
-Die konkrete menschliche GitHub-Identität wird nicht aus Repoowner, Federation oder Chat
-erraten. Sie ist ein explizites Deployment-Input einer späteren Governance-Operations-
-Spec.
+`CODEOWNERS` darf später Defense-in-Depth ergänzen, ist im belegten Ein-Owner-Repository
+aber weder unabhängiger Reviewbeweis noch Aktivierungs-Precondition. Die besondere
+gebundene Single-Owner-HITL-Freigabe aus
+`CONTEXT_BRIDGE_GOVERNANCE_AMENDMENT_01.md` gilt für C0-Sourceänderungen; sie wird nicht
+pauschal auf jeden Produkt- oder Test-PR ausgeweitet.
 
 ### 13.2 Generierte Root-Dateien
 
-`CLAUDE.md` und `AGENTS.md` sind generierte Outputs und werden nicht dateiweit durch
-CODEOWNERS blockiert. Andernfalls benötigte jeder legitime dynamische Publish einen
-menschlichen Review.
+`CLAUDE.md` und `AGENTS.md` sind generierte Outputs und werden nicht dateiweit durch einen
+menschlichen Review blockiert.
 
 Ihr Schutz erfolgt durch:
 
 - PR-only `main`,
 - `Context Bridge Contract` als Required Check,
-- geschützte Source-, Renderer-, Publisher-, Workflow- und Testpfade,
+- HITL-geschützte Source- sowie PR-only Renderer-, Publisher-, Workflow- und Testpfade,
 - keinen Automation- oder Admin-Bypass,
 - Auto-Merge erst nach vollständigem Checkvertrag.
 
@@ -571,14 +572,13 @@ Vor automatischem kanonischem Publish gilt:
 - `main` nur über Pull Request,
 - `enforce_admins=true`,
 - `required_approving_review_count=0`,
-- `require_code_owner_reviews=true`,
-- stale Reviews nach neuen Commits verwerfen,
+- eine neue Operatorfreigabe nach jedem Commit auf einem HITL-gegateten PR,
 - bestehende CI-Checks plus `Context Bridge Contract` erforderlich,
 - Force-Push und Branchlöschung verboten,
 - kein Heartbeat-/PAT-/GitHub-Actions-Bypass.
 
-Der aktuelle Single-Collaborator-Zustand erfüllt den Author-/Reviewer-Split nicht. Vor
-Aktivierung muss ein realer Zwei-Principal-Pfad positiv belegt sein.
+Der aktuelle Single-Collaborator-Zustand wird nicht als künstlicher Author-/Reviewer-Split
+dargestellt. Menschliche Freigabe und technische Byte-/Scope-Attestation bleiben getrennt.
 
 ---
 
@@ -629,7 +629,7 @@ Diese Tabelle ist eine Scope-Grenze, keine Freigabe:
 | kanonisches Modell/Validator | Feature 04 | reine Normalisierung/Validierung, keine Root-Writes |
 | Root-Dual-Publisher | Feature 01 | identische Payload sicher publizieren |
 | Contract-Tests/Fixtures | Feature 04/01 | rote Verträge in ausführbare Tests überführen |
-| `.github/CODEOWNERS` | Feature 01 Delivery | menschliche Governance-Pfade schützen |
+| optionale `.github/CODEOWNERS` | Feature 01 Delivery | Defense-in-Depth bei späteren zusätzlichen Maintainern |
 | Contract-Check-Workflow | Feature 01 Delivery | Required Check ohne Path-Skip |
 | Branchschutz/Auto-Merge | Feature 01 Operations | erst nach G2-Drill aktivieren |
 
@@ -673,8 +673,8 @@ Feature 00 ist G1-reviewfähig, wenn Reviewer bestätigen:
 - [x] Freie dynamische Prosa bleibt initial default-deny.
 - [x] Byteidentität bleibt Default ohne unnötige Consumer-Hüllen.
 - [x] Required Check schützt Root-Struktur und kann nicht still skippen.
-- [x] CODEOWNERS schützt menschliche Quellen, nicht jeden generierten Root-Diff.
-- [x] Zwei-Principal-, Branchschutz- und No-Bypass-Preconditions bleiben erhalten.
+- [x] Single-Owner-HITL schützt menschliche Quellen, nicht jeden generierten Root-Diff.
+- [x] PR-only-, Required-Check- und No-Bypass-Preconditions bleiben erhalten.
 - [x] Rote Tests sind wirkungsbezogen und scheitern am belegten Ist-Zustand.
 - [x] Feature 00 verändert oder autorisiert noch keine Produktdatei.
 - [x] Reihenfolge `00 -> 04 -> 01 -> 02/03` bleibt eingehalten.
@@ -685,7 +685,7 @@ Feature 00 ist G1-reviewfähig, wenn Reviewer bestätigen:
 
 | Feature-00-Vertrag | Primäre Evidence |
 |---|---|
-| PR-only, Code-Owner, Required Check und Zwei-Principal-Pfad | OQ-07 / `OQ18_OQ07_CONSTITUTION_GOVERNANCE.md` |
+| PR-only, Single-Owner-HITL und Required Check | OQ-07 plus `CONTEXT_BRIDGE_GOVERNANCE_AMENDMENT_01.md` |
 | externe Consumer-Rolle und keine Runtime-Impersonation | OQ-08 / `OQ08_ROLE_IDENTITY_BOUNDARY.md` |
 | Claude-/Codex-Discovery und Bytegleichheits-Default | OQ-11 / `OQ11_CONSUMER_CONTRACTS.md` |
 | PUBLIC_SAFE-Allowlist, C0-C4 und Hash-Domains | OQ-12/OQ-05 / `OQ12_OQ05_FIELDS_SEMANTICS.md` |
