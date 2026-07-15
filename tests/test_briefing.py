@@ -1,6 +1,9 @@
 """Tests for briefing — cockpit display from living system state."""
 
+import pytest
+
 from steward.briefing import (
+    LegacyBriefingWriteDisabled,
     _collect_critical,
     _load_orientation,
     generate_briefing,
@@ -48,26 +51,31 @@ class TestGenerateBriefing:
 
 
 class TestWriteClaudeMd:
-    def test_writes_file(self, tmp_path):
-        written = write_claude_md(str(tmp_path), force=True)
-        assert written
+    def test_existing_root_is_unchanged(self, tmp_path):
         claude_md = tmp_path / "CLAUDE.md"
-        assert claude_md.exists()
+        original = b"# human-reviewed legacy context\n"
+        claude_md.write_bytes(original)
 
-    def test_hash_dedup(self, tmp_path):
-        from unittest.mock import patch
+        with pytest.raises(LegacyBriefingWriteDisabled):
+            write_claude_md(str(tmp_path))
 
-        stable_content = "# steward\nStable content for dedup test"
-        with patch("steward.briefing.generate_briefing", return_value=stable_content):
+        assert claude_md.read_bytes() == original
+
+    def test_missing_root_is_not_created(self, tmp_path):
+        with pytest.raises(LegacyBriefingWriteDisabled):
+            write_claude_md(str(tmp_path))
+
+        assert not (tmp_path / "CLAUDE.md").exists()
+
+    def test_force_cannot_bypass_fence(self, tmp_path):
+        with pytest.raises(LegacyBriefingWriteDisabled):
             write_claude_md(str(tmp_path), force=True)
-            # Second call with same content should be skipped
-            written = write_claude_md(str(tmp_path), force=False)
-            assert not written
 
-    def test_force_bypasses_dedup(self, tmp_path):
-        write_claude_md(str(tmp_path), force=True)
-        written = write_claude_md(str(tmp_path), force=True)
-        assert written
+        assert not (tmp_path / "CLAUDE.md").exists()
+
+    def test_generate_preview_does_not_write_root(self, tmp_path):
+        assert isinstance(generate_briefing(str(tmp_path)), str)
+        assert not (tmp_path / "CLAUDE.md").exists()
 
 
 class TestLoadOrientation:

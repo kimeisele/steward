@@ -19,6 +19,7 @@ from steward.services import (
     SVC_SAFETY_GUARD,
     SVC_SIGNAL_BUS,
     SVC_TOOL_REGISTRY,
+    _add_steward_missions,
     boot,
     tool_descriptions_for_llm,
 )
@@ -58,6 +59,33 @@ class _DummyTool(Tool):
 
     def execute(self, parameters: dict) -> ToolResult:
         return ToolResult(success=True, output="ok")
+
+
+class _MissionRegistry:
+    def __init__(self) -> None:
+        self.missions = []
+
+    def get_all_missions(self):
+        return []
+
+    def add_mission(self, mission) -> None:
+        self.missions.append(mission)
+
+
+class _SankalpaStub:
+    def __init__(self) -> None:
+        self.registry = _MissionRegistry()
+
+
+def test_default_mission_has_no_synthesize_briefing_strategy():
+    sankalpa = _SankalpaStub()
+
+    _add_steward_missions(sankalpa)
+
+    assert len(sankalpa.registry.missions) == 1
+    strategies = sankalpa.registry.missions[0].strategies
+    assert all(strategy.id != "strategy_synthesize_briefing" for strategy in strategies)
+    assert all(strategy.intent_type != "synthesize_briefing" for strategy in strategies)
 
 
 class TestBoot:
