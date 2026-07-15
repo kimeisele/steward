@@ -1,6 +1,6 @@
 # PHASE 2 CURRENT — Fresh-Session-Cockpit
 
-**Aktualisiert:** 2026-07-15, 18:39 Europe/Berlin
+**Aktualisiert:** 2026-07-15, 19:35 Europe/Berlin
 **Zweck:** Ein neuer Lead-Agent soll mit dieser Datei in wenigen Minuten arbeitsfähig sein.
 Der ausführliche Beweis- und Operationsverlauf bleibt in `docs/PHASE2_BEFUND.md`.
 
@@ -63,15 +63,16 @@ Arbeitsflächen; die Lesewahrheit kommt über Live-`gh api` aus GitHub.
 
 ## 4. Gepinnter Produktionsstand
 
-Code-/Dokument-Snapshot: 2026-07-15 18:39 Europe/Berlin.
+Code-/Dokument-Snapshot: 2026-07-15 19:35 Europe/Berlin.
 
 ### Steward
 
 - Repo: `kimeisele/steward`
-- Head: `1e5b23a8f0ba9d30e39c9fc44fc89595fe6c9afe`
-- Tree: `c7fd7965845339b9e253084bcbd2466a7e31122d`
-- Commit: `chore: heartbeat #5496 state sync`
+- Head: `38f361318b39864628dca1329bc513475fec1c04`
+- Tree: `1822420053045da09869b1c7554a525317745423`
+- Commit: `chore: heartbeat #5502 state sync`
 - Slice-A-Merge: `1b1ef63d9d873a08acb812f18ba102b73174838c`
+- Slice-B-Merge: `a750e0f3826e0067656062e02c3b7c896db35cde`
 - Phase 1: Blob `2f8a8e4e3b9624859c9ae25a754f3cd93120df66`, read-only
 - Phase-2-Cockpit vor diesem Update: Blob `a8535fd5ce8e87a2d3d8de366d37c02495414ca8`
 - Phase-2-Befund vor diesem Update: Blob `a50fefde3a003b1a51a015951289c9c0c6930d13`
@@ -138,7 +139,7 @@ live pinnen, weil die Föderation weiterläuft.
   - finaler State-Commit `8b248ddfb6b09fad520e194ea1975910fab69c9b`.
 - Ausführlicher Beweis: `PHASE2_BEFUND.md` §14.
 
-### Context Bridge: G0, Feature 00, Feature 04 und Feature 01/Schnitt A
+### Context Bridge: G0, Feature 00, Feature 04 und Feature 01/Schnitte A–B
 
 - Master-Spec G0 adversarial geschlossen; Merge
   `7b1b6a221851f51d06191222f5187cc877c04304`.
@@ -178,58 +179,82 @@ live pinnen, weil die Föderation weiterläuft.
   `8146a15603c95e5aa1404c9eb7021e3008914b0c`; Root-`AGENTS.md` fehlt weiterhin.
 - Der Run enthielt bekannte Provider-Degradation (Gemini 429, Groq 401), aber Mistral
   übernahm; Tracebacks, Legacy-Writer-Fence-Fehler und Git-NADI-Fence-Fehler: 0.
-- Feature 01 ist **nicht produktiv aktiviert**: kein neuer Renderer/Publisher, kein
-  `AGENTS.md`, kein Publish-Record, keine Recovery, keine Source-Migration und keine
-  PR-only Delivery.
+- Slice-B-G2-Preflight: PR `#541`, Merge
+  `9347f21f9e1a15e5cfd049c562e4db24957a2cac`.
+- Offline-Contract/Renderer: PR `#547`, Merge
+  `a750e0f3826e0067656062e02c3b7c896db35cde`.
+- Neue reine Fläche: öffentliche Validatoren in `steward/context_contract.py` und der
+  I/O-freie `steward/context_rendering.py`; kein bestehender Produktcaller importiert den
+  Renderer.
+- Der Renderer erzeugt aus validierten Feature-04-Modellen ein einziges Bytes-Objekt für
+  beide Root-Kandidaten sowie zirkulationsfreie Snapshot-/Publication-Envelopes. Golden:
+  Root 2.318 Bytes, Snapshot 4.781 Bytes, Publication 1.203 Bytes.
+- 78 gezielte Tests, Python-3.11-/3.12-CI, Lint und Security grün. Der erste CI-Lauf fand
+  einen Testharness-Fehler durch ein bis zum Pytest-Teardown global gepatchtes `time.time`;
+  der Guard wurde auf den Renderer-Aufruf begrenzt, ohne Produktcodeänderung.
+- Kontrollierter Produktionsrun `29436703996` auf dem Slice-B-Merge-Head war grün.
+  Folgecommit `38f361318b39864628dca1329bc513475fec1c04` änderte ausschließlich elf Runtime-/
+  Federation-State-Pfade. Root- und Slice-B-Produktblobs blieben identisch.
+- `CLAUDE.md` blieb exakt Blob `8146a15603c95e5aa1404c9eb7021e3008914b0c`;
+  Root-`AGENTS.md`, Snapshot- und Publication-Artefakt fehlen weiterhin absichtlich.
+- Der Produktionsrun bewies außerdem eine ältere offene Fundamentlücke erneut: Groq 401,
+  Gemini 429 und schließlich Mistral 400 erschöpften den Streaming-Fallback, während der
+  Gesamtworkflow trotzdem erfolgreich endete. Das ist kein Slice-B-Fehler, aber ein
+  relevanter Beweis für den späteren Fehlerpropagationsauftrag.
+- Feature 01 ist **nicht produktiv aktiviert**: der neue Renderer ist offline und
+  unverdrahtet; kein Publisher, keine Root-Mutation, kein Publish-Record, keine Recovery,
+  keine Source-Migration und keine PR-only Delivery.
 - Normative Dokumente: `specs/CONTEXT_BRIDGE_SYSTEM_SPEC.md`,
   `specs/CONTEXT_BRIDGE_FEATURE_00.md`, `specs/CONTEXT_BRIDGE_FEATURE_04.md` und
   `specs/context_bridge_evidence/**`.
-- Ausführlicher Beweis: `PHASE2_BEFUND.md` §§15–16.
+- Ausführlicher Beweis: `PHASE2_BEFUND.md` §§15–17.
 
-## 6. Exakt nächster Auftrag: Feature 01 / Schnitt B — G2-Preflight
+## 6. Exakt nächster Auftrag: Feature 01 / Schnitt C — G2-Preflight
 
-**Noch keinen Schnitt-B-Produktcode schreiben.** Feature-01-G1 und der Legacy-Writer-Fence
-sind abgeschlossen. Als nächstes ist ausschließlich ein auf den dann aktuellen Main-Head
-gepinnter, read-only G2-Preflight für Schnitt B aus
-`specs/CONTEXT_BRIDGE_FEATURE_01.md` §15.2 erlaubt.
+**Noch keine Constitution-Datei verändern.** Schnitte A und B sind abgeschlossen. Als
+nächstes ist ausschließlich ein auf den dann aktuellen Main-Head gepinnter, read-only
+G2-Preflight für Schnitt C aus `specs/CONTEXT_BRIDGE_FEATURE_01.md` §15.3 erlaubt.
 
 Bekannter Ausgangspunkt:
 
-- `steward/context_contract.py` ist rein und hat absichtlich keine Writer-/Callerwirkung.
+- `steward/context_contract.py` und `steward/context_rendering.py` sind rein und haben
+  absichtlich keine Writer-/Callerwirkung.
 - `write_claude_md()` schlägt explizit fail-closed fehl und mutiert keine Root-Datei.
 - Der MOKSHA-Hook ruft keinen Root-Writer mehr auf.
 - Der LLM-Toolpfad liefert nur Preview mit `canonical=false` und akzeptiert keinen
   persistierten Zielpfad.
-- Git-NADI ist auf seine enge Federation-Allowlist begrenzt; der separate Heartbeat-
-  Post-Step pusht Runtime-State weiterhin direkt auf `main` und bleibt späterer Scope.
 - Root-`AGENTS.md` existiert nicht.
 - `.steward/conventions.md` ist noch nicht auf C0-/Orientation-Marker migriert.
-- Schnitt B darf nur offline Source-/Candidate-Validatoren und den reinen Renderer aus
-  Feature-04-Modellen liefern: identische Root-Kandidaten, zirkulationsfreie Snapshot-/
-  Record-Envelopes, adversariale Tests und **keine Writes**.
+- Feature 00 definiert den exakten C0-v1-Vertrag; die Migration darf keine Persona,
+  Runtime-Identität, volatile Frequenz, Healthzahl, Peeridentität oder aktuelle Agenda in
+  den statischen Verfassungskern übernehmen.
+- Schnitt C verlangt einen separaten menschlichen Review der Source-Migration. Der bisher
+  belegte Ein-Collaborator-Zustand erfüllt diese Precondition nicht. Der G2 darf weder
+  Self-Approval noch Admin-Bypass noch einen erfundenen Federation-Reviewer als Ersatz
+  akzeptieren.
 
 Read-only-Arbeitsauftrag:
 
-1. Aktuellen `origin/main`, offenen PR-Stand und alle für Slice B vorgesehenen Symbole
-   erneut pinnen.
-2. Die in Feature 01 bereits normierten Publication-Vektoren und Feature-04-Modelle gegen
-   den Live-Code prüfen; Modell und Hash-Domains nicht duplizieren.
-3. Exakte Produkt-/Testpfade, reine API-Fläche, rote Golden-/Adversarial-Tests,
-   Abbruchkriterien und Rollbackgrenze festlegen.
-4. Beweisen, dass der Slice weder Filesystem, Git, Clock, Netzwerk, ServiceRegistry noch
-   aktuelle Root-Dateien berührt.
-5. Preflight als separaten docs-only PR prüfen und mergen; erst danach red-first
-   implementieren.
+1. Aktuellen `origin/main`, offene PRs, `.steward/conventions.md`, Feature-00-C0-Text,
+   Branchschutz, Collaborators und reale Reviewerfähigkeit erneut pinnen.
+2. Den vorhandenen Source-Text blockweise klassifizieren: exakter C0, positiv erlaubte
+   Orientation und zu entfernende Persona-/Runtime-/Agenda-Inhalte. Noch nichts schreiben.
+3. Exakte Source-/Testpfade, Markerbytes, Blob-/Review-Evidence, negative Fixtures,
+   Rollbackblob und Abbruchkriterien definieren.
+4. Beweisen, wie ein anderer menschlicher Principal den Source-PR tatsächlich reviewen
+   kann. Fehlt er, Schnitt C ausdrücklich als governance-blocked dokumentieren.
+5. G2 als separaten docs-only PR regulär prüfen und mergen. Erst ein geschlossenes G2 und
+   eine reale Review-Precondition dürfen einen späteren Source-PR erlauben.
 
-Abbruchkriterium: Kein Renderer-/Validator-Produktpatch vor gemergtem Schnitt-B-G2. Kein
-Publisher-, Root-, Source-, Workflow-, Recovery-, Governance- oder Aktivierungspatch in
-Schnitt B.
+Abbruchkriterium: Keine Änderung an `.steward/conventions.md`, Root-Dateien, Produktcode,
+Workflow, Publisher, Recovery, Delivery oder Governance im G2. Kein Schnitt-C-Source-PR
+ohne belegten separaten menschlichen Reviewer.
 
 ## 7. Offene Agenda nach Feature-Spec 01
 
 Reihenfolge ist vorläufig und muss jeweils durch neuen Live-Recon bestätigt werden:
 
-1. Feature 01 ab Schnitt B weiter strikt nach den in §15 definierten Einzelschnitten und
+1. Feature 01 ab Schnitt C weiter strikt nach den in §15 definierten Einzelschnitten und
    jeweils eigenem aktuellem G2 implementieren; erst nach Required Checks, Governance und
    Operations-Drill aktivieren.
 2. Danach Feature 02 (Current-Phase Reference Card) und Feature 03 (Action Signal
@@ -275,10 +300,12 @@ Phase 1 ist read-only und historisch, aber nicht unfehlbar. Live-Code, Git-Objek
 Produktionslogs und neuere Phase-2-Beweise haben Vorrang. Widersprüche werden in Phase 2
 explizit korrigiert, niemals durch blindes Befolgen alter Aussagen.
 
-Feature 01 ist G1-freigegeben; Schnitt A (Legacy-Writer-Fence) ist implementiert, gemergt
-und am Folgeheartbeat verifiziert. Der nächste Auftrag ist ausschließlich der read-only
-G2-Preflight für Feature 01 / Schnitt B aus PHASE2_CURRENT §6. Schreibe noch keinen
-Schnitt-B-Produktcode und keinen Publisher-, Root-, Source-, Workflow-, Recovery-,
-Governance- oder Aktivierungspatch. Pflege PHASE2_CURRENT als widerlegbares rollierendes
-Cockpit und PHASE2_BEFUND als ausführliches externes Gehirn.
+Feature 01 ist G1-freigegeben; Schnitte A (Legacy-Writer-Fence) und B (Offline-Contract/
+Renderer) sind implementiert, gemergt und an Folgeheartbeats verifiziert. Der nächste
+Auftrag ist ausschließlich der read-only G2-Preflight für Feature 01 / Schnitt C aus
+PHASE2_CURRENT §6. Verändere noch keine Constitution-, Root-, Produkt-, Workflow-,
+Publisher-, Recovery-, Delivery- oder Governance-Datei. Erfinde keinen zweiten Reviewer:
+Die reale separate menschliche Review-Precondition ist ein Stop-Gate. Pflege
+PHASE2_CURRENT als widerlegbares rollierendes Cockpit und PHASE2_BEFUND als ausführliches
+externes Gehirn.
 ```
