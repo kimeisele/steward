@@ -2154,3 +2154,26 @@ Der erlaubte Source-PR-Scope wird daher exakt um `tests/test_briefing.py` erweit
 darf nur der obsolete Real-Repo-Test zu einem Integrationsbeweis geändert werden, dass der
 Legacy-Preview eine leere versionierte Orientation toleriert und keine Root-Datei schreibt.
 Produktcode, zusätzliche Orientation-Prosa und jeder weitere Pfad bleiben verboten.
+
+## 21. Adversariales Review findet Placebo-Orientation-Test
+
+Der menschlich eingeholte Read-only-Review verweigerte die Constitution-Freigabe zu Recht.
+Der neue Test in `tests/test_briefing.py` prüfte lediglich, dass `generate_briefing()`
+irgendeinen String liefert und keine Root-Datei schreibt. Er hätte auch bestanden, wenn
+`OrientationStage` vollständig ausgefallen wäre.
+
+Positiv belegt wurden zwei Ursachen:
+
+1. `_load_orientation()` liest die Source als freie Markdown-Prosa und versteht keine
+   C0-/Orientation-Marker. Nach der Migration kann es deshalb C0 als Orientation behandeln.
+2. `BriefingPipeline._render_all()` fängt jede Stage-Exception, loggt nur eine Warnung und
+   rendert weiter. Ein indirekter Gesamtpreview ist kein Loader-Contract-Test.
+
+PR `#552` wurde sofort als Draft markiert; sein Text nennt nun korrekt drei Pfade und den
+Blocker. Head `1b6cb74849a240ac7be9318eb4ffa5f616253fee` ist verworfen und nicht attestiert.
+
+Die korrigierte Sequenz ist chirurgisch: zuerst ein separater Zwei-Pfad-Adapter, der neue
+Sources strikt mit `parse_conventions()` liest, nur Orientation zurückgibt, malformed
+Marker fail-closed behandelt und unmarkierte Legacy-Source vorübergehend kompatibel hält.
+Direkte Loader-Tests dürfen nicht durch die Stage-Exception-Grenze laufen. Erst danach
+wird Slice C neu rebased, getestet, eingefroren und dem Operator erneut vorgelegt.
