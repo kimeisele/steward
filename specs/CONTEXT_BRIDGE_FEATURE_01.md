@@ -255,8 +255,9 @@ Die bestehende `.steward/conventions.md` wird in einem eigenen PR chirurgisch au
 5. kein dynamischer Root-Block.
 
 Der PR erzeugt noch keinen automatischen Publisher, verändert keine Root-Datei und
-aktiviert keine Delivery. Sein reviewter PR-Head-Commit und der darin enthaltene Source-
-Blob bilden nach Merge die externe Attestation-Evidence für den Bootstrap.
+aktiviert keine Delivery. Sein nach Governance Amendment 01 vom Operator explizit
+freigegebener PR-Head-Commit und der darin enthaltene Source-Blob bilden nach Merge die
+externe Attestation-Evidence für den Bootstrap.
 
 ### 6.3 ConstitutionAttestation
 
@@ -266,27 +267,30 @@ Die Attestation wird nicht vom Heartbeat erfunden. Der Bootstrap-/Governance-PR 
 - den Git-Blob der reviewten `.steward/conventions.md`,
 - den Commit, an dem die menschliche Reviewentscheidung gilt.
 
-Ein Attestation-Resolver erhält den reviewten PR-Head-Commit als expliziten Input und
+Ein Attestation-Resolver erhält den explizit freigegebenen PR-Head-Commit samt
+`approval_mode=single_owner_hitl` als Bootstrap-Input und
 prüft über Git/GitHub-Evidence, dass:
 
-- dieser Commit im gemergten Source-PR reviewt wurde,
+- dieser Commit dem eingefrorenen und vom Operator freigegebenen Source-PR-Head entspricht,
 - `.steward/conventions.md` an diesem Commit exakt den gebundenen Source-Blob besitzt,
 - der aktuell zu publizierende C0-Hash aus genau diesem Blob stammt,
 - der aktuelle Source-Blob noch identisch ist.
 
 Der Resolver liefert danach das bestehende Feature-04-Value-Object. Er schreibt keine
 Attestation-Datei und setzt `status=verified` nicht allein aufgrund einer lokalen
-Konfiguration. API-Unverfügbarkeit oder fehlender separater Review blockiert den ersten
-Bootstrap. Ein Source-Blob-Wechsel führt zu `manual_review`, nie zu Autopublish.
+Konfiguration. Fehlende gebundene Operatorfreigabe oder API-Unverfügbarkeit blockiert den
+ersten Bootstrap. Ein Source-Blob-Wechsel führt zu `manual_review`, nie zu Autopublish.
 
 Der reviewte PR-Head ist bereits vor dem nachfolgenden Bootstrap-PR bekannt und vermeidet
 eine Commit-Selbstreferenz. Der Merge-Commit darf abweichen, solange Git beweist, dass der
 reviewte Commit erreichbar ist und derselbe Source-Blob im Zielbranch gilt.
 
-Die exakte API-, Reviewstate-, Branchschutz-, Blob- und Pagination-Prüfsequenz ist in
-`FEATURE_01_ATTESTATION_OPERATIONS_RECON.md` normativ geschlossen. Der Resolver erhält
-Source-PR-Nummer, reviewten Head-Commit, Source-Blob und C0-Hash als expliziten Bootstrap-
-Input. PR-Titel, Commitmessage und `merged_by` sind kein Reviewersatz.
+Die API-, Blob- und Pagination-Prüfsequenz aus
+`FEATURE_01_ATTESTATION_OPERATIONS_RECON.md` bleibt technische Evidence; ihre
+Zwei-Principal-Annahme wird durch `CONTEXT_BRIDGE_GOVERNANCE_AMENDMENT_01.md` ersetzt. Der
+Resolver erhält Source-PR-Nummer, freigegebenen Head-Commit, Source-Blob, C0-Hash und
+Approval-Modus als expliziten Bootstrap-Input. PR-Titel, Commitmessage und `merged_by`
+ersetzen keine Operatorfreigabe.
 
 ---
 
@@ -784,7 +788,7 @@ Branch: automation/context-bridge
 PR title: [context-bridge] canonical context publication
 PR body marker: <!-- steward-context-delivery:v1 -->
 Required check: Context Bridge Contract
-Constitution check: Context Constitution Attestation
+Constitution check: Context Constitution Contract
 Workflow display name: Context Bridge Delivery
 ```
 
@@ -829,16 +833,16 @@ Vor automatischer kanonischer Delivery müssen gelten:
 - `main` ist PR-only und Branchschutz gilt für Administratoren,
 - Force-Push und Branchlöschung sind verboten,
 - keine Automation besitzt Main-Bypass,
-- `.steward/conventions.md`, Konfiguration, CODEOWNERS, Publisher, Renderer, Workflow und
-  Contract-Tests sind codeowned,
-- stale Reviews werden verworfen,
+- `.steward/conventions.md` benötigt eine gebundene Single-Owner-HITL-Freigabe;
+  Konfiguration, Publisher, Renderer, Workflow und Contract-Tests ändern sich nur per PR,
+- jeder Commit nach einer Operatorfreigabe verwirft diese Freigabe,
 - `Context Bridge Contract` ist required,
-- ein realer Author-/Reviewer-Split ist positiv getestet.
+- der finale PR-Head, Source-Blob und C0-Hash sind im Reviewpaket gebunden.
 
-Der aktuell belegte Ein-Collaborator-Zustand erfüllt die Zwei-Principal-Precondition nicht.
-Der Gate darf deshalb nicht durch Self-Approval, Admin-Bypass oder erfundene Federation-
-Reviewer abgeschwächt werden. Code kann vorbereitet und gemergt werden, automatische
-Aktivierung bleibt bis zur realen Governance-Precondition gesperrt.
+Der belegte Ein-Collaborator-Zustand wird ehrlich als Single-Owner-HITL betrieben; Agent,
+Bot und lokaler Git-Autor sind keine unabhängigen Reviewer. Automatische Aktivierung bleibt
+bis zu Required Check, Delivery-/Kill-Switch-/Recovery-Vertrag und kontrolliertem G2-Drill
+gesperrt.
 
 ---
 
@@ -907,8 +911,8 @@ Feature 01 ist ein End-to-End-Vertrag, aber ausdrücklich kein Mega-PR.
 
 ### 15.9 Schnitt I — Governance und Aktivierungsdrill
 
-- CODEOWNERS/Branchschutz/Required Check,
-- Zwei-Principal-Beweis,
+- PR-only Branchschutz/Required Check und optionales CODEOWNERS-Defense-in-Depth,
+- Single-Owner-HITL-Bindung und Head-Drift-Invalidierung,
 - Disable/Force-Cancel/PR-Fence/Credential-Containment,
 - kontrollierter Preview- und Canonical-Drill,
 - Produktionsblob- und Folgeheartbeat-Verifikation.
@@ -1011,7 +1015,8 @@ bewusst getrennt:
    Feature-Spec vor Aktivierung.
 2. **Bootstrap-Fixtures:** erste gültige Vier-Artefakt-Generation nach reviewter Source,
    einschließlich absent/mixed/invalid-Kaltstart.
-3. **Governance-Principals:** realer getrennter Author-/Reviewer-Pfad.
+3. **Governance-Entscheidung:** gebundener Single-Owner-HITL-Pfad nach Governance
+   Amendment 01; ein unabhängiger Reviewer bleibt optionale spätere Defense-in-Depth.
 
 Diese Punkte dürfen nicht im Code improvisiert werden. Punkt 1 benötigt eine eigene
 Feature-Spec vor Aktivierung. Punkt 2 gehört in die roten Tests des Bootstrap-G2-

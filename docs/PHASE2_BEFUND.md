@@ -2091,3 +2091,50 @@ lokalen Git-Autornamen ist ungültig.
 
 Vollständiger G2-Beweis:
 `specs/context_bridge_evidence/FEATURE_01_SLICE_C_G2_PREFLIGHT.md`.
+
+## 19. Governance-Korrektur: Single-Owner-HITL statt künstlichem Zwei-Principal-Gate
+
+### Warum der vorherige Schluss zu streng war
+
+Der Slice-C-G2-Recon bewies korrekt, dass GitHub genau einen menschlichen Collaborator und
+keinen unabhängigen Review-Principal besitzt. Daraus wurde jedoch eine universelle
+Zwei-Principal-Precondition abgeleitet. Der Operator stellte klar, dass das Projekt
+bewusst als Single-Owner-HITL geführt wird und kein zweiter Mensch verfügbar ist.
+
+Ein Coding-Agent, Botname oder anderer lokaler Git-Autor ist kein unabhängiger Principal.
+Genauso falsch wäre es aber, die Aufnahme eines zweiten Menschen als technische
+Voraussetzung zu erfinden. Das hätte keine existierende Trust Boundary geschützt, sondern
+die Constitution-Migration unbefristet blockiert.
+
+### Korrigierter Vertrag
+
+`specs/CONTEXT_BRIDGE_GOVERNANCE_AMENDMENT_01.md` trennt jetzt:
+
+- Operatorentscheidung: explizite Freigabe eines eingefrorenen finalen PR-Heads,
+- technische Delegation: Agent erstellt Diff, Evidence und Merge, entscheidet aber nicht
+  anstelle des Operators über die Constitution,
+- Git/CI-Evidence: Head, Blob, C0-Hash, Scope und Checks,
+- ehrliche Provenance: `single_owner_hitl`, niemals erfundener `independent_review`.
+
+Ein gültiges Source-Reviewpaket bindet Repository, PR, Base/Head, erlaubte Pfade,
+vollständigen Diff, Source-Blob, C0-Hash, Kandidatenhash/-länge, Tests, unveränderte
+Root-Blobs, Risiken und Nicht-Ziele. Die Freigabe lautet exakt:
+
+```text
+APPROVE CONSTITUTION <head_sha> <source_blob> <c0_sha256>
+```
+
+Jeder nachfolgende Commit invalidiert sie. PR-Titel, Commitmessage, `merged_by`, Issue,
+Task oder Federation-Daten ersetzen die Operatorentscheidung nicht. CI attestiert
+reproduzierbare Bytes und technische Verträge; der reservierte technische Name lautet
+`Context Constitution Contract`, nicht eine vorgetäuschte Human-Attestation.
+
+### Begrenzte Wirkung
+
+Die Korrektur hebt ausschließlich den unbelegten zweiten-Human-Block auf. Sie aktiviert
+weder Publisher noch Root-Ausgaben, Auto-Merge oder Runtime-Delivery. Slice C darf erst
+nach reviewtem Merge des specs-only Amendments als separater Source-/Test-PR vorbereitet
+werden und bleibt seinerseits bis zur exakt gebundenen Operatorfreigabe ungemergt.
+
+Der historische G2-Befund bleibt erhalten und erhält eine explizite superseding note.
+Phase 1 bleibt read-only. PHASE2_CURRENT bleibt ein widerlegbarer Arbeitsstand, keine SSOT.

@@ -255,6 +255,18 @@ Diese G2-Datei ändert die Feature-Spec noch nicht. Sie dokumentiert den bewiese
 Widerspruch und blockiert die Implementierung bis zu einer getrennt reviewten
 Sequenzkorrektur.
 
+### 8.1 Spätere normative Korrektur
+
+Der Live-Befund dieses Recon bleibt gültig: Es gab genau einen Collaborator und keinen
+unabhängigen GitHub-Reviewbeweis. Die daraus abgeleitete Zwei-Principal-Precondition war
+jedoch für die reale Single-Owner-Projektgovernance zu streng.
+
+`CONTEXT_BRIDGE_GOVERNANCE_AMENDMENT_01.md` ersetzt deshalb ausschließlich §§7–8 dieses
+Dokuments: Der Operator darf den eingefrorenen Source-PR-Head über ein gebundenes
+Single-Owner-HITL-Reviewpaket freigeben. Git und CI attestieren Bytes, Scope und Checks;
+sie behaupten keinen unabhängigen zweiten Human-Review. Alle übrigen Source-, Test-,
+Scope-, Rollback- und No-Autopublish-Grenzen dieses Recon bleiben unverändert.
+
 ## 9. Rollback- und Abbruchgrenze
 
 Sollte ein später korrekt gegateter Source-PR vor Merge scheitern, wird der Branch
