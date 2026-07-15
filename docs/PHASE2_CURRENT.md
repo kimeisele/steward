@@ -220,44 +220,37 @@ live pinnen, weil die Föderation weiterläuft.
   `specs/CONTEXT_BRIDGE_FEATURE_04.md`,
   `specs/CONTEXT_BRIDGE_GOVERNANCE_AMENDMENT_01.md` und
   `specs/context_bridge_evidence/**`.
-- Ausführlicher Beweis: `PHASE2_BEFUND.md` §§15–19.
+- Ausführlicher Beweis: `PHASE2_BEFUND.md` §§15–21.
 
-## 6. Exakt nächster Auftrag: Amendment-Status prüfen, dann Slice C
+## 6. Exakt nächster Auftrag: Preview-Compatibility vor Slice C
 
-Zuerst den Live-Mergestatus von `CONTEXT_BRIDGE_GOVERNANCE_AMENDMENT_01.md` prüfen. Solange
-es nicht regulär auf `main` liegt, ist ausschließlich sein specs-only Review und Merge
-zulässig; Constitution-, Root-, Produkt-, Workflow-, Setting- und Runtime-State-Änderungen
-bleiben gesperrt.
+Governance Amendment 01 liegt auf `main`, aber Slice-C-PR `#552` ist nach adversarialem
+Review als Draft blockiert. Der Ersatztest bewies die Orientation-Integration nicht:
+`_load_orientation()` parst die neuen Marker noch nicht, während die Pipeline
+Stage-Ausnahmen schluckt.
 
-Der Vertrag trennt:
-
-- den alleinigen menschlichen Operator als Entscheidungsautorität,
-- den Coding-Agenten als technische Delegation, nicht als zweiten Principal,
-- CI/Git als Beweis für Bytes, Scope, Checks und unveränderten Head,
-- die explizite Chat-/CLI-Freigabe als prozeduralen `single_owner_hitl`-Beleg.
-
-Liegt das Amendment regulär auf `main`, ist der nächste isolierte Auftrag Slice C: exakt
-`.steward/conventions.md`, `tests/test_context_constitution.py` und die notwendige
-Integrationstestkorrektur in `tests/test_briefing.py` in einem **separaten** Source-/Test-
-PR. Der erste vollständige CI-Lauf bewies, dass der alte Real-Repo-Test fälschlich die
-bewusst entfernte `Antahkarana`-/`cognitive`-Orientation voraussetzt. Der Source-PR wird auf
-finalem Head eingefroren und erst nach einem Reviewpaket
+Der nächste isolierte Auftrag ist deshalb der Zwei-Pfad-Compatibility-Adapter aus
+`FEATURE_01_SLICE_C_PREVIEW_COMPATIBILITY.md`: ausschließlich
+`steward/briefing_stages.py` und `tests/test_briefing.py`, alte Source unverändert. Erst
+nach dessen Merge darf PR `#552` auf den Adapter rebased und neu aufgebaut werden. Der
+neue Source-Head wird erst nach direkten Loader-Assertions, finaler CI und einem neuen
+Reviewpaket
 sowie der exakten Operatorfreigabe
 `APPROVE CONSTITUTION <head_sha> <source_blob> <c0_sha256>` gemergt. Jeder weitere Commit
 verwirft die Freigabe.
 
-Abbruchkriterium: Kein Slice-C-Source-PR vor Merge dieses Amendments; keine Root-,
-Publisher-, Recovery-, Delivery- oder Aktivierungsänderung im Governance- oder Source-PR.
+Abbruchkriterium: PR `#552` nicht mergen; keine Sourceänderung im Compatibility-PR und
+keine Root-, Publisher-, Recovery-, Delivery- oder Aktivierungsänderung.
 
 ## 7. Offene Agenda nach Feature-Spec 01
 
 Reihenfolge ist vorläufig und muss jeweils durch neuen Live-Recon bestätigt werden:
 
-1. Governance Amendment 01 nach gebundenem Operatorreview mergen; danach Schnitt C als
-   separaten Source-/Test-PR vorbereiten, einfrieren und erneut explizit vom Operator
-   freigeben lassen. Danach weiter strikt nach den in §15 definierten Einzelschnitten und
-   jeweils eigenem aktuellem G2 implementieren; erst nach Required Checks, Governance und
-   Operations-Drill aktivieren.
+1. Den marker-aware Preview-Compatibility-Adapter separat mergen; danach PR `#552` auf
+   diese Basis rebasen, Placebo-Test durch direkte Loader-Assertions ersetzen, erneut
+   einfrieren und explizit vom Operator freigeben lassen. Danach weiter strikt nach den in
+   §15 definierten Einzelschnitten und jeweils eigenem aktuellem G2 implementieren; erst
+   nach Required Checks, Governance und Operations-Drill aktivieren.
 2. Danach Feature 02 (Current-Phase Reference Card) und Feature 03 (Action Signal
    Integrity) getrennt spezifizieren.
 3. Heartbeat-Fehlerpropagation read-only gegen kritische, degradierbare und externe/
@@ -302,12 +295,12 @@ Produktionslogs und neuere Phase-2-Beweise haben Vorrang. Widersprüche werden i
 explizit korrigiert, niemals durch blindes Befolgen alter Aussagen.
 
 Feature 01 ist G1-freigegeben; Schnitte A und B sind implementiert und verifiziert.
-Slice-C-G2 ist abgeschlossen. Die frühere Zwei-Principal-Precondition war für die reale
-Single-Owner-Topologie zu streng und wird durch Governance Amendment 01 korrigiert. Prüfe
-zuerst dessen Merge- und Reviewstatus. Vor einem Slice-C-Source-PR muss das Amendment
-regulär gemergt sein. Ein späterer Source-PR bleibt bis zum eingefrorenen HITL-Reviewpaket
-und der exakten Operatorfreigabe ungemergt. Verändere dabei keine Root-, Produkt-,
-Workflow-, Setting-, Publisher-, Recovery-, Delivery- oder Aktivierungsfläche. Pflege
-PHASE2_CURRENT als widerlegbares Cockpit und PHASE2_BEFUND als ausführliches externes
-Gehirn.
+Slice-C-PR #552 ist Draft und darf nicht gemergt werden. Sein erster Ersatztest war ein
+Placebo: `_load_orientation()` versteht die neuen Marker nicht und Stage-Ausnahmen werden
+geschluckt. Der nächste Auftrag ist ausschließlich der Zwei-Pfad-Adapter aus
+`FEATURE_01_SLICE_C_PREVIEW_COMPATIBILITY.md`; alte Constitution-Source unverändert. Erst
+nach dessen Merge darf #552 rebased, mit direkten Loader-Assertions neu aufgebaut und dem
+Operator erneut vorgelegt werden. Verändere keine Root-, Workflow-, Setting-, Publisher-,
+Recovery-, Delivery- oder Aktivierungsfläche. Pflege PHASE2_CURRENT als widerlegbares
+Cockpit und PHASE2_BEFUND als ausführliches externes Gehirn.
 ```

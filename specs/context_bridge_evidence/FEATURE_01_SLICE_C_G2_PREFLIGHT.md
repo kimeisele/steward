@@ -225,6 +225,18 @@ widerspricht der bereits geschlossenen Entscheidung für eine leere erste Orient
 Der neue Befund erweitert den zulässigen Scope genau um diesen vorhandenen Test. Er
 autorisiert weder eine Produktänderung noch zusätzliche Orientation-Prosa.
 
+### 6.2 Adversariales Review widerlegt den ersten Ersatztest
+
+Der erste Ersatztest war ebenfalls unzureichend: Er bewies nur irgendeinen Preview-String
+und fehlende Root-Writes. Weil `_load_orientation()` die neuen Marker nicht parst und die
+Pipeline Stage-Ausnahmen schluckt, konnte der Test weder eine leere Orientation noch eine
+funktionierende OrientationStage beweisen.
+
+Der korrigierte Sequenzvertrag steht in
+`FEATURE_01_SLICE_C_PREVIEW_COMPATIBILITY.md`: Vor der Source-Migration muss ein separater
+marker-aware Compatibility-Adapter landen. Erst danach ist der Drei-Pfad-Source-PR erneut
+zulässig.
+
 ## 7. Review- und Attestation-Gate
 
 Ein späterer Source-PR ist nur zulässig, wenn vor Brancherstellung positiv belegt ist:
