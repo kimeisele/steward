@@ -1,6 +1,6 @@
 # Context Bridge Governance Amendment 01 — Single-Owner HITL
 
-Status: **Normative Korrektur zur Review; keine Produktfreigabe**
+Status: **Normative Governance-Korrektur; keine Produkt- oder Aktivierungsfreigabe**
 
 Dieses Amendment korrigiert ausschließlich die unbelegte Annahme, Steward müsse vor
 einer Constitution-Sourceänderung einen zweiten menschlichen GitHub-Principal besitzen.

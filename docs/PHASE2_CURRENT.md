@@ -222,11 +222,12 @@ live pinnen, weil die Föderation weiterläuft.
   `specs/context_bridge_evidence/**`.
 - Ausführlicher Beweis: `PHASE2_BEFUND.md` §§15–19.
 
-## 6. Exakt nächster Auftrag: Governance-Amendment reviewen
+## 6. Exakt nächster Auftrag: Amendment-Status prüfen, dann Slice C
 
-**Keine Constitution-, Root-, Produkt-, Workflow-, Setting- oder Runtime-State-Änderung.**
-Der nächste zulässige Schritt ist ausschließlich der Review und Merge des specs-only
-`CONTEXT_BRIDGE_GOVERNANCE_AMENDMENT_01.md` samt den chirurgischen Normkorrekturen.
+Zuerst den Live-Mergestatus von `CONTEXT_BRIDGE_GOVERNANCE_AMENDMENT_01.md` prüfen. Solange
+es nicht regulär auf `main` liegt, ist ausschließlich sein specs-only Review und Merge
+zulässig; Constitution-, Root-, Produkt-, Workflow-, Setting- und Runtime-State-Änderungen
+bleiben gesperrt.
 
 Der Vertrag trennt:
 
@@ -235,9 +236,10 @@ Der Vertrag trennt:
 - CI/Git als Beweis für Bytes, Scope, Checks und unveränderten Head,
 - die explizite Chat-/CLI-Freigabe als prozeduralen `single_owner_hitl`-Beleg.
 
-Nach einem regulär geprüften Merge darf Slice C in einem **separaten** Source-/Test-PR
-vorbereitet werden. Dieser PR wird auf finalem Head eingefroren und erst nach einem
-Reviewpaket sowie der exakten Operatorfreigabe
+Liegt das Amendment regulär auf `main`, ist der nächste isolierte Auftrag Slice C: exakt
+`.steward/conventions.md` und `tests/test_context_constitution.py` in einem **separaten**
+Source-/Test-PR. Dieser PR wird auf finalem Head eingefroren und erst nach einem Reviewpaket
+sowie der exakten Operatorfreigabe
 `APPROVE CONSTITUTION <head_sha> <source_blob> <c0_sha256>` gemergt. Jeder weitere Commit
 verwirft die Freigabe.
 
