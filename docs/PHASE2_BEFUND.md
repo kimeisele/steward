@@ -1735,3 +1735,118 @@ zerlegen.
 Bis Feature-Spec 01 G1-freigegeben und ein separater aktueller G2-Preflight abgeschlossen
 ist, bleibt jeder Writer-, Workflow-, Root-, Conventions- oder Governance-Patch gesperrt.
 Phase 1 bleibt unverändert.
+
+## §16 — FEATURE 01 G1 UND SCHNITT A: LEGACY-WRITER-FENCE PRODUKTIV VERIFIZIERT
+
+**Stand:** 2026-07-15 18:39 Europe/Berlin
+**Verifizierter Main:** `1e5b23a8f0ba9d30e39c9fc44fc89595fe6c9afe`
+**Tree:** `c7fd7965845339b9e253084bcbd2466a7e31122d`
+
+### Spec- und Gate-Kette
+
+Feature 01 wurde nicht als Mega-Patch begonnen. Zuerst wurden Runtime-State, Source-
+Adapter, Constitution-Attestation, Operationsnamen, Golden-Publication-Vektoren und der
+vollständige End-to-End-Vertrag read-only geschlossen.
+
+- Feature-01-Spec/G1: PR `#532`, Merge
+  `b1f945a66aace9721684ae146ab7f8535e85844a`.
+- Slice-A-G2-Preflight: PR `#533`, Merge
+  `44c0a77f4fa8eda8ab165e9c901530947a938e86`.
+- G2-Basis: `964e9972bec25b912da71b2e014605592ebab2ae`, Tree
+  `1ac9484f32e9eb0b9a4ddb236f203d19ee5e143c`.
+- Implementierung: PR `#539`, Merge
+  `1b1ef63d9d873a08acb812f18ba102b73174838c`.
+
+Der Implementierungsbranch wurde nach jedem Live-Heartbeat-Drift normal auf `origin/main`
+rebasiert. Es gab keinen Force-Push auf `main`, keinen Admin-CI-Bypass und keinen
+manuellen Benutzer-Merge.
+
+### Roter Beweis vor Produktcode
+
+Die roten Tests belegten separat:
+
+1. `write_claude_md()` erzeugte beziehungsweise überschrieb Root-`CLAUDE.md`.
+2. MOKSHA rief den Legacy-Writer nach Raw-Context-Write auf.
+3. `synthesize_briefing` schrieb Default-, relative, absolute und Traversal-Ziele.
+4. Intent und autonome Strategy behaupteten MTime-basierte kanonische Aktualisierung.
+5. Git-NADI commitete unrelated Root-Dateien, fremd gestagten Index, gleichnamige
+   Root-Pfade und unrelated Löschungen über den breiten Fallback.
+
+Ein adversarialer Test schrieb den alten beliebigen `output_path` tatsächlich in den
+Engineering-Checkout. Der Lauf wurde sofort gestoppt, der getrackte Root-Blob exakt aus
+`HEAD` wiederhergestellt, alle ausschließlich durch diesen Test erzeugten Artefakte wurden
+entfernt und die Fixture danach in ein isoliertes `tmp_path`-CWD verlegt. Kein solcher
+Testartefakt gelangte in einen Commit oder PR.
+
+### Gelieferter Fence
+
+Der Merge änderte exakt sechs Produkt- und sechs Testpfade:
+
+- Legacy-`write_claude_md()` bleibt importierbar, schlägt aber vor Rendering oder I/O mit
+  eigenem `RuntimeError`-Untertyp fehl; `force=True` ist kein Bypass.
+- `generate_briefing()` bleibt read-only Preview.
+- MOKSHA schreibt weiterhin Raw-`.steward/context.json`, ruft aber keinen Root-Writer.
+- `synthesize_briefing` bleibt als Tool sichtbar, akzeptiert nur fehlenden Parameter oder
+  `stdout`, liefert `mode=preview`, `canonical=false` und schreibt nichts.
+- Der alte Intent ist ein deterministischer No-op; die Default-Strategy wurde entfernt.
+- Git-NADI prüft vor eigenem Staging auf leeren Index, erkennt nur allowlistete Änderungen,
+  staged mit positiven Pathspecs und validiert repo-relative Indexnamen gegen den echten
+  Federation-Prefix. Der Worktree-weite Fallback ist entfernt.
+
+Ausdrücklich nicht geliefert wurden neuer Renderer, Publisher, Root-Datei, Source-
+Migration, Recovery, Workflow, Branchschutz, CODEOWNERS, Runtime-State-Migration oder
+Aktivierung.
+
+### Test- und CI-Beweis
+
+- Rote Tests wurden in zwei separaten Testcommits gesichert.
+- Gezielte Fence-, Tool-, Hook-, Intent-, Service-, Git-NADI- und
+  Remote-Perception-Tests: grün.
+- Repositoryweiter Ruff-Formatcheck: 212 Dateien formatiert.
+- Repositoryweiter Ruff-Lint: grün.
+- Lokale Vollsuite: 2.207 passed, 13 skipped; ein `GitSense`-Test scheiterte ausschließlich,
+  weil fünf laufende Heartbeats den 15-Minuten-Feature-Branch gegenüber seinem Upstream
+  divergieren ließen. Nach normalem Rebase war derselbe Test bei `dirty_count=0` grün.
+- PR-CI Python 3.11 und 3.12: grün.
+- Lint und Security Scan: grün.
+- Remote-PR-Diff: ausschließlich die zwölf im G2 erlaubten Pfade.
+
+### Produktionsbeweis
+
+Kontrollierter Folgeheartbeat:
+
+- Run: `29432921534`, `workflow_dispatch`, Merge-Head
+  `1b1ef63d9d873a08acb812f18ba102b73174838c`, Ergebnis `success`, Dauer 4m03s.
+- Folgecommit: `1e5b23a8f0ba9d30e39c9fc44fc89595fe6c9afe`,
+  `chore: heartbeat #5496 state sync`.
+- Commit-Scope: elf bekannte `.steward/`- und `data/federation/`-State-Pfade; kein Root-,
+  Produkt-, Workflow- oder Spec-Pfad.
+- `CLAUDE.md` vor Merge, im Merge und nach Folgeheartbeat: identischer Blob
+  `8146a15603c95e5aa1404c9eb7021e3008914b0c`.
+- `AGENTS.md`: in allen drei Generationen absent; Schnitt A erzeugt sie bewusst noch nicht.
+- `GIT_NADI: narrow staging failed`: 0.
+- `refusing to use a non-empty pre-existing index`: 0.
+- `CLAUDE.md generation failed`: 0.
+- `Legacy CLAUDE.md writes are disabled`: 0, weil der produktive Caller entfernt ist.
+- Tracebacks: 0.
+
+Der Run war nicht vollständig providergesund: Gemini erreichte zweimal das Free-Tier-
+Quota-Limit, Groq meldete einen ungültigen Key; Mistral übernahm erfolgreich. Diese
+Provider-Degradation ist kein Slice-A-Fehler und wird nicht als „null Fehler“ verschwiegen.
+
+Der Workflow-Post-Step pushte den Runtime-State weiterhin direkt auf `main` und GitHub
+meldete dabei den bekannten Rule-Bypass für erwartete Checks. Das ist ausdrücklich noch
+nicht der Zielzustand von Feature 01; Runtime-State-Entkopplung und PR-only Delivery
+bleiben spätere eigene Schnitte.
+
+### Nächster Arbeitsauftrag
+
+Als nächstes ist ausschließlich der read-only G2-Preflight für Feature 01 / Schnitt B aus
+`specs/CONTEXT_BRIDGE_FEATURE_01.md` §15.2 zulässig. Er muss aktuelle Symbole und Pfade
+pinnen, die reine Renderer-/Validator-API und rote Golden-/Adversarial-Tests festlegen und
+beweisen, dass keine Writes, Clock-, Git-, Netzwerk-, ServiceRegistry-, Root- oder
+Workflowwirkung entsteht.
+
+Kein Schnitt-B-Produktcode vor gemergtem G2-Preflight. Publisher, Root-Ausgaben,
+Constitution-Migration, Recovery, Delivery, Governance und Aktivierung bleiben gesperrt.
+Phase 1 bleibt unverändert.

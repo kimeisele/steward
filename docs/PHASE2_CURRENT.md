@@ -1,6 +1,6 @@
 # PHASE 2 CURRENT — Fresh-Session-Cockpit
 
-**Aktualisiert:** 2026-07-15, 07:33 Europe/Berlin
+**Aktualisiert:** 2026-07-15, 18:39 Europe/Berlin
 **Zweck:** Ein neuer Lead-Agent soll mit dieser Datei in wenigen Minuten arbeitsfähig sein.
 Der ausführliche Beweis- und Operationsverlauf bleibt in `docs/PHASE2_BEFUND.md`.
 
@@ -48,10 +48,13 @@ Verbindlich:
 Der vom Benutzer bereitgestellte Clone `/Users/ss/projects/steward` gilt als schmutzig und
 ist **kein Arbeitsclone**.
 
-Vorhandene getrennte Klone:
+Vertrauenswürdige aktive Arbeitsfläche:
+
+- Code und Dokumentation: `/Users/ss/projects/steward-phase2`
+
+Weitere vorhandene getrennte Klone, deren Zustand vor Nutzung neu geprüft werden muss:
 
 - Code: `/Users/ss/projects/steward-gateway-phase2`
-- Dokumentation: `/Users/ss/projects/steward-phase2`
 - Agent City: `/Users/ss/projects/agent-city-phase2`
 
 Ein neuer Agent muss vor Nutzung `git status`, Remote, Branch und `origin/main` prüfen.
@@ -60,17 +63,18 @@ Arbeitsflächen; die Lesewahrheit kommt über Live-`gh api` aus GitHub.
 
 ## 4. Gepinnter Produktionsstand
 
-Code-/Dokument-Snapshot: 2026-07-15 07:33 Europe/Berlin.
+Code-/Dokument-Snapshot: 2026-07-15 18:39 Europe/Berlin.
 
 ### Steward
 
 - Repo: `kimeisele/steward`
-- Head: `c81a1683fd9358eb0c6a91cee157eb5c18fec99a`
-- Tree: `24ba54ff9f7e653c44a210ecf7304d14853c0916`
-- Commit: `Merge pull request #505 from kimeisele/feat/context-bridge-semantic-core`
+- Head: `1e5b23a8f0ba9d30e39c9fc44fc89595fe6c9afe`
+- Tree: `c7fd7965845339b9e253084bcbd2466a7e31122d`
+- Commit: `chore: heartbeat #5496 state sync`
+- Slice-A-Merge: `1b1ef63d9d873a08acb812f18ba102b73174838c`
 - Phase 1: Blob `2f8a8e4e3b9624859c9ae25a754f3cd93120df66`, read-only
-- Phase-2-Cockpit vor diesem Update: Blob `cb3e85c6a02bc776c2611bced87c6e9bf96ee995`
-- Phase-2-Befund vor diesem Update: Blob `52a862bbeb117653fb765ec6eaa9ad624f1945e1`
+- Phase-2-Cockpit vor diesem Update: Blob `a8535fd5ce8e87a2d3d8de366d37c02495414ca8`
+- Phase-2-Befund vor diesem Update: Blob `a50fefde3a003b1a51a015951289c9c0c6930d13`
 
 Die folgenden Registry-/Inbox-/Hub-Zahlen sind der letzte verifizierte Federation-Census
 vom 14.07., **nicht** automatisch der aktuelle Live-Zustand:
@@ -134,7 +138,7 @@ live pinnen, weil die Föderation weiterläuft.
   - finaler State-Commit `8b248ddfb6b09fad520e194ea1975910fab69c9b`.
 - Ausführlicher Beweis: `PHASE2_BEFUND.md` §14.
 
-### Context Bridge: G0, Feature 00 und Feature 04
+### Context Bridge: G0, Feature 00, Feature 04 und Feature 01/Schnitt A
 
 - Master-Spec G0 adversarial geschlossen; Merge
   `7b1b6a221851f51d06191222f5187cc877c04304`.
@@ -156,57 +160,78 @@ live pinnen, weil die Föderation weiterläuft.
   invertierte Health-Komponenten (`1.0 = gesund`), während mindestens der heutige
   Briefing-Focus `context_pressure` gegenteilig interpretiert. Feature 04 übernimmt
   diesen Altfehler nicht; beide Felder bleiben im V1-Payload default-deny.
-- Feature 04 ist **nicht produktiv aktiviert**: kein Publisher, kein Root-Write, kein
-  Heartbeat-Wiring, keine Source-Migration. `CLAUDE.md` läuft weiterhin über die alte
-  Pipeline; Root-`AGENTS.md` fehlt weiterhin.
+- Feature-01-Master-Spec/G1: PR `#532`, Merge
+  `b1f945a66aace9721684ae146ab7f8535e85844a`.
+- Slice-A-G2-Preflight: PR `#533`, Merge
+  `44c0a77f4fa8eda8ab165e9c901530947a938e86`.
+- Legacy-Writer-Fence: PR `#539`, Merge
+  `1b1ef63d9d873a08acb812f18ba102b73174838c`.
+- Der alte deterministische Root-Writer ist fail-closed; MOKSHA schreibt nur noch rohes
+  `.steward/context.json`; `synthesize_briefing` ist Preview-only; der alte Intent ist
+  No-op; die autonome Briefing-Strategy ist entfernt.
+- Git-NADI besitzt keinen Worktree-weiten Fallback mehr, übernimmt keinen fremd
+  vorbereiteten Index und staged nur positiv benannte Federationpfade.
+- Kontrollierter Produktionsrun `29432921534` auf dem Merge-Head war grün. Folgecommit
+  `1e5b23a8f0ba9d30e39c9fc44fc89595fe6c9afe` änderte 11 bekannte Runtime-/Federation-
+  State-Pfade und weder `CLAUDE.md` noch Produktcode.
+- `CLAUDE.md` blieb vom Merge über den Folgeheartbeat exakt Blob
+  `8146a15603c95e5aa1404c9eb7021e3008914b0c`; Root-`AGENTS.md` fehlt weiterhin.
+- Der Run enthielt bekannte Provider-Degradation (Gemini 429, Groq 401), aber Mistral
+  übernahm; Tracebacks, Legacy-Writer-Fence-Fehler und Git-NADI-Fence-Fehler: 0.
+- Feature 01 ist **nicht produktiv aktiviert**: kein neuer Renderer/Publisher, kein
+  `AGENTS.md`, kein Publish-Record, keine Recovery, keine Source-Migration und keine
+  PR-only Delivery.
 - Normative Dokumente: `specs/CONTEXT_BRIDGE_SYSTEM_SPEC.md`,
   `specs/CONTEXT_BRIDGE_FEATURE_00.md`, `specs/CONTEXT_BRIDGE_FEATURE_04.md` und
   `specs/context_bridge_evidence/**`.
-- Ausführlicher Beweis: `PHASE2_BEFUND.md` §15.
+- Ausführlicher Beweis: `PHASE2_BEFUND.md` §§15–16.
 
-## 6. Exakt nächster Auftrag: Feature-Spec 01
+## 6. Exakt nächster Auftrag: Feature 01 / Schnitt B — G2-Preflight
 
-**Noch keinen Publisher-Patch schreiben.** Feature 04 liefert nur die reine
-Modell-/Hashgrundlage. Als nächstes ist ausschließlich die ausführbare Feature-Spec 01
-für sicheren kanonischen Publisher plus Delivery zu erstellen und adversarial zu prüfen.
+**Noch keinen Schnitt-B-Produktcode schreiben.** Feature-01-G1 und der Legacy-Writer-Fence
+sind abgeschlossen. Als nächstes ist ausschließlich ein auf den dann aktuellen Main-Head
+gepinnter, read-only G2-Preflight für Schnitt B aus
+`specs/CONTEXT_BRIDGE_FEATURE_01.md` §15.2 erlaubt.
 
 Bekannter Ausgangspunkt:
 
 - `steward/context_contract.py` ist rein und hat absichtlich keine Writer-/Callerwirkung.
-- Der alte `write_claude_md()`-Pfad schreibt nur `CLAUDE.md`, dedupliziert prozesslokal und
-  hängt volatile Zeit an.
-- Der LLM-Toolpfad kann weiterhin direkt eine Root-Datei schreiben.
+- `write_claude_md()` schlägt explizit fail-closed fehl und mutiert keine Root-Datei.
+- Der MOKSHA-Hook ruft keinen Root-Writer mehr auf.
+- Der LLM-Toolpfad liefert nur Preview mit `canonical=false` und akzeptiert keinen
+  persistierten Zielpfad.
+- Git-NADI ist auf seine enge Federation-Allowlist begrenzt; der separate Heartbeat-
+  Post-Step pusht Runtime-State weiterhin direkt auf `main` und bleibt späterer Scope.
 - Root-`AGENTS.md` existiert nicht.
 - `.steward/conventions.md` ist noch nicht auf C0-/Orientation-Marker migriert.
-- Zwei reguläre Root-Dateien können lokal nicht als eine echte atomare Dateisystem-
-  Transaktion ersetzt werden; Feature 01 darf nur per-file atomicity, Mixed-State-
-  Erkennung, Reparatur und gemeinsamen Git-Commit versprechen.
-- Branchschutz, Required Contract Check, CODEOWNERS, Zwei-Principal-Pfad und Kill-Switch
-  sind Vertragsbestandteile, aber noch nicht produktiv aktiviert.
+- Schnitt B darf nur offline Source-/Candidate-Validatoren und den reinen Renderer aus
+  Feature-04-Modellen liefern: identische Root-Kandidaten, zirkulationsfreie Snapshot-/
+  Record-Envelopes, adversariale Tests und **keine Writes**.
 
 Read-only-Arbeitsauftrag:
 
-1. Neuesten Live-Head/Tree pinnen und alle Publisher-/Caller-/Workflow-Pfade aus G0 gegen
-   den aktuellen Code erneut prüfen.
-2. Exakte Feature-01-Schnitte festlegen: Source-Migration, Renderer, lokaler Publisher,
-   persistenter Record/Recovery, Git-Delivery, LLM-Isolation, Governance und Kill-Switch.
-3. Jede Transaktionsgrenze ehrlich spezifizieren; keine behauptete Zwei-Dateien-Atomarität.
-4. Rote Contract-, Integration-, Workflow-, Race-, Symlink-, Partial-Write- und
-   Recovery-Tests vor jedem Patch benennen.
-5. Aktivierungsreihenfolge und sicheren statischen Fallback inklusive realem G2-Drill
-   definieren.
-6. Erst nach Feature-01-G1 und separatem aktuellem G2-Preflight implementieren.
+1. Aktuellen `origin/main`, offenen PR-Stand und alle für Slice B vorgesehenen Symbole
+   erneut pinnen.
+2. Die in Feature 01 bereits normierten Publication-Vektoren und Feature-04-Modelle gegen
+   den Live-Code prüfen; Modell und Hash-Domains nicht duplizieren.
+3. Exakte Produkt-/Testpfade, reine API-Fläche, rote Golden-/Adversarial-Tests,
+   Abbruchkriterien und Rollbackgrenze festlegen.
+4. Beweisen, dass der Slice weder Filesystem, Git, Clock, Netzwerk, ServiceRegistry noch
+   aktuelle Root-Dateien berührt.
+5. Preflight als separaten docs-only PR prüfen und mergen; erst danach red-first
+   implementieren.
 
-Abbruchkriterium: Kein Writer-, Workflow-, Root-, Conventions- oder Governance-Patch,
-solange Feature-Spec 01 nicht G1-freigegeben ist. Feature 04 darf nicht opportunistisch
-in bestehende Caller „eingehängt“ werden.
+Abbruchkriterium: Kein Renderer-/Validator-Produktpatch vor gemergtem Schnitt-B-G2. Kein
+Publisher-, Root-, Source-, Workflow-, Recovery-, Governance- oder Aktivierungspatch in
+Schnitt B.
 
 ## 7. Offene Agenda nach Feature-Spec 01
 
 Reihenfolge ist vorläufig und muss jeweils durch neuen Live-Recon bestätigt werden:
 
-1. Feature 01 nach eigenem G2 in kleinen Code-/Delivery-Schnitten implementieren und erst
-   nach Required Checks, Governance und Operations-Drill aktivieren.
+1. Feature 01 ab Schnitt B weiter strikt nach den in §15 definierten Einzelschnitten und
+   jeweils eigenem aktuellem G2 implementieren; erst nach Required Checks, Governance und
+   Operations-Drill aktivieren.
 2. Danach Feature 02 (Current-Phase Reference Card) und Feature 03 (Action Signal
    Integrity) getrennt spezifizieren.
 3. Heartbeat-Fehlerpropagation read-only gegen kritische, degradierbare und externe/
@@ -250,10 +275,10 @@ Phase 1 ist read-only und historisch, aber nicht unfehlbar. Live-Code, Git-Objek
 Produktionslogs und neuere Phase-2-Beweise haben Vorrang. Widersprüche werden in Phase 2
 explizit korrigiert, niemals durch blindes Befolgen alter Aussagen.
 
-Feature 04 ist als reine, noch nicht verdrahtete Contract-Bibliothek auf main. Der nächste
-Auftrag ist ausschließlich Feature-Spec 01 aus PHASE2_CURRENT §6. Schreibe noch keinen
-Publisher-, Workflow-, Root-, Conventions- oder Governance-Patch. Prüfe zuerst alle
-aktuellen Caller und formuliere die ausführbare Spec für Publisher plus Delivery. Pflege
-PHASE2_CURRENT als widerlegbares rollierendes Cockpit und PHASE2_BEFUND als ausführliches
-externes Gehirn.
+Feature 01 ist G1-freigegeben; Schnitt A (Legacy-Writer-Fence) ist implementiert, gemergt
+und am Folgeheartbeat verifiziert. Der nächste Auftrag ist ausschließlich der read-only
+G2-Preflight für Feature 01 / Schnitt B aus PHASE2_CURRENT §6. Schreibe noch keinen
+Schnitt-B-Produktcode und keinen Publisher-, Root-, Source-, Workflow-, Recovery-,
+Governance- oder Aktivierungspatch. Pflege PHASE2_CURRENT als widerlegbares rollierendes
+Cockpit und PHASE2_BEFUND als ausführliches externes Gehirn.
 ```
