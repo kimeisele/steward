@@ -37,6 +37,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
 
+from steward.context_contract import ContractViolation, parse_conventions
+
 logger = logging.getLogger("STEWARD.BRIEFING_STAGES")
 
 # ── Token Budget Constants ─────────────────────────────────────────
@@ -905,22 +907,36 @@ def _load_orientation(cwd: str) -> str:
     if not path.is_file():
         return ""
     try:
-        content = path.read_text(encoding="utf-8").strip()
-        lines = content.splitlines()
-        start = 0
-        for i, line in enumerate(lines):
-            stripped = line.strip()
-            if stripped and not stripped.startswith("#"):
-                start = i
-                if i > 0 and lines[i - 1].strip().startswith("# "):
-                    start = i - 1
-                break
-            if stripped.startswith("## "):
-                start = i
-                break
-        return "\n".join(lines[start:]).strip()
+        source = path.read_bytes()
     except OSError:
         return ""
+    if not source:
+        return ""
+    if b"<!-- steward-context:" in source:
+        try:
+            parsed = parse_conventions(source)
+        except ContractViolation as exc:
+            logger.warning("Structured conventions rejected: %s", exc.code)
+            return ""
+        return (parsed.orientation or "").strip()
+    try:
+        content = source.decode("utf-8").strip()
+    except UnicodeDecodeError:
+        logger.warning("Legacy conventions rejected: invalid_utf8")
+        return ""
+    lines = content.splitlines()
+    start = 0
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#"):
+            start = i
+            if i > 0 and lines[i - 1].strip().startswith("# "):
+                start = i - 1
+            break
+        if stripped.startswith("## "):
+            start = i
+            break
+    return "\n".join(lines[start:]).strip()
 
 
 def _collect_annotations(high_priority_only: bool = False) -> str:
