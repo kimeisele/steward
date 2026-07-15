@@ -195,6 +195,77 @@ class TestGitNadiSyncPushRetry:
         assert _git(agent, "rev-parse", "HEAD").strip() == before
         assert "A  CLAUDE.md" in _git(agent, "status", "--porcelain")
 
+    def test_pre_staged_allowed_path_also_blocks_push(self, tmp_path):
+        remote = _init_bare_remote(tmp_path)
+        _seed_remote(remote, tmp_path)
+        agent = tmp_path / "agent"
+        _clone_to(remote, agent)
+        (agent / "nadi_inbox.json").write_text('[{"source":"foreign-index"}]')
+        _git(agent, "add", "nadi_inbox.json")
+        before = _git(agent, "rev-parse", "HEAD").strip()
+
+        sync = GitNadiSync(str(agent), sync_interval_s=0)
+        assert sync.push() is False
+
+        assert _git(agent, "rev-parse", "HEAD").strip() == before
+        assert "M  nadi_inbox.json" in _git(agent, "status", "--porcelain")
+
+    def test_report_path_is_allowed_without_broad_staging(self, tmp_path):
+        remote = _init_bare_remote(tmp_path)
+        _seed_remote(remote, tmp_path)
+        agent = tmp_path / "agent"
+        _clone_to(remote, agent)
+        reports = agent / "reports"
+        reports.mkdir()
+        (reports / "health.json").write_text("{}")
+
+        sync = GitNadiSync(str(agent), sync_interval_s=0)
+        assert sync.push(message="federation report") is True
+
+        committed = set(_git(agent, "show", "--pretty=", "--name-only", "HEAD").splitlines())
+        assert committed == {"reports/health.json"}
+
+    def test_nested_federation_does_not_capture_same_named_root_file(self, tmp_path):
+        remote = _init_bare_remote(tmp_path)
+        _seed_remote(remote, tmp_path)
+        agent = tmp_path / "agent"
+        _clone_to(remote, agent)
+        federation = agent / "data" / "federation"
+        federation.mkdir(parents=True)
+        (federation / "nadi_inbox.json").write_text("[]")
+        _git(agent, "add", "data/federation/nadi_inbox.json")
+        _git(agent, "commit", "-m", "add nested federation")
+        _git(agent, "push")
+
+        (federation / "nadi_inbox.json").write_text('[{"source":"steward"}]')
+        (agent / "peer.json").write_text('{"scope":"root"}')
+        sync = GitNadiSync(str(federation), sync_interval_s=0)
+        assert sync.push(message="nested federation update") is True
+
+        committed = set(_git(agent, "show", "--pretty=", "--name-only", "HEAD").splitlines())
+        assert committed == {"data/federation/nadi_inbox.json"}
+        assert "?? peer.json" in _git(agent, "status", "--porcelain")
+
+    def test_unrelated_deletion_is_not_committed(self, tmp_path):
+        remote = _init_bare_remote(tmp_path)
+        _seed_remote(remote, tmp_path)
+        agent = tmp_path / "agent"
+        _clone_to(remote, agent)
+        runtime = agent / "runtime.txt"
+        runtime.write_text("keep tracked\n")
+        _git(agent, "add", "runtime.txt")
+        _git(agent, "commit", "-m", "add unrelated runtime")
+        _git(agent, "push")
+
+        runtime.unlink()
+        (agent / "nadi_inbox.json").write_text('[{"source":"steward"}]')
+        sync = GitNadiSync(str(agent), sync_interval_s=0)
+        assert sync.push(message="narrow federation update") is True
+
+        committed = set(_git(agent, "show", "--pretty=", "--name-only", "HEAD").splitlines())
+        assert committed == {"nadi_inbox.json"}
+        assert " D runtime.txt" in _git(agent, "status", "--porcelain")
+
     def test_stage_commands_always_have_explicit_pathspecs(self, tmp_path):
         remote = _init_bare_remote(tmp_path)
         _seed_remote(remote, tmp_path)
