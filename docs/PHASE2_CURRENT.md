@@ -220,35 +220,34 @@ live pinnen, weil die Föderation weiterläuft.
   `specs/CONTEXT_BRIDGE_FEATURE_04.md`,
   `specs/CONTEXT_BRIDGE_GOVERNANCE_AMENDMENT_01.md` und
   `specs/context_bridge_evidence/**`.
-- Ausführlicher Beweis: `PHASE2_BEFUND.md` §§15–21.
+- Ausführlicher Beweis: `PHASE2_BEFUND.md` §§15–22.
 
-## 6. Exakt nächster Auftrag: Preview-Compatibility vor Slice C
+## 6. Exakt nächster Auftrag: Slice C finalisieren und neu reviewen
 
-Governance Amendment 01 liegt auf `main`, aber Slice-C-PR `#552` ist nach adversarialem
-Review als Draft blockiert. Der Ersatztest bewies die Orientation-Integration nicht:
-`_load_orientation()` parst die neuen Marker noch nicht, während die Pipeline
-Stage-Ausnahmen schluckt.
+Der marker-aware Preview-Compatibility-Adapter ist über PR `#559`, Merge
+`2c4ac9c12445bc791423f4cdd830959987c79ccf`, auf `main`. Er änderte exakt
+`steward/briefing_stages.py` und `tests/test_briefing.py`; Python 3.11/3.12, Lint und
+Security waren grün.
 
-Der nächste isolierte Auftrag ist deshalb der Zwei-Pfad-Compatibility-Adapter aus
-`FEATURE_01_SLICE_C_PREVIEW_COMPATIBILITY.md`: ausschließlich
-`steward/briefing_stages.py` und `tests/test_briefing.py`, alte Source unverändert. Erst
-nach dessen Merge darf PR `#552` auf den Adapter rebased und neu aufgebaut werden. Der
-neue Source-Head wird erst nach direkten Loader-Assertions, finaler CI und einem neuen
-Reviewpaket
-sowie der exakten Operatorfreigabe
+Slice-C-PR `#552` wurde danach vollständig neu aufgebaut: direkte Tests werden gegen die
+alte Source rot, der zweite Commit migriert exakt die geschlossenen Sourcebytes, und der
+Real-Source-Test ruft `_load_orientation(".")` direkt auf. Der PR bleibt Draft, bis diese
+Continuity-Aktualisierung gemergt, `#552` einmal final auf aktuellen `main` rebased und auf
+dem neuen unveränderlichen Head vollständig grün ist. Erst dann folgt ein neues Reviewpaket
+mit der exakten Operatorfreigabe
 `APPROVE CONSTITUTION <head_sha> <source_blob> <c0_sha256>` gemergt. Jeder weitere Commit
 verwirft die Freigabe.
 
-Abbruchkriterium: PR `#552` nicht mergen; keine Sourceänderung im Compatibility-PR und
-keine Root-, Publisher-, Recovery-, Delivery- oder Aktivierungsänderung.
+Abbruchkriterium: PR `#552` vor dem neuen gebundenen Reviewpaket nicht mergen; keine Root-,
+Publisher-, Recovery-, Delivery- oder Aktivierungsänderung.
 
 ## 7. Offene Agenda nach Feature-Spec 01
 
 Reihenfolge ist vorläufig und muss jeweils durch neuen Live-Recon bestätigt werden:
 
-1. Den marker-aware Preview-Compatibility-Adapter separat mergen; danach PR `#552` auf
-   diese Basis rebasen, Placebo-Test durch direkte Loader-Assertions ersetzen, erneut
-   einfrieren und explizit vom Operator freigeben lassen. Danach weiter strikt nach den in
+1. Diese Continuity-Aktualisierung mergen; danach PR `#552` final auf `main` rebasen,
+   vollständig prüfen, einfrieren und explizit vom Operator freigeben lassen. Danach
+   weiter strikt nach den in
    §15 definierten Einzelschnitten und jeweils eigenem aktuellem G2 implementieren; erst
    nach Required Checks, Governance und Operations-Drill aktivieren.
 2. Danach Feature 02 (Current-Phase Reference Card) und Feature 03 (Action Signal
@@ -295,12 +294,11 @@ Produktionslogs und neuere Phase-2-Beweise haben Vorrang. Widersprüche werden i
 explizit korrigiert, niemals durch blindes Befolgen alter Aussagen.
 
 Feature 01 ist G1-freigegeben; Schnitte A und B sind implementiert und verifiziert.
-Slice-C-PR #552 ist Draft und darf nicht gemergt werden. Sein erster Ersatztest war ein
-Placebo: `_load_orientation()` versteht die neuen Marker nicht und Stage-Ausnahmen werden
-geschluckt. Der nächste Auftrag ist ausschließlich der Zwei-Pfad-Adapter aus
-`FEATURE_01_SLICE_C_PREVIEW_COMPATIBILITY.md`; alte Constitution-Source unverändert. Erst
-nach dessen Merge darf #552 rebased, mit direkten Loader-Assertions neu aufgebaut und dem
-Operator erneut vorgelegt werden. Verändere keine Root-, Workflow-, Setting-, Publisher-,
-Recovery-, Delivery- oder Aktivierungsfläche. Pflege PHASE2_CURRENT als widerlegbares
-Cockpit und PHASE2_BEFUND als ausführliches externes Gehirn.
+Preview-Compatibility ist über PR #559 auf main implementiert und vollständig grün.
+Slice-C-PR #552 wurde in zwei saubere Commits neu aufgebaut und bleibt Draft. Der nächste
+Auftrag ist: diese Continuity-Aktualisierung prüfen, danach #552 final auf aktuellen main
+rebasen, vollständige CI abwarten und ein neues gebundenes HITL-Reviewpaket vorlegen. Vor
+der exakten Operatorfreigabe nicht mergen. Verändere keine Root-, Workflow-, Setting-,
+Publisher-, Recovery-, Delivery- oder Aktivierungsfläche. Pflege PHASE2_CURRENT als
+widerlegbares Cockpit und PHASE2_BEFUND als ausführliches externes Gehirn.
 ```

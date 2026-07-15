@@ -1,6 +1,6 @@
 # Feature 01 Slice C — Legacy Preview Compatibility Prerequisite
 
-Status: **Normative corrective preflight; implementation requires separate PR**
+Status: **Implemented and verified; prerequisite merged**
 
 Pinned base: `05616b4a90f133c45ae74ab04869321d26b4203c`
 
@@ -77,3 +77,18 @@ The head `1b6cb74849a240ac7be9318eb4ffa5f616253fee` is rejected and has no opera
 After the prerequisite merge, Slice C must be rebased and its briefing test replaced with
 a direct assertion that the real migrated source yields empty Orientation. All hashes and
 checks must then be repinned in a new HITL packet.
+
+## 7. Verified result
+
+- Implementation PR: `#559`
+- Merge commit: `2c4ac9c12445bc791423f4cdd830959987c79ccf`
+- Changed paths: exactly `steward/briefing_stages.py` and `tests/test_briefing.py`
+- Red proof: five direct failures covering C0 leakage, empty Orientation, malformed
+  structured input and invalid UTF-8
+- Local green proof: nine direct loader tests and 102 adjacent tests
+- CI: Python 3.11, Python 3.12, Lint and Security green
+
+The old unmarked Source remained unchanged in this prerequisite. Slice C was subsequently
+rebuilt into two clean commits: direct red integration contracts first, exact Source bytes
+second. Its final remote head remains subject to a new CI run and operator review after
+the current continuity update is merged.

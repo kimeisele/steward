@@ -2177,3 +2177,29 @@ Sources strikt mit `parse_conventions()` liest, nur Orientation zurückgibt, mal
 Marker fail-closed behandelt und unmarkierte Legacy-Source vorübergehend kompatibel hält.
 Direkte Loader-Tests dürfen nicht durch die Stage-Exception-Grenze laufen. Erst danach
 wird Slice C neu rebased, getestet, eingefroren und dem Operator erneut vorgelegt.
+
+## 22. Preview-Compatibility implementiert; Slice C sauber neu aufgebaut
+
+PR `#559` implementierte den korrigierten Zwei-Pfad-Vertrag und wurde als Merge
+`2c4ac9c12445bc791423f4cdd830959987c79ccf` regulär auf `main` aufgenommen.
+
+Der Loader unterscheidet jetzt drei Fälle:
+
+- strukturierte Source: strict `parse_conventions()`, ausschließlich Orientation zurück;
+- malformed strukturierte Source: sichere Warnung ohne Rohinhalt und fail-closed `""`;
+- unmarkierte Legacy-Source: vorübergehend unveränderte Comment-Skipping-Semantik.
+
+Invalid UTF-8 fällt ebenfalls geschlossen aus. Die generische Stage-Exception-Grenze blieb
+bewusst unverändert; neue Tests rufen den Loader direkt auf. Fünf Tests waren vor dem Patch
+rot, danach waren neun direkte und 102 angrenzende Tests lokal grün. Die vollständige CI
+war in Python 3.11/3.12, Lint und Security grün.
+
+Der verworfene Slice-C-Head wurde nicht weitergeflickt. Der Branch wurde auf den gemergten
+Adapter zurückgesetzt und in zwei saubere Commits neu gebaut:
+
+1. `tests/test_context_constitution.py` plus direkter Real-Source-Loadervertrag — vier
+   belegte rote Failures gegen die alte Source;
+2. ausschließlich die exakten 2.023 Sourcebytes — 105 gezielte Tests grün.
+
+PR `#552` bleibt bis zum finalen Rebase nach dieser Continuity-Aktualisierung, neuer
+vollständiger CI und gebundener Operatorfreigabe Draft. Der frühere Head ist ungültig.
