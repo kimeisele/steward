@@ -1,6 +1,6 @@
 # PHASE 2 CURRENT — Fresh-Session-Cockpit
 
-**Aktualisiert:** 2026-07-15, 19:35 Europe/Berlin
+**Aktualisiert:** 2026-07-15, 19:51 Europe/Berlin
 **Zweck:** Ein neuer Lead-Agent soll mit dieser Datei in wenigen Minuten arbeitsfähig sein.
 Der ausführliche Beweis- und Operationsverlauf bleibt in `docs/PHASE2_BEFUND.md`.
 
@@ -63,14 +63,14 @@ Arbeitsflächen; die Lesewahrheit kommt über Live-`gh api` aus GitHub.
 
 ## 4. Gepinnter Produktionsstand
 
-Code-/Dokument-Snapshot: 2026-07-15 19:35 Europe/Berlin.
+Code-/Dokument-Snapshot: 2026-07-15 19:51 Europe/Berlin.
 
 ### Steward
 
 - Repo: `kimeisele/steward`
-- Head: `38f361318b39864628dca1329bc513475fec1c04`
-- Tree: `1822420053045da09869b1c7554a525317745423`
-- Commit: `chore: heartbeat #5502 state sync`
+- Head: `004ac087cca7b2bd925c40b81b8f000f9541b7d1`
+- Tree: `5357c4a583b75f1230d418b843029f6cf0475f4d`
+- Commit: `Merge pull request #549 from kimeisele/spec/context-bridge-feature-01c-preflight`
 - Slice-A-Merge: `1b1ef63d9d873a08acb812f18ba102b73174838c`
 - Slice-B-Merge: `a750e0f3826e0067656062e02c3b7c896db35cde`
 - Phase 1: Blob `2f8a8e4e3b9624859c9ae25a754f3cd93120df66`, read-only
@@ -139,7 +139,7 @@ live pinnen, weil die Föderation weiterläuft.
   - finaler State-Commit `8b248ddfb6b09fad520e194ea1975910fab69c9b`.
 - Ausführlicher Beweis: `PHASE2_BEFUND.md` §14.
 
-### Context Bridge: G0, Feature 00, Feature 04 und Feature 01/Schnitte A–B
+### Context Bridge: G0, Feature 00, Feature 04 und Feature 01/Schnitte A–B plus C-Gate
 
 - Master-Spec G0 adversarial geschlossen; Merge
   `7b1b6a221851f51d06191222f5187cc877c04304`.
@@ -204,57 +204,70 @@ live pinnen, weil die Föderation weiterläuft.
 - Feature 01 ist **nicht produktiv aktiviert**: der neue Renderer ist offline und
   unverdrahtet; kein Publisher, keine Root-Mutation, kein Publish-Record, keine Recovery,
   keine Source-Migration und keine PR-only Delivery.
+- Slice-C-G2-Recon: PR `#549`, Merge
+  `004ac087cca7b2bd925c40b81b8f000f9541b7d1`.
+- Der exakte Source-Kandidat ist geschlossen: 1.860 C0-Bytes aus Feature 00, leeres
+  versioniertes Orientation-Payload, 2.023 Source-Bytes, erwarteter Git-Blob
+  `f428d5856a5c525e002c301890777748effbeb4e`.
+- Slice C ist **implementierungsblockiert**: Das öffentliche Repo besitzt genau einen
+  Collaborator (`kimeisele`), keine Einladungen, keine Reviews, keine CODEOWNERS, keinen
+  PR-Review-Schutz, `enforce_admins=false` und keinen Check
+  `Context Constitution Attestation`.
+- Ein heute gemergter Source-PR wäre später nicht als commitgebundene menschlich reviewte
+  Attestation verwendbar. `.steward/conventions.md` bleibt deshalb exakt auf Blob
+  `29829be4f77dcaebf970a8ee872de299f0357f1c`.
 - Normative Dokumente: `specs/CONTEXT_BRIDGE_SYSTEM_SPEC.md`,
   `specs/CONTEXT_BRIDGE_FEATURE_00.md`, `specs/CONTEXT_BRIDGE_FEATURE_04.md` und
   `specs/context_bridge_evidence/**`.
-- Ausführlicher Beweis: `PHASE2_BEFUND.md` §§15–17.
+- Ausführlicher Beweis: `PHASE2_BEFUND.md` §§15–18.
 
-## 6. Exakt nächster Auftrag: Feature 01 / Schnitt C — G2-Preflight
+## 6. Exakt nächster Auftrag: Constitution-Governance-Sequenzspec
 
-**Noch keine Constitution-Datei verändern.** Schnitte A und B sind abgeschlossen. Als
-nächstes ist ausschließlich ein auf den dann aktuellen Main-Head gepinnter, read-only
-G2-Preflight für Schnitt C aus `specs/CONTEXT_BRIDGE_FEATURE_01.md` §15.3 erlaubt.
+**Keine Constitution-, Setting-, CODEOWNERS- oder Workflowänderung.** Der Slice-C-G2-Recon
+ist abgeschlossen und blockiert den Implementierungsstart. Als nächstes ist ausschließlich
+eine eigene read-only Spec-/Governance-Sequenzkorrektur zulässig.
 
 Bekannter Ausgangspunkt:
 
-- `steward/context_contract.py` und `steward/context_rendering.py` sind rein und haben
-  absichtlich keine Writer-/Callerwirkung.
-- `write_claude_md()` schlägt explizit fail-closed fehl und mutiert keine Root-Datei.
-- Der MOKSHA-Hook ruft keinen Root-Writer mehr auf.
-- Der LLM-Toolpfad liefert nur Preview mit `canonical=false` und akzeptiert keinen
-  persistierten Zielpfad.
-- Root-`AGENTS.md` existiert nicht.
-- `.steward/conventions.md` ist noch nicht auf C0-/Orientation-Marker migriert.
-- Feature 00 definiert den exakten C0-v1-Vertrag; die Migration darf keine Persona,
-  Runtime-Identität, volatile Frequenz, Healthzahl, Peeridentität oder aktuelle Agenda in
-  den statischen Verfassungskern übernehmen.
-- Schnitt C verlangt einen separaten menschlichen Review der Source-Migration. Der bisher
-  belegte Ein-Collaborator-Zustand erfüllt diese Precondition nicht. Der G2 darf weder
-  Self-Approval noch Admin-Bypass noch einen erfundenen Federation-Reviewer als Ersatz
-  akzeptieren.
+- Feature 01 §15 ordnet die menschlich reviewte Source-Migration in Schnitt C ein.
+- Der geschlossene Attestation-Vertrag verlangt für genau diesen Source-PR einen anderen
+  menschlichen Reviewer, CODEOWNERS-/Branchschutz-Evidence und den commitgebundenen Check
+  `Context Constitution Attestation` aus geschützter Base.
+- Feature 01 §15.9 ordnet CODEOWNERS, Branchschutz und Governance-Drill erst Schnitt I zu.
+- Damit ist C-vor-I am heutigen Live-Zustand nicht ausführbar, ohne wertlose oder
+  rückwirkend erfundene Attestation-Evidence zu erzeugen.
+- Fehlende Governance blockiert normale default-off Produktvorbereitung nicht pauschal,
+  aber ausdrücklich die als „menschlich reviewt“ definierte Constitution-Migration.
 
 Read-only-Arbeitsauftrag:
 
-1. Aktuellen `origin/main`, offene PRs, `.steward/conventions.md`, Feature-00-C0-Text,
-   Branchschutz, Collaborators und reale Reviewerfähigkeit erneut pinnen.
-2. Den vorhandenen Source-Text blockweise klassifizieren: exakter C0, positiv erlaubte
-   Orientation und zu entfernende Persona-/Runtime-/Agenda-Inhalte. Noch nichts schreiben.
-3. Exakte Source-/Testpfade, Markerbytes, Blob-/Review-Evidence, negative Fixtures,
-   Rollbackblob und Abbruchkriterien definieren.
-4. Beweisen, wie ein anderer menschlicher Principal den Source-PR tatsächlich reviewen
-   kann. Fehlt er, Schnitt C ausdrücklich als governance-blocked dokumentieren.
-5. G2 als separaten docs-only PR regulär prüfen und mergen. Erst ein geschlossenes G2 und
-   eine reale Review-Precondition dürfen einen späteren Source-PR erlauben.
+1. Aktuellen Feature-01-Vertrag, Slice-C-G2, Attestation-Recon und GitHub-Live-Governance
+   gegeneinander pinnen.
+2. Einen minimalen prerequisite Governance-Schnitt **vor C** spezifizieren: anderer Human-
+   Principal, CODEOWNERS, Reviewschutz, stale dismissal, Admin-Enforcement und geschützter
+   Constitution-Check.
+3. Weitergehende Delivery-/Aktivierungs-Governance in Schnitt I belassen; keinen Mega-
+   Governance-Patch entwerfen.
+4. Exakte Settings-, Workflow-/Testpfade, Author-/Reviewer-Reihenfolge, Failure-/Rollback-
+   Vertrag und Operationsdrill definieren.
+5. Den Spec-Entwurf adversarial reviewen. Noch nichts implementieren und niemanden
+   eigenmächtig einladen.
 
-Abbruchkriterium: Keine Änderung an `.steward/conventions.md`, Root-Dateien, Produktcode,
-Workflow, Publisher, Recovery, Delivery oder Governance im G2. Kein Schnitt-C-Source-PR
-ohne belegten separaten menschlichen Reviewer.
+Externe harte Precondition: Vor einem Governance- oder Source-PR muss ein konkreter,
+vertrauenswürdiger zweiter menschlicher GitHub-Principal benannt und als Collaborator
+verfügbar sein. Ein Bot, Agent, zweiter lokaler Gitautor oder derselbe Account ist ungültig.
+
+Abbruchkriterium: Keine Source-, Root-, Produkt-, Workflow-, CODEOWNERS-, Setting-,
+Publisher-, Recovery-, Delivery- oder Aktivierungsänderung vor reviewter Sequenzspec und
+realer Human-Principal-Precondition.
 
 ## 7. Offene Agenda nach Feature-Spec 01
 
 Reihenfolge ist vorläufig und muss jeweils durch neuen Live-Recon bestätigt werden:
 
-1. Feature 01 ab Schnitt C weiter strikt nach den in §15 definierten Einzelschnitten und
+1. Feature 01 erst nach geschlossener Governance-Sequenzkorrektur weiterführen; Schnitt C
+   bleibt bis zum realen zweiten Human-Principal blockiert. Danach weiter strikt nach den
+   in §15 definierten Einzelschnitten und
    jeweils eigenem aktuellem G2 implementieren; erst nach Required Checks, Governance und
    Operations-Drill aktivieren.
 2. Danach Feature 02 (Current-Phase Reference Card) und Feature 03 (Action Signal
@@ -300,12 +313,12 @@ Phase 1 ist read-only und historisch, aber nicht unfehlbar. Live-Code, Git-Objek
 Produktionslogs und neuere Phase-2-Beweise haben Vorrang. Widersprüche werden in Phase 2
 explizit korrigiert, niemals durch blindes Befolgen alter Aussagen.
 
-Feature 01 ist G1-freigegeben; Schnitte A (Legacy-Writer-Fence) und B (Offline-Contract/
-Renderer) sind implementiert, gemergt und an Folgeheartbeats verifiziert. Der nächste
-Auftrag ist ausschließlich der read-only G2-Preflight für Feature 01 / Schnitt C aus
-PHASE2_CURRENT §6. Verändere noch keine Constitution-, Root-, Produkt-, Workflow-,
-Publisher-, Recovery-, Delivery- oder Governance-Datei. Erfinde keinen zweiten Reviewer:
-Die reale separate menschliche Review-Precondition ist ein Stop-Gate. Pflege
-PHASE2_CURRENT als widerlegbares rollierendes Cockpit und PHASE2_BEFUND als ausführliches
-externes Gehirn.
+Feature 01 ist G1-freigegeben; Schnitte A und B sind implementiert und verifiziert.
+Slice-C-G2 ist abgeschlossen, aber der Implementierungsstart ist blockiert: genau ein
+GitHub-Collaborator, kein Review-Schutz/CODEOWNERS/Attestation-Check und kein anderer
+menschlicher Reviewer. Der nächste Auftrag ist ausschließlich die read-only Constitution-
+Governance-Sequenzspec aus PHASE2_CURRENT §6. Verändere noch keine Constitution-, Root-,
+Produkt-, Workflow-, CODEOWNERS-, Setting-, Publisher-, Recovery-, Delivery- oder
+Aktivierungsfläche. Erfinde keinen zweiten Reviewer. Pflege PHASE2_CURRENT als
+widerlegbares Cockpit und PHASE2_BEFUND als ausführliches externes Gehirn.
 ```

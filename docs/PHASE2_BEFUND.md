@@ -1961,3 +1961,133 @@ verändert.
 
 Vollständiger Operationsbeweis:
 `specs/context_bridge_evidence/FEATURE_01_SLICE_B_PRODUCTION.md`.
+
+---
+
+## §18 — FEATURE 01 SCHNITT C: TECHNISCHER SOURCE-KANDIDAT GESCHLOSSEN, GOVERNANCE BLOCKIERT
+
+**Datum:** 2026-07-15
+**G2-PR:** `#549`
+**G2-Merge:** `004ac087cca7b2bd925c40b81b8f000f9541b7d1`
+**Gepinnte Recon-Basis:** `12d043467cde783088e8cda041696348e31d1be9`
+
+### Anlass
+
+Schnitt C sollte nicht blind die alte `.steward/conventions.md` umschreiben. Der G2-Recon
+musste drei getrennte Fragen positiv beantworten:
+
+1. Welche Bytes bilden den exakten Feature-00-C0-Vertrag?
+2. Welche alte Architekturprosa ist sicher genug für die erste Orientation?
+3. Kann der Source-PR heute tatsächlich durch einen anderen menschlichen Principal
+   commitgebunden reviewt und später attestiert werden?
+
+Die ersten beiden Fragen sind geschlossen. Die dritte ist positiv mit **nein** beantwortet.
+
+### Alter Source-Befund
+
+Die 5.415-Byte-Source blieb auf Blob
+`29829be4f77dcaebf970a8ee872de299f0357f1c`. Sie besitzt keine C0-/Orientation-Marker,
+beginnt mit `You are Steward`, enthält `Your North Star`, fixe Heartbeat-Frequenzen,
+volatile Federationzahlen und die seit Schnitt A falsche Behauptung, sie werde verbatim in
+`CLAUDE.md` geschrieben.
+
+Blockweise Entscheidung:
+
+- Kopfkommentare: entfernen, da Text außerhalb der Marker verboten ist.
+- `Identity`: vollständig durch C0 ersetzen; keine Runtime-Impersonation.
+- Cognitive Pipeline, Heartbeat, Substrate, Federation, Safety, Self-Healing, Directories,
+  Invariants und Development: nicht in die erste attestierte Orientation übernehmen.
+
+Das ist Default-deny, keine Behauptung, jeder alte Satz sei falsch. Optionale Architektur
+wird nicht allein wegen Nützlichkeit Teil einer menschlich attestierten Governance-
+Generation.
+
+### Exakter Kandidat
+
+Die erste Source verwendet den exakten Feature-00-§7-C0-Text und ein leeres, aber
+versioniertes Orientation-Markerpaar. Parser, SHA-256 und Git-Objektdomain reproduzierten:
+
+```text
+C0 bytes:           1860
+C0 SHA-256:         f23ab40415edf4947f12fd8ff98cf13aa8f4fbfffe029ae10aa6111fc04976a3
+Source bytes:       2023
+Source SHA-256:     0afe95c392ba611ad40302e13a5d013913fca1910423fe4ea18c663cd780aff5
+Expected Git blob:  f428d5856a5c525e002c301890777748effbeb4e
+Orientation:        empty / orientation-v1
+```
+
+Der hypothetische spätere Patchscope ist exakt:
+
+```text
+.steward/conventions.md
+tests/test_context_constitution.py
+```
+
+Der neue Test würde gegen die heutige unmarkierte Source zuerst rot und danach C0 direkt
+gegen die normative Feature-00-Spec prüfen. Weder Root-Datei noch Produktcode, Workflow,
+State oder Spec dürften im Source-PR geändert werden.
+
+### Positiv belegter Governance-Block
+
+GitHub Live-API am Recon-Zeitpunkt:
+
+```text
+Repository:                         public
+Authenticated principal:           kimeisele
+Collaborators:                      1 (kimeisele)
+Offene Einladungen:                 0
+Required PR reviews:                absent
+CODEOWNERS:                         absent
+Rulesets:                           absent
+enforce_admins:                     false
+Context Constitution Attestation:   absent
+```
+
+Die Reviews-API war auch für die untersuchten Context-Bridge-PRs leer. Commit-Autorname,
+PR-Merger, Chat-Review, Coding-Agent und Federation-Peer sind kein zweiter GitHub-
+Review-Principal.
+
+Damit kann heute niemand den vom Account `kimeisele` erstellten Source-PR als anderer
+menschlicher Collaborator auf dem finalen Head freigeben.
+
+### Gefundener Sequenzierungswiderspruch
+
+Feature 01 §15.3 verlangt Schnitt C als menschlich reviewte Source-Migration. Der bereits
+geschlossene Attestation-Vertrag verlangt für genau diesen Source-PR zusätzlich einen
+commitgebundenen geschützten Check und Governance-Evidence. CODEOWNERS, Branchschutz und
+Governance-Drill sind in §15.9 jedoch erst Schnitt I zugeordnet.
+
+Ein heute gemergter Source-PR wäre später nicht rückwirkend attestierbar. Aktuelle
+Branchschutzwerte dürfen nicht als historische Evidence ausgegeben werden. Ein zweiter
+„Segnungs-PR“ würde den tatsächlich reviewten Source-Head ebenfalls nicht ersetzen.
+
+Deshalb lautet das G2-Ergebnis:
+
+```text
+recon = complete
+candidate = deterministic
+implementation_start = blocked
+source_pr = forbidden
+```
+
+### Nächster erlaubter Schritt
+
+Vor Schnitt C braucht Feature 01 eine eigene read-only Sequenzspec für ein minimales
+Constitution-Governance-Prerequisite:
+
+- konkreter anderer vertrauenswürdiger menschlicher GitHub-Principal,
+- CODEOWNERS für Source und Contract-Test,
+- erforderlicher Review plus Code-Owner-Review und stale dismissal,
+- Admin-Enforcement ohne Bypass,
+- geschützter commitgebundener Check `Context Constitution Attestation`,
+- Author-/Reviewer-/Check-/Settings-Operationsdrill.
+
+Weitergehende Delivery- und Aktivierungs-Governance bleibt Schnitt I. Die Korrektur darf
+kein Mega-Governance-Patch werden.
+
+Solange kein echter zweiter Human-Principal existiert, bleibt bereits der Governance- und
+erst recht der Source-PR blockiert. Ein Bot, Agent oder derselbe Account unter anderem
+lokalen Git-Autornamen ist ungültig.
+
+Vollständiger G2-Beweis:
+`specs/context_bridge_evidence/FEATURE_01_SLICE_C_G2_PREFLIGHT.md`.
