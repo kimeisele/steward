@@ -159,7 +159,6 @@ class TestDeterministicDispatch:
         assert "lint violation" in result
         assert fake_llm.call_count == 0
 
-
     def test_dispatch_post_merge_detects_test_failure(self, fake_llm):
         """Post-merge handler detects test failures."""
         from unittest.mock import MagicMock, patch

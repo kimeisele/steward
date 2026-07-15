@@ -378,30 +378,7 @@ class IntentHandlers:
         )
 
     def execute_synthesize_briefing(self) -> str | None:
-        """Check if CLAUDE.md briefing is stale — 0 tokens.
-
-        Compares context.json mtime to CLAUDE.md mtime.
-        Only triggers when context.json exists AND is newer.
-        If no context.json yet (first boot), nothing to synthesize from.
-        """
-        from pathlib import Path
-
-        steward_dir = Path(self._cwd) / ".steward"
-        claude_md = Path(self._cwd) / "CLAUDE.md"
-        context_json = steward_dir / "context.json"
-
-        # No context.json yet → nothing to synthesize from (first boot)
-        if not context_json.exists():
-            return None
-
-        # No CLAUDE.md but context.json exists → needs synthesis
-        if not claude_md.exists():
-            return "CLAUDE.md does not exist. Use the synthesize_briefing tool to create it from .steward/context.json."
-
-        # context.json newer than CLAUDE.md → briefing is stale
-        if context_json.stat().st_mtime > claude_md.stat().st_mtime:
-            return "CLAUDE.md is stale (context.json updated since last synthesis). Use the synthesize_briefing tool to refresh it."
-
+        """Retained compatibility intent; canonical synthesis is disabled."""
         return None
 
     def execute_diagnose_stagnation(self) -> str:

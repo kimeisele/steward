@@ -1,12 +1,9 @@
 """
 synthesize_briefing — LLM-enriched on-demand briefing synthesis.
 
-This is the OPTIONAL LLM-enhanced path. The PRIMARY writer is
-briefing.write_claude_md() which runs deterministically every heartbeat.
-
-This tool is for on-demand deep synthesis (e.g., Sankalpa mission every
-15 min, or explicit agent request). It uses steward's LLM to enrich
-the deterministic briefing with prioritized insights.
+This tool is an OPTIONAL, non-canonical preview path. It uses steward's
+LLM to enrich deterministic context with prioritized insights and returns
+the result to the caller without persisting it.
 
 Input sources (all deterministic, zero LLM):
   - context.json: assembled from senses, vedana, gaps, sessions, etc.
@@ -37,9 +34,8 @@ logger = logging.getLogger("STEWARD.TOOLS.SYNTHESIZE_BRIEFING")
 # content comes from the architecture metadata and context data.
 
 _SYNTHESIS_INSTRUCTION = """\
-Write a COCKPIT BRIEFING, not a resume. This file is read by the NEXT
-Claude Opus session that opens this repo. They have ZERO context.
-They need to be PRODUCTIVE in 30 seconds, not read your life story.
+Write a COCKPIT BRIEFING PREVIEW, not a resume. The preview may be shown
+to an external engineering agent, but it is not canonical instruction.
 
 STRUCTURE (in this exact order):
 
@@ -74,7 +70,7 @@ Use ONLY the data provided below. Be TERSE.
 
 
 class SynthesizeBriefingTool(Tool):
-    """Synthesize CLAUDE.md from steward's living state + architecture metadata."""
+    """Return a non-canonical LLM briefing preview without filesystem writes."""
 
     def __init__(self, cwd: str | None = None) -> None:
         super().__init__()
@@ -87,9 +83,8 @@ class SynthesizeBriefingTool(Tool):
     @property
     def description(self) -> str:
         return (
-            "Synthesize .steward/CLAUDE.md from steward's own architecture "
-            "metadata and current state. Uses steward's LLM to create a "
-            "prioritized briefing for external consumers."
+            "Return a non-canonical briefing preview from steward's architecture "
+            "metadata and current state. This tool never writes files."
         )
 
     @property
@@ -99,18 +94,21 @@ class SynthesizeBriefingTool(Tool):
                 "type": "string",
                 "required": False,
                 "description": (
-                    "Path to write the briefing (default: .steward/CLAUDE.md). "
-                    "Use 'stdout' to return content without writing."
+                    "Optional compatibility value. Only 'stdout' is accepted; all persisted output paths are rejected."
                 ),
             },
         }
 
     def validate(self, parameters: dict[str, Any]) -> None:
-        pass  # No required params
+        output_path = parameters.get("output_path")
+        if output_path not in (None, "stdout"):
+            raise ValueError("synthesize_briefing supports preview output only")
 
     def execute(self, parameters: dict[str, Any]) -> ToolResult:
-        output_path = parameters.get("output_path")
-        stdout_mode = output_path == "stdout"
+        try:
+            self.validate(parameters)
+        except ValueError as e:
+            return ToolResult(success=False, error=str(e))
 
         try:
             # 1. Collect raw material (deterministic, zero LLM)
@@ -152,27 +150,14 @@ class SynthesizeBriefingTool(Tool):
                     error="LLM returned empty response for briefing synthesis",
                 )
 
-            # 5. Write the result
-            if stdout_mode:
-                return ToolResult(
-                    success=True,
-                    output=briefing,
-                    metadata={"mode": "stdout", "tokens": len(briefing.split())},
-                )
-
-            # Default path: .steward/CLAUDE.md
-            if output_path:
-                dest = Path(output_path)
-            else:
-                dest = Path(self._cwd) / "CLAUDE.md"
-
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_text(briefing, encoding="utf-8")
-
             return ToolResult(
                 success=True,
-                output=f"Briefing synthesized → {dest} ({len(briefing)} bytes)",
-                metadata={"path": str(dest), "bytes": len(briefing)},
+                output=briefing,
+                metadata={
+                    "mode": "preview",
+                    "canonical": False,
+                    "tokens": len(briefing.split()),
+                },
             )
 
         except Exception as e:
