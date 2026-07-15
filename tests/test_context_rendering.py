@@ -134,12 +134,13 @@ def test_build_is_pure(models, monkeypatch):
     def forbidden(*args, **kwargs):
         raise AssertionError("I/O or clock access is forbidden")
 
-    monkeypatch.setattr(builtins, "open", forbidden)
-    monkeypatch.setattr("pathlib.Path.open", forbidden)
-    monkeypatch.setattr("subprocess.run", forbidden)
-    monkeypatch.setattr("time.time", forbidden)
+    with monkeypatch.context() as patch:
+        patch.setattr(builtins, "open", forbidden)
+        patch.setattr("pathlib.Path.open", forbidden)
+        patch.setattr("subprocess.run", forbidden)
+        patch.setattr("time.time", forbidden)
 
-    build_publication_candidates(payload, snapshot)
+        build_publication_candidates(payload, snapshot)
 
 
 def test_module_imports_are_pure_and_fixture_free():
