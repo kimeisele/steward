@@ -1584,3 +1584,154 @@ werden, bevor Fehlerpropagation geändert wird. Insbesondere ist zu unterscheide
 
 Erst danach folgen Identitätsnamen-Reparatur, Key-Rotation, Quarantäne-Cleanup und
 Agent-City-GH006 als getrennte Tickets. Phase 1 wird weiterhin nicht verändert.
+
+## §15 — CONTEXT BRIDGE G0 GESCHLOSSEN, FEATURE 00/04 GELIEFERT, NOCH NICHT AKTIVIERT
+
+**Stand:** 2026-07-15 07:33 Europe/Berlin
+**Verifizierter Main:** `c81a1683fd9358eb0c6a91cee157eb5c18fec99a`
+**Tree:** `24ba54ff9f7e653c44a210ecf7304d14853c0916`
+
+### Anlass und Schutzgrenze
+
+Der Auftrag war nicht, kurzfristig eine zweite Root-Datei zu erzeugen. Das Fundamentproblem
+war größer: Externe Engineering-Agenten sollen in `CLAUDE.md` und `AGENTS.md` einen
+aktuellen, sicheren und consumerkorrekten Einstieg erhalten, ohne Runtime-Persona,
+untrusted Prompt-Injection, lokale Pfade, Secrets, volatile Agenda oder zwei driftende
+Wahrheiten zu übernehmen.
+
+Deshalb galt während G0 und Feature 00 strikt:
+
+- keine Implementierung aus Chat-Prosa,
+- `PHASE2_CURRENT` ist widerlegbarer Arbeitsstand, keine SSOT,
+- Phase 1 bleibt read-only,
+- statische Governance und dynamischer beobachteter State bleiben getrennt,
+- LLM-Output darf keine kanonischen Root-Dateien publizieren,
+- Byteidentität von `CLAUDE.md` und `AGENTS.md` ist der Default, bis ein realer
+  Consumer-Unterschied eine minimale Abweichung erzwingt,
+- keine Produktivaktivierung vor Feature-Specs, roten Tests und eigenem G2.
+
+### G0 und Feature 00
+
+Die Master-Spec und 18 read-only Evidence-Fragen wurden adversarial geschlossen. Der
+entscheidende Sicherheitswechsel war, die Bridge nicht nur als Freshness-/Dokumentproblem,
+sondern als Übersetzungsgrenze von teilweise untrusted Daten zu Agenten-Instruktionen zu
+behandeln.
+
+Geliefert wurden unter anderem:
+
+- T0–T5-Trust-Zonen,
+- exakter kleiner C0-v1-Vertrag für externe Engineering-/Maintenance-Consumer,
+- C0-/Dynamic-/Orientation-Blockgrenzen,
+- PUBLIC_SAFE-Allowlist statt Secret-Blocklist als Primärmodell,
+- Source-Status und sichtbare Degradation,
+- Governance-, Required-Check-, Zwei-Principal- und No-Bypass-Vertrag,
+- ehrliche per-file Atomicity, Mixed-State-Erkennung und Git als Remote-Grenze,
+- getrennte Snapshot-, Payload- und Consumer-Output-Hash-Domains.
+
+Relevante Merges:
+
+- G0-Master/Evidence: `7b1b6a221851f51d06191222f5187cc877c04304`,
+- Feature 00 PR `#497`: `327eca2f8bf275563c5940ba807996b52ca44fa3`.
+
+### Feature 04: semantischer Kern vor Publisher
+
+G0 hatte eine falsche alte Reihenfolge korrigiert. Ein Publisher darf nicht vor seinem
+kanonischen Modell und Hashvertrag entstehen. Die verbindliche Reihenfolge lautet deshalb
+`00 -> 04 -> 01 -> 02/03`.
+
+Feature 04 spezifizierte und implementierte ausschließlich:
+
+- fail-closed C0-/Orientation-Markerparser,
+- geschlossene SourceStatus-, TrustZone-, OutputMode- und Decision-Vokabulare,
+- Source-ID/Trust-/Mode-Bindung,
+- immutable explizite Input-/Previous-Record-Objekte,
+- floatfreies kanonisches JSON mit NFC, nicht NFKC,
+- volle domainseparierte SHA-256-Hashes,
+- PUBLIC_SAFE- und strikte Observation-Schema-Grenzen,
+- Health-, Sense-, Gap-, Federation-, Immune-, Campaign- und Cetana-Aggregate,
+- expliziten Vergleichsstate für kumulative Gateway-/Rollback-Ereignisse,
+- `publish`, `no_op`, `manual_review` und `blocked` ohne MTime oder Prozessglobalen State.
+
+Relevante Merges:
+
+- Feature-04-Spec/G1 PR `#498`: `44b318408ebd1e73731d38c0c11f241d13761b08`,
+- G2-Preflight PR `#499`: `d30a22a60213693d834ffd38f44c0892aa942de3`,
+- Implementierung PR `#505`: `c81a1683fd9358eb0c6a91cee157eb5c18fec99a`.
+
+Der Implementierungsmerge fügte exakt zwei Pfade hinzu:
+
+1. `steward/context_contract.py`,
+2. `tests/test_context_contract.py`.
+
+Kein bestehender Caller, Writer, Renderer, Hook, Workflow oder Root-Output wurde geändert.
+
+### Materielle Review-Korrekturen
+
+Der Erstentwurf wurde nicht blind umgesetzt. Die Reviews fanden und korrigierten:
+
+1. `error_pressure` und `context_pressure` sind in `measure_vedana()` invertierte
+   Health-Komponenten; mindestens `compute_focus()` liest `context_pressure` gegenteilig.
+   V1 schließt beide Felder aus, statt den Altfehler zu institutionalisieren.
+2. Nicht verwendete Sessions/Issues/Tasks dürfen den Payload-Hash nicht bewegen. Sie
+   bleiben diagnostisch im Snapshot, aber außerhalb des V1-Semantic-Core.
+3. Kumulative Gateway-/Rollback-Zähler brauchen eine explizite frühere Baseline. Ein
+   einfacher `count > 0`-Test würde dauerhaft Alarm oder nach Reset falsch `clear`
+   erzeugen.
+4. Ein passender C0-Hash beweist keinen menschlichen Review; Bootstrap benötigt eine
+   gebundene ConstitutionAttestation.
+5. `build_payload_core()` validiert die exakte Observation-Form. Zusätzlicher Freitext
+   kann nicht als unbekanntes Zusatzfeld durchrutschen.
+6. Source-ID, Trust-Zone und Source-Mode sind fest gebunden. Ein Issue kann sich nicht als
+   T0-Constitution ausgeben.
+
+### Test- und Mergebeweis
+
+Der rote Testcommit scheiterte vor Produktcode ausschließlich mit
+`ModuleNotFoundError: steward.context_contract`. Danach:
+
+- gezielt: 64 Contract-Tests grün,
+- lokaler vollständiger Lauf: 2.188 passed, 13 skipped in 15:49,
+- bekannte bestehende Deprecation-Warnungen, keine neue Failure,
+- Ruff check und format check grün,
+- `git diff --check` grün,
+- AST-Audit: keine Filesystem-, Clock-, Git-, Netzwerk-, Environment- oder
+  ServiceRegistry-Imports/Calls,
+- PR-CI Python 3.11 und Python 3.12 grün,
+- Lint grün,
+- Security scan grün,
+- Merge ohne Admin-Bypass.
+
+Die festen Hashvektoren wurden mit Python-Standardbibliothek und getrennt mit
+`jq -cS -j` plus `shasum -a 256` identisch reproduziert:
+
+- Snapshot: `999ba49ddaea6300f3398159103491915a9b5ce3b7871a9cbd2f7b20b761ceba`,
+- Payload: `d3a344af1700b88346695e13833ec5d6f81b66584ef8272542c64f7d4aa4d71a`.
+
+### Was ausdrücklich noch nicht wahr ist
+
+Feature 04 ist keine produktive Context Bridge:
+
+- `CLAUDE.md` wird weiterhin durch die alte Pipeline erzeugt,
+- Root-`AGENTS.md` fehlt weiterhin,
+- `.steward/conventions.md` besitzt noch nicht die C0-/Orientation-Migration,
+- es gibt noch keinen Dual-Publisher,
+- es gibt noch keinen persistenten Publish-Record oder Mixed-State-Recovery,
+- LLM- und Nebenpublisher sind noch nicht isoliert,
+- Workflow-Delivery, Required Contract Check, CODEOWNERS, Branchschutz, Zwei-Principal-
+  Pfad und Kill-Switch sind noch nicht aktiviert,
+- kein Produktionsbeweis für gemeinsame Root-Delivery existiert.
+
+Diese Aussagen dürfen nicht aus den grünen Feature-04-Tests abgeleitet werden.
+
+### Nächster Arbeitsauftrag
+
+Als nächstes wird ausschließlich Feature-Spec 01 für sicheren kanonischen Publisher plus
+Delivery erstellt. Vor der Spec werden Live-Head, alle Publisher/Caller und Workflow-
+Pfade erneut read-only gepinnt. Die Spec muss Source-Migration, Renderer, lokalen
+Transaktions-/Recovery-Vertrag, persistenten Record, Git-Delivery, LLM-Isolation,
+Governance, Kill-Switch, Rollback und realen G2-Drill in kleine überprüfbare Schnitte
+zerlegen.
+
+Bis Feature-Spec 01 G1-freigegeben und ein separater aktueller G2-Preflight abgeschlossen
+ist, bleibt jeder Writer-, Workflow-, Root-, Conventions- oder Governance-Patch gesperrt.
+Phase 1 bleibt unverändert.
