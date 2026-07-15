@@ -51,11 +51,8 @@ class TestGenerateBriefing:
         result = generate_briefing(cwd=str(tmp_path))
         assert "Critical" not in result or "No critical" in result
 
-    def test_includes_orientation_from_conventions(self):
-        """When run from the real repo, orientation block should be present."""
-        result = generate_briefing(cwd=".")
-        # The conventions.md in .steward/ has architecture explanation
-        assert "Antahkarana" in result or "cognitive" in result.lower()
+    def test_real_constitution_source_has_empty_orientation(self):
+        assert _load_orientation(".") == ""
 
 
 class TestWriteClaudeMd:
