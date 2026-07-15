@@ -9,6 +9,14 @@ from steward.briefing import (
     generate_briefing,
     write_claude_md,
 )
+from steward.context_contract import C0_BEGIN, C0_END, ORIENTATION_BEGIN, ORIENTATION_END
+
+
+def structured_conventions(orientation: str = "## Architecture Map\nOnly orientation.\n") -> bytes:
+    return (
+        f"{C0_BEGIN}\n## Private Constitution\nNever orientation.\n{C0_END}\n\n"
+        f"{ORIENTATION_BEGIN}\n{orientation.rstrip(chr(10))}\n{ORIENTATION_END}\n"
+    ).encode("utf-8")
 
 
 class TestGenerateBriefing:
@@ -105,6 +113,45 @@ class TestLoadOrientation:
         steward_dir = tmp_path / ".steward"
         steward_dir.mkdir()
         (steward_dir / "conventions.md").write_text("")
+        assert _load_orientation(str(tmp_path)) == ""
+
+    def test_versioned_source_returns_only_orientation(self, tmp_path):
+        steward_dir = tmp_path / ".steward"
+        steward_dir.mkdir()
+        (steward_dir / "conventions.md").write_bytes(structured_conventions())
+
+        result = _load_orientation(str(tmp_path))
+
+        assert result == "## Architecture Map\nOnly orientation."
+        assert "Private Constitution" not in result
+        assert "steward-context:" not in result
+
+    def test_versioned_empty_orientation_returns_empty(self, tmp_path):
+        steward_dir = tmp_path / ".steward"
+        steward_dir.mkdir()
+        (steward_dir / "conventions.md").write_bytes(structured_conventions(orientation=""))
+
+        assert _load_orientation(str(tmp_path)) == ""
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            structured_conventions().replace(C0_END.encode(), b""),
+            structured_conventions() + b"<!-- steward-context:unknown:v1:begin -->\n",
+        ],
+    )
+    def test_malformed_marker_source_fails_closed(self, tmp_path, source):
+        steward_dir = tmp_path / ".steward"
+        steward_dir.mkdir()
+        (steward_dir / "conventions.md").write_bytes(source)
+
+        assert _load_orientation(str(tmp_path)) == ""
+
+    def test_invalid_utf8_fails_closed(self, tmp_path):
+        steward_dir = tmp_path / ".steward"
+        steward_dir.mkdir()
+        (steward_dir / "conventions.md").write_bytes(b"\xff")
+
         assert _load_orientation(str(tmp_path)) == ""
 
 
