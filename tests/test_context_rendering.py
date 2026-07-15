@@ -80,9 +80,7 @@ def test_snapshot_and_publication_envelopes_are_bound(models, expected):
     assert publication["previous"]["payload_hash"] == expected["publication_artifact"]["expected_payload_hash"]
     assert publication["previous"]["consumer_outputs"] == expected["publication_artifact"]["expected_consumer_outputs"]
     assert publication["targets"] == expected["publication_artifact"]["expected_targets"]
-    artifact_hash = hashlib.sha256(
-        b"steward-context-snapshot-artifact-v1\0" + candidates.snapshot_artifact
-    ).hexdigest()
+    artifact_hash = hashlib.sha256(b"steward-context-snapshot-artifact-v1\0" + candidates.snapshot_artifact).hexdigest()
     assert artifact_hash == expected["publication_artifact"]["expected_snapshot_artifact_hash"]
     assert publication["snapshot_artifact_hash"] == artifact_hash
     assert "publication_hash" not in publication
@@ -118,8 +116,14 @@ def test_candidate_mutation_is_detected_and_container_is_frozen(models):
     candidates = build_publication_candidates(payload, snapshot)
     mutated = replace(candidates, agents_md=b"tampered")
 
+    class CandidateSubclass(PublicationCandidates):
+        pass
+
     with pytest.raises(ContractViolation):
         validate_publication_candidates(payload, snapshot, mutated)
+    with pytest.raises(ContractViolation) as exc_info:
+        validate_publication_candidates(payload, snapshot, CandidateSubclass(**candidates.__dict__))
+    assert exc_info.value.code == "invalid_type"
     with pytest.raises(FrozenInstanceError):
         candidates.claude_md = b"tampered"  # type: ignore[misc]
 
@@ -141,14 +145,17 @@ def test_build_is_pure(models, monkeypatch):
 def test_module_imports_are_pure_and_fixture_free():
     source = Path("steward/context_rendering.py").read_text()
     tree = ast.parse(source)
-    imported = {
+    imported_names = {
         alias.name.split(".")[0]
         for node in ast.walk(tree)
         if isinstance(node, (ast.Import, ast.ImportFrom))
         for alias in node.names
     }
+    imported_modules = {
+        node.module.split(".")[0] for node in ast.walk(tree) if isinstance(node, ast.ImportFrom) and node.module
+    }
 
-    assert not imported & {"datetime", "os", "pathlib", "socket", "subprocess", "time"}
+    assert not (imported_names | imported_modules) & {"datetime", "os", "pathlib", "socket", "subprocess", "time"}
     assert "ServiceRegistry" not in source
     assert "assemble_context" not in source
     assert "specs/" not in source

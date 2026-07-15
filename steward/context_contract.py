@@ -869,6 +869,204 @@ def _validate_mode_sources(sources: Mapping[str, SourceResult], mode: OutputMode
         _fail("inconsistent", "payload.mode")
 
 
+def validate_payload_core(model: Mapping[str, object]) -> None:
+    """Validate a materialized SemanticPayloadCore v1 model."""
+    payload = _exact_keys(
+        model,
+        {"schema", "contract", "mode", "source_status", "observations"},
+        field_path="payload",
+    )
+    if payload["schema"] != "steward.context.payload/v1":
+        _fail("invalid_schema", "payload.schema")
+
+    contract = _exact_keys(
+        payload["contract"],
+        {"c0_version", "c0_sha256", "c0", "orientation_sha256", "orientation"},
+        field_path="payload.contract",
+    )
+    if contract["c0_version"] != "c0/v1" or not isinstance(contract["c0"], str):
+        _fail("invalid_schema", "payload.contract.c0")
+    c0 = contract["c0"]
+    if validate_public_safe_text(c0, field_path="payload.contract.c0", multiline=True) != c0:
+        _fail("inconsistent", "payload.contract.c0")
+    if not c0.endswith("\n") or c0.endswith("\n\n"):
+        _fail("invalid_value", "payload.contract.c0")
+    _validate_hash(contract["c0_sha256"], 64, field_path="payload.contract.c0_sha256")
+    if contract["c0_sha256"] != hashlib.sha256(c0.encode("utf-8")).hexdigest():
+        _fail("inconsistent", "payload.contract.c0_sha256")
+
+    orientation = contract["orientation"]
+    orientation_hash = contract["orientation_sha256"]
+    if orientation is None:
+        if orientation_hash is not None:
+            _fail("inconsistent", "payload.contract.orientation_sha256")
+    else:
+        if not isinstance(orientation, str):
+            _fail("invalid_type", "payload.contract.orientation")
+        if (
+            validate_public_safe_text(orientation, field_path="payload.contract.orientation", multiline=True)
+            != orientation
+        ):
+            _fail("inconsistent", "payload.contract.orientation")
+        if orientation and (not orientation.endswith("\n") or orientation.endswith("\n\n")):
+            _fail("invalid_value", "payload.contract.orientation")
+        _validate_hash(orientation_hash, 64, field_path="payload.contract.orientation_sha256")
+        if orientation_hash != hashlib.sha256(orientation.encode("utf-8")).hexdigest():
+            _fail("inconsistent", "payload.contract.orientation_sha256")
+
+    mode = _enum_value(payload["mode"], {item.value for item in OutputMode}, field_path="payload.mode")
+    source_status = payload["source_status"]
+    if not isinstance(source_status, list) or len(source_status) != len(_PARTICIPATING_SOURCES):
+        _fail("invalid_schema", "payload.source_status")
+    statuses: dict[str, str] = {}
+    for index, source_id in enumerate(_PARTICIPATING_SOURCES):
+        item = _exact_keys(
+            source_status[index],
+            {"source_id", "status", "source_mode", "age_bucket"},
+            field_path=f"payload.source_status.{index}",
+        )
+        if item["source_id"] != source_id:
+            _fail("inconsistent", f"payload.source_status.{index}.source_id")
+        statuses[source_id] = _enum_value(
+            item["status"],
+            {status.value for status in SourceStatus},
+            field_path=f"payload.source_status.{source_id}.status",
+        )
+        if item["source_mode"] != _SOURCE_MODE[source_id]:
+            _fail("inconsistent", f"payload.source_status.{source_id}.source_mode")
+        _enum_value(item["age_bucket"], set(_AGE_BUCKETS), field_path=f"payload.source_status.{source_id}.age_bucket")
+
+    required_valid = {"constitution", "context_schema", "repository"}
+    if mode in {OutputMode.CANONICAL.value, OutputMode.DEGRADED.value} and any(
+        statuses[source_id] != SourceStatus.VALID.value for source_id in required_valid
+    ):
+        _fail("invalid_schema", "payload.source_status")
+    degraded = {
+        SourceStatus.UNAVAILABLE.value,
+        SourceStatus.INVALID.value,
+        SourceStatus.STALE.value,
+        SourceStatus.UNSAFE.value,
+        SourceStatus.UNSUPPORTED.value,
+    }
+    has_degradation = any(status in degraded for status in statuses.values())
+    if mode == OutputMode.CANONICAL.value and has_degradation:
+        _fail("inconsistent", "payload.mode")
+    if mode == OutputMode.DEGRADED.value and not has_degradation:
+        _fail("inconsistent", "payload.mode")
+
+    _validate_observations(payload["observations"])
+    canonical_json_bytes(dict(payload))
+
+
+def validate_snapshot_model(model: Mapping[str, object]) -> None:
+    """Validate a materialized NormalizedSnapshot v1 model."""
+    snapshot = _exact_keys(
+        model,
+        {
+            "schema",
+            "repository",
+            "generator",
+            "assembled_at",
+            "constitution",
+            "orientation",
+            "comparison_state",
+            "sources",
+            "observations",
+        },
+        field_path="snapshot",
+    )
+    if snapshot["schema"] != "steward.context.snapshot/v1":
+        _fail("invalid_schema", "snapshot.schema")
+    repository = _exact_keys(snapshot["repository"], {"name", "head"}, field_path="snapshot.repository")
+    if not isinstance(repository["name"], str) or not _REPOSITORY_NAME.fullmatch(repository["name"]):
+        _fail("invalid_value", "snapshot.repository.name")
+    _validate_hash(repository["head"], 40, field_path="snapshot.repository.head")
+    generator = _exact_keys(snapshot["generator"], {"schema", "repository", "commit"}, field_path="snapshot.generator")
+    if generator["schema"] != "steward.context.generator/v1":
+        _fail("invalid_schema", "snapshot.generator.schema")
+    if generator["repository"] != repository["name"]:
+        _fail("inconsistent", "snapshot.generator.repository")
+    _validate_hash(generator["commit"], 40, field_path="snapshot.generator.commit")
+    assembled_at = _validate_timestamp(snapshot["assembled_at"], field_path="snapshot.assembled_at")
+
+    constitution = _exact_keys(
+        snapshot["constitution"],
+        {"version", "sha256", "source_blob", "reviewed_at_commit"},
+        field_path="snapshot.constitution",
+    )
+    if constitution["version"] != "c0/v1":
+        _fail("invalid_schema", "snapshot.constitution.version")
+    _validate_hash(constitution["sha256"], 64, field_path="snapshot.constitution.sha256")
+    _validate_hash(constitution["source_blob"], 40, field_path="snapshot.constitution.source_blob")
+    _validate_hash(constitution["reviewed_at_commit"], 40, field_path="snapshot.constitution.reviewed_at_commit")
+    orientation = _exact_keys(snapshot["orientation"], {"sha256"}, field_path="snapshot.orientation")
+    if orientation["sha256"] is not None:
+        _validate_hash(orientation["sha256"], 64, field_path="snapshot.orientation.sha256")
+
+    comparison_state = _exact_keys(
+        snapshot["comparison_state"],
+        {
+            "gateway_errors_total",
+            "gateway_rejected_parse_total",
+            "gateway_rejected_validate_total",
+            "immune_rollbacks_total",
+        },
+        field_path="snapshot.comparison_state",
+    )
+    _validate_comparison_state(comparison_state)
+
+    sources = snapshot["sources"]
+    expected_sources = sorted(_ALL_SOURCES)
+    if not isinstance(sources, list) or len(sources) != len(expected_sources):
+        _fail("invalid_schema", "snapshot.sources")
+    for index, source_id in enumerate(expected_sources):
+        item = _exact_keys(
+            sources[index],
+            {
+                "source_id",
+                "trust_zone",
+                "status",
+                "source_mode",
+                "observed_at",
+                "age_bucket",
+                "schema_version",
+                "error_code",
+            },
+            field_path=f"snapshot.sources.{index}",
+        )
+        if item["source_id"] != source_id:
+            _fail("inconsistent", f"snapshot.sources.{index}.source_id")
+        if item["trust_zone"] != _SOURCE_TRUST[source_id]:
+            _fail("inconsistent", f"snapshot.sources.{source_id}.trust_zone")
+        if item["source_mode"] != _SOURCE_MODE[source_id]:
+            _fail("inconsistent", f"snapshot.sources.{source_id}.source_mode")
+        status = _enum_value(
+            item["status"], {status.value for status in SourceStatus}, field_path=f"snapshot.sources.{source_id}.status"
+        )
+        _enum_value(item["age_bucket"], set(_AGE_BUCKETS), field_path=f"snapshot.sources.{source_id}.age_bucket")
+        if (
+            status in {SourceStatus.VALID.value, SourceStatus.EMPTY.value}
+            and item["source_mode"] in {"live", "derived"}
+            and item["observed_at"] is None
+        ):
+            _fail("invalid_value", f"snapshot.sources.{source_id}.observed_at")
+        if item["observed_at"] is not None:
+            observed_at = _validate_timestamp(
+                item["observed_at"], field_path=f"snapshot.sources.{source_id}.observed_at"
+            )
+            if observed_at > assembled_at:
+                _fail("invalid_value", f"snapshot.sources.{source_id}.observed_at")
+        if item["schema_version"] is not None:
+            _validate_ascii_identifier(
+                item["schema_version"], field_path=f"snapshot.sources.{source_id}.schema_version"
+            )
+        if item["error_code"] is not None and item["error_code"] not in _ERROR_CODES:
+            _fail("unsupported_version", f"snapshot.sources.{source_id}.error_code")
+
+    _validate_observations(snapshot["observations"])
+    canonical_json_bytes(dict(snapshot))
+
+
 def build_payload_core(
     conventions: ParsedConventions,
     sources: Mapping[str, SourceResult],
@@ -909,7 +1107,7 @@ def build_payload_core(
         "source_status": source_status,
         "observations": dict(observations),
     }
-    canonical_json_bytes(core)
+    validate_payload_core(core)
     return core
 
 
@@ -981,7 +1179,7 @@ def build_snapshot(
         "sources": source_snapshots,
         "observations": dict(observations),
     }
-    canonical_json_bytes(snapshot)
+    validate_snapshot_model(snapshot)
     return snapshot
 
 

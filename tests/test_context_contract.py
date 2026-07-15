@@ -526,6 +526,16 @@ class TestMaterializedModelValidation:
 
         assert exc_info.value.code == "inconsistent"
 
+    def test_snapshot_requires_observation_time_for_successful_live_source(self, models):
+        _, snapshot = models
+        health = next(source for source in snapshot["sources"] if source["source_id"] == "health")
+        health["observed_at"] = None
+
+        with pytest.raises(ContractViolation) as exc_info:
+            validate_snapshot_model(snapshot)
+
+        assert exc_info.value.code == "invalid_value"
+
     def test_payload_rejects_contract_hash_mismatch(self, models):
         payload, _ = models
         payload["contract"]["c0_sha256"] = "0" * 64
