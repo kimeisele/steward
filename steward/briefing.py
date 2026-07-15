@@ -1,12 +1,7 @@
 """
-Briefing — cockpit display from living system state.
+Briefing — read-only preview from living system state.
 
-SINGLE WRITER for CLAUDE.md. All paths funnel through write_claude_md():
-  - MOKSHA heartbeat (via moksha_bridge hook, rate-limited by the hook itself)
-  - On-demand (synthesize_briefing tool, agent request)
-  - External trigger (PR, push, federation sync)
-
-Three layers compose the CLAUDE.md:
+Three layers compose the legacy briefing preview:
   1. Static orientation from .steward/conventions.md (irreplaceable knowledge:
      cognitive pipeline, philosophy, invariants, workflow)
   2. Validated agent annotations (from steward.annotations pipeline)
@@ -23,8 +18,6 @@ Same pattern as PhaseHookRegistry.
 
 from __future__ import annotations
 
-import hashlib
-import logging
 from pathlib import Path
 
 from steward.briefing_stages import (
@@ -49,36 +42,15 @@ from steward.briefing_stages import (
     default_pipeline,
 )
 
-logger = logging.getLogger("STEWARD.BRIEFING")
 
-# ── Write Dedup ──────────────────────────────────────────────────────
-# Hash-based dedup prevents writing identical content.
-# Rate limiting is the caller's responsibility (MOKSHA hook has its own).
-_last_hash: str = ""
+class LegacyBriefingWriteDisabled(RuntimeError):
+    """Raised when a caller attempts to use the retired root writer."""
 
 
 def write_claude_md(cwd: str | None = None, force: bool = False) -> bool:
-    """Single writer for CLAUDE.md. All triggers call this.
-
-    Rate limiting is NOT done here — it's the caller's job (e.g., MOKSHA
-    hook rate-limits at 5s). This function only deduplicates by content hash.
-
-    Returns True if file was written, False if content unchanged.
-    """
-    global _last_hash
-
-    cwd = cwd or str(Path.cwd())
-    briefing = generate_briefing(cwd)
-
-    # Hash dedup — skip write if content unchanged
-    content_hash = hashlib.sha256(briefing.encode()).hexdigest()[:16]
-    if content_hash == _last_hash and not force:
-        return False
-
-    claude_md = Path(cwd) / "CLAUDE.md"
-    claude_md.write_text(briefing, encoding="utf-8")
-    _last_hash = content_hash
-    return True
+    """Reject legacy root writes until the canonical publisher exists."""
+    del cwd, force
+    raise LegacyBriefingWriteDisabled("Legacy CLAUDE.md writes are disabled; use generate_briefing() for preview only")
 
 
 def generate_briefing(cwd: str | None = None, token_budget: int = BUDGET_STANDARD) -> str:

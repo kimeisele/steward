@@ -556,3 +556,24 @@ class TestConscience:
         verdict = check_conscience("contract_import_fix", Ashrama.GRIHASTHA, 80)
         assert verdict.is_permitted is True, "contract_import_fix sollte für GRIHASTHA erlaubt sein"
         assert verdict.missing_permissions == [], "Keine Permissions sollten fehlen"
+
+
+class TestSynthesizeBriefingIntentFence:
+    def test_intent_is_noop_for_every_file_age(self, tmp_path):
+        from unittest.mock import MagicMock
+
+        from steward.intent_handlers import IntentHandlers
+
+        handlers = IntentHandlers(senses=MagicMock(), vedana_fn=MagicMock(), cwd=str(tmp_path))
+        assert handlers.execute_synthesize_briefing() is None
+
+        steward_dir = tmp_path / ".steward"
+        steward_dir.mkdir()
+        context_json = steward_dir / "context.json"
+        claude_md = tmp_path / "CLAUDE.md"
+        context_json.write_text("{}")
+        assert handlers.execute_synthesize_briefing() is None
+
+        claude_md.write_text("legacy")
+        context_json.touch()
+        assert handlers.execute_synthesize_briefing() is None

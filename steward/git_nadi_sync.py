@@ -29,6 +29,13 @@ logger = logging.getLogger("STEWARD.GIT_NADI_SYNC")
 # Minimum seconds between git operations (prevents git history bloat)
 DEFAULT_SYNC_INTERVAL_S = 300  # 5 minutes
 
+_FEDERATION_PATHS = (
+    "nadi_inbox.json",
+    "nadi_outbox.json",
+    "peer.json",
+    "reports",
+)
+
 
 class GitNadiSync:
     """Git sync for federation nadi directory.
@@ -97,23 +104,34 @@ class GitNadiSync:
         if (now - self._last_push) < self._sync_interval_s:
             return True  # Throttled — skip
 
-        # Check if there's anything to push
+        if self._staged_paths():
+            logger.warning("GIT_NADI: refusing to use a non-empty pre-existing index")
+            return False
+
+        # Check if there's anything allowed to push
         if not self._has_changes():
             self._last_push = time.monotonic()
             return True
 
-        # Stage federation files (nadi messages, peer descriptor, reports)
-        try:
-            self._run_git("add", "nadi_inbox.json", "nadi_outbox.json", "peer.json")
-            self._run_git("add", "reports/")
-        except subprocess.CalledProcessError:
-            self._run_git("add", "-A")
+        stageable_paths = self._stageable_paths()
+        if not stageable_paths:
+            self._last_push = time.monotonic()
+            return True
 
-        # Check if staging produced anything
-        status = self._run_git("status", "--porcelain")
-        if not status.strip():
+        # Stage only positively named federation files.
+        try:
+            self._run_git("add", "--all", "--", *stageable_paths)
+        except subprocess.CalledProcessError as e:
+            logger.warning("GIT_NADI: narrow staging failed: %s", e.stderr.strip() if e.stderr else e)
+            return False
+
+        staged_paths = self._staged_paths()
+        if not staged_paths:
             self._last_push = time.monotonic()
             return True  # Nothing staged
+        if not self._index_is_allowed(staged_paths):
+            logger.error("GIT_NADI: refusing staged paths outside federation allowlist")
+            return False
 
         # Commit
         try:
@@ -163,12 +181,38 @@ class GitNadiSync:
             return False
 
     def _has_changes(self) -> bool:
-        """Check if working tree has modifications."""
+        """Check if allowlisted federation paths have modifications."""
         try:
-            status = self._run_git("status", "--porcelain")
+            status = self._run_git(
+                "status",
+                "--porcelain",
+                "--untracked-files=all",
+                "--",
+                *_FEDERATION_PATHS,
+            )
             return bool(status.strip())
         except subprocess.CalledProcessError:
             return False
+
+    def _stageable_paths(self) -> list[str]:
+        """Return allowlisted paths that exist or are already tracked."""
+        stageable = []
+        for path in _FEDERATION_PATHS:
+            if (self._dir / path).exists() or self._run_git("ls-files", "--", path).strip():
+                stageable.append(path)
+        return stageable
+
+    def _staged_paths(self) -> list[str]:
+        """Return repo-relative paths currently present in the index diff."""
+        output = self._run_git("diff", "--cached", "--name-only", "-z")
+        return [path for path in output.split("\0") if path]
+
+    def _index_is_allowed(self, staged_paths: list[str]) -> bool:
+        """Validate repo-relative index names against the federation prefix."""
+        prefix = self._run_git("rev-parse", "--show-prefix").strip()
+        allowed_files = {f"{prefix}{path}" for path in _FEDERATION_PATHS[:-1]}
+        reports_prefix = f"{prefix}reports/"
+        return all(path in allowed_files or path.startswith(reports_prefix) for path in staged_paths)
 
     def _rebase_and_retry(self) -> bool:
         """Pull --rebase to resolve non-fast-forward. Returns True if clean."""
