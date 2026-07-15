@@ -1,0 +1,110 @@
+{
+  "schema": "steward.context.hash-test-vectors/v1",
+  "canonical_json": {
+    "input": {
+      "z": 0,
+      "a": "ä",
+      "set": ["alpha", "beta"],
+      "flag": true,
+      "none": null
+    },
+    "expected_utf8": "{\"a\":\"ä\",\"flag\":true,\"none\":null,\"set\":[\"alpha\",\"beta\"],\"z\":0}"
+  },
+  "snapshot": {
+    "domain_ascii": "steward-context-snapshot-v1",
+    "model": {
+      "schema": "steward.context.snapshot/v1",
+      "repository": {
+        "name": "steward",
+        "head": "1111111111111111111111111111111111111111"
+      },
+      "generator": {
+        "schema": "steward.context.generator/v1",
+        "repository": "steward",
+        "commit": "2222222222222222222222222222222222222222"
+      },
+      "assembled_at": "2026-07-15T00:00:00Z",
+      "constitution": {
+        "version": "c0/v1",
+        "sha256": "64abc8074fc32eb9f2e5cc6d47a948295d191c9aed76a1afc3bc934136632d51",
+        "source_blob": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "reviewed_at_commit": "cccccccccccccccccccccccccccccccccccccccc"
+      },
+      "orientation": {
+        "sha256": null
+      },
+      "comparison_state": {
+        "gateway_errors_total": 0,
+        "gateway_rejected_parse_total": 0,
+        "gateway_rejected_validate_total": 0,
+        "immune_rollbacks_total": 0
+      },
+      "sources": [
+        {"source_id":"annotations","trust_zone":"t3_advisory_project","status":"not_configured","source_mode":"derived","observed_at":null,"age_bucket":"unknown","schema_version":null,"error_code":null},
+        {"source_id":"architecture","trust_zone":"t1_verified_evidence","status":"valid","source_mode":"derived","observed_at":"2026-07-15T00:00:00Z","age_bucket":"fresh","schema_version":"architecture/v1","error_code":null},
+        {"source_id":"campaign","trust_zone":"t2_validated_operational","status":"empty","source_mode":"live","observed_at":"2026-07-15T00:00:00Z","age_bucket":"fresh","schema_version":"campaign/v1","error_code":null},
+        {"source_id":"cetana","trust_zone":"t2_validated_operational","status":"valid","source_mode":"live","observed_at":"2026-07-15T00:00:00Z","age_bucket":"fresh","schema_version":"cetana/v1","error_code":null},
+        {"source_id":"constitution","trust_zone":"t0_constitution","status":"valid","source_mode":"static","observed_at":null,"age_bucket":"fresh","schema_version":"c0/v1","error_code":null},
+        {"source_id":"context_schema","trust_zone":"t1_verified_evidence","status":"valid","source_mode":"derived","observed_at":"2026-07-15T00:00:00Z","age_bucket":"fresh","schema_version":"context/v1","error_code":null},
+        {"source_id":"continuity","trust_zone":"t3_advisory_project","status":"not_configured","source_mode":"static","observed_at":null,"age_bucket":"unknown","schema_version":null,"error_code":null},
+        {"source_id":"federation","trust_zone":"t2_validated_operational","status":"empty","source_mode":"live","observed_at":"2026-07-15T00:00:00Z","age_bucket":"fresh","schema_version":"federation/v1","error_code":null},
+        {"source_id":"gaps","trust_zone":"t2_validated_operational","status":"empty","source_mode":"live","observed_at":"2026-07-15T00:00:00Z","age_bucket":"fresh","schema_version":"gaps/v1","error_code":null},
+        {"source_id":"health","trust_zone":"t2_validated_operational","status":"valid","source_mode":"live","observed_at":"2026-07-15T00:00:00Z","age_bucket":"fresh","schema_version":"vedana/v1","error_code":null},
+        {"source_id":"immune","trust_zone":"t2_validated_operational","status":"valid","source_mode":"live","observed_at":"2026-07-15T00:00:00Z","age_bucket":"fresh","schema_version":"immune/v1","error_code":null},
+        {"source_id":"issues","trust_zone":"t4_external_untrusted","status":"empty","source_mode":"live","observed_at":"2026-07-15T00:00:00Z","age_bucket":"fresh","schema_version":"github-issues/v1","error_code":null},
+        {"source_id":"orientation","trust_zone":"t1_verified_evidence","status":"empty","source_mode":"static","observed_at":null,"age_bucket":"fresh","schema_version":"orientation/v1","error_code":null},
+        {"source_id":"repository","trust_zone":"t1_verified_evidence","status":"valid","source_mode":"derived","observed_at":"2026-07-15T00:00:00Z","age_bucket":"fresh","schema_version":"git/v1","error_code":null},
+        {"source_id":"senses","trust_zone":"t2_validated_operational","status":"valid","source_mode":"live","observed_at":"2026-07-15T00:00:00Z","age_bucket":"fresh","schema_version":"senses/v1","error_code":null},
+        {"source_id":"sessions","trust_zone":"t3_advisory_project","status":"empty","source_mode":"live","observed_at":"2026-07-15T00:00:00Z","age_bucket":"fresh","schema_version":"sessions/v1","error_code":null},
+        {"source_id":"tasks","trust_zone":"t3_advisory_project","status":"empty","source_mode":"live","observed_at":"2026-07-15T00:00:00Z","age_bucket":"fresh","schema_version":"tasks/v1","error_code":null}
+      ],
+      "observations": {
+        "health": {"class":"healthy","guna":"sattva","provider":"healthy"},
+        "senses": {"pain":"clear","critical_count":0},
+        "gaps": {"active_count":0,"categories":[]},
+        "federation": {"class":"empty","alive":0,"suspect":0,"dead":0,"gateway":"clear"},
+        "immune": {"class":"healthy","rollback":"none"},
+        "campaign": {"class":"empty","failing_kinds":[]},
+        "cetana": {"class":"alive"}
+      }
+    },
+    "expected_sha256": "999ba49ddaea6300f3398159103491915a9b5ce3b7871a9cbd2f7b20b761ceba"
+  },
+  "payload": {
+    "domain_ascii": "steward-context-payload-v1",
+    "model": {
+      "schema": "steward.context.payload/v1",
+      "contract": {
+        "c0_version": "c0/v1",
+        "c0_sha256": "64abc8074fc32eb9f2e5cc6d47a948295d191c9aed76a1afc3bc934136632d51",
+        "c0": "## Repository Operating Contract\n\nTest contract.\n",
+        "orientation_sha256": null,
+        "orientation": null
+      },
+      "mode": "canonical",
+      "source_status": [
+        {"source_id":"campaign","status":"empty","source_mode":"live","age_bucket":"fresh"},
+        {"source_id":"cetana","status":"valid","source_mode":"live","age_bucket":"fresh"},
+        {"source_id":"constitution","status":"valid","source_mode":"static","age_bucket":"fresh"},
+        {"source_id":"context_schema","status":"valid","source_mode":"derived","age_bucket":"fresh"},
+        {"source_id":"federation","status":"empty","source_mode":"live","age_bucket":"fresh"},
+        {"source_id":"gaps","status":"empty","source_mode":"live","age_bucket":"fresh"},
+        {"source_id":"health","status":"valid","source_mode":"live","age_bucket":"fresh"},
+        {"source_id":"immune","status":"valid","source_mode":"live","age_bucket":"fresh"},
+        {"source_id":"orientation","status":"empty","source_mode":"static","age_bucket":"fresh"},
+        {"source_id":"repository","status":"valid","source_mode":"derived","age_bucket":"fresh"},
+        {"source_id":"senses","status":"valid","source_mode":"live","age_bucket":"fresh"}
+      ],
+      "observations": {
+        "health": {"class":"healthy","guna":"sattva","provider":"healthy"},
+        "senses": {"pain":"clear","critical_count":0},
+        "gaps": {"active_count":0,"categories":[]},
+        "federation": {"class":"empty","alive":0,"suspect":0,"dead":0,"gateway":"clear"},
+        "immune": {"class":"healthy","rollback":"none"},
+        "campaign": {"class":"empty","failing_kinds":[]},
+        "cetana": {"class":"alive"}
+      }
+    },
+    "expected_sha256": "d3a344af1700b88346695e13833ec5d6f81b66584ef8272542c64f7d4aa4d71a"
+  }
+}
