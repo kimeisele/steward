@@ -32,6 +32,11 @@
 Health: 0.855 (sattva) · Immune: 0/0 heals, breaker OK · Federation: 12 peers (12 alive, 0 suspect, 0 dead)
 
 ## Action
+- #516: [review-request] Does the WCFA pattern scale differently in larger federations?
+- #515: [review-request] What is the minimum viable governance verification a peer should deman
+- #514: [review-request] How should federation descriptors distinguish between capability exist
+- #513: [review-request] Is the WCFA pattern inherent to systems with safe fallbacks, or preven
+- #512: [review-request] Can execution-path tracing be standardized across federation nodes as 
 - #511: [review-request] Does the WCFA pattern scale differently in larger federations?
 - #510: [review-request] What is the minimum viable governance verification a peer should deman
 - #509: [review-request] How should federation descriptors distinguish between capability exist
@@ -47,14 +52,9 @@ Health: 0.855 (sattva) · Immune: 0/0 heals, breaker OK · Federation: 12 peers 
 - #494: [review-request] How should federation descriptors distinguish between capability exist
 - #493: [review-request] Is the WCFA pattern inherent to systems with safe fallbacks, or preven
 - #492: [review-request] Can execution-path tracing be standardized across federation nodes as 
-- #491: [review-request] Does the WCFA pattern scale differently in larger federations?
-- #490: [review-request] What is the minimum viable governance verification a peer should deman
-- #489: [review-request] How should federation descriptors distinguish between capability exist
-- #488: [review-request] Is the WCFA pattern inherent to systems with safe fallbacks, or preven
-- #487: [review-request] Can execution-path tracing be standardized across federation nodes as 
 
 ## Environment Perception
-Git: main, 13 dirty, ci=, 0 open PRs
+Git: main, 12 dirty, ci=, 0 open PRs
 Project: python
 Code: 200 files, 680 cls, 481 fn, 10 low-cohesion cls (worst: AutonomyEngine LCOM4=6)
 Tests: pytest, 93 files, last=unknown
@@ -66,4 +66,4 @@ Health: 214 source files, 2 smells (2 large, 0 stale)
 ## Architecture
 38 services · 25 tattvas
 MURALI: **genesis**(2) → **dharma**(5) → **karma**(4) → **moksha**(6)
-<!-- briefing v3.0.0 | 973 tokens | budget: standard (2000) | focus: sattva, git_pain=0.8, ctx_pressure=1.0 | 2026-07-15T09:04:58 -->
+<!-- briefing v3.0.0 | 973 tokens | budget: standard (2000) | focus: sattva, git_pain=0.8, ctx_pressure=1.0 | 2026-07-15T11:04:57 -->
