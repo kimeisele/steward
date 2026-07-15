@@ -220,36 +220,31 @@ live pinnen, weil die Föderation weiterläuft.
   `specs/CONTEXT_BRIDGE_FEATURE_04.md`,
   `specs/CONTEXT_BRIDGE_GOVERNANCE_AMENDMENT_01.md` und
   `specs/context_bridge_evidence/**`.
-- Ausführlicher Beweis: `PHASE2_BEFUND.md` §§15–22.
+- Ausführlicher Beweis: `PHASE2_BEFUND.md` §§15–23.
 
-## 6. Exakt nächster Auftrag: Slice C finalisieren und neu reviewen
+## 6. Exakt nächster Auftrag: Slice-D-G2-Recon
 
-Der marker-aware Preview-Compatibility-Adapter ist über PR `#559`, Merge
-`2c4ac9c12445bc791423f4cdd830959987c79ccf`, auf `main`. Er änderte exakt
-`steward/briefing_stages.py` und `tests/test_briefing.py`; Python 3.11/3.12, Lint und
-Security waren grün.
+Slice C ist abgeschlossen. PR `#552` wurde auf dem exakt gebundenen Head vom Operator
+freigegeben und als Merge `1d009b6cc7f26adfb5e2d179688c5c8990fe9ede` regulär aufgenommen.
+Heartbeat `29444370093` war erfolgreich; Folgecommit `1d88a82391d52296bda9d6b8bace3e4442599487`
+änderte nur acht Runtime-State-Pfade. Source blieb auf dem freigegebenen Blob,
+`CLAUDE.md` blieb unverändert, Root-`AGENTS.md` und Publication-Artefakte blieben absent.
 
-Slice-C-PR `#552` wurde danach vollständig neu aufgebaut: direkte Tests werden gegen die
-alte Source rot, der zweite Commit migriert exakt die geschlossenen Sourcebytes, und der
-Real-Source-Test ruft `_load_orientation(".")` direkt auf. Der PR bleibt Draft, bis diese
-Continuity-Aktualisierung gemergt, `#552` einmal final auf aktuellen `main` rebased und auf
-dem neuen unveränderlichen Head vollständig grün ist. Erst dann folgt ein neues Reviewpaket
-mit der exakten Operatorfreigabe
-`APPROVE CONSTITUTION <head_sha> <source_blob> <c0_sha256>` gemergt. Jeder weitere Commit
-verwirft die Freigabe.
+Der nächste Auftrag ist ausschließlich read-only G2-Recon für Feature-01-Schnitt D:
+lokaler Publisher und Recovery. Vor jedem Code müssen bestehende Lock-/Atomic-Write-
+Primitiven, Pfadschutz, fsync-/Replace-Semantik, Publication-Record-Shape, Recovery-Caller,
+Modus-Fences und Tests erneut gegen aktuellen `main` gepinnt werden.
 
-Abbruchkriterium: PR `#552` vor dem neuen gebundenen Reviewpaket nicht mergen; keine Root-,
-Publisher-, Recovery-, Delivery- oder Aktivierungsänderung.
+Abbruchkriterium: Noch kein Publisher-, Writer-, Root-, Record-, Recovery-, Workflow-,
+Setting-, Delivery- oder Aktivierungspatch vor einer separat reviewten Slice-D-G2-Spec.
 
 ## 7. Offene Agenda nach Feature-Spec 01
 
 Reihenfolge ist vorläufig und muss jeweils durch neuen Live-Recon bestätigt werden:
 
-1. Diese Continuity-Aktualisierung mergen; danach PR `#552` final auf `main` rebasen,
-   vollständig prüfen, einfrieren und explizit vom Operator freigeben lassen. Danach
-   weiter strikt nach den in
-   §15 definierten Einzelschnitten und jeweils eigenem aktuellem G2 implementieren; erst
-   nach Required Checks, Governance und Operations-Drill aktivieren.
+1. Slice D ausschließlich read-only spezifizieren und adversarial reviewen; danach weiter
+   strikt nach den in §15 definierten Einzelschnitten und jeweils eigenem aktuellem G2
+   implementieren. Erst nach Required Checks, Governance und Operations-Drill aktivieren.
 2. Danach Feature 02 (Current-Phase Reference Card) und Feature 03 (Action Signal
    Integrity) getrennt spezifizieren.
 3. Heartbeat-Fehlerpropagation read-only gegen kritische, degradierbare und externe/
@@ -294,11 +289,10 @@ Produktionslogs und neuere Phase-2-Beweise haben Vorrang. Widersprüche werden i
 explizit korrigiert, niemals durch blindes Befolgen alter Aussagen.
 
 Feature 01 ist G1-freigegeben; Schnitte A und B sind implementiert und verifiziert.
-Preview-Compatibility ist über PR #559 auf main implementiert und vollständig grün.
-Slice-C-PR #552 wurde in zwei saubere Commits neu aufgebaut und bleibt Draft. Der nächste
-Auftrag ist: diese Continuity-Aktualisierung prüfen, danach #552 final auf aktuellen main
-rebasen, vollständige CI abwarten und ein neues gebundenes HITL-Reviewpaket vorlegen. Vor
-der exakten Operatorfreigabe nicht mergen. Verändere keine Root-, Workflow-, Setting-,
-Publisher-, Recovery-, Delivery- oder Aktivierungsfläche. Pflege PHASE2_CURRENT als
-widerlegbares Cockpit und PHASE2_BEFUND als ausführliches externes Gehirn.
+Slice C ist über PR #552 gemergt und per Folgeheartbeat als nicht aktiviert verifiziert.
+Der nächste Auftrag ist ausschließlich read-only Slice-D-G2-Recon für lokalen Publisher
+und Recovery. Vor reviewter Slice-D-Spec keinen Publisher-, Writer-, Root-, Record-,
+Recovery-, Workflow-, Setting-, Delivery- oder Aktivierungspatch erstellen. Pflege
+PHASE2_CURRENT als widerlegbares Cockpit und PHASE2_BEFUND als ausführliches externes
+Gehirn.
 ```
