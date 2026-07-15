@@ -162,10 +162,17 @@ Erlaubt wären ausschließlich:
 ```text
 .steward/conventions.md
 tests/test_context_constitution.py
+tests/test_briefing.py
 ```
 
 `tests/test_context_constitution.py` ist neu. Es liest ausschließlich die echte Source und
 die normative Feature-00-Spec. Es dupliziert den C0-Wortlaut nicht.
+
+`tests/test_briefing.py` erhält ausschließlich die notwendige Korrektur seines bestehenden
+Real-Repo-Integrationstests: Eine leere versionierte Orientation ist nach diesem G2 ein
+gültiger Zustand und darf nicht weiter durch die alten Begriffe `Antahkarana` oder
+`cognitive` widerlegt werden. Der Test muss stattdessen beweisen, dass der Legacy-Preview
+mit der leeren Orientation weiterhin erfolgreich und ohne Root-Write erzeugt wird.
 
 Jeder weitere Pfad stoppt den Source-PR. Insbesondere verboten:
 
@@ -201,9 +208,22 @@ Der grüne Vertrag prüft mindestens:
    `write CLAUDE.md` fehlen.
 8. CR, BOM, NUL, bidi/zero-width, doppelter oder verschachtelter Marker blockieren.
 9. `CLAUDE.md` bleibt exakt der Base-Blob; `AGENTS.md` bleibt absent.
-10. Der PR-Diff enthält nur die zwei erlaubten Pfade.
+10. Der PR-Diff enthält nur die drei erlaubten Pfade.
+11. Der reale Legacy-Preview toleriert die leere versionierte Orientation, ohne eine
+    Architekturphrase aus der entfernten Source zu verlangen oder Root-Dateien zu ändern.
 
 Punkte 9 und 10 sind PR-/Git-Contract-Prüfungen, keine bloßen Unit-Assertions.
+
+### 6.1 Nachträglicher Integrationsbeweis
+
+Der erste vollständige PR-CI-Lauf auf dem exakten Zwei-Pfad-Kandidaten scheiterte in
+Python 3.11 und 3.12 ausschließlich an
+`TestGenerateBriefing.test_includes_orientation_from_conventions`. Der Test behauptete,
+die reale Source müsse weiterhin `Antahkarana` oder `cognitive` enthalten. Diese Annahme
+widerspricht der bereits geschlossenen Entscheidung für eine leere erste Orientation.
+
+Der neue Befund erweitert den zulässigen Scope genau um diesen vorhandenen Test. Er
+autorisiert weder eine Produktänderung noch zusätzliche Orientation-Prosa.
 
 ## 7. Review- und Attestation-Gate
 

@@ -2138,3 +2138,19 @@ werden und bleibt seinerseits bis zur exakt gebundenen Operatorfreigabe ungemerg
 
 Der historische G2-Befund bleibt erhalten und erhält eine explizite superseding note.
 Phase 1 bleibt read-only. PHASE2_CURRENT bleibt ein widerlegbarer Arbeitsstand, keine SSOT.
+
+## 20. Slice-C-CI korrigiert den zulässigen Integrationstest-Scope
+
+Der erste vollständige CI-Lauf des exakten Slice-C-Kandidaten war in Lint und Security
+grün und scheiterte in Python 3.11/3.12 am selben alten Integrationstest:
+`TestGenerateBriefing.test_includes_orientation_from_conventions` verlangte weiterhin
+`Antahkarana` oder `cognitive` aus der realen `.steward/conventions.md`.
+
+Das ist kein Source- oder Parserfehler. Slice-C-G2 entschied ausdrücklich, dass die erste
+versionierte Orientation leer bleibt und alte Architekturprosa default-deny entfernt
+wird. Den C0-Vertrag zur Befriedigung des alten Tests aufzuweichen wäre falsch.
+
+Der erlaubte Source-PR-Scope wird daher exakt um `tests/test_briefing.py` erweitert. Dort
+darf nur der obsolete Real-Repo-Test zu einem Integrationsbeweis geändert werden, dass der
+Legacy-Preview eine leere versionierte Orientation toleriert und keine Root-Datei schreibt.
+Produktcode, zusätzliche Orientation-Prosa und jeder weitere Pfad bleiben verboten.

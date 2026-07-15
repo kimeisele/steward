@@ -237,8 +237,11 @@ Der Vertrag trennt:
 - die explizite Chat-/CLI-Freigabe als prozeduralen `single_owner_hitl`-Beleg.
 
 Liegt das Amendment regulär auf `main`, ist der nächste isolierte Auftrag Slice C: exakt
-`.steward/conventions.md` und `tests/test_context_constitution.py` in einem **separaten**
-Source-/Test-PR. Dieser PR wird auf finalem Head eingefroren und erst nach einem Reviewpaket
+`.steward/conventions.md`, `tests/test_context_constitution.py` und die notwendige
+Integrationstestkorrektur in `tests/test_briefing.py` in einem **separaten** Source-/Test-
+PR. Der erste vollständige CI-Lauf bewies, dass der alte Real-Repo-Test fälschlich die
+bewusst entfernte `Antahkarana`-/`cognitive`-Orientation voraussetzt. Der Source-PR wird auf
+finalem Head eingefroren und erst nach einem Reviewpaket
 sowie der exakten Operatorfreigabe
 `APPROVE CONSTITUTION <head_sha> <source_blob> <c0_sha256>` gemergt. Jeder weitere Commit
 verwirft die Freigabe.
