@@ -1839,9 +1839,10 @@ meldete dabei den bekannten Rule-Bypass für erwartete Checks. Das ist ausdrück
 nicht der Zielzustand von Feature 01; Runtime-State-Entkopplung und PR-only Delivery
 bleiben spätere eigene Schnitte.
 
-### Nächster Arbeitsauftrag
+### Damals nächster Arbeitsauftrag
 
-Als nächstes ist ausschließlich der read-only G2-Preflight für Feature 01 / Schnitt B aus
+Zum Abschluss von Schnitt A war ausschließlich der read-only G2-Preflight für Feature 01 /
+Schnitt B aus
 `specs/CONTEXT_BRIDGE_FEATURE_01.md` §15.2 zulässig. Er muss aktuelle Symbole und Pfade
 pinnen, die reine Renderer-/Validator-API und rote Golden-/Adversarial-Tests festlegen und
 beweisen, dass keine Writes, Clock-, Git-, Netzwerk-, ServiceRegistry-, Root- oder
@@ -1850,3 +1851,113 @@ Workflowwirkung entsteht.
 Kein Schnitt-B-Produktcode vor gemergtem G2-Preflight. Publisher, Root-Ausgaben,
 Constitution-Migration, Recovery, Delivery, Governance und Aktivierung bleiben gesperrt.
 Phase 1 bleibt unverändert.
+
+---
+
+## §17 — FEATURE 01 SCHNITT B: OFFLINE-CONTRACT UND RENDERER GELIEFERT, WEITERHIN NICHT AKTIVIERT
+
+**Datum:** 2026-07-15
+**Preflight:** PR `#541`, Merge `9347f21f9e1a15e5cfd049c562e4db24957a2cac`
+**Implementierung:** PR `#547`, Merge `a750e0f3826e0067656062e02c3b7c896db35cde`
+**Produktionsfolge:** Run `29436703996`, Commit
+`38f361318b39864628dca1329bc513475fec1c04`
+
+### Gelieferte Grenze
+
+Schnitt B ergänzt genau den reinen Offline-Unterbau, nicht den Publisher:
+
+- zwei öffentliche Validatoren für materialisierte Feature-04-Payloads und Snapshots,
+- einen I/O-, Clock-, Git-, Netzwerk- und Registry-freien Renderer,
+- ein frozen Kandidatenobjekt mit vier Bytes-Artefakten,
+- exakt dasselbe Root-Bytes-Objekt für Claude und Codex,
+- zirkulationsfreie Snapshot- und Publication-Envelopes,
+- fail-closed Preview- und Cross-Binding-Grenzen.
+
+Der Merge-First-Parent-Diff enthält ausschließlich:
+
+```text
+steward/context_contract.py
+steward/context_rendering.py
+tests/test_context_contract.py
+tests/test_context_rendering.py
+```
+
+Kein bestehender Produktcaller importiert den neuen Renderer. Es gibt weiterhin keinen
+Writer, Lock, Replace, Recovery, Root-Write, Workflow oder Deliverypfad.
+
+### Golden- und Qualitätsbeweis
+
+Die gemergten Feature-04-/Feature-01-Vektoren wurden exakt reproduziert:
+
+- Root: 2.318 Bytes, Consumer-Hash
+  `9519cfc5867580d041ef7d01c6007a35e7d98b51d559c08b6b941940fcbb6e9d`,
+- Snapshot-Artefakt: 4.781 Bytes, domain-separierter Hash
+  `fb6320ea4e8dd3d2fd8c009d920396c9e5db73aa4403027b5fae2ca3d3719ac3`,
+- Publication-Artefakt: 1.203 Bytes,
+- Payload-Hash `d3a344af1700b88346695e13833ec5d6f81b66584ef8272542c64f7d4aa4d71a`,
+- Snapshot-Hash `999ba49ddaea6300f3398159103491915a9b5ce3b7871a9cbd2f7b20b761ceba`.
+
+78 gezielte Tests, Bandit, gezieltes Ruff und alle vier CI-Checks waren grün. Der erste
+CI-Lauf fand keine Produktabweichung, sondern einen Testharness-Lifetime-Fehler: global
+gepatchtes `time.time` traf Pytest beim Fixture-Teardown. Ein auf den Renderer-Aufruf
+begrenzter `monkeypatch.context()` korrigierte dies; beide Python-Matrizen liefen danach
+vollständig grün.
+
+Die lokale Vollsuite endete mit 2.221 passed und 13 skipped. Ein GitSense-Test sah zwei von
+der Suite selbst veränderte State-Dateien und bewertete den Checkout deshalb als `tamas`;
+nach Restore und normalem Heartbeat-Rebase lief exakt dieser Test grün. Der repositoryweite
+Ruff-Baseline-Check bleibt an unberührten Altskripten rot; der Slice-Scope selbst ist sauber.
+
+### Produktionsbeweis
+
+Run `29436703996` startete auf dem exakten Merge-Head und endete erfolgreich. Der einzige
+Folgecommit `38f361318b39864628dca1329bc513475fec1c04` änderte elf bekannte Runtime-/Federation-
+State-Pfade. Root- und Slice-B-Produktblobs blieben unverändert:
+
+```text
+CLAUDE.md:                  8146a15603c95e5aa1404c9eb7021e3008914b0c
+AGENTS.md:                  absent
+context snapshot/record:    absent
+context_contract.py:        5bd37a576ab476739fd37dd613c2e4630791a7e1
+context_rendering.py:       9b603bfbed853ed4cdcda4b8939c2926777fbc20
+```
+
+Es gab keinen Runtime-Traceback, keinen Legacy-Writer- oder Git-NADI-Fence-Fehler und
+keinen Renderer-/AGENTS-Aufruf. Zwei reine Texttreffer auf `Traceback` stammten nur aus
+den im Actionlog eingeblendeten Python-Quellzeilen.
+
+### Neue Live-Präzisierung: grüner Heartbeat ist nicht gleich erfolgreicher Agententask
+
+Der Run machte eine bereits vermutete Fehlerpropagationslücke schärfer sichtbar:
+
+- Groq: 401 Invalid API Key,
+- Gemini: 429 Quota nach Retries,
+- Mistral: erst 200, danach 400 im Streaming-Fallback,
+- Ergebnis der Chamber: alle Provider für Streaming erschöpft,
+- `agent_error` ging an null Listener,
+- Gesamtworkflow trotzdem `success`.
+
+Das widerlegt keinen Slice-B-Vertrag, weil der Renderer unverdrahtet ist. Es widerlegt aber
+die mögliche Interpretation, ein grüner Heartbeat beweise automatisch eine erfolgreiche
+autonome Aktion. Der ältere Auftrag zur Fehlerklassifikation und -propagation bleibt daher
+materiell wichtig und wird nach den bereits begonnenen Context-Bridge-Schnitten separat
+behandelt.
+
+Der Runtime-State-Post-Step pushte weiterhin direkt auf `main` und bypassed erwartete
+Required Checks. Auch das bleibt ausdrücklich späterer Schnitt H/I.
+
+### Nächster Auftrag und harte Governance-Grenze
+
+Als nächstes ist nur der read-only G2-Preflight für Schnitt C zulässig. Er muss den heutigen
+Constitution-Source-Blob, den exakten Feature-00-C0-Text, die erlaubte Orientation, alle zu
+entfernenden Persona-/Runtime-/Agenda-Teile sowie Rollback und negative Fixtures pinnen.
+
+Vor allem muss er die reale separate menschliche Reviewfähigkeit prüfen. Feature 01 hat
+bereits bewiesen, dass der heutige Ein-Collaborator-Zustand die Zwei-Principal-Precondition
+nicht erfüllt. Weder Self-Approval noch Admin-Bypass noch ein erfundener Federation-Agent
+darf diese Governance-Evidence ersetzen. Fehlt ein echter zweiter menschlicher Reviewer,
+wird Schnitt C nach dem Recon als governance-blocked dokumentiert und die Source nicht
+verändert.
+
+Vollständiger Operationsbeweis:
+`specs/context_bridge_evidence/FEATURE_01_SLICE_B_PRODUCTION.md`.
