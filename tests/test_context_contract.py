@@ -34,6 +34,7 @@ from steward.context_contract import (
     payload_hash,
     snapshot_hash,
     validate_payload_core,
+    validate_previous_published_record,
     validate_public_safe_text,
     validate_snapshot_model,
 )
@@ -493,6 +494,93 @@ class TestModeAndPayloadDecision:
         attestation = self.attestation(c0)
         assert decide_publish("a" * 64, c0, attestation, None, OutputMode.PREVIEW).decision is Decision.BLOCKED
         assert decide_publish("not-a-hash", c0, attestation, None, OutputMode.CANONICAL).decision is Decision.BLOCKED
+
+    def test_previous_record_accepts_nullable_comparison_state(self):
+        candidate = "a" * 64
+        c0 = "b" * 64
+        all_null = PreviousPublishedRecord(
+            payload_hash=candidate,
+            snapshot_id="ctxsnap-v1:" + ("d" * 64),
+            c0_sha256=c0,
+            mode=OutputMode.CANONICAL,
+            consumer_outputs={"agents": "e" * 64, "claude": "e" * 64},
+            comparison_state={
+                "gateway_errors_total": None,
+                "gateway_rejected_parse_total": None,
+                "gateway_rejected_validate_total": None,
+                "immune_rollbacks_total": None,
+            },
+        )
+        validate_previous_published_record(all_null)
+        assert (
+            decide_publish(candidate, c0, self.attestation(c0), all_null, OutputMode.CANONICAL).decision
+            is Decision.NO_OP
+        )
+
+        mixed = PreviousPublishedRecord(
+            payload_hash=candidate,
+            snapshot_id="ctxsnap-v1:" + ("d" * 64),
+            c0_sha256=c0,
+            mode=OutputMode.CANONICAL,
+            consumer_outputs={"agents": "e" * 64, "claude": "e" * 64},
+            comparison_state={
+                "gateway_errors_total": 0,
+                "gateway_rejected_parse_total": None,
+                "gateway_rejected_validate_total": 2,
+                "immune_rollbacks_total": None,
+            },
+        )
+        validate_previous_published_record(mixed)
+
+    @pytest.mark.parametrize("bad_value", [-1, True, 1.5, "1"])
+    def test_previous_record_rejects_invalid_comparison_values(self, bad_value):
+        previous = self.previous("a" * 64, "b" * 64)
+        comparison_state = dict(previous.comparison_state)
+        comparison_state["gateway_errors_total"] = bad_value
+        malformed = PreviousPublishedRecord(
+            payload_hash=previous.payload_hash,
+            snapshot_id=previous.snapshot_id,
+            c0_sha256=previous.c0_sha256,
+            mode=previous.mode,
+            consumer_outputs=previous.consumer_outputs,
+            comparison_state=comparison_state,
+        )
+
+        assert violation_code(validate_previous_published_record, malformed) in {"invalid_type", "invalid_value"}
+        assert (
+            decide_publish(
+                "a" * 64,
+                "b" * 64,
+                self.attestation("b" * 64),
+                malformed,
+                OutputMode.CANONICAL,
+            ).decision
+            is Decision.BLOCKED
+        )
+
+    def test_previous_record_rejects_wrong_record_and_mode_runtime_types(self):
+        assert violation_code(validate_previous_published_record, object()) == "invalid_type"
+
+        previous = self.previous("a" * 64, "b" * 64)
+        malformed = PreviousPublishedRecord(
+            payload_hash=previous.payload_hash,
+            snapshot_id=previous.snapshot_id,
+            c0_sha256=previous.c0_sha256,
+            mode="canonical",  # type: ignore[arg-type]
+            consumer_outputs=previous.consumer_outputs,
+            comparison_state=previous.comparison_state,
+        )
+        assert violation_code(validate_previous_published_record, malformed) == "invalid_type"
+        assert (
+            decide_publish(
+                "a" * 64,
+                "b" * 64,
+                self.attestation("b" * 64),
+                malformed,
+                OutputMode.CANONICAL,
+            ).decision
+            is Decision.BLOCKED
+        )
 
 
 class TestMaterializedModelValidation:

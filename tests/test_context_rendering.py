@@ -12,10 +12,11 @@ from pathlib import Path
 
 import pytest
 
-from steward.context_contract import ContractViolation, consumer_output_hash
+from steward.context_contract import ContractViolation, OutputMode, canonical_json_bytes, consumer_output_hash
 from steward.context_rendering import (
     PublicationCandidates,
     build_publication_candidates,
+    validate_persisted_generation,
     validate_publication_candidates,
 )
 
@@ -31,6 +32,18 @@ def models():
 def expected():
     path = Path("specs/context_bridge_evidence/FEATURE_01_PUBLICATION_VECTORS.json")
     return json.loads(path.read_text())
+
+
+@pytest.fixture
+def detached_candidates(models):
+    payload, snapshot = models
+    built = build_publication_candidates(payload, snapshot)
+    return PublicationCandidates(
+        claude_md=bytes(bytearray(built.claude_md)),
+        agents_md=bytes(bytearray(built.agents_md)),
+        snapshot_artifact=bytes(bytearray(built.snapshot_artifact)),
+        publication_artifact=bytes(bytearray(built.publication_artifact)),
+    )
 
 
 def test_golden_generation_is_exact_and_byte_identical(models, expected):
@@ -160,3 +173,84 @@ def test_module_imports_are_pure_and_fixture_free():
     assert "ServiceRegistry" not in source
     assert "assemble_context" not in source
     assert "specs/" not in source
+
+
+def test_persisted_generation_accepts_separately_read_equal_roots(detached_candidates, expected):
+    assert detached_candidates.claude_md == detached_candidates.agents_md
+    assert detached_candidates.claude_md is not detached_candidates.agents_md
+
+    previous = validate_persisted_generation(detached_candidates)
+
+    assert previous.payload_hash == expected["publication_artifact"]["expected_payload_hash"]
+    assert previous.snapshot_id == expected["publication_artifact"]["expected_snapshot_id"]
+    assert previous.mode is OutputMode.CANONICAL
+
+
+def test_publication_artifact_bytes_alone_are_not_a_trusted_record(detached_candidates):
+    with pytest.raises(ContractViolation) as exc_info:
+        validate_persisted_generation(detached_candidates.publication_artifact)  # type: ignore[arg-type]
+    assert exc_info.value.code == "invalid_type"
+
+
+@pytest.mark.parametrize("field", PublicationCandidates.__dataclass_fields__)
+def test_each_persisted_artifact_tamper_blocks(detached_candidates, field):
+    tampered = replace(detached_candidates, **{field: getattr(detached_candidates, field) + b"x"})
+    with pytest.raises(ContractViolation):
+        validate_persisted_generation(tampered)
+
+
+def test_distinct_root_bytes_block(detached_candidates):
+    tampered = replace(detached_candidates, agents_md=detached_candidates.agents_md.replace(b"Steward", b"steward", 1))
+    with pytest.raises(ContractViolation) as exc_info:
+        validate_persisted_generation(tampered)
+    assert exc_info.value.code == "inconsistent"
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda root: b"prefix\n" + root,
+        lambda root: root + b"\n",
+        lambda root: root.replace(b"<!-- steward-context:dynamic:v1:end -->", b"", 1),
+        lambda root: root.replace(b"### Observations", b"### Injected\n\n### Observations", 1),
+        lambda root: root[:-1],
+    ],
+)
+def test_root_structure_tamper_blocks(detached_candidates, mutation):
+    root = mutation(detached_candidates.claude_md)
+    tampered = replace(detached_candidates, claude_md=root, agents_md=bytes(bytearray(root)))
+    with pytest.raises(ContractViolation):
+        validate_persisted_generation(tampered)
+
+
+def test_snapshot_and_publication_cross_binding_tamper_blocks(detached_candidates):
+    snapshot_artifact = json.loads(detached_candidates.snapshot_artifact)
+    snapshot_artifact["snapshot"]["comparison_state"]["gateway_errors_total"] = None
+    tampered_snapshot = canonical_json_bytes(snapshot_artifact)
+    with pytest.raises(ContractViolation):
+        validate_persisted_generation(replace(detached_candidates, snapshot_artifact=tampered_snapshot))
+
+    publication = json.loads(detached_candidates.publication_artifact)
+    publication["previous"]["comparison_state"]["gateway_errors_total"] = None
+    tampered_publication = canonical_json_bytes(publication)
+    with pytest.raises(ContractViolation):
+        validate_persisted_generation(replace(detached_candidates, publication_artifact=tampered_publication))
+
+
+@pytest.mark.parametrize(
+    ("field", "bad_bytes"),
+    [
+        ("claude_md", b"x" * 65_537),
+        ("agents_md", b"x" * 65_537),
+        ("snapshot_artifact", b"x" * 131_073),
+        ("publication_artifact", b"x" * 16_385),
+        ("snapshot_artifact", b"\xef\xbb\xbf{}"),
+        ("snapshot_artifact", b"\xff"),
+        ("snapshot_artifact", b'{"schema":NaN}'),
+        ("snapshot_artifact", b'{"schema":"x","schema":"x"}'),
+        ("snapshot_artifact", b'{ "schema": "x" }'),
+    ],
+)
+def test_persisted_input_boundaries_and_noncanonical_json_block(detached_candidates, field, bad_bytes):
+    with pytest.raises(ContractViolation):
+        validate_persisted_generation(replace(detached_candidates, **{field: bad_bytes}))
