@@ -186,6 +186,27 @@ def test_persisted_generation_accepts_separately_read_equal_roots(detached_candi
     assert previous.mode is OutputMode.CANONICAL
 
 
+def test_persisted_generation_accepts_nullable_comparison_state(models):
+    payload, snapshot = models
+    snapshot["comparison_state"] = {
+        "gateway_errors_total": None,
+        "gateway_rejected_parse_total": 1,
+        "gateway_rejected_validate_total": None,
+        "immune_rollbacks_total": 2,
+    }
+    built = build_publication_candidates(payload, snapshot)
+    detached = PublicationCandidates(
+        claude_md=bytes(bytearray(built.claude_md)),
+        agents_md=bytes(bytearray(built.agents_md)),
+        snapshot_artifact=bytes(bytearray(built.snapshot_artifact)),
+        publication_artifact=bytes(bytearray(built.publication_artifact)),
+    )
+
+    previous = validate_persisted_generation(detached)
+
+    assert dict(previous.comparison_state) == snapshot["comparison_state"]
+
+
 def test_publication_artifact_bytes_alone_are_not_a_trusted_record(detached_candidates):
     with pytest.raises(ContractViolation) as exc_info:
         validate_persisted_generation(detached_candidates.publication_artifact)  # type: ignore[arg-type]
@@ -235,6 +256,65 @@ def test_snapshot_and_publication_cross_binding_tamper_blocks(detached_candidate
     tampered_publication = canonical_json_bytes(publication)
     with pytest.raises(ContractViolation):
         validate_persisted_generation(replace(detached_candidates, publication_artifact=tampered_publication))
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda value: value.update({"unknown": True}),
+        lambda value: value["previous"].update({"unknown": True}),
+        lambda value: value["targets"].update({"agents": "agents.md"}),
+        lambda value: value["previous"].update({"payload_hash": "0" * 64}),
+        lambda value: value["previous"].update({"c0_sha256": "0" * 64}),
+        lambda value: value["previous"]["consumer_outputs"].update({"agents": "0" * 64}),
+        lambda value: value["previous"].update({"mode": 1}),
+        lambda value: value.update({"repository_head": "0" * 40}),
+        lambda value: value.update({"generator_commit": "0" * 40}),
+        lambda value: value["constitution"].update({"source_blob": "0" * 40}),
+    ],
+)
+def test_publication_schema_provenance_and_hash_tamper_blocks(detached_candidates, mutation):
+    publication = json.loads(detached_candidates.publication_artifact)
+    mutation(publication)
+    tampered = canonical_json_bytes(publication)
+
+    with pytest.raises(ContractViolation):
+        validate_persisted_generation(replace(detached_candidates, publication_artifact=tampered))
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda value: value.update({"unknown": True}),
+        lambda value: value.update({"snapshot_id": "ctxsnap-v1:" + ("0" * 64)}),
+        lambda value: value.update({"snapshot_hash": "0" * 64}),
+        lambda value: value["snapshot"]["orientation"].update({"sha256": "0" * 64}),
+    ],
+)
+def test_snapshot_schema_and_hash_tamper_blocks(detached_candidates, mutation):
+    snapshot = json.loads(detached_candidates.snapshot_artifact)
+    mutation(snapshot)
+    tampered = canonical_json_bytes(snapshot)
+
+    with pytest.raises(ContractViolation):
+        validate_persisted_generation(replace(detached_candidates, snapshot_artifact=tampered))
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [
+        (b"Repository head: `1111111111111111111111111111111111111111`", b"Repository head: `" + b"0" * 40 + b"`"),
+        (b'"provider":"healthy"', b'"provider":"unknown"'),
+        (b'"status":"empty"', b'"status":"valid"'),
+    ],
+)
+def test_dynamic_provenance_and_observation_tamper_blocks(detached_candidates, old, new):
+    assert old in detached_candidates.claude_md
+    root = detached_candidates.claude_md.replace(old, new, 1)
+    tampered = replace(detached_candidates, claude_md=root, agents_md=bytes(bytearray(root)))
+
+    with pytest.raises(ContractViolation):
+        validate_persisted_generation(tampered)
 
 
 @pytest.mark.parametrize(
