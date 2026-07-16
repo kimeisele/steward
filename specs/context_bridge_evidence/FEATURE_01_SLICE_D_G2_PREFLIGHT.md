@@ -269,9 +269,19 @@ steward/context_rendering.py
 
 `context_contract.py` darf die bestehende private Previous-Record-Prüfung zu genau einem
 öffentlichen strikten Validator `validate_previous_published_record()` refaktorieren. Er
-gibt bei Erfolg `None` zurück und wirft bei Fehler `ContractViolation`.
-`decide_publish()` muss dieselbe Wahrheit weiterverwenden; Record-Schema,
-Decision-Ergebnisse und Goldenwerte dürfen sich nicht ändern.
+bestätigt ausschließlich die strukturelle Schema-Gültigkeit eines bereits typisiert
+materialisierten `PreviousPublishedRecord`. Er gibt bei Erfolg `None` zurück und wirft
+bei Fehler `ContractViolation`. Falscher Record-Runtime-Typ, ein nicht als `OutputMode`
+materialisierter `mode` und sonstige malformed Felder blockieren.
+
+Der Validator muss für `comparison_state` dieselbe bestehende Nullable-Wahrheit wie
+`validate_snapshot_model()` verwenden: exakt alle vier Schlüssel, jeder Wert entweder
+ein gültiger nichtnegativer Integer oder `None`. Die heutige private `_valid_previous()`-
+Schleife mit `_count()` ist für `None` nachweislich zu eng und wird nicht konserviert.
+`decide_publish()` verwendet nach der Refaktorierung denselben öffentlichen Validator.
+Seine Ergebnisse bleiben für bisher schema-valide Records unverändert; die bisherige
+falsche Ablehnung normativ valider Nullable-Records wird ausdrücklich korrigiert.
+Hash-Domains, Goldenwerte und alle sonstigen Record-Felder bleiben unverändert.
 
 `context_rendering.py` darf genau eine reine Persisted-Generation-Fähigkeit ergänzen:
 
@@ -282,7 +292,16 @@ validate_persisted_generation(PublicationCandidates)
 
 Der Rückgabevertrag wird im roten Test festgeschrieben. Er exportiert keine mutable
 Payload-/Snapshot-Kopie als zweite Wahrheit. Der Validator erhält alle vier Bytes
-gemeinsam; es gibt keinen öffentlichen „Record allein ist gültig“-Shortcut.
+gemeinsam.
+
+Die Trust-Grenzen sind verschieden und dürfen nicht vermischt werden:
+
+- `validate_previous_published_record()` validiert nur ein bereits materialisiertes
+  Value Object; es attestiert weder Artifact-Bytes noch eine persistierte Generation.
+- Publication-Artefaktbytes allein dürfen nicht durch eine öffentliche Loader-API in
+  einen für den Publisher vertrauenswürdigen Previous Record verwandelt werden.
+- Ausschließlich `validate_persisted_generation()` darf aus vier gemeinsam geprüften
+  Bytefolgen einen für den Publisher verwendbaren `PreviousPublishedRecord` zurückgeben.
 
 ### 5.2 Tests
 
@@ -390,22 +409,31 @@ dürfen nicht über Pipeline-, Hook- oder Exception-swallowing-Pfade laufen.
 Mindestens erforderlich:
 
 1. Golden-Viererset liefert den exakt erwarteten `PreviousPublishedRecord`.
-2. Publication Record allein besitzt keine Validierungs-API.
-3. Jede einzelne der vier Bytefolgen wird separat manipuliert und blockiert.
-4. Root-Consumer unterscheiden sich um ein Byte und blockieren.
-5. falsche Markerreihenfolge, doppelter Marker, Zusatztext und fehlender finaler LF
+2. Publication-Artefaktbytes allein können nicht in einen vertrauenswürdigen Previous
+   Record geladen werden; der reine Value-Object-Validator ändert daran nichts.
+3. Ein `PreviousPublishedRecord` mit allen vier `comparison_state`-Werten `None` ist
+   schema-valide und wird akzeptiert.
+4. Gemischte zulässige Integer-/`None`-Comparison-States werden akzeptiert; negative,
+   boolesche, Float-, String- und unbekannte Werte blockieren.
+5. Falscher Record-Runtime-Typ und stringförmiger statt enumtypisierter `mode` blockieren;
+   `decide_publish()` gibt dafür `blocked` zurück.
+6. Jede einzelne der vier Bytefolgen wird separat manipuliert und blockiert.
+7. Zwei separat materialisierte Root-Byteobjekte mit `claude_md == agents_md`, aber
+   `claude_md is not agents_md`, werden als gültige bytegleiche Generation akzeptiert.
+8. Root-Consumer unterscheiden sich um ein Byte und blockieren.
+9. falsche Markerreihenfolge, doppelter Marker, Zusatztext und fehlender finaler LF
    blockieren.
-6. manipulierte Dynamic-Provenance, Source-Status oder Observations blockieren.
-7. falscher Snapshot-Hash/-ID und falscher Snapshot-Artifact-Hash blockieren.
-8. falscher Payload-/Output-/C0-/Orientation-Hash blockiert.
-9. unbekannte Envelope- oder Previous-Keys blockieren.
-10. duplicate JSON keys, nichtkanonischer Whitespace, BOM, invalides UTF-8, `NaN`, Float
+10. manipulierte Dynamic-Provenance, Source-Status oder Observations blockieren.
+11. falscher Snapshot-Hash/-ID und falscher Snapshot-Artifact-Hash blockieren.
+12. falscher Payload-/Output-/C0-/Orientation-Hash blockiert.
+13. unbekannte Envelope- oder Previous-Keys blockieren.
+14. duplicate JSON keys, nichtkanonischer Whitespace, BOM, invalides UTF-8, `NaN`, Float
     und überlanges Input blockieren.
-11. falsche Targetmap oder Consumer-Keymenge blockiert.
-12. mutierter `comparison_state` zwischen Snapshot und Record blockiert.
-13. der öffentliche Previous-Record-Validator und `decide_publish()` teilen nachweislich
+15. falsche Targetmap oder Consumer-Keymenge blockiert.
+16. mutierter `comparison_state` zwischen Snapshot und Record blockiert.
+17. der öffentliche Previous-Record-Validator und `decide_publish()` teilen nachweislich
     dieselbe Record-Wahrheit.
-14. ein Purity-Test prüft direkt, dass der D1-Produktpfad weder Filesystem, Git,
+18. ein Purity-Test prüft direkt, dass der D1-Produktpfad weder Filesystem, Git,
     Subprocess, Environment, Clock, Netzwerk noch Registry importiert oder aufruft.
 
 Tests dürfen keine private Implementierungsfunktion als Ersatz für die öffentliche
@@ -459,12 +487,16 @@ D1 besitzt keine Deploymentwirkung:
 - keine Dateisystem- oder Git-Seiteneffekte;
 - Policy bleibt mangels Repository-Policy und Runtime-Autorisierung effektiv disabled;
 - Heartbeat darf weiterhin nur den bekannten Legacy-Raw-State schreiben;
-- Root- und Publication-Blobs bleiben unverändert beziehungsweise absent.
+- getrackte Root- und Publication-Blobs bleiben unverändert beziehungsweise im Git-Tree
+  absent.
 
 Revert ist ein normaler PR-Revert des D1-Produktcommits. Da D1 nichts persistiert, gibt es
 keine Datenmigration und keine Recoveryaktion. Nach Merge muss ein erfolgreicher
-Folgeheartbeat per GitHub API beweisen, dass `CLAUDE.md` unverändert, `AGENTS.md` absent
-und beide JSON-Artefakte absent blieben.
+Folgeheartbeat per GitHub API beweisen, dass der getrackte `CLAUDE.md`-Blob unverändert
+blieb und `AGENTS.md` sowie beide JSON-Artefakte nicht im Commit beziehungsweise Git-Tree
+auftauchten. GitHub kann keine Aussage über kurzlebige ignorierte Dateien im ephemeren
+Runner-Dateisystem beweisen. Dass D1 keinen Writer und keinen Produktivcaller besitzt,
+wird stattdessen durch direkten Purity-Test und positiven Call-Site-Recon belegt.
 
 ---
 
