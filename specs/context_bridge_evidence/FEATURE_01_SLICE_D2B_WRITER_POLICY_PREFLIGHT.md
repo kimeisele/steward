@@ -2,13 +2,15 @@
 
 > **Status:** DRAFT 0.1 — READ-ONLY POLICY PROPOSAL; G1 OFF; IMPLEMENTATION LOCKED
 >
-> **Investigated main:** `kimeisele/steward@dd3824563fd074995fb71bd26255628f7eb2ef78`
+> **Investigated main:** `kimeisele/steward@36b22ebbd2f31d8f660f434138572bea563dc418`
 >
-> **Investigated tree:** `a298284e25568ac76f3bdccd75e75e88b313bdfa`
+> **Investigated tree:** `8a7779381d141552b2f03642e2e3e79fd845d577`
 >
 > **D2b preflight parent:** `f582e0d63876df8be61e8970a0fe065a2b2c034e`
 >
 > **Writer-evidence merge:** `573908721fce10ad1783af4abaa360b34987d6a6`
+>
+> **Earlier policy scan pin:** `dd3824563fd074995fb71bd26255628f7eb2ef78`
 >
 > **Date:** 2026-07-17
 
@@ -88,6 +90,22 @@ The current `.steward/context.json` and `.steward/.context_hash` are legacy runt
 state, not D2b artifacts. The tracked `.steward/.atomic_*.tmp` files are unrelated
 hygiene state and must not be adopted as transaction evidence. The baseline is
 `legacy_bootstrap`; it is not eligible for automatic D2b recovery or overwrite.
+
+Between the earlier policy scan pin and this final pin, the live heartbeat changed only
+the following nine runtime/federation paths; no Context Bridge code, test, spec, root
+contract, workflow, or setting changed:
+
+```text
+.steward/.context_hash
+.steward/context.json
+.steward/federation_health.json
+.steward/marketplace.json
+.steward/sessions.json
+data/federation/nadi_outbox.json
+data/federation/peers.json
+data/federation/relay_seen_ids.json
+data/federation/steward_health.json
+```
 
 The current Constitution candidate remains `.steward/conventions.md`, blob
 `f428d5856a5c525e002c301890777748effbeb4e`; it is source evidence only and is not a
