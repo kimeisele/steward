@@ -125,7 +125,10 @@ kontrollierte Recon belegte:
 - ein zweiter separater File Descriptor desselben Prozesses konnte einen gehaltenen
   nonblocking exklusiven `flock` nicht erwerben;
 - dirfd-relatives `os.replace()` plus Parent-`fsync()` funktionierte in einem temporären
-  Verzeichnis.
+  Verzeichnis;
+- `/usr/bin/git` war eine reguläre, nicht verlinkte, UID-0-Datei mit Modus `0755` in
+  einem nicht gruppen-/weltbeschreibbaren UID-0-Parent. Die benötigten Plumbing-Kommandos
+  funktionierten mit exakt der in §3.3 definierten leeren Allowlist-Umgebung.
 
 Das beweist die Grundfähigkeit, nicht alle Crash-/Power-Loss-Garantien. D2b benötigt
 später Linux-CI-Fixtures und injizierte Fehler nach jedem Durability-Schritt.
@@ -150,12 +153,12 @@ akzeptieren.
 
 ## 3. D2a — exakter freigegebener Vertrag
 
-### 3.1 Attestierter D1-Generationsbeweis
+### 3.1 Constitution-gebundener D1-Generationsbeweis
 
 Erlaubt ist genau eine neue öffentliche reine Funktion:
 
 ```python
-validate_attested_persisted_generation(
+validate_constitution_bound_persisted_generation(
     candidates: PublicationCandidates,
     attestation: ConstitutionAttestation,
 ) -> PreviousPublishedRecord
@@ -181,6 +184,11 @@ Der Vertrag lautet:
 `validate_persisted_generation()` bleibt als interner-Konsistenzbeweis kompatibel. Es
 wird nicht nachträglich als Attestation bezeichnet. Ein Publication-Artefakt allein und
 ein `PreviousPublishedRecord` allein bleiben unzureichend.
+
+Auch die neue Funktion attestiert **keinen Publisher-Ursprung und keine Persistenz in
+Git**. Sie beweist ausschließlich, dass eine intern valide Vierergruppe dieselbe extern
+reviewte Constitution-Provenance trägt. Erst die Repository-Grenze aus §3.6 darf nach
+bytegenauer HEAD-Bindung daraus einen vertrauenswürdigen Previous Record exponieren.
 
 Falls die bestehende private `_validate_attestation()` refaktoriert wird, ist höchstens
 ein öffentlicher reiner `validate_constitution_attestation()`-Wrapper mit demselben
@@ -215,17 +223,35 @@ geschlossen und exakt.
 
 D2a verwendet nur die in §2.5 belegten Plumbing-Kommandos. Verbindlich sind:
 
-- ausführbare Datei und Argumente werden als Liste ohne Shell ausgeführt;
-- fester `cwd` ist der zuerst real aufgelöste erwartete Repository-Root;
-- `LC_ALL=C`, `GIT_OPTIONAL_LOCKS=0` und `GIT_NO_REPLACE_OBJECTS=1` werden gesetzt;
-- System- und Global-Config-Discovery werden über explizite Null-Config-Grenzen
-  deaktiviert; für die Plumbing-Aufrufe ist keine benutzerdefinierte Git-Konfiguration
-  erforderlich;
-- alle durch `git rev-parse --local-env-vars` bekannten Repository-/Index-/Object-/Config-
-  Overrides werden aus der Kindprozessumgebung entfernt; dynamische
-  `GIT_CONFIG_KEY_<n>`-/`GIT_CONFIG_VALUE_<n>`-Paare werden zusammen mit ihrem Count
-  entfernt;
-- Exitcode, Größenlimit, Timeout und NUL-getrennte Ausgabe werden strikt geprüft;
+- die Git-Executable wird nicht über das geerbte `PATH` gesucht. D2a prüft ausschließlich
+  die festen POSIX-Systempfade `/usr/bin/git` und `/bin/git` und verwendet den ersten
+  sicheren absoluten Treffer;
+- Executable und jede Komponente ihres absoluten Pfads müssen per `lstat` regulär
+  beziehungsweise Verzeichnis, keine Symlinks, UID `0` und weder gruppen- noch
+  weltbeschreibbar sein. Fehlt ein solcher Treffer, bleibt D2a fail-closed
+  `manual_review`;
+- die validierte absolute Executable und Argumente werden als Liste ohne Shell
+  ausgeführt; vor und nach der Inspektion werden Device, Inode, Typ, UID, Modus,
+  `mtime_ns` und `ctime_ns` erneut verglichen;
+- fester `cwd` ist der ursprüngliche lexikalisch normalisierte absolute Repository-Pfad,
+  nicht ein durch `resolve()` umgeschriebener Alias. Unmittelbar vor und nach jedem
+  Spawn muss dessen `lstat()` mit dem gehaltenen Root-Directory-FD übereinstimmen;
+- die Child-Umgebung ist eine Allowlist, keine bereinigte Kopie der Caller-Umgebung. Sie
+  enthält nur `LC_ALL=C`, `LANG=C`, `PATH=/usr/bin:/bin`, `GIT_OPTIONAL_LOCKS=0`,
+  `GIT_NO_REPLACE_OBJECTS=1`, `GIT_PAGER=cat`, `GIT_CONFIG_NOSYSTEM=1`,
+  `GIT_CONFIG_GLOBAL=/dev/null` und `GIT_CONFIG_SYSTEM=/dev/null`;
+- insbesondere werden kein Caller-`PATH`, `HOME`, `GIT_EXEC_PATH`, sonstiges `GIT_*`,
+  `GIT_CONFIG_KEY_*`, `GIT_CONFIG_VALUE_*`, `LD_*`, `DYLD_*`, `PYTHON*` oder
+  Loader-/Runtime-Override vererbt;
+- jedes Git-Kommando besitzt ein monotones Timeout von exakt fünf Sekunden; die gesamte
+  Repository-Inspektion besitzt eine monotone Obergrenze von zwanzig Sekunden;
+- stderr ist je Prozess auf 4.096 Bytes begrenzt. `rev-parse`-stdout ist auf 4.096 Bytes,
+  `ls-tree`-/`ls-files`-stdout jeweils auf 16.384 Bytes und Blob-stdout auf das jeweilige
+  D1-Artefaktlimit plus genau ein Byte begrenzt;
+- Pipes werden begrenzt gelesen; bei Timeout oder Überschreitung wird der Kindprozess
+  beendet und geerntet. Ein erst nach vollständigem `communicate()` geprüfter
+  unbeschränkter Puffer erfüllt den Vertrag nicht;
+- Exitcode und NUL-getrennte Ausgabe werden strikt geprüft;
 - `show-toplevel` muss bytegenau zum erwarteten realen Root passen;
 - HEAD muss exakt ein Commit sein;
 - unerwartete Stages, doppelte Einträge, falsche Modi oder nicht angeforderte Pfade
@@ -241,18 +267,34 @@ oder Import eines mutierenden Steward-Git-Wrappers ist verboten.
 
 Vor jedem Worktree-Read wird per `lstat`/sicherem Descriptor geprüft:
 
-- Repository-Root und `.steward/` sind reale Verzeichnisse und keine Symlinks;
-- Zielparent ist exakt einer dieser beiden gepinnten Parents;
+- der übergebene Repository-Pfad ist absolut, lexikalisch normalisiert und enthält weder
+  `.` noch `..`; er wird nicht zuerst mit `resolve()` durch Symlinks „bereinigt“;
+- ausgehend von einem geöffneten Dateisystem-Root wird jede Pfadkomponente dirfd-relativ
+  mit `O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW` geöffnet und per `fstat()`
+  geprüft. Repository-Root und `.steward/` bleiben als gepinnte Directory-FDs offen;
+- `.steward/` wird ausschließlich relativ zum Root-FD geöffnet. Zielparent ist exakt
+  einer dieser beiden gepinnten Directory-FDs;
+- Targets werden ausschließlich relativ zum Parent-FD mit
+  `O_RDONLY | O_CLOEXEC | O_NOFOLLOW` geöffnet. Nach der Parent-Prüfung ist
+  pfadbasiertes `Path.open()`/`open()` verboten;
 - ein existentes Ziel ist regulär, nicht Symlink, besitzt genau einen Hardlink und
   überschreitet sein D1-Größenlimit nicht;
-- ein nach dem Open durch `fstat()` beobachteter Descriptor stimmt mit dem vorher
-  geprüften Objekt überein;
+- `fstat()` unmittelbar vor und nach jedem Read muss mindestens Device, Inode, Typ,
+  Linkzahl, Größe, `mtime_ns` und `ctime_ns` unverändert sehen und mit dem vorherigen
+  dirfd-relativen `lstat()` übereinstimmen;
 - vollständige Byteanzahl und EOF werden geprüft; keine implizite Textdekodierung;
-- Parent- und Target-Inodes werden nach dem Read erneut geprüft.
+- Parent- und Targetzustand werden nach dem Read erneut dirfd-relativ geprüft.
 
 Nach allen Git- und Worktree-Reads werden HEAD und Index ein zweites Mal mit derselben
 Plumbing-Grenze gelesen. Nur identische Anfangs- und End-Evidence darf klassifiziert
-werden; beobachteter Drift ist `manual_review` und kein best-effort Snapshot.
+werden. Danach werden alle vorhandenen Targets ein zweites Mal über dieselben gepinnten
+Directory-FDs sicher geöffnet und vollständig gelesen. Stat-Tupel und Bytehash müssen
+mit der ersten Beobachtung identisch sein. Erst dann darf die Funktion zurückkehren;
+beobachteter Drift ist `manual_review` und kein best-effort Snapshot.
+
+`O_NOFOLLOW` ist eine Vertraulichkeitsgrenze: Ein zwischen Prüfung und Open eingesetzter
+Symlink muss schon beim Open blockieren. D2a darf nicht zuerst fremde Zielbytes lesen und
+den Angriff erst nachträglich über `fstat()` bemerken.
 
 Die Größenlimits haben genau eine Code-Wahrheit. D2a darf sie aus D1 kontrolliert
 exportieren oder über einen einzigen D1-Loader verwenden, aber keine abweichenden
@@ -300,8 +342,9 @@ Die öffentliche Beobachtung verwendet ein geschlossenes Enum mit mindestens:
 |---|---|
 | `legacy_bootstrap` | HEAD/Index besitzen nur ein unverändertes reguläres `CLAUDE.md`; drei neue Ziele fehlen; Worktree entspricht exakt; keine generierten V1-Marker und keine Publisher-eigenen Signale |
 | `absent` | alle vier Ziele fehlen in HEAD, Index und Worktree; keine Publisher-eigenen Signale |
-| `valid` | alle vier Worktreebytes bilden eine D1-valide und extern attestierte Generation; Index entspricht HEAD; Pfade sind sicher |
-| `unattested` | vollständige intern valide Vierergruppe, deren externe Attestation fehlt oder abweicht |
+| `valid` | alle vier Worktreebytes sind bytegenau mit vier HEAD-Blobs identisch, bilden eine D1-valide Generation und tragen die passende externe Constitution-Attestation; Index entspricht HEAD; Pfade sind sicher |
+| `unattested` | vier bytegenau HEAD-gebundene und intern valide Artefakte, deren externe Constitution-Attestation fehlt oder abweicht |
+| `unbound` | vollständige intern valide Vierergruppe, deren Worktreebytes nicht vollständig mit den HEAD-Blobs identisch sind und für die kein D2b-Journal-Ursprungsbeweis existiert |
 | `mixed` | unvollständige Kombination aus V1-Artefakten, V1-Markern oder exakt grammatischem Publisher-Transaktionssignal |
 | `invalid` | alle vier behaupteten Artefakte sind vorhanden, aber der strikte D1-Beweis scheitert |
 | `manual_review` | unsicherer Pfadtyp, Indexkonflikt, unbekannte Zielbytes, mehrdeutige/mehrfache Transaktionssignale, Race oder nicht sicher klassifizierbarer Zustand |
@@ -311,11 +354,18 @@ Fail-closed Priorität:
 1. Pfad-, Git-, Index-, Race- oder Prozessfehler → `manual_review`;
 2. unbekannte oder mehrere Publisher-Signale → `manual_review`;
 3. exakt ein späteres eigenes Transaktionssignal plus Teilzustand → `mixed`;
-4. vollständige Vierergruppe → `valid`, `unattested` oder `invalid`;
-5. erst danach dürfen `legacy_bootstrap` oder `absent` erkannt werden.
+4. vollständige Vierergruppe mit Worktree-/HEAD-Abweichung → `unbound`, wenn intern
+   valide, sonst `invalid`; eine passende Constitution-Attestation hebt `unbound` nicht
+   auf;
+5. vollständige bytegenau HEAD-gebundene Vierergruppe → `valid`, `unattested` oder
+   `invalid`;
+6. erst danach dürfen `legacy_bootstrap` oder `absent` erkannt werden.
 
 Ein intern valider Record darf keine unsichere Pfad- oder Gitklasse überstimmen. Die
 Beobachtung ist Diagnose, keine Publish-Entscheidung und keine Recovery-Autorität.
+Constitution-Attestation ist kein Writer-Ursprungsbeweis. Erst D2b darf unter gehaltenem
+Lock exakt journalgebundene Candidatebytes als eigene noch nicht in HEAD vorhandene
+Generation behandeln.
 
 ### 3.7 Rückgabevertrag
 
@@ -326,12 +376,15 @@ Evidence:
 - realen Repository-Root;
 - gepinnten HEAD-Commit;
 - pro Ziel HEAD-/Index-/Worktree-Abwesenheit oder Modus plus Blob-/Bytehash;
-- bei `valid` den attestiert geladenen `PreviousPublishedRecord`;
+- ausschließlich bei `valid` den Constitution-gebunden geladenen
+  `PreviousPublishedRecord`;
 - boolesche Publisher-Signal-/Race-Indikatoren ohne untrusted Freitext.
 
 Es enthält keine Rootbytes, kein Snapshotobjekt, kein Publication-JSON, kein Git-stderr,
 keine Environmentwerte und keine absolute Fremdpfad-Prosa. D2a trifft weder
 `PUBLISH`/`NO_OP` noch Cleanup-/Rollbackentscheidungen.
+`unbound`, `unattested`, `mixed`, `invalid` und `manual_review` exponieren ausdrücklich
+keinen `PreviousPublishedRecord`.
 
 ---
 
@@ -390,7 +443,8 @@ Vor Produktcode müssen mindestens folgende Tests rot sein.
 
 ### 5.1 Attestation
 
-- dieselben vier validen Bytes plus exakt passende externe Attestation werden akzeptiert;
+- der reine Constitution-Binder akzeptiert dieselben vier validen Bytes plus exakt
+  passende externe Attestation, behauptet aber noch keinen Git-/Writer-Ursprung;
 - falscher C0-Hash blockiert;
 - falscher Source-Blob blockiert;
 - falscher Reviewed-Commit blockiert;
@@ -403,6 +457,12 @@ Vor Produktcode müssen mindestens folgende Tests rot sein.
 
 ### 5.2 Git und Environment
 
+- vergiftetes Caller-`PATH` und ein dort platziertes Fake-`git` werden niemals zur
+  Programmauswahl verwendet oder ausgeführt;
+- Symlink, falscher Owner oder gruppen-/weltbeschreibbare System-Git-Executable
+  blockiert;
+- die Child-Environment enthält bytegenau nur die erlaubten Schlüssel; `GIT_EXEC_PATH`,
+  `GIT_*`-, `LD_*`-, `DYLD_*`- und Python-/Loader-Injection fehlen;
 - exakter Head-/Indexzustand wird aus NUL-getrennter Plumbing-Ausgabe geladen;
 - Stage-0 identisch zu HEAD wird akzeptiert;
 - staged Add/Modify/Delete und Stage 1/2/3 blockieren;
@@ -410,8 +470,10 @@ Vor Produktcode müssen mindestens folgende Tests rot sein.
 - `GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`, Object-/Replace- und Config-Overrides
   werden nicht an Git vererbt;
 - Headwechsel zwischen zwei Beobachtungspunkten ergibt `manual_review`;
-- Timeout, nonzero Exit, malformed NUL-Ausgabe und übergroße Ausgabe blockieren ohne
-  ungefiltertes stderr;
+- Fünf-Sekunden-Kommando-/Zwanzig-Sekunden-Gesamttimeout sowie die exakten stdout-/stderr-
+  Grenzen werden jeweils direkt am Grenzwert und ein Byte darüber getestet;
+- Timeout, nonzero Exit, malformed NUL-Ausgabe und übergroße Ausgabe beenden/ernten den
+  Prozess und blockieren ohne ungefiltertes stderr;
 - Blobbytes kommen aus `cat-file`, nicht aus Worktree oder Filter.
 
 ### 5.3 Pfade und Reads
@@ -419,6 +481,12 @@ Vor Produktcode müssen mindestens folgende Tests rot sein.
 - Root-, `.steward`-, Ziel- und Parent-Symlink blockieren;
 - Directory, FIFO, Socket, Device und mehr als ein Hardlink blockieren;
 - Zieltausch zwischen `lstat`, `open`, `fstat` und finaler Prüfung blockiert;
+- Symlink-/Parent-Swap blockiert am `O_NOFOLLOW`-/dirfd-Open; ein instrumentierter Reader
+  beweist, dass der fremde Zielinhalt niemals gelesen wurde;
+- In-place-Mutation über einen zweiten FD bei identischem Device/Inode wird durch
+  Stat-Tupel oder finalen zweiten Bytehash erkannt und ergibt `manual_review`;
+- Mutation nach erster Beobachtung und finaler Git-Refence wird durch den zweiten
+  vollständigen sicheren Target-Read erkannt;
 - zu große Datei, Short Read, unerwartetes Wachstum und Readfehler blockieren;
 - separat gelesene bytegleiche Roots bleiben valide;
 - keine Fehlermeldung enthält Zielbytes, Git-stderr oder fremde absolute Pfade.
@@ -428,7 +496,13 @@ Vor Produktcode müssen mindestens folgende Tests rot sein.
 - der gepinnte P1-Shape wird ohne hardcodierten Blob als `legacy_bootstrap` erkannt;
 - vierfach absent wird separat als `absent` erkannt;
 - vollständige attestierte Generation wird `valid`;
-- vollständige intern valide Generation mit externer Abweichung wird `unattested`;
+- `valid` setzt zusätzlich voraus, dass alle vier Worktreebytes bytegenau den vier
+  HEAD-Blobs entsprechen;
+- vollständige HEAD-gebundene intern valide Generation mit Constitution-Abweichung wird
+  `unattested` und exponiert keinen Previous Record;
+- vier kohärent neu gerenderte und Constitution-gebundene, aber gegenüber HEAD
+  abweichende Worktree-Artefakte werden `unbound`, niemals `valid`, und exponieren keinen
+  Previous Record;
 - vollständige malformed Generation wird `invalid`;
 - jede Teilkombination aus Record, Snapshot und generiertem Root wird `mixed` oder
   strenger `manual_review`, niemals `absent`/`legacy_bootstrap`;
@@ -442,9 +516,11 @@ Vor Produktcode müssen mindestens folgende Tests rot sein.
 
 Während Import und Ausführung von D2a werden schreibende `open`-Modi, `os.write`,
 `os.replace`, `os.rename`, `os.unlink`, `Path.write_*`, `tempfile`, `fcntl.flock`,
-mutierende Git-Kommandos, Clock, Netzwerk und ServiceRegistry durch Fakes verboten. Der
-Test muss die echte `inspect_repository_generation()`-Grenze aufrufen; eine bloße
-Source-String-Assertion genügt nicht.
+mutierende Git-Kommandos, Wall-Clock, Netzwerk und ServiceRegistry durch Fakes verboten.
+Nur eine injizierbare monotone Deadline-Quelle ist für die exakt begrenzten Git-Prozesse
+zulässig; `time.time()`, Datum und MTime als Freshness-Wahrheit bleiben verboten. Der Test
+muss die echte `inspect_repository_generation()`-Grenze aufrufen; eine bloße Source-
+String-Assertion genügt nicht.
 
 ---
 
@@ -615,6 +691,9 @@ Nach Code-PR sind erforderlich:
   Prozess Root-Dateien verändern kann.
 - Vor Slice E existiert keine positive Produktionsfixture für eine getrackte,
   attestierte Vier-Artefakt-Baseline.
+- Der heutige Recon belegt den sicheren Git-Systempfad lokal. Falls ein späterer Linux-
+  Runner weder `/usr/bin/git` noch `/bin/git` unter demselben Sicherheitsvertrag besitzt,
+  muss D2a dort fail-closed blockieren statt auf `PATH` zurückzufallen.
 - Ein lokal vorhandenes Journal wäre erst nach D2b-Code und dessen eigener Review
   authentische Publisher-Provenance.
 
