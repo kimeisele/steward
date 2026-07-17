@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "timestamp": 1784323117.3330708,
+  "timestamp": 1784324016.5807428,
   "project": {
     "name": "steward",
     "path": "/home/runner/work/steward/steward"
@@ -59,7 +59,7 @@
         "task": "[autonomous] CROSS_REPO_DIAGNOSTIC",
         "outcome": "clean",
         "summary": "Deterministic CROSS_REPO_DIAGNOSTIC: no issues",
-        "timestamp": "2026-07-17T21:04:30.759383+00:00",
+        "timestamp": "2026-07-17T21:18:37.325874+00:00",
         "tokens": 0,
         "rounds": 0,
         "errors": 0,
@@ -70,7 +70,7 @@
         "task": "[autonomous] BOTTLENECK_ESCALATION",
         "outcome": "problem_found",
         "summary": "Deterministic BOTTLENECK_ESCALATION: problem detected",
-        "timestamp": "2026-07-17T21:16:00.281515+00:00",
+        "timestamp": "2026-07-17T21:31:16.613745+00:00",
         "tokens": 0,
         "rounds": 0,
         "errors": 0,
@@ -81,7 +81,7 @@
         "task": "[autonomous] HEALTH_CHECK",
         "outcome": "clean",
         "summary": "Deterministic HEALTH_CHECK: no issues",
-        "timestamp": "2026-07-17T21:18:11.933067+00:00",
+        "timestamp": "2026-07-17T21:33:25.537120+00:00",
         "tokens": 0,
         "rounds": 0,
         "errors": 0,
@@ -92,7 +92,7 @@
         "task": "[autonomous] FEDERATION_HEALTH",
         "outcome": "clean",
         "summary": "Deterministic FEDERATION_HEALTH: no issues",
-        "timestamp": "2026-07-17T21:18:19.206995+00:00",
+        "timestamp": "2026-07-17T21:33:31.495987+00:00",
         "tokens": 0,
         "rounds": 0,
         "errors": 0,
@@ -103,7 +103,7 @@
         "task": "[autonomous] CROSS_REPO_DIAGNOSTIC",
         "outcome": "clean",
         "summary": "Deterministic CROSS_REPO_DIAGNOSTIC: no issues",
-        "timestamp": "2026-07-17T21:18:37.325874+00:00",
+        "timestamp": "2026-07-17T21:33:36.575341+00:00",
         "tokens": 0,
         "rounds": 0,
         "errors": 0,
@@ -123,31 +123,31 @@
   "tasks": {
     "pending": [
       {
-        "id": "043586f9-6792-4695-a87d-929005288030",
+        "id": "0ee13436-02ca-4cce-9e10-b67c057af077",
         "title": "[BOTTLENECK_ESCALATION] Investigate and resolve the failing 'ruff_clean' and 'tests_pass' contracts. Mis",
         "priority": 70,
         "status": "COMPLETED"
       },
       {
-        "id": "094726e0-5611-4adc-bd85-a11bbe720ab9",
+        "id": "ea91d36d-1bba-4314-85e3-232d76a88da8",
         "title": "[HEALTH_CHECK] Quick Health Check",
         "priority": 70,
         "status": "COMPLETED"
       },
       {
-        "id": "ef58fc0d-6243-4d37-97b0-47b3711e1c93",
+        "id": "1fe0dd48-3dc2-411e-8ab3-1af487eea99f",
         "title": "[FEDERATION_HEALTH] Federation Health Check",
         "priority": 70,
         "status": "COMPLETED"
       },
       {
-        "id": "b34b114d-0592-42ab-af35-e8691923e12d",
+        "id": "1d9d585f-9b00-4f04-9f0a-f76af0f8cc99",
         "title": "[HEAL_REPO] Heal Federation Repos",
         "priority": 90,
         "status": "COMPLETED"
       },
       {
-        "id": "a7904712-41e3-4c4c-a0b6-60c8a823e8d0",
+        "id": "68abed42-d67a-43a5-ac6e-477e4b7d7e3a",
         "title": "[CROSS_REPO_DIAGNOSTIC] Cross-Repo Diagnostic",
         "priority": 70,
         "status": "COMPLETED"
@@ -157,11 +157,11 @@
   "federation": {
     "total_peers": 77,
     "by_status": {
-      "alive": 12,
-      "evicted": 65
+      "alive": 16,
+      "evicted": 61
     },
-    "avg_trust": 0.24545454545454543,
-    "total_reaps": 11391,
+    "avg_trust": 0.2649350649350648,
+    "total_reaps": 11400,
     "total_evictions": 532,
     "lease_ttl_s": 900.0,
     "trust_decay": 0.2,
@@ -296,6 +296,18 @@
       {
         "agent_id": "ag_b670dc6cbcb705fe",
         "status": "alive",
+        "trust": 0.4,
+        "capabilities": []
+      },
+      {
+        "agent_id": "ag_9272c311628b5f40",
+        "status": "alive",
+        "trust": 0.5,
+        "capabilities": []
+      },
+      {
+        "agent_id": "ag_c3c5d9aed6d3dc6e",
+        "status": "alive",
         "trust": 0.5,
         "capabilities": []
       },
@@ -310,24 +322,36 @@
           "federation_bridge",
           "task_execution"
         ]
+      },
+      {
+        "agent_id": "ag_99e616186d438ecd",
+        "status": "alive",
+        "trust": 0.5,
+        "capabilities": []
+      },
+      {
+        "agent_id": "ag_a67df7784ad18292",
+        "status": "alive",
+        "trust": 0.5,
+        "capabilities": []
       }
     ],
     "marketplace": {
       "active_claims": 0,
       "unique_agents": 0,
-      "total_grants": 1285,
+      "total_grants": 1286,
       "total_contests": 0,
       "total_evictions": 1,
       "default_ttl_s": 600.0
     },
     "gateway": {
-      "total_requests": 16,
+      "total_requests": 23,
       "by_protocol": {
-        "nadi": 16
+        "nadi": 23
       },
       "rejected_parse": 0,
       "rejected_validate": 0,
-      "errors": 1,
+      "errors": 2,
       "pending_signals": 0
     }
   },
@@ -352,7 +376,7 @@
         "kind": "federation_healthy",
         "met": true,
         "actual": {
-          "alive": 12,
+          "alive": 16,
           "suspect": 0,
           "dead": 0
         }
@@ -377,14 +401,34 @@
   },
   "cetana": {
     "alive": true,
-    "total_beats": 21,
-    "frequency_hz": 0.10031916906519042,
-    "phase": "DHARMA",
+    "total_beats": 19,
+    "frequency_hz": 0.1004559558074149,
+    "phase": "MOKSHA",
     "consecutive_anomalies": 0,
     "last_health": 0.8425775938386342,
     "last_guna": "sattva"
   },
   "issues": [
+    {
+      "number": 743,
+      "title": "[review-request] Does the WCFA pattern scale differently in larger federations?"
+    },
+    {
+      "number": 742,
+      "title": "[review-request] What is the minimum viable governance verification a peer should deman"
+    },
+    {
+      "number": 741,
+      "title": "[review-request] How should federation descriptors distinguish between capability exist"
+    },
+    {
+      "number": 740,
+      "title": "[review-request] Is the WCFA pattern inherent to systems with safe fallbacks, or preven"
+    },
+    {
+      "number": 739,
+      "title": "[review-request] Can execution-path tracing be standardized across federation nodes as "
+    },
     {
       "number": 738,
       "title": "[review-request] Does the WCFA pattern scale differently in larger federations?"
@@ -443,26 +487,6 @@
     },
     {
       "number": 723,
-      "title": "[review-request] Can execution-path tracing be standardized across federation nodes as "
-    },
-    {
-      "number": 722,
-      "title": "[review-request] Does the WCFA pattern scale differently in larger federations?"
-    },
-    {
-      "number": 721,
-      "title": "[review-request] What is the minimum viable governance verification a peer should deman"
-    },
-    {
-      "number": 720,
-      "title": "[review-request] How should federation descriptors distinguish between capability exist"
-    },
-    {
-      "number": 719,
-      "title": "[review-request] Is the WCFA pattern inherent to systems with safe fallbacks, or preven"
-    },
-    {
-      "number": 718,
       "title": "[review-request] Can execution-path tracing be standardized across federation nodes as "
     }
   ]
