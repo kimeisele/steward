@@ -2,9 +2,9 @@
 
 > **Status:** DRAFT 0.1 — READ-ONLY G2 CONTRACT; G1 OFF; IMPLEMENTATION LOCKED
 >
-> **Investigated main:** `kimeisele/steward@e2811e8790d2060088701f536fb7d6923323a015`
+> **Investigated main:** `kimeisele/steward@dd21e1e46dff2ff96683e323536b4a425b9b8015`
 >
-> **Investigated tree:** `95a9e34d34946c0679d31221c613e12ca4733706`
+> **Investigated tree:** `e53e5f69af7b00220f2c056859c35977bebfd5c3`
 >
 > **D2b parent preflight:** `f582e0d63876df8be61e8970a0fe065a2b2c034e`
 >
@@ -437,15 +437,21 @@ branch including cleanup returns `manual_review` with no mutation.
 
 Recovery runs only under that same exclusive lock and only for exactly one strict journal:
 
-Recovery does not add a second mutable cursor to this slice. The journal remains the
-forward transaction record while rollback or absent cleanup is in progress. Before every
-recovery mutation, the current state must equal the journal's cursor-specific forward
-state. If the process crashes or is interrupted after any rollback replace, unlink, or
-their parent `fsync`, the next invocation observes a state that is no longer that forward
-state and must return `manual_review` without further target, journal, or tempfile
-mutation. It preserves the journal and all remaining temps as evidence. A crash before
-the first recovery mutation, with the forward state still exact, may retry the same
-branch; no other partial state is auto-adopted.
+Recovery does not add a second durable cursor to this slice. At branch entry, while the
+external lease and journal anchor are held, the current state must equal the journal's
+cursor-specific forward state. The uninterrupted invocation then creates a bounded,
+in-memory recovery plan: its volatile cursor advances after each successful rollback
+replace or candidate unlink and parent `fsync`, and each next mutation is fenced against
+that plan's expected prefix/suffix state rather than the unchanged forward journal. The
+lease remains held for the entire plan; a lease loss stops with `manual_review`.
+
+The journal remains the forward transaction record throughout. If the process crashes or
+is interrupted after any rollback replace, unlink, or their parent `fsync`, the next
+invocation sees a state that no longer matches the journal's forward cursor and must
+return `manual_review` without further target, journal, or tempfile mutation. It preserves
+the journal and all remaining temps as evidence. A crash before the first recovery
+mutation, with the forward state still exact, may retry the same branch; no other partial
+state is auto-adopted.
 
 | Observed state | Allowed result |
 |---|---|
@@ -530,7 +536,9 @@ The later code PR must include direct tests, not source-string assertions, for:
 - recovery-crash injection before and after every rollback replace, candidate unlink,
   parent `fsync`, fourfold-absence proof, and journal/temp cleanup; after any recovery
   mutation the expected result is evidence-preserving `manual_review` with no further
-  mutation, while an unchanged forward state may retry;
+  mutation, while an unchanged forward state may retry; uninterrupted multi-step
+  rollback and absent cleanup must use only the volatile recovery plan and complete under
+  the same lease;
 - malformed/duplicate/foreign journal and temp names, wrong transaction ID, wrong parent,
   extra file, and unknown `.context-publish-*` signal;
 - legacy bootstrap, absent baseline, valid baseline, mixed generation, invalid schema,
