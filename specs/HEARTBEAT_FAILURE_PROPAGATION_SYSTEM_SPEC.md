@@ -78,6 +78,7 @@ Sie schreibt **nicht** in `docs/PHASE2_BEFUND.md`, `docs/PHASE2_CURRENT.md` oder
 | Dok | Inhalt | Status |
 |---|---|---|
 | `heartbeat_failure_propagation_evidence/RECON_01_SWALLOW_PATHS.md` | Die vier Schluck-Schichten, am Code belegt | RECON — teils offen |
+| `heartbeat_failure_propagation_evidence/RECON_02_CONSUMPTION_AND_CLASSES.md` | None-Konsum (Event, nicht verkabelt), bestehende Fehlerklassifikation, Andockpunkt `health_anomaly` | RECON — teils offen |
 
 ## 5. NÄCHSTER GATE
 
