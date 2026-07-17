@@ -126,9 +126,10 @@ kontrollierte Recon belegte:
   nonblocking exklusiven `flock` nicht erwerben;
 - dirfd-relatives `os.replace()` plus Parent-`fsync()` funktionierte in einem temporären
   Verzeichnis;
-- `/usr/bin/git` war eine reguläre, nicht verlinkte, UID-0-Datei mit Modus `0755` in
-  einem nicht gruppen-/weltbeschreibbaren UID-0-Parent. Die benötigten Plumbing-Kommandos
-  funktionierten mit exakt der in §3.3 definierten leeren Allowlist-Umgebung.
+- `/usr/bin/git` und `/usr/bin/python3` waren reguläre, nicht verlinkte UID-0-Dateien mit
+  Modus `0755` in nicht gruppen-/weltbeschreibbaren UID-0-Parents. Die benötigten
+  Plumbing-Kommandos funktionierten über den isolierten Helper mit exakt der in §3.3
+  definierten Allowlist-Umgebung.
 
 Das beweist die Grundfähigkeit, nicht alle Crash-/Power-Loss-Garantien. D2b benötigt
 später Linux-CI-Fixtures und injizierte Fehler nach jedem Durability-Schritt.
@@ -137,7 +138,6 @@ Die folgenden read-only Git-Kommandos lieferten den benötigten exakten Zustand 
 Porcelain-Stringheuristik:
 
 ```text
-git rev-parse --path-format=absolute --show-toplevel
 git rev-parse --verify HEAD^{commit}
 git ls-tree -z --full-tree HEAD -- <vier exakte Zielpfade>
 git ls-files --stage -z -- <vier exakte Zielpfade>
@@ -148,6 +148,25 @@ git cat-file blob <gepinnte Blob-ID>
 `GIT_INDEX_FILE`, Object-/Replace-/Common-Dir-Variablen und Config-Parameter. Ein
 Publisher darf diese vom Aufrufer geerbten Overrides nicht als Repository-Wahrheit
 akzeptieren.
+
+Der zweite kontrollierte POSIX-Drill schloss die danach gefundene Spawn-TOCTOU-Lücke:
+
+1. Repository-Root wurde sicher als Directory-FD geöffnet.
+2. `.git` wurde ausschließlich dirfd-relativ darunter mit
+   `O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW` geöffnet.
+3. Ein isolierter `/usr/bin/python3 -I -S -c <fester Helper>` erhielt nur diesen `.git`-
+   FD über `pass_fds`, prüfte dessen Device/Inode, wechselte per `fchdir()` auf genau
+   diesen Inode und ersetzte sich per `execve()` durch `/usr/bin/git --git-dir=. ...`.
+4. `rev-parse`, `ls-tree` und `ls-files` lieferten über diese Grenze dieselben erwarteten
+   Bytes wie der normale Recon.
+5. In einem temporären adversarialen Drill wurde nach dem Öffnen der FDs der ursprüngliche
+   Repository-Pfad umbenannt und am alten Namen ein anderes Git-Repository angelegt. Der
+   Helper lieferte weiterhin ausschließlich den Head des geöffneten ursprünglichen
+   `.git`-Inodes und niemals den Head des Ersatz-Repositories.
+
+Darwins `/dev/fd/<n>` und das dort nicht vorhandene `/proc/self/fd/<n>` eigneten sich
+nicht als traversierbare Directory-Pfade. Diese nicht funktionierende Variante wird
+nicht als Implementierungsannahme verwendet.
 
 ---
 
@@ -226,16 +245,35 @@ D2a verwendet nur die in §2.5 belegten Plumbing-Kommandos. Verbindlich sind:
 - die Git-Executable wird nicht über das geerbte `PATH` gesucht. D2a prüft ausschließlich
   die festen POSIX-Systempfade `/usr/bin/git` und `/bin/git` und verwendet den ersten
   sicheren absoluten Treffer;
-- Executable und jede Komponente ihres absoluten Pfads müssen per `lstat` regulär
+- der FD-Helper wird ebenso wenig über `PATH` gewählt. D2a prüft ausschließlich
+  `/usr/bin/python3` und `/bin/python3` und verwendet den ersten sicheren absoluten
+  Treffer;
+- beide Executables und jede Komponente ihrer absoluten Pfade müssen per `lstat` regulär
   beziehungsweise Verzeichnis, keine Symlinks, UID `0` und weder gruppen- noch
   weltbeschreibbar sein. Fehlt ein solcher Treffer, bleibt D2a fail-closed
   `manual_review`;
-- die validierte absolute Executable und Argumente werden als Liste ohne Shell
-  ausgeführt; vor und nach der Inspektion werden Device, Inode, Typ, UID, Modus,
+- beide validierten absoluten Executables und ihre Argumente werden als Listen ohne Shell
+  verwendet; vor und nach der Inspektion werden Device, Inode, Typ, UID, Modus,
   `mtime_ns` und `ctime_ns` erneut verglichen;
-- fester `cwd` ist der ursprüngliche lexikalisch normalisierte absolute Repository-Pfad,
-  nicht ein durch `resolve()` umgeschriebener Alias. Unmittelbar vor und nach jedem
-  Spawn muss dessen `lstat()` mit dem gehaltenen Root-Directory-FD übereinstimmen;
+- `.git` muss ein reales Verzeichnis sein und wird ausschließlich relativ zum bereits
+  sicher geöffneten Root-Directory-FD mit
+  `O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW` geöffnet. `.git`-Datei,
+  `commondir`, `gitdir` oder Object-Alternates sind im V1-Vertrag nicht unterstützt und
+  blockieren fail-closed;
+- der Python-Helper erhält mit `close_fds=True` und `pass_fds=(git_dir_fd,)` exakt diesen
+  einen Repository-FD. Sein Prozess-`cwd` vor `fchdir()` ist `/`; er erhält keinen
+  Repository-Pfad;
+- sein `-c`-Programm ist ein festes versioniertes ASCII-Literal. FD-Nummer, erwartetes
+  Device/Inode, Git-Executable und geschlossene Git-Argumente werden ausschließlich als
+  getrennte `argv`-Elemente übergeben und niemals in Helper-Quelltext interpoliert;
+- der feste versionierte Helper prüft den FD per `fstat()` gegen das vom Parent gebundene
+  Device/Inode und Directory-Schema, ruft `os.fchdir(git_dir_fd)` und danach unmittelbar
+  `os.execve(<validiertes git>, [<git>, "--git-dir=.", ...], <Allowlist-Env>)` auf;
+- Git sieht damit den Repository-Pfad weder als `cwd`, `-C`, `--git-dir=<Pfad>` noch als
+  Environmentwert. `.` bezeichnet nach `fchdir()` den bereits geöffneten `.git`-Inode;
+- `preexec_fn`, `os.fchdir()` im Steward-Prozess und jede prozessglobale Parent-`cwd`-
+  Mutation sind verboten; der Vertrag bleibt dadurch mit vorhandenen Threads
+  vereinbar;
 - die Child-Umgebung ist eine Allowlist, keine bereinigte Kopie der Caller-Umgebung. Sie
   enthält nur `LC_ALL=C`, `LANG=C`, `PATH=/usr/bin:/bin`, `GIT_OPTIONAL_LOCKS=0`,
   `GIT_NO_REPLACE_OBJECTS=1`, `GIT_PAGER=cat`, `GIT_CONFIG_NOSYSTEM=1`,
@@ -252,7 +290,6 @@ D2a verwendet nur die in §2.5 belegten Plumbing-Kommandos. Verbindlich sind:
   beendet und geerntet. Ein erst nach vollständigem `communicate()` geprüfter
   unbeschränkter Puffer erfüllt den Vertrag nicht;
 - Exitcode und NUL-getrennte Ausgabe werden strikt geprüft;
-- `show-toplevel` muss bytegenau zum erwarteten realen Root passen;
 - HEAD muss exakt ein Commit sein;
 - unerwartete Stages, doppelte Einträge, falsche Modi oder nicht angeforderte Pfade
   blockieren;
@@ -260,8 +297,11 @@ D2a verwendet nur die in §2.5 belegten Plumbing-Kommandos. Verbindlich sind:
   `git show <rev>:<path>` oder Worktree-Fallback;
 - stderr oder Exceptiontexte werden nicht ungefiltert in Contract-Fehler übernommen.
 
-Ein bloßes `git status`-Parsing, `Path.read_text()`, libgit-ähnliche Zusatzabhängigkeit
-oder Import eines mutierenden Steward-Git-Wrappers ist verboten.
+Die frühere `show-toplevel`-Prüfung entfällt als Sicherheitsgrenze: Die Bindung zwischen
+Worktree und Git-Metadaten entsteht jetzt dadurch, dass `.git` dirfd-relativ unter genau
+demselben geöffneten Root-Inode erworben wird, aus dem D2a anschließend die vier Targets
+liest. Ein bloßes `git status`-Parsing, `Path.read_text()`, libgit-ähnliche
+Zusatzabhängigkeit oder Import eines mutierenden Steward-Git-Wrappers ist verboten.
 
 ### 3.4 Pfad- und Bytegrenze
 
@@ -459,10 +499,22 @@ Vor Produktcode müssen mindestens folgende Tests rot sein.
 
 - vergiftetes Caller-`PATH` und ein dort platziertes Fake-`git` werden niemals zur
   Programmauswahl verwendet oder ausgeführt;
-- Symlink, falscher Owner oder gruppen-/weltbeschreibbare System-Git-Executable
+- vergiftetes Caller-`PATH` kann ebenso wenig einen Fake-`python3` als Helper wählen;
+- Symlink, falscher Owner oder gruppen-/weltbeschreibbare System-Git-/Python-Executable
   blockiert;
 - die Child-Environment enthält bytegenau nur die erlaubten Schlüssel; `GIT_EXEC_PATH`,
   `GIT_*`-, `LD_*`-, `DYLD_*`- und Python-/Loader-Injection fehlen;
+- `.git`-Symlink, `.git`-Datei, `commondir`, `gitdir` und Object-Alternates blockieren;
+- der Helper erhält exakt den geöffneten `.git`-FD, keinen Repository-Pfad, macht
+  `fchdir()` nur im isolierten Kind und startet Git ausschließlich mit `--git-dir=.`;
+- dynamische Werte bleiben separate `argv`-Elemente; adversariale Werte können den festen
+  `-c`-Helpertext nicht erweitern oder neue Git-Argumente einschleusen;
+- ein adversarialer Test tauscht den Root-Pfad exakt zwischen Parent-Prüfung und
+  Helper-Start gegen ein zweites Repository aus und danach zurück. Git-Evidence muss
+  weiterhin ausschließlich vom ursprünglich geöffneten `.git`-Inode stammen; ein
+  Sentinel-Head/-Blob des Ersatz-Repositories darf niemals beobachtet werden;
+- derselbe Test beweist, dass weder `preexec_fn` noch `chdir`/`fchdir` im Steward-Prozess
+  verwendet wird;
 - exakter Head-/Indexzustand wird aus NUL-getrennter Plumbing-Ausgabe geladen;
 - Stage-0 identisch zu HEAD wird akzeptiert;
 - staged Add/Modify/Delete und Stage 1/2/3 blockieren;
@@ -691,9 +743,10 @@ Nach Code-PR sind erforderlich:
   Prozess Root-Dateien verändern kann.
 - Vor Slice E existiert keine positive Produktionsfixture für eine getrackte,
   attestierte Vier-Artefakt-Baseline.
-- Der heutige Recon belegt den sicheren Git-Systempfad lokal. Falls ein späterer Linux-
-  Runner weder `/usr/bin/git` noch `/bin/git` unter demselben Sicherheitsvertrag besitzt,
-  muss D2a dort fail-closed blockieren statt auf `PATH` zurückzufallen.
+- Der heutige Recon belegt die sicheren Git-/Python-Systempfade lokal. Falls ein späterer
+  Linux-Runner weder die erlaubte Git- noch die erlaubte Python-Executable unter
+  demselben Sicherheitsvertrag besitzt, muss D2a dort fail-closed blockieren statt auf
+  `PATH` zurückzufallen.
 - Ein lokal vorhandenes Journal wäre erst nach D2b-Code und dessen eigener Review
   authentische Publisher-Provenance.
 
