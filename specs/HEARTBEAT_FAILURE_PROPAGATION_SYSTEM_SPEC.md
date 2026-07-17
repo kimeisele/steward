@@ -79,6 +79,13 @@ Sie schreibt **nicht** in `docs/PHASE2_BEFUND.md`, `docs/PHASE2_CURRENT.md` oder
 |---|---|---|
 | `heartbeat_failure_propagation_evidence/RECON_01_SWALLOW_PATHS.md` | Die vier Schluck-Schichten, am Code belegt | RECON — teils offen |
 | `heartbeat_failure_propagation_evidence/RECON_02_CONSUMPTION_AND_CLASSES.md` | None-Konsum (Event, nicht verkabelt), bestehende Fehlerklassifikation, Andockpunkt `health_anomaly` | RECON — teils offen |
+| `heartbeat_failure_propagation_evidence/RECON_03_ADVERSARIAL.md` | Gegenbeweis-Versuch: Claim hält; Befund umgedreht — Erkennung vorhanden, Aussenverdrahtung fehlt; Fix-Richtung korrigiert (nicht `raise`) | RECON — teils offen |
+
+**Befund-Korrektur (RECON_03):** Der Kern ist nicht „der Heartbeat schluckt Fehler" (das
+Schlucken ist plausibel bewusste Resilienz), sondern „eine bereits vorhandene Kollaps-
+Erkennung (`vedana` Provider-Puls → `health_anomaly`) ist nur nach innen verdrahtet oder
+verwaist". Zielrichtung: vorhandene Erkennung bei *anhaltendem* Kollaps nach außen sichtbar
+machen — LOGGING zuerst, kein erzwungenes Rot vor Beobachtung.
 
 ## 5. NÄCHSTER GATE
 
