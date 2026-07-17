@@ -2,15 +2,15 @@
 
 > **Status:** DRAFT 0.1 — READ-ONLY POLICY PROPOSAL; G1 OFF; IMPLEMENTATION LOCKED
 >
-> **Investigated main:** `kimeisele/steward@36b22ebbd2f31d8f660f434138572bea563dc418`
+> **Investigated main:** `kimeisele/steward@e36e8dde1273f62796db8f1f39821140a1b94545`
 >
-> **Investigated tree:** `8a7779381d141552b2f03642e2e3e79fd845d577`
+> **Investigated tree:** `3f0b96fa3b5aae2065dd33b30b67012eff97a169`
 >
 > **D2b preflight parent:** `f582e0d63876df8be61e8970a0fe065a2b2c034e`
 >
 > **Writer-evidence merge:** `573908721fce10ad1783af4abaa360b34987d6a6`
 >
-> **Earlier policy scan pin:** `dd3824563fd074995fb71bd26255628f7eb2ef78`
+> **Earlier policy scan pin:** `36b22ebbd2f31d8f660f434138572bea563dc418`
 >
 > **Date:** 2026-07-17
 
@@ -163,8 +163,11 @@ The protected transaction namespace is separate and equally deny-by-default:
 
 ```text
 .steward/.context-publish-v1.lock
-.steward/.context-publish-v1.journal
-.steward/.context-publish-v1.*.tmp
+.steward/.context-publish-v1.<32 lowercase hex>.txn
+.context-publish-v1.<32 lowercase hex>.claude.tmp
+.context-publish-v1.<32 lowercase hex>.agents.tmp
+.steward/.context-publish-v1.<32 lowercase hex>.snapshot.tmp
+.steward/.context-publish-v1.<32 lowercase hex>.publication.tmp
 ```
 
 The namespace is not a glob permission for arbitrary `.steward` files. Existing legacy
