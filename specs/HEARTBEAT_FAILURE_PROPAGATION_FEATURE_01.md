@@ -2,11 +2,13 @@
 
 ## Sichtbarmachung anhaltenden kognitiven/Provider-Kollaps
 
-> **Status:** DRAFT 0.8 — SECHS RUNDEN. §5.3 ist jetzt VOLLSTÄNDIG DEFINIERT (Dekodierung
-> §5.3a gegen echtes `steward-protocol` gepinnt) und damit Haiku-implementierbar. Verbleibend
-> vor G1: (i) Versions-Gegenprüfung der Statusformen gegen die Produktions-`steward-protocol`-
-> Version, (ii) normales Deployment-Gate (Produktionsbeweis, Review, Operator-Go).
-> IMPL./AKTIVIERUNG WEITERHIN GESPERRT bis Operator-Go.
+> **Status:** DRAFT 1.0 — SIEBEN REVIEW-RUNDEN, BEDINGTES GO. §5.3 vollständig definiert und
+> **fail-laut** (Dekoder werfen bei Form-Drift statt still „gesund" zu lesen, Befund 1);
+> Prosa/Code-Konsistenz hergestellt (Membran-Skip bewusst nicht erfasst, Befund 2);
+> Snapshot-Verzerrung benannt (Befund 3). Keine Designfehler mehr offen. **G1 formal erst
+> nach:** (i) Versions-Gegenprüfung der Statusformen gegen die Produktions-`steward-protocol`-
+> Version als **Impl-Schritt 1**; (ii) normales Deployment-Gate + Operator-Go. IMPL./
+> AKTIVIERUNG GESPERRT bis Operator-Go.
 > **Datum:** 2026-07-17
 > **Produktionsbasis:** `kimeisele/steward@bf2fba2075a87463fc8e333f8f57d805fce4d030`
 > **Herkunft:** Phase-2 §7.3; Recon RECON_01–04; adversariales Review (§12)
@@ -111,7 +113,7 @@ except (OSError, ValueError, TypeError):
 prev = prev or {"consecutive_collapsed_cycles": 0, "total_calls": 0, "total_failures": 0}
 cog = {"providers_alive": 0, "providers_total": 0, "providers_usable": 0,
        "total_calls": 0, "total_failures": 0, "calls_delta": 0, "fail_delta": 0,
-       "hard_down": False, "degraded": False, "skip_collapse": False,
+       "hard_down": False, "degraded": False, "skip_collapse": False, "decode_error": None,
        "consecutive_collapsed_cycles": prev["consecutive_collapsed_cycles"]}
 provider = ServiceRegistry.get(SVC_PROVIDER)
 if provider is not None and hasattr(provider, "stats"):
@@ -126,18 +128,24 @@ if provider is not None and hasattr(provider, "stats"):
     hard_down = (total > 0 and alive == 0)
     degraded  = (cd == 0 and fd > 0)   # Failures, aber kein Erfolg im Zyklus (§3-Semantik)
     # providers_usable: alive UND breaker≠OPEN UND within_quota. Dekodierung §5.3a (gepinnt).
-    usable = sum(1 for p in providers
-                 if p.get("alive") and _breaker_ok(p.get("breaker")) and _quota_ok(ps.get("quota")))
-    skip_collapse = (total > 0 and usable == 0)
-    collapsed = hard_down or degraded or skip_collapse
+    try:
+        usable = sum(1 for p in providers
+                     if p.get("alive") and _breaker_ok(p.get("breaker")) and _quota_ok(ps.get("quota")))
+        skip_collapse = (total > 0 and usable == 0)
+        collapsed = hard_down or degraded or skip_collapse
+        streak = prev["consecutive_collapsed_cycles"] + 1 if collapsed else 0
+    except _ShapeDrift as e:                       # Befund 1: fail-laut, nicht still „gesund"
+        logger.warning("cognition decode drift: %s", e)
+        usable = 0; skip_collapse = False
+        cog["decode_error"] = str(e)
+        streak = prev["consecutive_collapsed_cycles"]   # Streak eingefroren, nicht geraten
     cog.update({"providers_alive": alive, "providers_total": total,
                 "providers_usable": usable,
                 "total_calls": tc, "total_failures": tf,
                 "calls_delta": cd, "fail_delta": fd,
                 "hard_down": hard_down, "degraded": degraded,
                 "skip_collapse": skip_collapse,
-                "consecutive_collapsed_cycles":
-                    prev["consecutive_collapsed_cycles"] + 1 if collapsed else 0})
+                "consecutive_collapsed_cycles": streak})
 report["cognition"] = cog
 ```
 
@@ -145,28 +153,47 @@ report["cognition"] = cog
 `p["breaker"]` ist `CircuitBreaker.get_status()` (dict oder `None`), `ps["quota"]` ist
 `OperationalQuota.get_status()`. Am echten Code gelesen (`steward-protocol==0.3.2`):
 ```
+class _ShapeDrift(Exception):   # steward-protocol get_status()-Form weicht ab
+    pass
+
 def _breaker_ok(b: dict | None) -> bool:
-    # CircuitBreakerState = {closed, open, half_open}; can_execute()==False nur bei OPEN.
-    return b is None or b.get("state") != "open"
+    if b is None:
+        return True                       # kein Breaker für diesen Provider = nutzbar
+    if "state" not in b:                  # FAIL-LAUT statt still „gesund" (Befund 1)
+        raise _ShapeDrift("breaker.get_status(): 'state' fehlt")
+    return b["state"] != "open"           # {closed, open, half_open}; Skip nur bei OPEN
 
 def _quota_ok(q: dict | None) -> bool:
-    # check_before_request raist bei RPM/TPM/Cost. Konservative Snapshot-Näherung aus get_status():
     if not q:
         return True
-    r = q.get("requests", {}); t = q.get("tokens", {}); c = q.get("cost", {})
-    return (r.get("percent_used", 0) < 100 and t.get("percent_used", 0) < 100
-            and c.get("this_hour_usd", 0) < c.get("limit_per_hour_usd", float("inf")))
+    try:                                  # fehlende erwartete Keys → FAIL-LAUT (Befund 1)
+        return (q["requests"]["percent_used"] < 100
+                and q["tokens"]["percent_used"] < 100
+                and q["cost"]["this_hour_usd"] < q["cost"]["limit_per_hour_usd"])
+    except (KeyError, TypeError) as e:
+        raise _ShapeDrift(f"quota.get_status()-Form: {e}")
 ```
 **`is_alive`** ist `lifecycle.is_active and lifecycle.prana > 0`; `stats()` liefert genau das
 schon als Feld `alive` — `hard_down`/`usable` nutzen es direkt, keine Neuberechnung.
 
-**Ehrliche Restgrenze (kein Rateanteil, aber benannt):** `_breaker_ok`/`_quota_ok` lesen den
-`get_status()`-**Snapshot** zum MOKSHA-Zeitpunkt; die echten Skips nutzen zusätzlich
-Live-Größen (Breaker-Recovery-Timeout, geschätzte Tokens/Kosten der *nächsten* Anfrage). Für
-ein **Instrument** ist die Snapshot-Näherung bewusst konservativ (OPEN/„≥100 %" = nicht
-nutzbar). Und: gepinnt gegen `0.3.2` (PyPI) — Produktion installiert `steward-protocol`
-editable aus `main` (`steward-heartbeat.yml:49`); **vor G1 die Statusformen gegen die exakte
-Produktionsversion gegenprüfen** (oder die Version pinnen).
+**Fail-laut im Builder (Befund 1):** die `usable`-Berechnung (§5.3) wird mit
+`try/except _ShapeDrift` umschlossen. Bei Drift: `cog["decode_error"] = <detail>` **setzen**
++ `logger.warning`, `skip_collapse` bleibt `False` und der Streak wird in diesem Zyklus
+**nicht** fortgeschrieben. So liest das Instrument bei unerwarteter Form **nicht still
+„gesund"** — die Drift ist als Feld `decode_error` im Artefakt sichtbar. Zusätzlich validiert
+`execute()` beim ersten Aufruf die Form einmal gegen die installierte Version.
+
+**Versionsabgleich ist IMPLEMENTIERUNGS-SCHRITT 1, nicht danach (Befund 1):** gepinnt gegen
+`steward-protocol==0.3.2` (PyPI); Produktion installiert editable aus `main`
+(`steward-heartbeat.yml:49`). Bevor eine Zeile von §5.3 geschrieben wird, die drei Formen
+(`CircuitBreaker.get_status`, `OperationalQuota.get_status`, `MahaCellUnified.is_alive`) gegen
+die exakte Produktionsversion gegenlesen (oder die Dependency-Version pinnen). Das Fail-laut
+oben macht jede Drift, die *nach* diesem Abgleich entsteht, sichtbar statt blind.
+
+**Snapshot-Näherung (benannt):** `_breaker_ok`/`_quota_ok` lesen den `get_status()`-Snapshot
+zum MOKSHA-Zeitpunkt; die echten Skips nutzen zusätzlich Live-Größen (Recovery-Timeout,
+geschätzte Tokens/Kosten der nächsten Anfrage). Bewusst konservativ (OPEN/„≥100 %" = nicht
+nutzbar). Verzerrungsrichtung siehe §10.1.
 
 ### 5.4 Invariante
 Schnitt A ändert **keinen** Kontrollfluss außerhalb `moksha_health.py`, wirft nicht (der
@@ -199,6 +226,11 @@ Builder-Ebene:
   `providers_usable==0` → `skip_collapse True`, Streak +1. Treibt den **erreichbaren**
   Skip-Pfad (`chamber.py:251`), nicht die tote Per-Provider-Quota-Form (`:244`) — sonst
   „grüner Test, tote Produktion" (§220.3).
+- `test_decode_error_fails_loud` (**Runde 7, Befund 1**): `stats()` liefert einen `breaker`-
+  Dict **ohne** `state`-Key (simulierte Form-Drift) → `_ShapeDrift` → `cog["decode_error"]`
+  ist gesetzt, `logger.warning` gefeuert, `consecutive_collapsed_cycles == prev` (eingefroren,
+  **nicht** auf 0 „gesund" geraten), Run-Exit unverändert. Beweist, dass Drift sichtbar wird
+  statt still gesund.
 
 Disk-Roundtrip-Ebene (**das eigentliche Novum — Befund 3**):
 - `test_roundtrip_increment`: Datei mit `cognition.consecutive_collapsed_cycles=N` +
@@ -241,6 +273,11 @@ None-Guard (Befund 6).
 1. **Schwelle `N` — Einheit ist Zyklen** (Befund 5): ein Run addiert bis zu `CYCLES`
    (Default 4) Zyklen; `N` muss run-sprung-bewusst definiert werden (z. B. „≥N kollabierte
    Zyklen über ≥M aufeinanderfolgende Runs"), nicht naiv als „N Runs". Aus A-Daten.
+   **Verzerrungs-Richtung (Befund 3):** `_breaker_ok` rekonstruiert das dynamische
+   `can_execute()==False` aus einem statischen `state`-Snapshot. An der OPEN→HALF_OPEN-
+   Recovery-Grenze zeigt `state` noch „open", während `can_execute()` schon einen Probe
+   erlaubt ⇒ `skip_collapse` **überzählt** Kollaps-Zyklen während der Erholung. `N` aus
+   A-Daten daher gegen diese Aufwärts-Verzerrung kalibrieren.
 2. Prädikat-Wahl für C (Hard-Down / Degradation / kombiniert) — aus A-Daten.
 3. Atomicity des Health-Writes — **jetzt als C-Blocker (iii) §8 verdrahtet** (Befund 2), nicht
    mehr nur „separate Hygiene".
@@ -269,21 +306,29 @@ None-Guard (Befund 6).
    `skip_collapse` erneut prüfen (Feld in `stats()` exponieren oder Blindfleck bewusst
    tragen).*
 
-   **Lebende `skip_collapse`-Eingänge** sind damit: Breaker-OPEN (`:251`), schwache Membran
-   (`:255`) und **globale** Quota-Erschöpfung (`self._quota.check_before_request` am Kopf von
-   `invoke()`, `chamber.py:231–238`, `return None`). Alle drei sind aus `stats()` (`breaker`,
-   `integrity`/`alive`, globaler `quota`) unter 4a rekonstruierbar — 4b kollabiert in 4a.
-   *Hinweis:* Reviewer-Runde-5-Punkt „`_quota_ok` sei Streaming-only tot" ist am Code
-   widerlegt — der globale Quota-Check steht auch im non-streaming `invoke()` (`:231`), also
-   bleibt `_quota_ok` erreichbar und normativ.
+   **Lebende `skip_collapse`-Eingänge:** Breaker-OPEN (`:251`) und **globale** Quota-
+   Erschöpfung (`self._quota.check_before_request` am Kopf von `invoke()`, `chamber.py:231–238`,
+   `return None`) — **beide** von `usable` erfasst (`_breaker_ok`, `_quota_ok`), aus `stats()`
+   (`breaker`, globaler `quota`) rekonstruierbar. *Hinweis:* Reviewer-Runde-5-Punkt „`_quota_ok`
+   sei Streaming-only tot" ist am Code widerlegt — der globale Check steht auch im
+   non-streaming `invoke()` (`:231`).
+
+   **Membran-Skip (`:255`) wird bewusst NICHT separat erkannt (Befund 2):** `usable` prüft
+   `alive AND breaker AND quota`, **nicht** `integrity`. Eine Zelle kann `alive=True`
+   (`is_active ∧ prana>0`) und trotzdem an `:255` übersprungen werden, weil Failures die
+   *Integrität* senken (`chamber.py:502`), nicht prana. Dieser Pfad wird vom Breaker-Skip
+   (`:251`, niedrigere Schwelle) höchstwahrscheinlich maskiert; und die Membran-Schwelle in
+   `cell.signal` liegt in `vibe_core` und ist **nicht gepinnt**. Daher: bewusster Verzicht,
+   **keine** Behauptung einer `integrity`-Rekonstruktion. Wird der Pfad je relevant, ist die
+   `cell.signal`-Schwelle wie 4a zu pinnen und `usable` zu erweitern.
 
 ## 11. Schlussstatus
 
-DRAFT 0.8. Schnitt A misst Hard-Down, Degradation und Skip-Kollaps; §5.3 vollständig
-definiert (Dekodierung §5.3a gegen echtes `steward-protocol` gepinnt). B/C korrekt gegated.
+DRAFT 1.0 — bedingtes Go. Schnitt A misst Hard-Down, Degradation und Skip-Kollaps; §5.3
+vollständig definiert, fail-laut, ohne offene Designfehler. B/C korrekt gegated.
 **Verbleibend vor G1:** (i) Statusformen gegen die Produktions-`steward-protocol`-Version
-gegenprüfen (§5.3a); (ii) normales Deployment-Gate. Kein Impl./Aktivierung ohne Review +
-Operator-Go.
+gegenprüfen — **als erster Implementierungsschritt** (§5.3a); (ii) normales Deployment-Gate.
+Kein Impl./Aktivierung ohne Review + Operator-Go.
 
 **Minor (für den C-Designer):** `skip_collapse` ist ein **Kapazitäts**-Prädikat („könnten
 wir kognizieren?"), in denselben Streak gefaltet wie die **Failure**-Prädikate
@@ -345,3 +390,13 @@ Inkrement heißt also nicht immer „Kognition scheiterte".
   §10.4a von OFFEN → AUFGELÖST. §5.3 ist jetzt vollständig definiert. Restgrenze:
   Snapshot-Näherung + Versions-Gegenprüfung gegen Produktion. Methoden-Lehre: „geht hier
   nicht" erst behaupten, wenn Beschaffung (pip/dep-graph) geprüft ist — nicht davor.
+- **Siebte Runde (2026-07-17, finales Review von DRAFT 0.8): BEDINGTES GO.** Keine
+  Designfehler mehr — drei kleine Härtungen: (1, MED-HIGH) die §5.3a-Dekoder lasen bei
+  Form-Drift still „gesund" (`.get(key, healthy_default)`) → **fail-laut** umgebaut
+  (`_ShapeDrift` + `decode_error`-Feld + Streak eingefroren), plus Versionsabgleich als
+  Impl-Schritt 1; (2, MED) §10.4 behauptete eine `integrity`/Membran-Rekonstruktion, die
+  `usable` nicht leistet → Behauptung entfernt, Membran-Skip `:255` bewusst als
+  nicht-separat-erfasst dokumentiert; (3, LOW) Snapshot-Verzerrung überzählt Kollaps während
+  Breaker-Recovery → in §10.1 benannt. Der Reviewer korrigierte zudem seinen eigenen
+  Runde-5-Fehler (globaler Quota IST im non-streaming `invoke()` erreichbar). Verbleibend nur
+  noch Versionsabgleich + Deployment-Gate; nächster sinnvoller Schritt ist Code, nicht Review.

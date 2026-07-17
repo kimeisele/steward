@@ -93,12 +93,12 @@ machen — LOGGING zuerst, kein erzwungenes Rot vor Beobachtung.
 **Recon abgeschlossen (RECON_01–04).** Die Fehlerklassen-Matrix ist vollständig belegt
 (RECON_04 §5). Kein offener Recon-Punkt ist vor der Spec zwingend.
 
-Feature-Spec liegt als **DRAFT 0.8** vor: `HEARTBEAT_FAILURE_PROPAGATION_FEATURE_01.md`
-(NICHT G1). **Sechs** Runden. Schnitt A misst Hard-Down, Degradation und Skip-Kollaps;
-Non-Atomicity als C-Blocker; Roundtrip getestet. Per-Provider-Quota (Runde 4) als toter Pfad
-aufgelöst. **§10.4a ist gepinnt und AUFGELÖST:** `vibe_core` kommt vom PyPI-Paket
-`steward-protocol` — installiert, echte `get_status()`-Formen gelesen, `_breaker_ok`/
-`_quota_ok`/`is_alive` in §5.3a definiert. §5.3 ist damit vollständig/Haiku-implementierbar.
-**Verbleibend vor G1:** Versions-Gegenprüfung der Statusformen gegen die Produktions-
-`steward-protocol`-Version + normales Deployment-Gate. **Kein Produktcode ohne Review +
-Operator-Go.**
+Feature-Spec liegt als **DRAFT 1.0 — bedingtes Go** vor:
+`HEARTBEAT_FAILURE_PROPAGATION_FEATURE_01.md`. **Sieben** Review-Runden, keine offenen
+Designfehler. Schnitt A misst Hard-Down, Degradation und Skip-Kollaps; §5.3 vollständig
+definiert und **fail-laut** (Dekoder werfen bei `steward-protocol`-Form-Drift statt still
+„gesund" zu lesen); §10.4a gepinnt (`vibe_core` via PyPI-Paket `steward-protocol`);
+Per-Provider-Quota als toter Pfad aufgelöst; Membran-Skip bewusst nicht erfasst.
+**Verbleibend vor formalem G1:** (i) Statusform-Gegenprüfung gegen die Produktions-
+`steward-protocol`-Version als **erster Implementierungsschritt**; (ii) normales
+Deployment-Gate. **Kein Produktcode ohne Operator-Go.**
