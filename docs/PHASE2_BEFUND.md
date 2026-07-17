@@ -2241,3 +2241,68 @@ Damit ist Slice C abgeschlossen, aber Feature 01 ausdrücklich nicht aktiviert. 
 zulässige Schritt ist read-only Slice-D-G2-Recon für lokalen Publisher und Recovery.
 Vollständige Evidence:
 `specs/context_bridge_evidence/FEATURE_01_SLICE_C_PRODUCTION.md`.
+
+## 24. Slice D1 liefert strikten Vier-Artefakt-Read-back ohne Aktivierung
+
+Der read-only Slice-D-Recon auf Head
+`ff635f3b05ec225349d776e7ee557119b424bdb5` bewies, dass ein kombinierter Patch aus
+Artifact-Parser, Git-Fence, Lock, Atomic Write und Recovery erneut ein riskanter Mega-
+Schnitt wäre. D wurde deshalb in D1 (reiner Persisted-Generation-Read-back) und D2
+(POSIX-Publisher/Recovery) geteilt.
+
+Ein adversarialer Review des ersten Preflight-Heads fand vor Code einen realen
+Feature-04-Widerspruch: `comparison_state` erlaubt vier nullable Counter, aber die alte
+private `_valid_previous()`-Logik rief für jeden Wert `_count()` auf und lehnte `None` ab.
+Der korrigierte G2-Vertrag verlangt dieselbe Nullable-Wahrheit für Snapshot, Record und
+Decision, trennt strukturelle Value-Object-Validierung von Generationsvertrauen und
+verlangt einen positiven Test für separat gelesene, bytegleiche Root-Objekte.
+
+Der finale Preflight-Head `f56ad28325c4e4e272e4f9b23151682ed417a74e` wurde freigegeben
+und als PR `#627`, Merge `4d1459c0dbfadf1da95a2582e765f4e367ac2455`, aufgenommen.
+
+D1 wurde red-first in zwei Commits implementiert:
+
+```text
+24bdb0c2f31166d8fe2a8e37f51ab61767c60a2f test: define persisted generation readback
+0214e3c871c33cb839293a2d6727382b0c479fac feat: validate persisted context generations
+```
+
+Der öffentliche `validate_previous_published_record()` prüft ausschließlich ein bereits
+typisiertes Record-Value-Object. Nur `validate_persisted_generation()` darf aus vier
+gemeinsam geprüften Bytes einen publisher-verwendbaren Previous Record zurückgeben. Es
+prüft Größen, UTF-8, kanonisches JSON, Duplicate Keys, Envelopes, Marker, Targetmap,
+Provenance, alle Hash- und Comparison-Bindungen sowie einen abschließenden exakten
+Renderer-Rebuild. Dadurch entsteht keine zweite permissive Root-Sprache.
+
+Das finale Code-Review gab exakt Head
+`0214e3c871c33cb839293a2d6727382b0c479fac` frei. PR `#633` wurde als Merge
+`5995d7f4dd0688ec1da0f7afded491d9011620be` aufgenommen. Exakt zwei Produkt- und zwei
+Testpfade änderten sich; Filesystem, Git, Clock, Netzwerk, Writer, Lock, Recovery und
+Caller blieben außerhalb.
+
+124 gezielte Tests und ein zusätzlicher Scan über 338 gesampelte Einzelbyte-Mutationen
+waren grün. Der vollständige lokale Lauf traf einen fremden Cetana/Dharma-Teardown-
+Timeout; der exakte Test war isoliert grün, alle übrigen Tests ergaben 2.287 passed,
+einen Skip und den bewusst deselecteten isolierten Test. Repositoryweites Ruff-Format,
+Lint, Bandit sowie die vier CI-Checks waren grün.
+
+Merge-CI `29558191253` und Folgeheartbeat `29558194430` liefen erfolgreich auf dem
+exakten Merge-Head. Die beiden nachfolgenden Heartbeat-Commits
+`ab1f4937d99e1c3f437efa5a2d7a2df44498f50d` und
+`511f5a8760258ba23b503860ebc865aa97b4b335` änderten zusammen ausschließlich zehn
+bekannte Runtime-/Federation-State-Pfade.
+
+Am Merge- und Folge-Head blieben identisch beziehungsweise absent:
+
+- Source `f428d5856a5c525e002c301890777748effbeb4e`,
+- `CLAUDE.md` `8146a15603c95e5aa1404c9eb7021e3008914b0c`,
+- `context_contract.py` `b5c7410ec9adc8ab8c35485a9238dc1d214e0bc5`,
+- `context_rendering.py` `3dd923237d6871163e9b45b827a8e0d4b7d963bb`,
+- Root-`AGENTS.md` absent,
+- Snapshot- und Publication-Artefakt absent.
+
+D1 ist damit abgeschlossen, aber Feature 01 weiterhin nicht aktiviert. Der nächste
+zulässige Schritt ist ausschließlich ein neuer read-only D2-G2-Preflight. Publisher,
+Writer, Lock, Root-/Record-Mutation, Recovery, `.gitignore`, Workflow, Settings, Delivery
+und Aktivierung bleiben bis zu dessen Review vollständig gesperrt. Vollständige Evidence:
+`specs/context_bridge_evidence/FEATURE_01_SLICE_D1_PRODUCTION.md`.
