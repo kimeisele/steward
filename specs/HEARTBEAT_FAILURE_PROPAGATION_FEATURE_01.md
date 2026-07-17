@@ -2,8 +2,9 @@
 
 ## Sichtbarmachung anhaltenden kognitiven/Provider-Kollaps
 
-> **Status:** DRAFT 0.3 — SCHNITT A AUSFÜHRBAR; ADVERSARIAL-REVIEW-BEFUNDE 1–6 EINGEARBEITET;
-> NICHT G1; IMPLEMENTIERUNG UND AKTIVIERUNG GESPERRT
+> **Status:** DRAFT 0.4 — SCHNITT A AUSFÜHRBAR; ZWEI ADVERSARIAL-REVIEW-RUNDEN EINGEARBEITET
+> (inkl. Korrektur des invertierten `degraded`-Prädikats); NICHT G1; IMPLEMENTIERUNG UND
+> AKTIVIERUNG GESPERRT
 > **Datum:** 2026-07-17
 > **Produktionsbasis:** `kimeisele/steward@bf2fba2075a87463fc8e333f8f57d805fce4d030`
 > **Herkunft:** Phase-2 §7.3; Recon RECON_01–04; adversariales Review (§12)
@@ -29,6 +30,12 @@ Produktionsbasis oben und sind vor Implementierung erneut zu pinnen.
   "total_calls":int, "total_failures":int, …}`. `total_calls`/`total_failures` sind
   prozess-monoton (nur bei frischem Prozess auf 0; `_maybe_reset_daily` `chamber.py:522`
   setzt sie **nicht** zurück).
+- **Zählsemantik (gepinnt — jedes Delta-Prädikat hängt daran):** `_total_calls += 1` steht
+  **ausschließlich** in `_record_call_success` (`chamber.py:471`) ⇒ `total_calls` = Anzahl
+  **gelungener** Invokes, NICHT Versuche. `_total_failures += 1` steht in
+  `_record_call_failure` (`chamber.py:495`) und feuert **pro totem Provider** ⇒ ein einzelner
+  `invoke()` kann `total_failures` um mehrere erhöhen. Ein toter Provider vor einem guten =
+  gesunder Fallback erzeugt Erfolg **und** Failures.
 - Chamber ist Service: `SVC_PROVIDER` `services.py:40`; Registrierung `services.py:285`;
   Get-Muster `context_bridge.py:271`.
 - Health-Builder `_build_health_report()` `moksha_health.py:62`; Writer `moksha_health.py:
@@ -61,8 +68,10 @@ Pro MOKSHA-Zyklus aus `stats()`: `providers_alive`, `providers_total`, `total_ca
 `total_failures`. Abgeleitet über den Zyklus-Delta zum vorigen Report: `calls_delta`,
 `fail_delta`. Zwei Zustände:
 - `hard_down` = `providers_total>0 and providers_alive==0` (Total-Ausfall, Momentwert).
-- `degraded` = `calls_delta>0 and fail_delta>=calls_delta` (im Zyklus wurde Kognition
-  versucht, **keine** gelang) — dies ist das Krankheitsbild aus RECON_01 §4.
+- `degraded` = `calls_delta==0 and fail_delta>0` (Failures traten auf, **kein** Erfolg im
+  Zyklus — weil `total_calls` laut §3 nur Erfolge zählt) — das Krankheitsbild aus RECON_01
+  §4. **Gesunder Fallback (`calls_delta>0`) bleibt bewusst grün**, egal wie viele Failures
+  ein toter Vorgänger-Provider erzeugt.
 
 `collapsed = hard_down or degraded` treibt **einen** Streak.
 
@@ -98,7 +107,7 @@ if provider is not None and hasattr(provider, "stats"):
     else:
         cd = tc; fd = tf
     hard_down = (total > 0 and alive == 0)
-    degraded  = (cd > 0 and fd >= cd)
+    degraded  = (cd == 0 and fd > 0)   # Failures, aber kein Erfolg im Zyklus (§3-Semantik)
     collapsed = hard_down or degraded
     cog.update({"providers_alive": alive, "providers_total": total,
                 "total_calls": tc, "total_failures": tf,
@@ -124,10 +133,14 @@ Builder-Ebene:
   `hard_down False`, `degraded False`, `consecutive_collapsed_cycles==0`.
 - `test_hard_down_increments`: alle Cells nicht-alive, `prev.streak=3` → `hard_down True`,
   `consecutive_collapsed_cycles==4`.
-- `test_degraded_increments` (**Befund 1**): Cells alive, aber `prev.total_calls`/
-  `total_failures` so gesetzt, dass `calls_delta>0 and fail_delta==calls_delta` → `degraded
-  True`, Streak +1 — obwohl `hard_down False`.
-- `test_transient_resets` (**Guard §220.3**): ≥1 Erfolg im Zyklus (`fail_delta<calls_delta`)
+- `test_degraded_increments` (**Befund 1**): Cells alive, Totals so gesetzt, dass
+  `calls_delta==0 and fail_delta>0` (Failures ohne Erfolg im Zyklus) → `degraded True`,
+  Streak +1 — obwohl `hard_down False`.
+- `test_healthy_fallback_stays_green` (**Befund 1b — False-Positive-Guard, Runde 2**):
+  gesunder Fallback, `calls_delta>0 and fail_delta>0` (toter Vorgänger-Provider) →
+  `degraded False`, `consecutive_collapsed_cycles==0` trotz `prev.streak=5`. Fängt die
+  invertierte Prädikat-Version ab.
+- `test_transient_resets` (**Guard §220.3**): ≥1 Erfolg im Zyklus (`calls_delta>0`)
   → `collapsed False`, `consecutive_collapsed_cycles==0` trotz `prev.streak=5`.
 - `test_no_provider_registered`: SVC_PROVIDER fehlt → Block mit `providers_total==0`,
   Streak == `prev.streak`; kein Fehler.
@@ -192,3 +205,11 @@ Operator-Go.
   Doppel-Inkrement) → §5.2 nur Extraktion, §5.3 einzige Inkrement-Stelle; 5 (MED, Einheiten)
   → §10.1; 6 (LOW, §5.1 vs §5.3 normativ) → §5.1 als illustrativ markiert. G1 blieb korrekt
   verwehrt.
+- **Zweite Runde (2026-07-17, Review von DRAFT 0.3):** 1 neuer HIGH-Befund — der Fix für
+  Befund 1 hatte ein **invertiertes** `degraded`-Prädikat eingebaut. Am Code verifiziert:
+  `total_calls` zählt nur Erfolge (`chamber.py:471`), `total_failures` pro totem Provider
+  (`chamber.py:495`). Das alte `cd>0 and fd>=cd` hätte auf gesundem Fallback
+  (Groq-tot→Gemini-ok: `cd=1,fd=1` je Zyklus) **Dauerfehlalarm** erzeugt und das reale
+  Krankheitsbild (`cd==0`) verfehlt. Fix: §3 pinnt jetzt die Zählsemantik; §5 Prädikat
+  korrigiert auf `cd==0 and fd>0`; §6 neuer `test_healthy_fallback_stays_green`. Die 5
+  handwerklich sauberen Befunde (2,3,4,5,6) wurden bestätigt. G1 weiterhin verwehrt.
