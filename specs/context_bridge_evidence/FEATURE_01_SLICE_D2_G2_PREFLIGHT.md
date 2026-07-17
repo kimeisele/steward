@@ -175,27 +175,43 @@ echter GitHub-Hosted-Runner-Drill außerhalb des Steward-Repositories:
 
 - privater, nach dem Beweis archivierter Evidence-Repo:
   `kimeisele/steward-d2-platform-drill`;
-- gepinnter Drill-Commit: `5c9fe5d473256d8414536c9b4d323d7a10a9257b`;
-- Workflow-Run: `29561708330`, Ergebnis `success`;
+- gepinnter Drill-Implementierungscommit:
+  `6fd294be18941a7ad441478bdeecc077d69d9a29`;
+- Workflow-Run: `29562503249`, Ergebnis `success`;
 - Runner-Image: `ubuntu-24.04`;
-- Evidence-Artifact SHA-256:
-  `ef21029863f9d1558e32e5f97ac55198f4f6d547f3520182fab3f94a3fd9f720`.
+- dauerhafter archivierter Evidence-Commit:
+  `01608b6ab475dd9129aeb3dedcb4b396d7da21e9`;
+- dauerhafter JSON-Pfad:
+  `evidence/ubuntu-fd-drill-run-29562503249.json`;
+- dauerhafter JSON-Git-Blob:
+  `460233d7d563fe722ed0b452e3d525796e87216f`;
+- kanonischer **JSON-Payload SHA-256**:
+  `104fb5bb1ff09307c3e661d6537e75a563cbe930409a0856d835f8af6c3455fb`;
+- separat bezeichnete, auslaufende GitHub-Artifact-ZIP-Digest:
+  `sha256:4edb09585f76092a9da2f1d30443a81c1f66b3220ddbad64d0023250b327175e`.
 
 Der Run belegte positiv:
 
 - Linux `6.17.0-1020-azure`, glibc 2.39;
 - `/usr/bin/git` war regulär, UID 0, Modus `0755`; Git-Version `2.54.0`;
 - `/proc/self/fd` war verfügbar und traversierbar;
+- Parent-`os.stat("/proc/self/fd/<git_dir_fd>")` stimmte in Device und Inode exakt mit
+  `os.fstat(git_dir_fd)` überein;
 - `/usr/bin/python3` war wie im Review vermutet ein Symlink auf `python3.12`; diese
   Tatsache wird **nicht** mehr durch einen falschen No-Symlink-Vertrag verdeckt;
 - Git lief ohne Python-Helper direkt mit
   `--git-dir=/proc/self/fd/<geerbter git_dir_fd>`;
 - nach vollständigem Rename des ursprünglichen Repository-Pfads und Ersetzung durch ein
   zweites Repository lieferte Git weiterhin den ursprünglichen Head
-  `321d3940d154d194a2c51b8b7ab12812124f52f1`, nicht den Ersatz-Head
-  `5a493650a66e6e16ca227bcfc22ba9dc544e8c4`;
-- `ls-tree`, `ls-files` und der dirfd-relative Worktree-Read blieben ebenfalls an der
-  ursprünglichen Instanz gebunden.
+  `ce0acd14d3b4c756fe812a18e8a03f165edf0a73`, nicht den Ersatz-Head
+  `499f389451ff3a35cc27f353888bd2fafb5ed1d3`;
+- Original-Blob `4b48deed3a433909bfd6b6ab3d4b91348b6af464` und Ersatz-Blob
+  `4804f74bd089c942c2bb4eeb116c16cc3398bf0a` waren verschieden;
+- vollständige NUL-terminierte `ls-tree`- und `ls-files`-Bytes nach dem Replacement
+  stimmten bytegenau mit der vor dem Replacement gelesenen Original-Evidence überein und
+  unterschieden sich bytegenau von der Ersatz-Evidence;
+- Ersatz-Blob-ID kam weder in FD-gebundenem Tree noch Index vor;
+- der dirfd-relative Worktree-Read blieb ebenfalls an der ursprünglichen Instanz gebunden.
 
 Der Drill verwendete keine Steward-Produktdatei, keinen Workflow des Steward-Repos,
 keinen Token im Artefakt und keine Produktionsaktivierung. Sein Repo ist archiviert; der
@@ -298,9 +314,12 @@ D2a verwendet nur die in §2.5 belegten Plumbing-Kommandos. Verbindlich sind:
   blockieren fail-closed;
 - **Linux-/Ubuntu-Grenze:** `/proc/self/fd` muss vorhanden sein. Git wird direkt als
   `[<git>, "--git-dir=/proc/self/fd/<git_dir_fd>", ...]` mit `close_fds=True`,
-  `pass_fds=(git_dir_fd,)` und Prozess-`cwd=/` gestartet. Der `/proc`-Eintrag muss im
-  Parent und durch einen positiven Kindprozess-Probe dieselben Device/Inode-Werte wie
-  `fstat(git_dir_fd)` zeigen; es gibt keinen Python-Helper und keinen Python-Pfadvertrag;
+  `pass_fds=(git_dir_fd,)` und Prozess-`cwd=/` gestartet. Unmittelbar vor Spawn muss
+  `os.stat("/proc/self/fd/<git_dir_fd>")` im Parent dieselben Device/Inode-Werte wie
+  `os.fstat(git_dir_fd)` zeigen; danach beweist der erfolgreiche, outputgebundene Git-
+  Aufruf selbst, dass das Kind den geerbten FD traversieren konnte. Ein zusätzlicher
+  Child-Stat-Prozess wird weder behauptet noch benötigt. Es gibt keinen Python-Helper und
+  keinen Python-Pfadvertrag;
 - **Darwin-Grenze:** Weil `/dev/fd/<n>` dort nicht traversierbar ist, wird ausschließlich
   der positiv belegte Systempfad `/usr/bin/python3` als isolierter Helper akzeptiert. Er
   unterliegt derselben vollständigen UID-0-/No-Symlink-/No-Write-Komponentenprüfung wie
@@ -556,12 +575,19 @@ Vor Produktcode müssen mindestens folgende Tests rot sein.
 - Linux startet Git direkt mit dem geerbten `.git`-FD unter
   `--git-dir=/proc/self/fd/<n>`; Darwin gibt exakt denselben FD an den isolierten Helper,
   der `fchdir()` nur im Kind ausführt und Git mit `--git-dir=.` startet;
+- auf Linux wird Parent-`stat(/proc/self/fd/<n>)` direkt gegen `fstat(git_dir_fd)` geprüft;
+  es gibt keinen behaupteten oder gemockten Child-Stat-Probe;
 - dynamische Werte bleiben separate `argv`-Elemente; adversariale Werte können den festen
   `-c`-Helpertext nicht erweitern oder neue Git-Argumente einschleusen;
 - ein adversarialer Test tauscht den Root-Pfad exakt zwischen Parent-Prüfung und
-  Helper-Start gegen ein zweites Repository aus und danach zurück. Git-Evidence muss
+  Linux-Git-/Darwin-Helper-Start gegen ein zweites Repository aus und danach zurück.
+  Git-Evidence muss
   weiterhin ausschließlich vom ursprünglich geöffneten `.git`-Inode stammen; ein
   Sentinel-Head/-Blob des Ersatz-Repositories darf niemals beobachtet werden;
+- Original und Ersatz verwenden denselben Zielpfad, aber verschiedene Blob-IDs. Head,
+  vollständige NUL-terminierte `ls-tree`-Bytes und vollständige NUL-terminierte
+  `ls-files --stage`-Bytes müssen nach dem Austausch exakt der vorab gelesenen Original-
+  Evidence entsprechen und sich exakt von der Ersatz-Evidence unterscheiden;
 - derselbe Test beweist, dass weder `preexec_fn` noch `chdir`/`fchdir` im Steward-Prozess
   verwendet wird;
 - ein ungemockter Linux-Integrationstest ruft auf dem echten GitHub-Hosted-Ubuntu-
