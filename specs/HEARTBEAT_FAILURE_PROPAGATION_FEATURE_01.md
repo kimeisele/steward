@@ -2,10 +2,11 @@
 
 ## Sichtbarmachung anhaltenden kognitiven/Provider-Kollaps
 
-> **Status:** DRAFT 0.7 — FÜNF ADVERSARIAL-REVIEW-RUNDEN. 4b (Per-Provider-Quota) als TOTER
-> PFAD aufgelöst; einzige verbleibende tragende Lücke ist §10.4a (vibe_core-Statusdekodierung).
-> NICHT G1 / nicht Haiku-implementierbar, bis 4a in einer vibe_core-Umgebung gepinnt ist.
-> IMPL./AKTIVIERUNG GESPERRT
+> **Status:** DRAFT 0.8 — SECHS RUNDEN. §5.3 ist jetzt VOLLSTÄNDIG DEFINIERT (Dekodierung
+> §5.3a gegen echtes `steward-protocol` gepinnt) und damit Haiku-implementierbar. Verbleibend
+> vor G1: (i) Versions-Gegenprüfung der Statusformen gegen die Produktions-`steward-protocol`-
+> Version, (ii) normales Deployment-Gate (Produktionsbeweis, Review, Operator-Go).
+> IMPL./AKTIVIERUNG WEITERHIN GESPERRT bis Operator-Go.
 > **Datum:** 2026-07-17
 > **Produktionsbasis:** `kimeisele/steward@bf2fba2075a87463fc8e333f8f57d805fce4d030`
 > **Herkunft:** Phase-2 §7.3; Recon RECON_01–04; adversariales Review (§12)
@@ -124,8 +125,7 @@ if provider is not None and hasattr(provider, "stats"):
         cd = tc; fd = tf
     hard_down = (total > 0 and alive == 0)
     degraded  = (cd == 0 and fd > 0)   # Failures, aber kein Erfolg im Zyklus (§3-Semantik)
-    # providers_usable: alive UND breaker≠OPEN UND within_quota. Die exakte Dekodierung von
-    # p['breaker'] und ps['quota'] ist an vibe_core get_status() zu PINNEN (§10.4) — NICHT raten.
+    # providers_usable: alive UND breaker≠OPEN UND within_quota. Dekodierung §5.3a (gepinnt).
     usable = sum(1 for p in providers
                  if p.get("alive") and _breaker_ok(p.get("breaker")) and _quota_ok(ps.get("quota")))
     skip_collapse = (total > 0 and usable == 0)
@@ -140,6 +140,33 @@ if provider is not None and hasattr(provider, "stats"):
                     prev["consecutive_collapsed_cycles"] + 1 if collapsed else 0})
 report["cognition"] = cog
 ```
+
+### 5.3a Statusdekodierung — GEPINNT gegen `steward-protocol` (vibe_core), verifiziert
+`p["breaker"]` ist `CircuitBreaker.get_status()` (dict oder `None`), `ps["quota"]` ist
+`OperationalQuota.get_status()`. Am echten Code gelesen (`steward-protocol==0.3.2`):
+```
+def _breaker_ok(b: dict | None) -> bool:
+    # CircuitBreakerState = {closed, open, half_open}; can_execute()==False nur bei OPEN.
+    return b is None or b.get("state") != "open"
+
+def _quota_ok(q: dict | None) -> bool:
+    # check_before_request raist bei RPM/TPM/Cost. Konservative Snapshot-Näherung aus get_status():
+    if not q:
+        return True
+    r = q.get("requests", {}); t = q.get("tokens", {}); c = q.get("cost", {})
+    return (r.get("percent_used", 0) < 100 and t.get("percent_used", 0) < 100
+            and c.get("this_hour_usd", 0) < c.get("limit_per_hour_usd", float("inf")))
+```
+**`is_alive`** ist `lifecycle.is_active and lifecycle.prana > 0`; `stats()` liefert genau das
+schon als Feld `alive` — `hard_down`/`usable` nutzen es direkt, keine Neuberechnung.
+
+**Ehrliche Restgrenze (kein Rateanteil, aber benannt):** `_breaker_ok`/`_quota_ok` lesen den
+`get_status()`-**Snapshot** zum MOKSHA-Zeitpunkt; die echten Skips nutzen zusätzlich
+Live-Größen (Breaker-Recovery-Timeout, geschätzte Tokens/Kosten der *nächsten* Anfrage). Für
+ein **Instrument** ist die Snapshot-Näherung bewusst konservativ (OPEN/„≥100 %" = nicht
+nutzbar). Und: gepinnt gegen `0.3.2` (PyPI) — Produktion installiert `steward-protocol`
+editable aus `main` (`steward-heartbeat.yml:49`); **vor G1 die Statusformen gegen die exakte
+Produktionsversion gegenprüfen** (oder die Version pinnen).
 
 ### 5.4 Invariante
 Schnitt A ändert **keinen** Kontrollfluss außerhalb `moksha_health.py`, wirft nicht (der
@@ -217,12 +244,15 @@ None-Guard (Befund 6).
 2. Prädikat-Wahl für C (Hard-Down / Degradation / kombiniert) — aus A-Daten.
 3. Atomicity des Health-Writes — **jetzt als C-Blocker (iii) §8 verdrahtet** (Befund 2), nicht
    mehr nur „separate Hygiene".
-4. **NORMATIVE KERN-LÜCKE — §5.3 ist bis hierhin NICHT ausführbar.** Zwei getrennte Teile:
+4. **Statusdekodierung §5.3 — AUFGELÖST (Runde 6).**
 
-   **4a — Dekodierung (Runde 3):** `_breaker_ok(p['breaker'])`, `is_alive` und der globale
-   `ps['quota']`-Status liegen in `vibe_core` (hier nicht installiert). Exakte Formen (wann
-   „OPEN", wann „erschöpft") vor Implementierung gegen den echten `get_status()` pinnen,
-   **nicht raten**. `_breaker_ok`/`_quota_ok` in §5.3 sind Platzhalter dafür.
+   **4a — GEPINNT.** `steward-protocol` (das Distributions-Paket hinter dem Import
+   `vibe_core`, `pyproject.toml` `dependencies`) wurde installiert und die echten Formen
+   gelesen: `CircuitBreakerState = {closed,open,half_open}` (Skip nur bei `open`),
+   `OperationalQuota.get_status()` (RPM/TPM/Cost-Struktur), `is_alive = is_active and prana>0`
+   (in `stats()` als `alive`). `_breaker_ok`/`_quota_ok` sind in §5.3a **definiert**, keine
+   Platzhalter mehr. Einzige benannte Restgrenze: Snapshot-Näherung + Versions-Gegenprüfung
+   gegen die Produktions-`steward-protocol`-Version (§5.3a).
 
    **4b — AUFGELÖST (Runde 5): der Per-Provider-Quota-Skip `:244` ist ein TOTER PFAD.**
    Runde 4 rahmte dies als Datenlücke + Operator-Entscheidung. Am Code widerlegt: der Skip
@@ -249,11 +279,11 @@ None-Guard (Befund 6).
 
 ## 11. Schlussstatus
 
-DRAFT 0.7. Schnitt A misst Hard-Down, Degradation und Skip-Kollaps; B/C korrekt gegated.
-**Einziger verbleibender G1-Blocker: §10.4a** — die vibe_core-Statusdekodierung
-(`_breaker_ok`/`_quota_ok`/`is_alive`), zu pinnen in einer Umgebung *mit* `vibe_core`; dieses
-Environment kann es nicht. Danach ist G1 plausibel. Kein G1/Impl./Aktivierung ohne 4a +
-erneutes Review + Operator-Go.
+DRAFT 0.8. Schnitt A misst Hard-Down, Degradation und Skip-Kollaps; §5.3 vollständig
+definiert (Dekodierung §5.3a gegen echtes `steward-protocol` gepinnt). B/C korrekt gegated.
+**Verbleibend vor G1:** (i) Statusformen gegen die Produktions-`steward-protocol`-Version
+gegenprüfen (§5.3a); (ii) normales Deployment-Gate. Kein Impl./Aktivierung ohne Review +
+Operator-Go.
 
 **Minor (für den C-Designer):** `skip_collapse` ist ein **Kapazitäts**-Prädikat („könnten
 wir kognizieren?"), in denselben Streak gefaltet wie die **Failure**-Prädikate
@@ -306,3 +336,12 @@ Inkrement heißt also nicht immer „Kognition scheiterte".
   normativ (Reviewer hier am Code widerlegt). Folgen: §10.4b neu (toter Pfad + Latent-Guard),
   §5.1 präzisiert, `test_skip_collapse_quota` → `test_skip_collapse_breaker` (lebender Pfad).
   Einziger G1-Blocker bleibt §10.4a (vibe_core-Dekodierung). G1 verwehrt.
+- **Sechste Runde (2026-07-17, Operator-Einwand „das ist doch ein PyPI-Package"):** berechtigt
+  — der Lead-Agent hatte §10.4a fälschlich als unlösbares Umgebungsproblem gerahmt, ohne
+  `pyproject.toml.dependencies` zu lesen. `vibe_core` wird vom PyPI-Paket **`steward-protocol`**
+  geliefert (Import-Name ≠ Distributionsname). `pip install steward-protocol` (0.3.2), echte
+  Formen gelesen und §5.3a **gepinnt**: `_breaker_ok`=`state!="open"`, `_quota_ok`=Snapshot-
+  Näherung aus `get_status()`, `is_alive`=`is_active and prana>0` (= `stats()`-Feld `alive`).
+  §10.4a von OFFEN → AUFGELÖST. §5.3 ist jetzt vollständig definiert. Restgrenze:
+  Snapshot-Näherung + Versions-Gegenprüfung gegen Produktion. Methoden-Lehre: „geht hier
+  nicht" erst behaupten, wenn Beschaffung (pip/dep-graph) geprüft ist — nicht davor.

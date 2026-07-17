@@ -93,11 +93,12 @@ machen — LOGGING zuerst, kein erzwungenes Rot vor Beobachtung.
 **Recon abgeschlossen (RECON_01–04).** Die Fehlerklassen-Matrix ist vollständig belegt
 (RECON_04 §5). Kein offener Recon-Punkt ist vor der Spec zwingend.
 
-Feature-Spec liegt als **DRAFT 0.7** vor: `HEARTBEAT_FAILURE_PROPAGATION_FEATURE_01.md`
-(NICHT G1). **Fünf** adversariale Review-Runden. Schnitt A misst Hard-Down, Degradation und
-Skip-Kollaps; Non-Atomicity als C-Blocker; Roundtrip getestet. Der vermeintliche
-Per-Provider-Quota-Blindfleck (Runde 4) ist als **toter Pfad** aufgelöst (`calls_today` wird
-nie inkrementiert) — keine Operator-Entscheidung mehr nötig. **Einziger verbleibender
-G1-Blocker: §10.4a** — die vibe_core-Statusdekodierung (`breaker`/`quota`/`is_alive`
-`get_status`), zu pinnen in einer Umgebung *mit* `vibe_core`; dieses Environment kann es
-nicht. **Kein G1, kein Produktcode ohne 4a + erneutes Review + Operator-Go.**
+Feature-Spec liegt als **DRAFT 0.8** vor: `HEARTBEAT_FAILURE_PROPAGATION_FEATURE_01.md`
+(NICHT G1). **Sechs** Runden. Schnitt A misst Hard-Down, Degradation und Skip-Kollaps;
+Non-Atomicity als C-Blocker; Roundtrip getestet. Per-Provider-Quota (Runde 4) als toter Pfad
+aufgelöst. **§10.4a ist gepinnt und AUFGELÖST:** `vibe_core` kommt vom PyPI-Paket
+`steward-protocol` — installiert, echte `get_status()`-Formen gelesen, `_breaker_ok`/
+`_quota_ok`/`is_alive` in §5.3a definiert. §5.3 ist damit vollständig/Haiku-implementierbar.
+**Verbleibend vor G1:** Versions-Gegenprüfung der Statusformen gegen die Produktions-
+`steward-protocol`-Version + normales Deployment-Gate. **Kein Produktcode ohne Review +
+Operator-Go.**
