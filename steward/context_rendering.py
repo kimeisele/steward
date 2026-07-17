@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Mapping
 
 from steward.context_contract import (
@@ -12,6 +13,7 @@ from steward.context_contract import (
     C0_END,
     ORIENTATION_BEGIN,
     ORIENTATION_END,
+    ConstitutionAttestation,
     ContractViolation,
     OutputMode,
     PreviousPublishedRecord,
@@ -19,6 +21,7 @@ from steward.context_contract import (
     consumer_output_hash,
     payload_hash,
     snapshot_hash,
+    validate_constitution_attestation,
     validate_payload_core,
     validate_previous_published_record,
     validate_snapshot_model,
@@ -30,6 +33,14 @@ DYNAMIC_END = "<!-- steward-context:dynamic:v1:end -->"
 _ROOT_MAX_BYTES = 65_536
 _SNAPSHOT_MAX_BYTES = 131_072
 _PUBLICATION_MAX_BYTES = 16_384
+PERSISTED_TARGET_MAX_BYTES: Mapping[str, int] = MappingProxyType(
+    {
+        "CLAUDE.md": _ROOT_MAX_BYTES,
+        "AGENTS.md": _ROOT_MAX_BYTES,
+        ".steward/context-snapshot.json": _SNAPSHOT_MAX_BYTES,
+        ".steward/context-publication.json": _PUBLICATION_MAX_BYTES,
+    }
+)
 _SNAPSHOT_SCHEMA = "steward.context.snapshot-artifact/v1"
 _PUBLICATION_SCHEMA = "steward.context.publication-artifact/v1"
 _TARGETS = {
@@ -361,7 +372,10 @@ def validate_publication_candidates(
         _fail("inconsistent", "candidates")
 
 
-def _validate_persisted_generation(candidates: PublicationCandidates) -> PreviousPublishedRecord:
+def _validate_persisted_generation(
+    candidates: PublicationCandidates,
+    attestation: ConstitutionAttestation | None = None,
+) -> PreviousPublishedRecord:
     snapshot_envelope = _exact_mapping(
         _strict_json_bytes(candidates.snapshot_artifact, _SNAPSHOT_MAX_BYTES, "persisted.snapshot_artifact"),
         {"schema", "snapshot_id", "snapshot_hash", "snapshot"},
@@ -448,6 +462,13 @@ def _validate_persisted_generation(candidates: PublicationCandidates) -> Previou
         _fail("inconsistent", "persisted.publication_artifact.constitution.source_blob")
     if constitution["reviewed_at_commit"] != snapshot_constitution["reviewed_at_commit"]:
         _fail("inconsistent", "persisted.publication_artifact.constitution.reviewed_at_commit")
+    if attestation is not None:
+        if attestation.c0_sha256 != snapshot_constitution["sha256"]:
+            _fail("inconsistent", "persisted.constitution_attestation.c0_sha256")
+        if attestation.source_blob != snapshot_constitution["source_blob"]:
+            _fail("inconsistent", "persisted.constitution_attestation.source_blob")
+        if attestation.reviewed_at_commit != snapshot_constitution["reviewed_at_commit"]:
+            _fail("inconsistent", "persisted.constitution_attestation.reviewed_at_commit")
     if previous.snapshot_id != snapshot_id:
         _fail("inconsistent", "persisted.publication_artifact.previous.snapshot_id")
     if previous.c0_sha256 != snapshot_constitution["sha256"]:
@@ -494,6 +515,22 @@ def validate_persisted_generation(candidates: PublicationCandidates) -> Previous
         _fail("invalid_type", "persisted")
     try:
         return _validate_persisted_generation(candidates)
+    except ContractViolation:
+        raise
+    except (AttributeError, IndexError, KeyError, RecursionError, TypeError, UnicodeError, ValueError):
+        _fail("invalid_type", "persisted")
+
+
+def validate_constitution_bound_persisted_generation(
+    candidates: PublicationCandidates,
+    attestation: ConstitutionAttestation,
+) -> PreviousPublishedRecord:
+    """Validate one persisted generation against an external Constitution attestation."""
+    if type(candidates) is not PublicationCandidates:
+        _fail("invalid_type", "persisted")
+    validate_constitution_attestation(attestation)
+    try:
+        return _validate_persisted_generation(candidates, attestation)
     except ContractViolation:
         raise
     except (AttributeError, IndexError, KeyError, RecursionError, TypeError, UnicodeError, ValueError):

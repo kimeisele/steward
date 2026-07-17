@@ -12,10 +12,17 @@ from pathlib import Path
 
 import pytest
 
-from steward.context_contract import ContractViolation, OutputMode, canonical_json_bytes, consumer_output_hash
+from steward.context_contract import (
+    ConstitutionAttestation,
+    ContractViolation,
+    OutputMode,
+    canonical_json_bytes,
+    consumer_output_hash,
+)
 from steward.context_rendering import (
     PublicationCandidates,
     build_publication_candidates,
+    validate_constitution_bound_persisted_generation,
     validate_persisted_generation,
     validate_publication_candidates,
 )
@@ -205,6 +212,59 @@ def test_persisted_generation_accepts_nullable_comparison_state(models):
     previous = validate_persisted_generation(detached)
 
     assert dict(previous.comparison_state) == snapshot["comparison_state"]
+
+
+def attestation_for_candidates(candidates: PublicationCandidates) -> ConstitutionAttestation:
+    snapshot = json.loads(candidates.snapshot_artifact)["snapshot"]["constitution"]
+    return ConstitutionAttestation(
+        c0_sha256=snapshot["sha256"],
+        source_blob=snapshot["source_blob"],
+        reviewed_at_commit=snapshot["reviewed_at_commit"],
+    )
+
+
+def test_constitution_bound_generation_accepts_exact_external_attestation(detached_candidates):
+    previous = validate_constitution_bound_persisted_generation(
+        detached_candidates,
+        attestation_for_candidates(detached_candidates),
+    )
+
+    assert previous == validate_persisted_generation(detached_candidates)
+
+
+@pytest.mark.parametrize("field", ["c0_sha256", "source_blob", "reviewed_at_commit"])
+def test_constitution_bound_generation_rejects_each_external_mismatch(detached_candidates, field):
+    attestation = attestation_for_candidates(detached_candidates)
+    bad_length = 64 if field == "c0_sha256" else 40
+    mismatched = replace(attestation, **{field: "0" * bad_length})
+
+    with pytest.raises(ContractViolation) as exc_info:
+        validate_constitution_bound_persisted_generation(detached_candidates, mismatched)
+
+    assert exc_info.value.code == "inconsistent"
+
+
+def test_constitution_bound_generation_rejects_wrong_attestation_type(detached_candidates):
+    with pytest.raises(ContractViolation) as exc_info:
+        validate_constitution_bound_persisted_generation(detached_candidates, object())  # type: ignore[arg-type]
+
+    assert exc_info.value.code == "invalid_type"
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        {"schema": "steward.context.constitution-attestation/v2"},
+        {"status": "unverified"},
+    ],
+)
+def test_constitution_bound_generation_rejects_attestation_schema_or_status(detached_candidates, mutation):
+    attestation = replace(attestation_for_candidates(detached_candidates), **mutation)
+
+    with pytest.raises(ContractViolation) as exc_info:
+        validate_constitution_bound_persisted_generation(detached_candidates, attestation)
+
+    assert exc_info.value.code == "invalid_schema"
 
 
 def test_publication_artifact_bytes_alone_are_not_a_trusted_record(detached_candidates):
