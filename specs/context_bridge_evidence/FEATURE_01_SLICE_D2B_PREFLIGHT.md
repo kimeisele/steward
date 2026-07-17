@@ -79,8 +79,11 @@ Context Bridge module, test, or spec path drifted. The evidence below is therefo
 repinned to `29326550…`, while the PR-base drift is explicitly bounded rather than
 assumed away.
 
-No open PR exists at the time of this pin. The latest post-merge heartbeat completed
-successfully, but that is evidence about the heartbeat run, not a D2b publication proof.
+The pinned `.steward/context.json` reports `2 open PRs` inside its non-authoritative
+runtime perception string. A live GitHub query is the only evidence for current PR
+existence; at this evidence update it returns PRs `#693` and `#694`. Neither the runtime
+string nor the live PR list is a D2b publication proof. The latest post-merge heartbeat
+completed successfully, but that is evidence about the heartbeat run only.
 
 ### 2.2 Four D2a/D2b target paths
 
