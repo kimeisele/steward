@@ -1191,6 +1191,13 @@ def _validate_attestation(attestation: ConstitutionAttestation) -> None:
     _validate_hash(attestation.reviewed_at_commit, 40, field_path="constitution_attestation.reviewed_at_commit")
 
 
+def validate_constitution_attestation(attestation: ConstitutionAttestation) -> None:
+    """Validate an external Constitution attestation without inferring its origin."""
+    if type(attestation) is not ConstitutionAttestation:
+        _fail("invalid_type", "constitution_attestation")
+    _validate_attestation(attestation)
+
+
 def validate_previous_published_record(previous: PreviousPublishedRecord) -> None:
     """Validate a materialized published-record value object without attesting its origin."""
     if type(previous) is not PreviousPublishedRecord:
