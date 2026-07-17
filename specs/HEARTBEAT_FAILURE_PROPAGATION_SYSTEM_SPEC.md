@@ -79,7 +79,8 @@ Sie schreibt **nicht** in `docs/PHASE2_BEFUND.md`, `docs/PHASE2_CURRENT.md` oder
 |---|---|---|
 | `heartbeat_failure_propagation_evidence/RECON_01_SWALLOW_PATHS.md` | Die vier Schluck-Schichten, am Code belegt | RECON — teils offen |
 | `heartbeat_failure_propagation_evidence/RECON_02_CONSUMPTION_AND_CLASSES.md` | None-Konsum (Event, nicht verkabelt), bestehende Fehlerklassifikation, Andockpunkt `health_anomaly` | RECON — teils offen |
-| `heartbeat_failure_propagation_evidence/RECON_03_ADVERSARIAL.md` | Gegenbeweis-Versuch: Claim hält; Befund umgedreht — Erkennung vorhanden, Aussenverdrahtung fehlt; Fix-Richtung korrigiert (nicht `raise`) | RECON — teils offen |
+| `heartbeat_failure_propagation_evidence/RECON_03_ADVERSARIAL.md` | Gegenbeweis-Versuch: Claim hält; Befund umgedreht — Erkennung vorhanden, Aussenverdrahtung fehlt; Fix-Richtung korrigiert (nicht `raise`) | EVIDENCE |
+| `heartbeat_failure_propagation_evidence/RECON_04_PERSISTENCE_AND_EXTERNAL.md` | Kollaps-Zustand nur in-memory (über Runs blind); Push-Fehler geschluckt+ungezählt; konsolidierte Fehlerklassen-Matrix | EVIDENCE COMPLETE |
 
 **Befund-Korrektur (RECON_03):** Der Kern ist nicht „der Heartbeat schluckt Fehler" (das
 Schlucken ist plausibel bewusste Resilienz), sondern „eine bereits vorhandene Kollaps-
@@ -89,5 +90,10 @@ machen — LOGGING zuerst, kein erzwungenes Rot vor Beobachtung.
 
 ## 5. NÄCHSTER GATE
 
-Recon fortsetzen (offene Punkte in RECON_01 §8), bis die Fehlerklassen-Matrix vollständig
-belegt ist. Erst danach: separate Feature-Spec, dann kleinster Patch im LOGGING-Modus.
+**Recon abgeschlossen (RECON_01–04).** Die Fehlerklassen-Matrix ist vollständig belegt
+(RECON_04 §5). Kein offener Recon-Punkt ist vor der Spec zwingend.
+
+Nächster Gate = **eigene Feature-Spec** (Format wie Context Bridge). Zielarchitektur:
+vorhandene `vedana`/`health_anomaly`-Erkennung bei *anhaltendem* Kollaps nach außen
+sichtbar machen + persistierter Kollaps-Zähler über Runs; LOGGING vor Erzwingen; Rollback.
+**Kein Produktcode und keine Feature-Spec ohne ausdrückliches Operator-Go.**
