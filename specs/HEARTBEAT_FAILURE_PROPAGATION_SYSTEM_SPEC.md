@@ -93,8 +93,12 @@ machen — LOGGING zuerst, kein erzwungenes Rot vor Beobachtung.
 **Recon abgeschlossen (RECON_01–04).** Die Fehlerklassen-Matrix ist vollständig belegt
 (RECON_04 §5). Kein offener Recon-Punkt ist vor der Spec zwingend.
 
-Feature-Spec liegt als **DRAFT** vor: `HEARTBEAT_FAILURE_PROPAGATION_FEATURE_01.md`
-(Status DRAFT 0.1 — NICHT G1). Zielarchitektur: vorhandene `vedana`/`health_anomaly`-
-Erkennung bei *anhaltendem* Kollaps nach außen sichtbar machen + persistierter Kollaps-
-Zähler über Runs; LOGGING vor Erzwingen; Rollback. Nächster Schritt: adversariales Review
-der DRAFT-Spec (§10 dort). **Kein G1, kein Produktcode ohne ausdrückliches Operator-Go.**
+Feature-Spec liegt als **DRAFT 1.0 — bedingtes Go** vor:
+`HEARTBEAT_FAILURE_PROPAGATION_FEATURE_01.md`. **Sieben** Review-Runden, keine offenen
+Designfehler. Schnitt A misst Hard-Down, Degradation und Skip-Kollaps; §5.3 vollständig
+definiert und **fail-laut** (Dekoder werfen bei `steward-protocol`-Form-Drift statt still
+„gesund" zu lesen); §10.4a gepinnt (`vibe_core` via PyPI-Paket `steward-protocol`);
+Per-Provider-Quota als toter Pfad aufgelöst; Membran-Skip bewusst nicht erfasst.
+**Verbleibend vor formalem G1:** (i) Statusform-Gegenprüfung gegen die Produktions-
+`steward-protocol`-Version als **erster Implementierungsschritt**; (ii) normales
+Deployment-Gate. **Kein Produktcode ohne Operator-Go.**
