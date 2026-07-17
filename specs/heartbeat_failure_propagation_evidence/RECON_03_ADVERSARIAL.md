@@ -36,7 +36,7 @@ wird sehr wohl gemessen:
 - `vedana.py:78` `_W_PROVIDER = 0.35` (höchstes Gewicht; Kommentar Z.74: *„Provider health
   is most critical — no provider = agent is dead"*), `vedana.py:115`
   `p_health = provider_alive / max(provider_total, 1)`. 0 lebende Provider → Puls sinkt.
-- `dharma.py:56` `if v.health < 0.3: ctx.health_anomaly = True`.
+- `dharma.py:56–57` (`if v.health < 0.3:` Z.56 → `ctx.health_anomaly = True` Z.57).
 
 Der Kollaps erzeugt also ein Health-Anomalie-Signal. **Aber jeder Aktuator dieses Signals
 zeigt nach INNEN oder ist verwaist** — nichts zeigt nach außen. Das ist exakt „alles
@@ -46,7 +46,7 @@ gebaut, nichts verdrahtet", nur präzise lokalisiert.
 
 | Signal | Erzeugt in | Aktuator / Leser | Nach außen sichtbar? |
 |---|---|---|---|
-| `health_anomaly`-Flag | `dharma.py:56` | nur `engine.py:310` — kappt Tool-Runden + spielt LLM-Guidance ein | **nein** |
+| `health_anomaly`-Flag | `dharma.py:56–57` | nur `engine.py:310` — kappt Tool-Runden + spielt LLM-Guidance ein | **nein** |
 | `AGENT_ERROR`-Signal | `agent_bus.py:180` (SignalBus) | **kein In-Repo-Subscriber** | **nein** |
 | `federation_health.json` / `steward_health.json` | `moksha_health.py:39` | **kein Code-Leser** (nur Docs referenzieren) | **nein** |
 | Feld im Health-Report | `moksha_health.py:62` — `peers/immune/gateway` | — | **kein Provider-/Kognitions-Feld überhaupt** |

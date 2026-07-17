@@ -70,7 +70,7 @@ nicht.
 
 Es gibt bereits einen Erkennungs→Verhalten-Kanal für Gesundheit:
 
-- SET: `hooks/dharma.py:57` `ctx.health_anomaly = True`; zurückgelesen `agent.py:790–793`;
+- SET: `hooks/dharma.py:56–57` (`if v.health < 0.3:` Z.56 → `ctx.health_anomaly = True` Z.57); zurückgelesen `agent.py:790–793`;
   Cetana direkt `agent.py:838`. Feld: `phase_hook.py:52–53`.
 - KONSUM (einziger): `engine.py:310–323` — verwendet `health_anomaly` **ausschließlich**,
   um `max_rounds` zu kappen und dem LLM eine USER-Guidance („finish immediately")
