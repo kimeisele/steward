@@ -1191,33 +1191,34 @@ def _validate_attestation(attestation: ConstitutionAttestation) -> None:
     _validate_hash(attestation.reviewed_at_commit, 40, field_path="constitution_attestation.reviewed_at_commit")
 
 
+def validate_previous_published_record(previous: PreviousPublishedRecord) -> None:
+    """Validate a materialized published-record value object without attesting its origin."""
+    if type(previous) is not PreviousPublishedRecord:
+        _fail("invalid_type", "previous")
+    if previous.record_schema != "steward.context.published-record/v1":
+        _fail("invalid_schema", "previous.record_schema")
+    if previous.payload_schema != "steward.context.payload/v1":
+        _fail("invalid_schema", "previous.payload_schema")
+    if not isinstance(previous.mode, OutputMode):
+        _fail("invalid_type", "previous.mode")
+    if previous.mode is OutputMode.PREVIEW:
+        _fail("invalid_value", "previous.mode")
+    _validate_hash(previous.payload_hash, 64, field_path="previous.payload_hash")
+    _validate_hash(previous.c0_sha256, 64, field_path="previous.c0_sha256")
+    if not isinstance(previous.snapshot_id, str) or not re.fullmatch(r"ctxsnap-v1:[0-9a-f]{64}", previous.snapshot_id):
+        _fail("invalid_value", "previous.snapshot_id")
+    if set(previous.consumer_outputs) != {"agents", "claude"}:
+        _fail("invalid_schema", "previous.consumer_outputs")
+    for consumer, value in previous.consumer_outputs.items():
+        _validate_hash(value, 64, field_path=f"previous.consumer_outputs.{consumer}")
+    if previous.consumer_outputs["agents"] != previous.consumer_outputs["claude"]:
+        _fail("inconsistent", "previous.consumer_outputs")
+    _validate_comparison_state(previous.comparison_state)
+
+
 def _valid_previous(previous: PreviousPublishedRecord) -> bool:
     try:
-        if previous.record_schema != "steward.context.published-record/v1":
-            return False
-        if previous.payload_schema != "steward.context.payload/v1" or previous.mode is OutputMode.PREVIEW:
-            return False
-        _validate_hash(previous.payload_hash, 64, field_path="previous.payload_hash")
-        _validate_hash(previous.c0_sha256, 64, field_path="previous.c0_sha256")
-        if not re.fullmatch(r"ctxsnap-v1:[0-9a-f]{64}", previous.snapshot_id):
-            return False
-        if set(previous.consumer_outputs) != {"agents", "claude"}:
-            return False
-        outputs = list(previous.consumer_outputs.values())
-        for value in outputs:
-            _validate_hash(value, 64, field_path="previous.consumer_outputs")
-        if outputs[0] != outputs[1]:
-            return False
-        expected_comparison = {
-            "gateway_errors_total",
-            "gateway_rejected_parse_total",
-            "gateway_rejected_validate_total",
-            "immune_rollbacks_total",
-        }
-        if set(previous.comparison_state) != expected_comparison:
-            return False
-        for key, value in previous.comparison_state.items():
-            _count(value, field_path=f"previous.comparison_state.{key}")
+        validate_previous_published_record(previous)
     except ContractViolation:
         return False
     return True
