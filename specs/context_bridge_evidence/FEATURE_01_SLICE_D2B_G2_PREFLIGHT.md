@@ -2,9 +2,9 @@
 
 > **Status:** DRAFT 0.1 — READ-ONLY G2 CONTRACT; G1 OFF; IMPLEMENTATION LOCKED
 >
-> **Investigated main:** `kimeisele/steward@9621fafb5e3f2c96b9b77beb446e2197df60fc1a`
+> **Investigated main:** `kimeisele/steward@7a1119bab726707a92f306c18f6bab55688717a5`
 >
-> **Investigated tree:** `b86446d7fc97ac0d943023c3d511f5d91c3dd85c`
+> **Investigated tree:** `696d5be70ccac43bc735c36af01488fb84395af5`
 >
 > **D2b parent preflight:** `f582e0d63876df8be61e8970a0fe065a2b2c034e`
 >
@@ -166,10 +166,12 @@ Constitution attestation, reviewed commit, and source blob.
 `no_op` is returned only when the existing state is already a complete, valid, attestable
 four-artifact generation and all four separately read target bytes are byte-for-byte equal
 to the one immutable candidate group. The current HEAD, index, target/parent identities,
-source attestation, and policy fence must all match, and no lock, journal, tempfile, or
-unknown transaction signal may exist. `no_op` creates, removes, or rewrites no target or
-transaction path. `legacy_bootstrap`, absent, mixed, invalid, unattested, unbound, or
-ambiguous states can never be reported as `no_op`.
+source attestation, and policy fence must all match. The persistent lock inode may exist
+and is retained; the condition is that this invocation owns the lock with no competing
+lock holder, no active transaction, no journal/temp signal for any transaction, and no
+unknown transaction signal. `no_op` creates, removes, or rewrites no target,
+transaction, or lock path. `legacy_bootstrap`, absent, mixed, invalid, unattested,
+unbound, or ambiguous states can never be reported as `no_op`.
 
 ## 5. Lock and path-fence contract
 
@@ -199,8 +201,13 @@ Before every mutation, the primitive must prove:
   Git `commondir`/`gitdir`/alternates layout;
 - all target names are the exact four allowed names;
 - all transaction names match their one transaction ID and correct parent;
-- HEAD, index, tree, target modes, target bytes, and parent fingerprints match the
-  preceding fence;
+- the target state matches the preceding fence for the current cursor: before the first
+  replace every target is its journalized baseline; after a prefix is installed, every
+  completed-prefix target is its journalized candidate with its recorded installed inode
+  and every next/suffix target remains its journalized baseline with its recorded parent;
+  the next target is never compared to an impossible all-baseline or all-candidate state;
+- HEAD, index, tree, target modes, and parent fingerprints match that cursor-specific
+  fence;
 - the publisher process/worktree identity remains the one selected at open.
 
 Any mismatch is `manual_review`/`blocked` before the next write. It is never repaired by
@@ -251,11 +258,14 @@ It is strict canonical JSON, mode `0600`, file- and parent-`fsync`ed before any 
 tempfile or target replace. It binds only:
 
 - schema version and 32-lowercase-hex transaction ID;
+- the journal's own opened regular-file identity `{device, inode, type, link_count, mode}`;
 - repository root identity and reviewed HEAD commit;
 - the exact four target paths and fixed replace order;
 - per-target parent identity `{device, inode, type, link_count, mode}`;
 - baseline absence or HEAD blob/mode/byte hash for every target;
 - candidate byte hashes and sizes;
+- each of the four tempfile identities `{device, inode, type, link_count, mode, size,
+  candidate_sha256}` after exclusive creation;
 - snapshot ID, payload hash, C0 hash, source blob, reviewed commit;
 - a closed status, replace cursor, fixed completed-target prefix, in-flight target, and
   installed-target `{device, inode, type, link_count, mode, size, candidate_sha256}`
@@ -284,7 +294,7 @@ identity are invalid and require `manual_review`.
 The exact top-level key set is:
 
 ```text
-schema, txid, repository, reviewed_head, replace_order, targets,
+schema, txid, journal, repository, reviewed_head, replace_order, targets, temps,
 snapshot_id, payload_hash, c0_sha256, source_blob, status, cursor,
 completed_targets, in_flight_target, installed_targets
 ```
@@ -294,9 +304,14 @@ hex characters; `reviewed_head` and `source_blob` are 40 lowercase hex character
 `c0_sha256` and `payload_hash` are 64 lowercase hex characters; `snapshot_id` matches
 `ctxsnap-v1:[0-9a-f]{64}`; and `replace_order` is exactly the JSON array
 `["CLAUDE.md", "AGENTS.md", ".steward/context-snapshot.json", ".steward/context-publication.json"]`.
-`repository` is exactly `{root, git, steward}`, each an identity object with exactly
+`journal` is exactly `{device, inode, type, link_count, mode}` with `type=regular`,
+`link_count=1`, and mode `0600`; `repository` is exactly `{root, git, steward}`, each an identity object with exactly
 `{device, inode, type, link_count, mode}`; `targets` is exactly that same four-key ordered
-map in `replace_order`. Each target record has exactly
+map in `replace_order`; `temps` is exactly that same four-key ordered map, with each value
+null only before its exclusive tempfile is created and otherwise exactly
+`{device, inode, type, link_count, mode, size, candidate_sha256}` with
+`type=regular`, `link_count=1`, mode `0600`, the per-target size bound, and a 64-hex
+candidate hash. Each target record has exactly
 `parent`, `baseline`, `candidate`, and `installed`; `parent` is exactly
 `{device, inode, type, link_count, mode}` with non-negative integer identities,
 `type=directory`, and its observed safe mode; `baseline` has exactly
@@ -320,23 +335,33 @@ Its byte length is at most 65,536. Any extra key, wrong type, non-canonical enco
 over-limit field is invalid.
 
 Recovery never calls a journal "stale" from age or MTime. After the lock is acquired,
-an orphaned journal is classified only from its bound repository identity, reviewed HEAD,
-closed status, transaction names, baseline/candidate byte hashes, target types, and
-recorded inodes. A HEAD change, unsupported Git layout, missing/foreign inode, or any
-byte state outside the journal's baseline/candidate set is `manual_review` with no
-automatic mutation.
+an orphaned journal is classified only from its bound repository identity, its own
+journal/temp identities, reviewed HEAD, closed status, transaction names,
+baseline/candidate byte hashes, target types, and recorded inodes. A HEAD change,
+unsupported Git layout, missing/foreign inode, or any byte state outside the journal's
+baseline/candidate set is `manual_review` with no automatic mutation.
 
 The serialized schema is bounded and typed: `schema` is one fixed ASCII identifier;
 `txid`, `head`, source blob, C0 hash, payload hash, snapshot ID, and candidate hashes are
 fixed lowercase-hex/ASCII identifiers of their contract lengths; `targets` is exactly the
-four-key ordered map; every identity member is a non-negative integer except the closed
-mode/type strings; `cursor` is an integer `0..4`; `completed_targets` is exactly the
+four-key ordered map; `journal` is one regular-file identity and `temps` is exactly the
+four-key ordered map of null-or-regular-file identities; every identity member is a
+non-negative integer except the closed mode/type strings; `cursor` is an integer `0..4`;
+`completed_targets` is exactly the
 ordered prefix of length `cursor`; `in_flight_target` is null only for `prepared`,
 `replaced`, or `read_back_validated`, and is exactly the next target for `replacing`; and
 `installed_targets` contains exactly the durable prefix identities. The canonical
 representation is UTF-8 without a BOM, compact, ordered as specified, and at most 65,536
 bytes; any extra key, wrong type, duplicate key, non-canonical encoding, or over-limit
 field is invalid.
+
+Before any recovery cleanup, the journal path is opened with `O_RDONLY | O_CLOEXEC |
+O_NOFOLLOW` relative to the pinned `.steward` FD and its complete fstat identity must
+match `journal`. Every transaction tempfile is opened the same way relative to its
+recorded parent and its complete fstat identity, mode, size, and candidate hash must
+match `temps`. A missing, replaced, extra-linked, or changed journal/temp is foreign and
+requires `manual_review` without deletion. Cleanup may unlink only these positively
+matched inodes, then fsync their parents and re-fstat the parents before success.
 
 ### 6.2 Four tempfiles
 
@@ -346,10 +371,12 @@ short writes, size overflow, and disk-full errors. Each tempfile is:
 
 - opened with `O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW`, mode `0600`;
 - fully written, file-`fsync`ed, read back, size/hash checked, and parent-`fsync`ed;
-- rejected if the inode, parent, bytes, or mode changes before replace.
+- rejected if the inode, parent, bytes, link count, or mode changes before replace; its
+  complete identity is durably recorded in `temps` before the first replace.
 
 All four temps must be prepared and validated before the first target replace. A missing,
-extra, unknown, or foreign temp is fail-closed.
+extra, unknown, or foreign temp is fail-closed. The journal identity itself is fstat-checked
+before every journal update and before cleanup; a journal replacement is never adopted.
 
 ## 7. Replace, read-back, and recovery
 
@@ -362,8 +389,10 @@ The only replace order is:
 3. `.steward/context-snapshot.json`;
 4. `.steward/context-publication.json` last.
 
-Each replace is dirfd-relative and preceded by a complete target/parent/Git fence. The
-prepared inode is installed with deterministic final mode `0644`; the target parent is
+Each replace is dirfd-relative and preceded by a complete cursor-specific target/parent/
+Git fence: the completed prefix must equal journalized installed candidates, the next
+target and untouched suffix must equal journalized baseline state, and no foreign inode or
+parent may appear. The prepared inode is installed with deterministic final mode `0644`; the target parent is
 `fsync`ed after each replace. This promises per-file atomic replacement, not impossible
 two-file filesystem atomicity.
 
@@ -371,8 +400,10 @@ Success requires all four final bytes to be read back separately and to equal th
 generated immutable candidate bytes byte-for-byte. D1 and Constitution attestation validate
 those bytes; the publisher performs no second renderer pass. The read-back must also pass
 the per-target journalized expected state, parent/target fingerprints, Git HEAD/index, and
-transaction-ID checks. Journal removal and final `.steward` `fsync` must complete before
-`published` or `no_op` is returned.
+transaction-ID checks. Before cleanup, the journal and every tempfile are reopened and
+fstat-checked against their journalized identities; only those exact inodes may be
+removed. Journal removal and final `.steward` `fsync` must complete before `published`
+or `no_op` is returned.
 
 ### 7.2 Recovery state machine
 
@@ -380,9 +411,10 @@ Recovery runs only under the same exclusive lock and only for exactly one strict
 
 | Observed state | Allowed result |
 |---|---|
-| `status=replaced` or `read_back_validated`, `cursor=4`, all four completed targets and installed target/parent identities match the journal, all four final bytes equal the journalized candidates, and D1/attestation/Git fences pass | repeat/confirm final read-back if needed, then remove only own temps/journal |
-| partial replace and all current bytes match the attestable four-file baseline | restore that baseline in fixed order, read back, then clean own transaction |
-| `status=replacing`, cursor `1..3`, completed prefix and every installed candidate target's recorded parent/target identity and candidate hash/mode match, while the bound baseline is four-file absent and D1/attestation/Git fences pass | enter the isolated deletion fence in §7.3, unlink only journal-/candidate-bound target inodes, `fsync` each affected parent, remove own temps/journal, then prove all four targets absent in worktree, HEAD, and index |
+| `status=prepared`, `cursor=0`, all targets and parents match their journalized baseline identities/bytes, and journal/temp identities match | remove only the positively fstat-matched own temps and journal, fsync their parents, then return the unchanged baseline |
+| `status=replaced` or `read_back_validated`, `cursor=4`, all four completed targets and installed target/parent identities match the journal, all four final bytes equal the journalized candidates, and D1/attestation/Git fences pass | repeat/confirm final read-back if needed, then remove only the positively fstat-matched own temps/journal |
+| `status=replacing`, cursor `1..3`, completed prefix targets match their journalized candidate bytes and installed target/parent identities, remaining suffix targets match their journalized baseline bytes and target/parent identities, the complete baseline is attestable, and D1/attestation/Git fences pass | restore the baseline in fixed order, with every replace fenced against the cursor-specific prefix/suffix state, read back, then clean only positively fstat-matched own transaction files |
+| `status=replacing`, cursor `1..3`, completed prefix and every installed candidate target's recorded parent/target identity and candidate hash/mode match, while the bound baseline is four-file absent and D1/attestation/Git fences pass | enter the isolated deletion fence in §7.3, unlink only journal-/candidate-bound target inodes, `fsync` each affected parent, remove only positively fstat-matched own temps/journal, then prove all four targets absent in worktree, HEAD, and index |
 | four-file-absent baseline but an installed target lacks a matching recorded inode, parent, mode, or candidate hash | `manual_review`/`blocked`; do not guess whether the target is publisher-owned |
 | `legacy_bootstrap`, unknown/manual bytes, multiple journals, foreign temps, unsafe path | `manual_review`/`blocked`, no automatic mutation |
 | cleanup or final fence fails | visible blocked/manual-review result; preserve evidence |
