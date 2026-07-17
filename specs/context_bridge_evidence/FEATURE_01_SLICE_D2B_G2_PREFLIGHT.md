@@ -2,9 +2,9 @@
 
 > **Status:** DRAFT 0.1 — READ-ONLY G2 CONTRACT; G1 OFF; IMPLEMENTATION LOCKED
 >
-> **Investigated main:** `kimeisele/steward@9e08aab10b115fbff9160523dcd2dda7b201fb2d`
+> **Investigated main:** `kimeisele/steward@e2811e8790d2060088701f536fb7d6923323a015`
 >
-> **Investigated tree:** `7770289ef1f5dbeb9b3bed15c17c12af41fbdc48`
+> **Investigated tree:** `95a9e34d34946c0679d31221c613e12ca4733706`
 >
 > **D2b parent preflight:** `f582e0d63876df8be61e8970a0fe065a2b2c034e`
 >
