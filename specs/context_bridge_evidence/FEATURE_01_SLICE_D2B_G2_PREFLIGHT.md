@@ -2,9 +2,9 @@
 
 > **Status:** DRAFT 0.1 — READ-ONLY G2 CONTRACT; G1 OFF; IMPLEMENTATION LOCKED
 >
-> **Investigated main:** `kimeisele/steward@7a1119bab726707a92f306c18f6bab55688717a5`
+> **Investigated main:** `kimeisele/steward@94f4d527d720a885ee772a9dcc878478661bf284`
 >
-> **Investigated tree:** `696d5be70ccac43bc735c36af01488fb84395af5`
+> **Investigated tree:** `5fb0d691f29280e1ab10cf36f19e1eb2c7d59e44`
 >
 > **D2b parent preflight:** `f582e0d63876df8be61e8970a0fe065a2b2c034e`
 >
@@ -262,7 +262,8 @@ tempfile or target replace. It binds only:
 - repository root identity and reviewed HEAD commit;
 - the exact four target paths and fixed replace order;
 - per-target parent identity `{device, inode, type, link_count, mode}`;
-- baseline absence or HEAD blob/mode/byte hash for every target;
+- baseline absence or HEAD blob/mode/byte hash for every target, plus its observed
+  baseline parent and target identity (target is null only when the baseline is absent);
 - candidate byte hashes and sizes;
 - each of the four tempfile identities `{device, inode, type, link_count, mode, size,
   candidate_sha256}` after exclusive creation;
@@ -284,9 +285,10 @@ prepared -> replacing -> replaced -> read_back_validated
 
 `prepared` has cursor `0`, no completed targets, and no in-flight target. `replacing` has
 an in-flight target equal to the next member of the fixed replace order; after a
-successful dirfd-relative replace and fstat, that target's `{device, inode, mode,
-candidate_sha256}` is durably recorded and the cursor advances. `replaced` has cursor
-`4` and the complete four-target prefix. `read_back_validated` is allowed only after
+successful dirfd-relative replace and fstat, that target's full installed identity
+`{device, inode, type, link_count, mode, size, candidate_sha256}` is durably recorded
+and the cursor advances. `replaced` has cursor `4` and the complete four-target prefix.
+`read_back_validated` is allowed only after
 the final D1/attestation/read-back and Git fence. Backward transitions, skipped targets,
 unknown fields, duplicate target identities, or an installed target without its journal
 identity are invalid and require `manual_review`.
@@ -315,11 +317,14 @@ candidate hash. Each target record has exactly
 `parent`, `baseline`, `candidate`, and `installed`; `parent` is exactly
 `{device, inode, type, link_count, mode}` with non-negative integer identities,
 `type=directory`, and its observed safe mode; `baseline` has exactly
-`{present, mode, blob, sha256, size}` where `present` is boolean and all other values are
-null when it is false; when true, `mode` is a permission-bit integer, `blob` is 40
-lowercase hex characters, `sha256` is 64 lowercase hex characters, and `size` is an
-integer from zero through the target's exact Feature-04 limit (`CLAUDE.md`/`AGENTS.md`
-65536, snapshot 131072, publication 16384). `candidate` has exactly `{sha256, size}`
+`{parent, target, present, mode, blob, sha256, size}` where `parent` is the
+journalized baseline parent identity and `target` is either null (when `present=false`)
+or exactly `{device, inode, type, link_count, mode, size}` with `type=regular` and
+`link_count=1`; `present` is boolean and all other content fields are null when it is
+false. When true, `mode` is a permission-bit integer, `blob` is 40 lowercase hex
+characters, `sha256` is 64 lowercase hex characters, and `size` is an integer from zero
+through the target's exact Feature-04 limit (`CLAUDE.md`/`AGENTS.md` 65536, snapshot 131072,
+publication 16384). `candidate` has exactly `{sha256, size}`
 with a 64-hex hash and the same per-target size bound; `installed` is null until the
 target is replaced and otherwise
 has exactly `{device, inode, type, link_count, mode, size, candidate_sha256}` with
@@ -333,6 +338,12 @@ representation is UTF-8 without a BOM, uses the listed key order and compact JSO
 separators, and rejects NaN, Infinity, duplicate keys, and non-ASCII control characters.
 Its byte length is at most 65,536. Any extra key, wrong type, non-canonical encoding, or
 over-limit field is invalid.
+
+For a present baseline, the `baseline.target` identity and the target's `parent` identity
+are both required and must match the first pre-replace fence; for an absent baseline,
+`baseline.target` is null and the parent identity remains required. A worktree inode that
+matches baseline bytes but not its journalized baseline identity is foreign and cannot be
+automatically replaced or deleted.
 
 Recovery never calls a journal "stale" from age or MTime. After the lock is acquired,
 an orphaned journal is classified only from its bound repository identity, its own
@@ -407,17 +418,33 @@ or `no_op` is returned.
 
 ### 7.2 Recovery state machine
 
-Recovery runs only under the same exclusive lock and only for exactly one strict journal:
+Every recovery branch first establishes an external recovery anchor; no journal field is
+trusted to create that anchor. The primitive opens and pins the repository root, `.git`,
+and `.steward` directory FDs with the safe flags, acquires the persistent lock inode
+through the pinned `.steward` FD, verifies the dedicated isolated-worktree lease from
+the reviewed policy inputs, and independently fences the reviewed HEAD/attestation via
+the FD-bound Git read. Only after that anchor is held may it open and parse one journal.
+The journal's own and tempfile identities are then consistency checks against the anchor,
+never authority for it. If the anchor cannot be established, every recovery branch
+including cleanup returns `manual_review` with no mutation.
+
+Recovery runs only under that same exclusive lock and only for exactly one strict journal:
 
 | Observed state | Allowed result |
 |---|---|
 | `status=prepared`, `cursor=0`, all targets and parents match their journalized baseline identities/bytes, and journal/temp identities match | remove only the positively fstat-matched own temps and journal, fsync their parents, then return the unchanged baseline |
 | `status=replaced` or `read_back_validated`, `cursor=4`, all four completed targets and installed target/parent identities match the journal, all four final bytes equal the journalized candidates, and D1/attestation/Git fences pass | repeat/confirm final read-back if needed, then remove only the positively fstat-matched own temps/journal |
 | `status=replacing`, cursor `1..3`, completed prefix targets match their journalized candidate bytes and installed target/parent identities, remaining suffix targets match their journalized baseline bytes and target/parent identities, the complete baseline is attestable, and D1/attestation/Git fences pass | restore the baseline in fixed order, with every replace fenced against the cursor-specific prefix/suffix state, read back, then clean only positively fstat-matched own transaction files |
-| `status=replacing`, cursor `1..3`, completed prefix and every installed candidate target's recorded parent/target identity and candidate hash/mode match, while the bound baseline is four-file absent and D1/attestation/Git fences pass | enter the isolated deletion fence in §7.3, unlink only journal-/candidate-bound target inodes, `fsync` each affected parent, remove only positively fstat-matched own temps/journal, then prove all four targets absent in worktree, HEAD, and index |
+| `status=replacing`, cursor `1..3`, completed prefix and every installed candidate target's recorded parent/target identity and candidate hash/mode match, while the bound baseline is four-file absent, every uninstalled suffix target is independently lstat-absent under its journalized parent, and D1/attestation/Git fences pass | enter the isolated deletion fence in §7.3, unlink only journal-/candidate-bound prefix target inodes, `fsync` each affected parent, prove all four targets absent in worktree, HEAD, and index, and only then remove positively fstat-matched own temps/journal |
 | four-file-absent baseline but an installed target lacks a matching recorded inode, parent, mode, or candidate hash | `manual_review`/`blocked`; do not guess whether the target is publisher-owned |
 | `legacy_bootstrap`, unknown/manual bytes, multiple journals, foreign temps, unsafe path | `manual_review`/`blocked`, no automatic mutation |
 | cleanup or final fence fails | visible blocked/manual-review result; preserve evidence |
+
+For the four-file-absent branch, target deletion is not transaction cleanup. Candidate
+prefix targets are unlinked and their parents fsynced first; the fourfold worktree/HEAD/
+index absence proof then runs while the external anchor and journal remain live. If that
+proof fails, the journal and all temp evidence remain for `manual_review`; only a
+successful proof permits their positively fstat-matched removal.
 
 An existing Publication Record alone, an MTime, a self-consistent but unbound candidate,
 or the historical `.atomic_*` files is never recovery authority. No second C0 copy may
@@ -435,7 +462,10 @@ platform or deployment cannot enforce that boundary, recovery must return
 `manual_review` without attempting deletion. It then opens each installed target with
 `O_RDONLY | O_CLOEXEC | O_NOFOLLOW`, compares the complete journalized device/inode/type/
 link-count/mode/size tuple and candidate hash, and rechecks the parent immediately before
-the deletion fence. Any exchange, missing identity, extra link, or hash mismatch returns
+the deletion fence. Before the first unlink, every target outside the installed candidate
+prefix is opened/lstat-checked under its journalized parent and must be absent; a present,
+replaced, extra-linked, or changed suffix target returns `manual_review` before any prefix
+mutation. Any exchange, missing identity, extra link, or hash mismatch returns
 `manual_review` before mutation.
 
 The unlink operation is permitted only inside that positively attested private worktree
