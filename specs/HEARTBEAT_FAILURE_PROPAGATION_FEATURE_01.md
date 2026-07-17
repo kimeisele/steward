@@ -2,8 +2,8 @@
 
 ## Sichtbarmachung anhaltenden kognitiven/Provider-Kollaps
 
-> **Status:** DRAFT 0.4 — SCHNITT A AUSFÜHRBAR; ZWEI ADVERSARIAL-REVIEW-RUNDEN EINGEARBEITET
-> (inkl. Korrektur des invertierten `degraded`-Prädikats); NICHT G1; IMPLEMENTIERUNG UND
+> **Status:** DRAFT 0.5 — SCHNITT A AUSFÜHRBAR; DREI ADVERSARIAL-REVIEW-RUNDEN EINGEARBEITET
+> (invertiertes Prädikat + Skip-Kollaps-Blindfleck); NICHT G1; IMPLEMENTIERUNG UND
 > AKTIVIERUNG GESPERRT
 > **Datum:** 2026-07-17
 > **Produktionsbasis:** `kimeisele/steward@bf2fba2075a87463fc8e333f8f57d805fce4d030`
@@ -73,7 +73,19 @@ Pro MOKSHA-Zyklus aus `stats()`: `providers_alive`, `providers_total`, `total_ca
   §4. **Gesunder Fallback (`calls_delta>0`) bleibt bewusst grün**, egal wie viele Failures
   ein toter Vorgänger-Provider erzeugt.
 
-`collapsed = hard_down or degraded` treibt **einen** Streak.
+- `skip_collapse` = `providers_usable==0` (alle Provider **übersprungen** statt versucht:
+  Quota erschöpft `chamber.py:244`, Breaker OPEN `:251`, Membran zu schwach `:255` — jeweils
+  `continue` **ohne** `_record_call_failure`, also `fd=0`). `providers_usable` = pro Provider
+  `alive AND breaker≠OPEN AND within_quota`, ableitbar aus `stats()` (Felder `alive`,
+  `breaker`, chamber-`quota`). Fängt das schwerste Krankheitsbild — Quota-Erschöpfung über
+  einen Tag (RECON_04) und den vertieften Breaker-Steady-State —, das `degraded` (braucht
+  `fd>0`) systematisch verfehlt.
+
+**Partial-Failure bleibt bewusst grün:** ein Zyklus mit ≥1 gelungenem Invoke (`cd>0`) gilt
+als gesund, egal wie viele Failures ein toter Vorgänger-Provider erzeugt. Das ist die
+Auflösungsgrenze, die der C-Prädikat-Designer kennen muss.
+
+`collapsed = hard_down or degraded or skip_collapse` treibt **einen** Streak.
 
 ### 5.2 Lesen-vor-Überschreiben (**nur Extraktion**, kein Rechnen — Befund 4)
 ```
@@ -93,8 +105,9 @@ except (OSError, ValueError, TypeError):
 `return report`:
 ```
 prev = prev or {"consecutive_collapsed_cycles": 0, "total_calls": 0, "total_failures": 0}
-cog = {"providers_alive": 0, "providers_total": 0, "total_calls": 0, "total_failures": 0,
-       "calls_delta": 0, "fail_delta": 0, "hard_down": False, "degraded": False,
+cog = {"providers_alive": 0, "providers_total": 0, "providers_usable": 0,
+       "total_calls": 0, "total_failures": 0, "calls_delta": 0, "fail_delta": 0,
+       "hard_down": False, "degraded": False, "skip_collapse": False,
        "consecutive_collapsed_cycles": prev["consecutive_collapsed_cycles"]}
 provider = ServiceRegistry.get(SVC_PROVIDER)
 if provider is not None and hasattr(provider, "stats"):
@@ -108,11 +121,18 @@ if provider is not None and hasattr(provider, "stats"):
         cd = tc; fd = tf
     hard_down = (total > 0 and alive == 0)
     degraded  = (cd == 0 and fd > 0)   # Failures, aber kein Erfolg im Zyklus (§3-Semantik)
-    collapsed = hard_down or degraded
+    # providers_usable: alive UND breaker≠OPEN UND within_quota. Die exakte Dekodierung von
+    # p['breaker'] und ps['quota'] ist an vibe_core get_status() zu PINNEN (§10.4) — NICHT raten.
+    usable = sum(1 for p in providers
+                 if p.get("alive") and _breaker_ok(p.get("breaker")) and _quota_ok(ps.get("quota")))
+    skip_collapse = (total > 0 and usable == 0)
+    collapsed = hard_down or degraded or skip_collapse
     cog.update({"providers_alive": alive, "providers_total": total,
+                "providers_usable": usable,
                 "total_calls": tc, "total_failures": tf,
                 "calls_delta": cd, "fail_delta": fd,
                 "hard_down": hard_down, "degraded": degraded,
+                "skip_collapse": skip_collapse,
                 "consecutive_collapsed_cycles":
                     prev["consecutive_collapsed_cycles"] + 1 if collapsed else 0})
 report["cognition"] = cog
@@ -144,6 +164,10 @@ Builder-Ebene:
   → `collapsed False`, `consecutive_collapsed_cycles==0` trotz `prev.streak=5`.
 - `test_no_provider_registered`: SVC_PROVIDER fehlt → Block mit `providers_total==0`,
   Streak == `prev.streak`; kein Fehler.
+- `test_skip_collapse_quota` (**Runde 3**): alle Provider im Skip-Zustand (über Quota bzw.
+  Breaker OPEN, via passend geformtem `breaker`/`quota`-Status), `cd==0, fd==0`, aber
+  `providers_usable==0` → `skip_collapse True`, Streak +1. Fängt den Quota-/Breaker-
+  Blindfleck, den `degraded` allein verfehlt.
 
 Disk-Roundtrip-Ebene (**das eigentliche Novum — Befund 3**):
 - `test_roundtrip_increment`: Datei mit `cognition.consecutive_collapsed_cycles=N` +
@@ -189,12 +213,18 @@ None-Guard (Befund 6).
 2. Prädikat-Wahl für C (Hard-Down / Degradation / kombiniert) — aus A-Daten.
 3. Atomicity des Health-Writes — **jetzt als C-Blocker (iii) §8 verdrahtet** (Befund 2), nicht
    mehr nur „separate Hygiene".
+4. **vibe_core-Statusformen pinnen (Runde 3):** die exakte Dekodierung von `p['breaker']`
+   (get_status → wann OPEN), `ps['quota']` (wann erschöpft) und `MahaCellUnified.is_alive`
+   liegt in `vibe_core` (hier nicht installiert). `providers_usable`/`skip_collapse` und der
+   `hard_down`-Backstop hängen daran — vor Implementierung gegen die echten Formen pinnen,
+   **nicht raten** (das war die Fehlerklasse der Runden 2/3). Die Helfer `_breaker_ok`/
+   `_quota_ok` in §5.3 sind Platzhalter für genau diese Dekodierung.
 
 ## 11. Schlussstatus
 
-DRAFT 0.3. Schnitt A ausführbar und misst das reale Krankheitsbild; B/C korrekt gegated.
-Kein G1, keine Implementierung, keine Aktivierung ohne erneutes Review von §5/§6/§8 und
-Operator-Go.
+DRAFT 0.5. Schnitt A misst Hard-Down, Degradation UND Skip-Kollaps; B/C korrekt gegated.
+Einzige tragende ungeprüfte Annahme: die vibe_core-Statusformen (§10.4). Kein G1, keine
+Implementierung, keine Aktivierung ohne erneutes Review von §5/§6/§8 und Operator-Go.
 
 ## 12. Review-Historie
 
@@ -213,3 +243,12 @@ Operator-Go.
   Krankheitsbild (`cd==0`) verfehlt. Fix: §3 pinnt jetzt die Zählsemantik; §5 Prädikat
   korrigiert auf `cd==0 and fd>0`; §6 neuer `test_healthy_fallback_stays_green`. Die 5
   handwerklich sauberen Befunde (2,3,4,5,6) wurden bestätigt. G1 weiterhin verwehrt.
+- **Dritte Runde (2026-07-17, Review von DRAFT 0.4):** 1 neuer HIGH-Befund — `degraded`
+  (`cd==0 and fd>0`) ist blind für **Skip-Kollaps**: die `continue`-Pfade Quota
+  (`chamber.py:244`), Breaker OPEN (`:251`), Membran (`:255`) überspringen Provider **ohne**
+  `_record_call_failure` → `fd=0`. Universeller Skip (v. a. Quota-Erschöpfung über einen Tag,
+  das RECON_04-Krankheitsbild) las sich gesund; `hard_down` fängt es nicht, weil Breaker/Quota
+  `is_alive` nicht anfassen. Am Code verifiziert (Skip-Pfade, Breaker/Lifecycle-Trennung).
+  Fix: neuer Zustand `skip_collapse = providers_usable==0` (§5); Test `test_skip_collapse_quota`
+  (§6); vibe_core-Statusformen als Pin-Pflicht §10.4. `is_alive` bleibt die einzige
+  ungeprüfte tragende Annahme (vibe_core nicht installiert). G1 weiterhin verwehrt.

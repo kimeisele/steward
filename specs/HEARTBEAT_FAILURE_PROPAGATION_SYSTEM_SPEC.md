@@ -93,9 +93,10 @@ machen — LOGGING zuerst, kein erzwungenes Rot vor Beobachtung.
 **Recon abgeschlossen (RECON_01–04).** Die Fehlerklassen-Matrix ist vollständig belegt
 (RECON_04 §5). Kein offener Recon-Punkt ist vor der Spec zwingend.
 
-Feature-Spec liegt als **DRAFT 0.3** vor: `HEARTBEAT_FAILURE_PROPAGATION_FEATURE_01.md`
-(NICHT G1). Ein adversariales Design-Review (6 Befunde) ist eingearbeitet — u.a. misst
-Schnitt A jetzt die reale Degradation (Zyklus-Delta), nicht nur Hard-Down; Non-Atomicity ist
-als C-Blocker verdrahtet; der Disk-Roundtrip ist im Testvertrag abgedeckt (Details
-FEATURE-01 §12). **Kein G1, kein Produktcode ohne erneutes Review und ausdrückliches
-Operator-Go.**
+Feature-Spec liegt als **DRAFT 0.5** vor: `HEARTBEAT_FAILURE_PROPAGATION_FEATURE_01.md`
+(NICHT G1). **Drei** adversariale Review-Runden sind eingearbeitet — Schnitt A misst jetzt
+Hard-Down, Degradation (`cd==0 and fd>0`) **und** Skip-Kollaps (`providers_usable==0`, gegen
+Quota-/Breaker-Erschöpfung); Non-Atomicity als C-Blocker verdrahtet; Roundtrip getestet.
+Einzige ungeprüfte tragende Annahme: die vibe_core-Statusformen (`is_alive`, breaker/quota
+`get_status`), zu pinnen vor Implementierung (FEATURE-01 §10.4/§12). **Kein G1, kein
+Produktcode ohne erneutes Review und ausdrückliches Operator-Go.**
