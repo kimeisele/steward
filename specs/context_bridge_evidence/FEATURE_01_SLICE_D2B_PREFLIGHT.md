@@ -2,8 +2,9 @@
 
 > **Status:** DRAFT 0.1 — EVIDENCE/SPEC ONLY; G1 OFF; IMPLEMENTATION AND ACTIVATION
 > LOCKED
-> **Investigated main:** `kimeisele/steward@3ad7b951039e1a3687206a03db64464c06474f6b`
+> **Investigated main:** `kimeisele/steward@293265502f6bbac34ab8d43dcdf7d8565d67e4af`
 > **D2a merge:** `ac9caba61c426086ba4c09a1ac02065cbd850f5a`
+> **PR base at review:** `b8a2b3e9beedb7e3191a4ca7e7d7068dcaa3141d`
 > **Date:** 2026-07-17
 
 This document is the next isolated read-only work package after the merged D2a
@@ -48,14 +49,16 @@ This preflight does not:
 
 ### 2.1 Remote and tree
 
-The inspected clone was fast-forwarded to `origin/main` and is clean. Local `main` and
-`origin/main` both resolve to:
+The inspected clone was fast-forwarded to `origin/main` and is clean. The current remote
+`main` resolves to:
 
 ```text
-3ad7b951039e1a3687206a03db64464c06474f6b
+293265502f6bbac34ab8d43dcdf7d8565d67e4af
 ```
 
-The only files changed after the D2a merge are heartbeat/federation runtime state:
+PR #694 was based on `b8a2b3e9…`. The complete comparison from that PR base to the
+current `origin/main` contains only these ten runtime/federation files; no Context Bridge
+module, test, or spec path drifted:
 
 ```text
 .steward/.context_hash
@@ -63,11 +66,18 @@ The only files changed after the D2a merge are heartbeat/federation runtime stat
 .steward/federation_health.json
 .steward/marketplace.json
 .steward/sessions.json
+data/federation/nadi_inbox.json
+data/federation/nadi_outbox.json
 data/federation/peers.json
-data/federation/quarantine/index.json
-data/federation/relay_seen_ids.json
 data/federation/steward_health.json
+data/federation/relay_seen_ids.json
 ```
+
+The same comparison from the D2a merge to current `origin/main` also contains only
+tracked runtime/federation state (including the existing quarantine-index state); no
+Context Bridge module, test, or spec path drifted. The evidence below is therefore
+repinned to `29326550…`, while the PR-base drift is explicitly bounded rather than
+assumed away.
 
 No open PR exists at the time of this pin. The latest post-merge heartbeat completed
 successfully, but that is evidence about the heartbeat run, not a D2b publication proof.
@@ -143,7 +153,10 @@ the proposed D2b lock.
 |---|---|---|
 | Generic `write_file` | `steward/tools/write_file.py:52-73` accepts an expanded arbitrary path and calls `Path.write_text()` | can write any root or `.steward` target without D2b lock |
 | Generic `edit_file` | `steward/tools/edit.py:61-119` performs unrestricted `Path.write_text()` after an existence/read check | same race and governance surface; read-before-write is not a transaction fence |
-| Tool registration | `steward/tool_providers.py:58-75` registers both tools in the normal Steward registry | available to autonomous Steward and child-agent registries |
+| Built-in `bash` | `steward/tool_providers.py:38-76` registers `BashTool`; `steward/tools/bash.py:67-88` executes `bash -c` with caller-controlled command text | shell redirection, rename, deletion, and arbitrary helper programs can mutate targets outside the D2b lock |
+| Built-in `git` | `steward/tool_providers.py:38-76` registers `GitTool`; `steward/tools/git.py:110-139,201-231` exposes checkout/branch operations and `:247-253` can stage all paths | `git checkout`/stash can replace worktree targets; commit/push and index changes can interleave with a transaction |
+| Tool registration | `steward/tool_providers.py:58-75` registers the built-ins in the normal Steward registry; child registries inherit parent tools | available to autonomous Steward, API paths, and child-agent registries |
+| Dynamic filesystem tools | `steward/tool_providers.py:79-148` imports every non-private `.steward/tools/*.py` module and auto-registers every `Tool` subclass | the current absence of that directory is not a closed writer inventory; future/runtime extensions can add arbitrary writers |
 | Legacy context bridge | `context_bridge.py:186-217,525-541` writes `context.json` and `.context_hash` | separate state writer; must not be mistaken for D2b publication |
 | Git Nadi sync | `steward/git_nadi_sync.py:94-170` stages, commits, rebases, and pushes an allowlisted federation subtree | does not target the four files, but shares the repository/index and has no D2b lock |
 | Heartbeat post-step | `.github/workflows/steward-heartbeat.yml:93-106` runs under `if: always()`, stages `.steward/` and `data/federation/`, then pushes directly | tracked `.steward/conventions.md` is in the staging surface; delivery is not PR-only |
@@ -151,12 +164,15 @@ the proposed D2b lock.
 `GitNadiSync` currently positively allowlists only `nadi_inbox.json`, `nadi_outbox.json`,
 `peer.json`, and `reports/**`; it is therefore not evidence of a Context target writer.
 It is nevertheless a concurrent Git/index actor and must be included in the D2b race
-model.
+model. Other programmatic mutators (for example circuit-breaker rollback and healer
+subprocess paths) require positive call-site classification before a writer inventory can
+be declared complete; a grep for the four target names alone is insufficient.
 
-**Required decision before D2b code:** either every writer capable of touching a D2b
-target must enter the same repository transaction boundary, or those paths must be
-explicitly prevented from touching the four targets. “One publisher” is not sufficient
-while generic file tools remain unrestricted.
+**Required decision before D2b code:** every write-capable surface — `write_file`,
+`edit_file`, `bash`, `git`, dynamically loaded filesystem tools, and programmatic
+subprocess/file mutators — must either enter the same repository transaction boundary or
+be explicitly prevented from touching the four targets. “One publisher” is not
+sufficient while these surfaces remain unrestricted.
 
 ## 5. Concurrency and delivery reality
 
@@ -230,7 +246,12 @@ fail-closed result.
 - Decide whether `write_file` and `edit_file` are forbidden for the four target paths,
   made lock-aware, or isolated from the canonical publisher by a separately reviewed
   boundary.
-- Prove that the decision covers child agents, API/Telegram paths, and any dynamically
+- Decide the equivalent boundary for shell-capable `bash`, structured `git` checkout/
+  stash/commit/push actions, and every programmatic subprocess or file mutator.
+- Positively inventory `FileSystemToolProvider` modules, child-agent inheritance, API/
+  Telegram tool registries, circuit-breaker/healer fallbacks, and any dynamically
+  discovered tool before declaring the writer set complete.
+- Prove that the decision covers child agents, API/Telegram paths, and dynamically
   discovered tools, not only the default registry.
 - Prove that the LLM preview path cannot become a canonical writer through a new caller.
 
@@ -258,7 +279,21 @@ The D2b code review must have direct tests for, at minimum:
 
 ### 7.4 Cross-process and Git races
 
-- A generic writer must be injected during every D2b fence and replace boundary.
+- A generic writer must be injected during every D2b fence and replace boundary. The
+  matrix must include shell redirection, `git checkout`/stash, direct `Path.write_*`,
+  and a dynamically loaded `.steward/tools/*.py` writer.
+- The lock inode itself must be attacked during acquire, held transaction, and release:
+  unlink/recreate, symlink, hardlink, owner/mode change, parent replacement, competing
+  process, interrupted acquire, and stale-lock discovery. The implementation must never
+  follow a foreign lock inode or claim ownership after replacement.
+- The journal must be attacked during creation, durable write, every fence, every replace,
+  final read-back, recovery, and cleanup: parent/target replacement, rename/unlink,
+  symlink/hardlink substitution, truncation, malformed JSON, duplicate journals, foreign
+  transaction IDs, and candidate/baseline byte substitution.
+- Every one of the four tempfiles must be attacked before open, during short writes and
+  `fsync`, between temp validation and replace, and after replace. Parent and target
+  replacement must be injected during each fence and replace; foreign bytes must never be
+  read as if they belonged to the transaction.
 - Git Nadi and heartbeat staging must be tested against a held D2b transaction; a
   successful local replace is not enough if the index or remote push can interleave.
 - External readers must observe and classify a mixed generation rather than receive a
