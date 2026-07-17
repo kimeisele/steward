@@ -2,23 +2,21 @@
 
 ## Sichtbarmachung anhaltenden kognitiven/Provider-Kollaps
 
-> **Status:** DRAFT 0.2 — SCHNITT A AUSFÜHRBAR SPEZIFIZIERT; NICHT G1; IMPLEMENTIERUNG UND
-> AKTIVIERUNG GESPERRT
+> **Status:** DRAFT 0.3 — SCHNITT A AUSFÜHRBAR; ADVERSARIAL-REVIEW-BEFUNDE 1–6 EINGEARBEITET;
+> NICHT G1; IMPLEMENTIERUNG UND AKTIVIERUNG GESPERRT
 > **Datum:** 2026-07-17
 > **Produktionsbasis:** `kimeisele/steward@bf2fba2075a87463fc8e333f8f57d805fce4d030`
-> **Herkunft:** Phase-2 §7.3; Recon RECON_01–04 in `heartbeat_failure_propagation_evidence/`
+> **Herkunft:** Phase-2 §7.3; Recon RECON_01–04; adversariales Review (§12)
 
 ---
 
 ## 1. Zweck und Gate
 
-Anhaltenden kognitiven/Provider-Kollaps beobachtbar machen, ohne die bewusste Resilienz
-(Daemon stirbt nicht an transienten Fehlern) zu brechen. LOGGING zuerst; Erzwingen (Run rot)
-erst nach belegter Beobachtung und nur hinter Kill-Switch.
-
-DRAFT. Kein G1 ohne adversariales Review (§10) und Operator-Go. **Schnitt A** ist hier so
-spezifiziert, dass er ohne Interpretationsspielraum umsetzbar ist. **Schnitt B/C** sind
-bewusst datengesteuert gegated (nicht geraten).
+Anhaltenden kognitiven/Provider-Kollaps beobachtbar machen, ohne die bewusste Resilienz zu
+brechen. LOGGING zuerst; Erzwingen (Run rot) erst nach belegter Beobachtung, nur hinter
+Kill-Switch. DRAFT — kein G1 ohne Auflösung der offenen Blocker (§12) und Operator-Go.
+**Schnitt A** ist ohne Interpretationsspielraum spezifiziert; **B/C** sind datengesteuert
+gegated.
 
 ## 2. Normative Abhängigkeiten
 
@@ -28,114 +26,137 @@ Produktionsbasis oben und sind vor Implementierung erneut zu pinnen.
 ## 3. Gepinnte Fakten (belegt, mit Anker)
 
 - `chamber.stats()` → `chamber.py:423`; liefert `{"providers":[{"name","alive",…}],
-  "total_calls":int, "total_failures":int, …}`.
-- Chamber ist Service: Klasse `SVC_PROVIDER` `services.py:40`; Registrierung
-  `services.py:285` (`ServiceRegistry.register(SVC_PROVIDER, provider)`); Get-Muster wie
-  `context_bridge.py:271` (`ServiceRegistry.get(SVC_PROVIDER)`).
-- Health-Report-Builder `_build_health_report()` `moksha_health.py:62`; Writer/Execute
-  `moksha_health.py:39–59`; Zieldateien `.steward/federation_health.json` und
-  `data/federation/steward_health.json` (plain `write_text`, **nicht** atomar).
-- Health-Hook registriert: `hooks/__init__.py:66` (`MokshaHealthReportHook`). Läuft pro
-  MOKSHA-Zyklus.
-- **Kein** Once-per-Run/Shutdown-Phasen-Hook (bestätigt); nur Per-Zyklus-Hooks. Prozess-
-  `close()` `agent.py:742` ist kein Phasen-Hook → nicht genutzt. ⇒ Streak-Granularität =
-  **pro Zyklus**.
-- `.steward/federation_health.json` wird vom Heartbeat committet (`steward-heartbeat.yml:99`
-  `git add -u -- .steward/`) ⇒ über Runs persistent.
+  "total_calls":int, "total_failures":int, …}`. `total_calls`/`total_failures` sind
+  prozess-monoton (nur bei frischem Prozess auf 0; `_maybe_reset_daily` `chamber.py:522`
+  setzt sie **nicht** zurück).
+- Chamber ist Service: `SVC_PROVIDER` `services.py:40`; Registrierung `services.py:285`;
+  Get-Muster `context_bridge.py:271`.
+- Health-Builder `_build_health_report()` `moksha_health.py:62`; Writer `moksha_health.py:
+  39–59`; Dateien `.steward/federation_health.json` + `data/federation/steward_health.json`
+  (plain `write_text`, **nicht atomar**). Beide git-tracked, per `steward-heartbeat.yml:99`
+  committet ⇒ über Runs persistent (unabhängig verifiziert im Review §12).
+- Health-Hook registriert `hooks/__init__.py:66`; läuft pro MOKSHA-Zyklus.
+- **Kein** Once-per-Run-Hook (bestätigt) ⇒ Streak-Granularität = **pro Zyklus**.
+- Erkennung existiert: `vedana.py:78` (`_W_PROVIDER=0.35`, höchstes Gewicht) →
+  `dharma.py:56–57` (`health<0.3` → `health_anomaly`); Konsum nur `engine.py:310`.
 
 ## 4. Scope und Nicht-Scope
 
-**In Scope (Schnitt A):** ein `cognition`-Block im vorhandenen Health-Report inkl. eines über
-Runs persistierten Zyklus-Streak-Zählers. **Kein** Einfluss auf Run-Exit-Status.
+**In Scope (Schnitt A):** ein `cognition`-Instrument-Block im vorhandenen Health-Report, der
+sowohl Hard-Down als auch **Degradation** (Zyklus-Delta) misst und über Runs persistiert.
+Kein Einfluss auf Run-Exit-Status.
 
 **Nicht-Scope:** kein `raise` in `chamber`; keine Änderung der Workflow-`try/except`-
-Resilienz; keine Atomicity-Änderung am bestehenden Health-Write (vorbestehend, eigener
-Hygiene-Punkt); Context-Bridge/Identität/Rotation/Quarantäne unberührt. Kein Sammelpatch.
+Resilienz; Context-Bridge/Identität/Rotation/Quarantäne unberührt. Kein Sammelpatch. Die
+Atomicity des Health-Writes wird in A nicht geändert, ist aber **C-Blocker** (§8).
 
-## 5. SCHNITT A — AUSFÜHRBARER VERTRAG (Sichtbarkeit)
+## 5. SCHNITT A — AUSFÜHRBARER VERTRAG (Instrument, nicht nur Hard-Down)
 
-### 5.1 Kollaps-Prädikat (rein aus `stats()`, kein Delta)
-```
-pstats = ServiceRegistry.get(SVC_PROVIDER).stats()
-providers = pstats["providers"]
-alive  = sum(1 for p in providers if p.get("alive"))
-total  = len(providers)
-collapsed = (total > 0 and alive == 0)
-```
+> **Behebt Review-Befund 1:** A misst nicht nur `alive==0`, sondern die real beobachtete
+> Degradation (Zyklus lief, keine Kognition gelang). Nur so entstehen die Daten, die C's
+> Schwelle begründen sollen.
 
-### 5.2 Persistierter Zyklus-Streak (Lesen-vor-Überschreiben)
-Vor dem Überschreiben den vorherigen Streak aus der bestehenden Zieldatei lesen:
+### 5.1 Beobachtete Rohgrößen (illustrativ; **normativ ist allein §5.3**)
+Pro MOKSHA-Zyklus aus `stats()`: `providers_alive`, `providers_total`, `total_calls`,
+`total_failures`. Abgeleitet über den Zyklus-Delta zum vorigen Report: `calls_delta`,
+`fail_delta`. Zwei Zustände:
+- `hard_down` = `providers_total>0 and providers_alive==0` (Total-Ausfall, Momentwert).
+- `degraded` = `calls_delta>0 and fail_delta>=calls_delta` (im Zyklus wurde Kognition
+  versucht, **keine** gelang) — dies ist das Krankheitsbild aus RECON_01 §4.
+
+`collapsed = hard_down or degraded` treibt **einen** Streak.
+
+### 5.2 Lesen-vor-Überschreiben (**nur Extraktion**, kein Rechnen — Befund 4)
 ```
-prev = 0
+prev = {"consecutive_collapsed_cycles": 0, "total_calls": 0, "total_failures": 0}
 try:
-    prev = json.loads(Path(".steward/federation_health.json").read_text())\
-             .get("cognition", {}).get("consecutive_collapsed_cycles", 0)
-except (OSError, ValueError):
-    prev = 0
-streak = prev + 1 if collapsed else 0
+    _c = json.loads(Path(".steward/federation_health.json").read_text()).get("cognition", {})
+    prev["consecutive_collapsed_cycles"] = _c.get("consecutive_collapsed_cycles", 0)
+    prev["total_calls"]    = _c.get("total_calls", 0)
+    prev["total_failures"] = _c.get("total_failures", 0)
+except (OSError, ValueError, TypeError):
+    pass   # fehlende/zerrissene Datei ⇒ Defaults (für A tolerierbar; C-Blocker §8)
 ```
+`execute()` übergibt `prev` an den Builder. `execute()` selbst **inkrementiert nicht**.
 
-### 5.3 Report-Erweiterung
-`_build_health_report()` (`moksha_health.py:62`) erhält Signatur
-`_build_health_report(prev_streak: int = 0)` und ergänzt vor `return report`:
+### 5.3 Report-Erweiterung (**einzige Inkrement-Stelle** — Befund 4, mit None-Guard — Befund 6)
+`_build_health_report(prev: dict | None = None)` (`moksha_health.py:62`) ergänzt vor
+`return report`:
 ```
+prev = prev or {"consecutive_collapsed_cycles": 0, "total_calls": 0, "total_failures": 0}
+cog = {"providers_alive": 0, "providers_total": 0, "total_calls": 0, "total_failures": 0,
+       "calls_delta": 0, "fail_delta": 0, "hard_down": False, "degraded": False,
+       "consecutive_collapsed_cycles": prev["consecutive_collapsed_cycles"]}
 provider = ServiceRegistry.get(SVC_PROVIDER)
-report["cognition"] = {"providers_alive": 0, "providers_total": 0,
-                       "total_calls": 0, "total_failures": 0,
-                       "collapsed": False, "consecutive_collapsed_cycles": prev_streak}
 if provider is not None and hasattr(provider, "stats"):
-    ps = provider.stats()
-    providers = ps.get("providers", [])
-    alive = sum(1 for p in providers if p.get("alive"))
-    total = len(providers)
-    collapsed = (total > 0 and alive == 0)
-    report["cognition"] = {
-        "providers_alive": alive, "providers_total": total,
-        "total_calls": ps.get("total_calls", 0),
-        "total_failures": ps.get("total_failures", 0),
-        "collapsed": collapsed,
-        "consecutive_collapsed_cycles": (prev_streak + 1 if collapsed else 0),
-    }
+    ps = provider.stats(); providers = ps.get("providers", [])
+    alive = sum(1 for p in providers if p.get("alive")); total = len(providers)
+    tc = ps.get("total_calls", 0); tf = ps.get("total_failures", 0)
+    # Run-Grenze: frischer Prozess setzt Totals auf 0 -> Delta = aktuelle Totals
+    if tc >= prev["total_calls"]:
+        cd = tc - prev["total_calls"]; fd = tf - prev["total_failures"]
+    else:
+        cd = tc; fd = tf
+    hard_down = (total > 0 and alive == 0)
+    degraded  = (cd > 0 and fd >= cd)
+    collapsed = hard_down or degraded
+    cog.update({"providers_alive": alive, "providers_total": total,
+                "total_calls": tc, "total_failures": tf,
+                "calls_delta": cd, "fail_delta": fd,
+                "hard_down": hard_down, "degraded": degraded,
+                "consecutive_collapsed_cycles":
+                    prev["consecutive_collapsed_cycles"] + 1 if collapsed else 0})
+report["cognition"] = cog
 ```
-`execute()` (`moksha_health.py:39`) liest `prev` (5.2) und ruft
-`_build_health_report(prev_streak=prev)`. Writer und Dateien **unverändert**.
 
 ### 5.4 Invariante
-Schnitt A ändert **keinen** Kontrollfluss außerhalb `moksha_health.py`, wirft nicht, ändert
-den Run-Exit-Status in **keinem** Fall. Nur ein zusätzliches Datenfeld.
+Schnitt A ändert **keinen** Kontrollfluss außerhalb `moksha_health.py`, wirft nicht (der
+`get(SVC_PROVIDER)`-None-Fall ist geführt), ändert den Run-Exit-Status in **keinem** Fall.
 
-## 6. SCHNITT A — TESTVERTRAG (exakt, echte Klassen, kein Stub)
+## 6. SCHNITT A — TESTVERTRAG (exakt, echte Klassen; inkl. Disk-Roundtrip — Befund 3)
 
-Datei `tests/test_moksha_health.py` (neu oder erweitert). Gegen echte `ProviderChamber`
-(`build_chamber()`-artig konstruiert), via `ServiceRegistry.register(SVC_PROVIDER, chamber)`.
+Datei `tests/test_moksha_health.py`. Gegen echte `ProviderChamber`, via
+`ServiceRegistry.register(SVC_PROVIDER, chamber)`. Dateibasierte Tests nutzen ein `tmp_path`
+als cwd.
 
-- `test_cognition_block_present_and_healthy`: 2 lebende Cells → `report["cognition"]`
-  existiert; `providers_total == 2`; `providers_alive == 2`; `collapsed is False`;
-  `consecutive_collapsed_cycles == 0`.
-- `test_collapse_increments_streak`: alle Cells nicht-alive → `collapsed is True`;
-  `_build_health_report(prev_streak=3)` ⇒ `consecutive_collapsed_cycles == 4`.
-- `test_transient_resets_streak` (**Guard §220.3**): ≥1 lebende Cell, `prev_streak=5`
-  ⇒ `collapsed is False`; `consecutive_collapsed_cycles == 0`.
-- `test_no_provider_registered`: SVC_PROVIDER nicht registriert ⇒ `cognition`-Block mit
-  `providers_total == 0`, `consecutive_collapsed_cycles == prev_streak`; kein Fehler.
+Builder-Ebene:
+- `test_cognition_block_healthy`: 2 lebende Cells, `prev` leer → `providers_alive==2`,
+  `hard_down False`, `degraded False`, `consecutive_collapsed_cycles==0`.
+- `test_hard_down_increments`: alle Cells nicht-alive, `prev.streak=3` → `hard_down True`,
+  `consecutive_collapsed_cycles==4`.
+- `test_degraded_increments` (**Befund 1**): Cells alive, aber `prev.total_calls`/
+  `total_failures` so gesetzt, dass `calls_delta>0 and fail_delta==calls_delta` → `degraded
+  True`, Streak +1 — obwohl `hard_down False`.
+- `test_transient_resets` (**Guard §220.3**): ≥1 Erfolg im Zyklus (`fail_delta<calls_delta`)
+  → `collapsed False`, `consecutive_collapsed_cycles==0` trotz `prev.streak=5`.
+- `test_no_provider_registered`: SVC_PROVIDER fehlt → Block mit `providers_total==0`,
+  Streak == `prev.streak`; kein Fehler.
+
+Disk-Roundtrip-Ebene (**das eigentliche Novum — Befund 3**):
+- `test_roundtrip_increment`: Datei mit `cognition.consecutive_collapsed_cycles=N` +
+  passenden Totals schreiben → `execute()` bei Kollaps → **Datei zeigt `N+1`**.
+- `test_roundtrip_missing_and_torn`: Datei fehlt / enthält torn JSON / hat keinen
+  `cognition`-Key → `prev`-Defaults, kein Crash, Run-Ausgang unverändert.
 - `test_execute_appends_ok_and_returns_none`: `execute(ctx)` gibt `None`, hängt
-  `"moksha_health_report:ok"` an `ctx.operations` an, wirft nicht (Invariante 5.4).
+  `"moksha_health_report:ok"` an, wirft nicht.
 
 ## 7. SCHNITT A — AKZEPTANZ (Produktionslog, nicht grüner Test)
 
-Nach einem Heartbeat-Run gilt: `.steward/federation_health.json` enthält den `cognition`-
-Block mit den sechs Feldern; bei lebenden Providern `consecutive_collapsed_cycles: 0`; der
-Run-Exit-Status ist unverändert grün. Verifikation am realen Artefakt + Run-Log.
+Nach einem Heartbeat-Run enthält `.steward/federation_health.json` den `cognition`-Block mit
+allen Feldern (inkl. `calls_delta`/`fail_delta`/`degraded`); bei gesunder Kognition
+`consecutive_collapsed_cycles: 0`; Run-Exit-Status unverändert grün. Verifikation am realen
+Artefakt über mehrere aufeinanderfolgende Runs (Streak-Verhalten sichtbar).
 
-## 8. SCHNITT B/C — PRÄZISE GEGATED (nicht geraten)
+## 8. SCHNITT B/C — PRÄZISE GEGATED
 
-- **B (Eskalation):** erst nachdem A in Produktion Daten geliefert hat. Wiederverwendung des
-  vorhandenen Issue-Musters (`dharma.py:187`, heute Peer-scoped) für Selbst-Kollaps. Eigene
-  G2-Spec. Ändert Run-Ausgang **nicht**.
-- **C (Erzwingen/Run-rot):** GESPERRT bis (i) A-Beobachtung die Schwelle `N`
-  (`consecutive_collapsed_cycles ≥ N`) empirisch begründet und (ii) das Prädikat (5.1)
-  ggf. auf „keine erfolgreiche Kognition" verschärft ist. Hinter Feature-Flag/Kill-Switch,
-  Default AUS. Eigene G2-Spec + Operator-Go.
+- **B (Eskalation):** erst nach A-Produktionsdaten. Wiederverwendung `dharma.py:187`
+  (Peer-Muster) für Selbst-Kollaps. Eigene G2-Spec. Kein Run-Rot.
+- **C (Erzwingen/Run-rot):** GESPERRT bis **alle drei**:
+  (i) A-Beobachtung begründet die Schwelle `N` empirisch (§10.1, Einheit Zyklen);
+  (ii) Prädikat für C entschieden (Hard-Down vs. Degradation vs. Kombination);
+  (iii) **Atomarer Persistenz-Write** hergestellt (Befund 2) — eine Rot-Schwelle darf nicht
+  auf einem Zähler ruhen, dessen Datei genau bei Crash/Unhealth still auf 0 resettet.
+  Hinter Feature-Flag/Kill-Switch, Default AUS. Eigene G2-Spec + Operator-Go.
 
 ## 9. Rollback
 
@@ -144,20 +165,30 @@ kein Kontrollfluss.
 
 ## 10. Offene Fragen
 
-**Geschlossen durch DRAFT 0.2:** Chamber-Erreichbarkeit (SVC_PROVIDER), Persistenz-Ort
-(bestehende committete `federation_health.json`), Granularität (pro Zyklus, da kein
-Once-per-Run-Hook), Andockstelle (`moksha_health.py`).
+**Geschlossen (DRAFT 0.2/0.3):** Chamber-Erreichbarkeit, Persistenz-Ort, Granularität,
+Andockstelle, Degradations-Messung (Befund 1), Inkrement-Eindeutigkeit (Befund 4),
+None-Guard (Befund 6).
 
-**Bewusst offen — datengesteuert, NICHT vor Beobachtung entscheidbar (Angriffsfläche fürs
-Review):**
-1. Schwelle `N` für „kritisch" — muss aus A-Produktionsdaten kommen, darf nicht geraten
-   werden. Sperrt C.
-2. Prädikat-Verschärfung „alive==0" → „keine erfolgreiche Kognition im Zyklus" (braucht
-   Zyklus-Delta von `total_calls`/`total_failures`) — für C, nicht für A.
-3. Nicht-Atomicity des bestehenden Health-Writes (`write_text`) — vorbestehend; als eigener
-   Hygiene-Punkt zu führen, nicht in dieser Feature.
+**Bewusst offen — datengesteuert:**
+1. **Schwelle `N` — Einheit ist Zyklen** (Befund 5): ein Run addiert bis zu `CYCLES`
+   (Default 4) Zyklen; `N` muss run-sprung-bewusst definiert werden (z. B. „≥N kollabierte
+   Zyklen über ≥M aufeinanderfolgende Runs"), nicht naiv als „N Runs". Aus A-Daten.
+2. Prädikat-Wahl für C (Hard-Down / Degradation / kombiniert) — aus A-Daten.
+3. Atomicity des Health-Writes — **jetzt als C-Blocker (iii) §8 verdrahtet** (Befund 2), nicht
+   mehr nur „separate Hygiene".
 
 ## 11. Schlussstatus
 
-DRAFT 0.2. Schnitt A ausführbar; B/C korrekt gegated. Kein G1, keine Implementierung, keine
-Aktivierung ohne adversariales Review von §5/§8/§10 und Operator-Go.
+DRAFT 0.3. Schnitt A ausführbar und misst das reale Krankheitsbild; B/C korrekt gegated.
+Kein G1, keine Implementierung, keine Aktivierung ohne erneutes Review von §5/§6/§8 und
+Operator-Go.
+
+## 12. Review-Historie
+
+- **Adversariales Design-Review (2026-07-17):** 6 Befunde. Fakten-Fundament unabhängig
+  bestätigt (Anker, `stats()`-Form, `SVC_PROVIDER`, git-tracked Persistenz). Design-Befunde:
+  1 (HIGH, A maß nur Hard-Down statt Degradation) → §5 neu; 2 (HIGH, Non-Atomicity als
+  C-Blocker) → §8(iii)/§10.3; 3 (HIGH, Roundtrip ungetestet) → §6 Roundtrip-Tests; 4 (MED,
+  Doppel-Inkrement) → §5.2 nur Extraktion, §5.3 einzige Inkrement-Stelle; 5 (MED, Einheiten)
+  → §10.1; 6 (LOW, §5.1 vs §5.3 normativ) → §5.1 als illustrativ markiert. G1 blieb korrekt
+  verwehrt.

@@ -93,8 +93,9 @@ machen — LOGGING zuerst, kein erzwungenes Rot vor Beobachtung.
 **Recon abgeschlossen (RECON_01–04).** Die Fehlerklassen-Matrix ist vollständig belegt
 (RECON_04 §5). Kein offener Recon-Punkt ist vor der Spec zwingend.
 
-Feature-Spec liegt als **DRAFT** vor: `HEARTBEAT_FAILURE_PROPAGATION_FEATURE_01.md`
-(Status DRAFT 0.1 — NICHT G1). Zielarchitektur: vorhandene `vedana`/`health_anomaly`-
-Erkennung bei *anhaltendem* Kollaps nach außen sichtbar machen + persistierter Kollaps-
-Zähler über Runs; LOGGING vor Erzwingen; Rollback. Nächster Schritt: adversariales Review
-der DRAFT-Spec (§10 dort). **Kein G1, kein Produktcode ohne ausdrückliches Operator-Go.**
+Feature-Spec liegt als **DRAFT 0.3** vor: `HEARTBEAT_FAILURE_PROPAGATION_FEATURE_01.md`
+(NICHT G1). Ein adversariales Design-Review (6 Befunde) ist eingearbeitet — u.a. misst
+Schnitt A jetzt die reale Degradation (Zyklus-Delta), nicht nur Hard-Down; Non-Atomicity ist
+als C-Blocker verdrahtet; der Disk-Roundtrip ist im Testvertrag abgedeckt (Details
+FEATURE-01 §12). **Kein G1, kein Produktcode ohne erneutes Review und ausdrückliches
+Operator-Go.**
