@@ -2,9 +2,9 @@
 
 ## Sichtbarmachung anhaltenden kognitiven/Provider-Kollaps
 
-> **Status:** DRAFT 0.5 — SCHNITT A AUSFÜHRBAR; DREI ADVERSARIAL-REVIEW-RUNDEN EINGEARBEITET
-> (invertiertes Prädikat + Skip-Kollaps-Blindfleck); NICHT G1; IMPLEMENTIERUNG UND
-> AKTIVIERUNG GESPERRT
+> **Status:** DRAFT 0.6 — VIER ADVERSARIAL-REVIEW-RUNDEN; NORMATIVER KERN §5.3 HAT ZWEI
+> BENANNTE, TRAGENDE LÜCKEN (§10.4: vibe_core-Dekodierung + Per-Provider-Quota-Datenlücke) —
+> NICHT G1, NICHT HAIKU-IMPLEMENTIERBAR, bis §10.4 aufgelöst ist. IMPL./AKTIVIERUNG GESPERRT
 > **Datum:** 2026-07-17
 > **Produktionsbasis:** `kimeisele/steward@bf2fba2075a87463fc8e333f8f57d805fce4d030`
 > **Herkunft:** Phase-2 §7.3; Recon RECON_01–04; adversariales Review (§12)
@@ -77,7 +77,8 @@ Pro MOKSHA-Zyklus aus `stats()`: `providers_alive`, `providers_total`, `total_ca
   Quota erschöpft `chamber.py:244`, Breaker OPEN `:251`, Membran zu schwach `:255` — jeweils
   `continue` **ohne** `_record_call_failure`, also `fd=0`). `providers_usable` = pro Provider
   `alive AND breaker≠OPEN AND within_quota`, ableitbar aus `stats()` (Felder `alive`,
-  `breaker`, chamber-`quota`). Fängt das schwerste Krankheitsbild — Quota-Erschöpfung über
+  `breaker`, chamber-`quota`) — **aber die Per-Provider-Quota fehlt heute in `stats()`, siehe
+  §10.4b (offene Operator-Entscheidung).** Zielt auf das schwerste Krankheitsbild — Quota-Erschöpfung über
   einen Tag (RECON_04) und den vertieften Breaker-Steady-State —, das `degraded` (braucht
   `fd>0`) systematisch verfehlt.
 
@@ -213,18 +214,45 @@ None-Guard (Befund 6).
 2. Prädikat-Wahl für C (Hard-Down / Degradation / kombiniert) — aus A-Daten.
 3. Atomicity des Health-Writes — **jetzt als C-Blocker (iii) §8 verdrahtet** (Befund 2), nicht
    mehr nur „separate Hygiene".
-4. **vibe_core-Statusformen pinnen (Runde 3):** die exakte Dekodierung von `p['breaker']`
-   (get_status → wann OPEN), `ps['quota']` (wann erschöpft) und `MahaCellUnified.is_alive`
-   liegt in `vibe_core` (hier nicht installiert). `providers_usable`/`skip_collapse` und der
-   `hard_down`-Backstop hängen daran — vor Implementierung gegen die echten Formen pinnen,
-   **nicht raten** (das war die Fehlerklasse der Runden 2/3). Die Helfer `_breaker_ok`/
-   `_quota_ok` in §5.3 sind Platzhalter für genau diese Dekodierung.
+4. **NORMATIVE KERN-LÜCKE — §5.3 ist bis hierhin NICHT ausführbar.** Zwei getrennte Teile:
+
+   **4a — Dekodierung (Runde 3):** `_breaker_ok(p['breaker'])`, `is_alive` und der globale
+   `ps['quota']`-Status liegen in `vibe_core` (hier nicht installiert). Exakte Formen (wann
+   „OPEN", wann „erschöpft") vor Implementierung gegen den echten `get_status()` pinnen,
+   **nicht raten**. `_breaker_ok`/`_quota_ok` in §5.3 sind Platzhalter dafür.
+
+   **4b — Per-Provider-Quota ist eine DATENLÜCKE, kein Dekodier-Problem (Runde 4, HIGH):**
+   Der Skip-Pfad, den `skip_collapse` adressiert (`chamber.py:244`), nutzt
+   `_is_within_quota(payload)` (`chamber.py:514–520`) und liest **Per-Provider**-Felder
+   `payload.calls_today`/`daily_call_limit`/`tokens_today`. **Keines** steht in `stats()`
+   (Per-Provider-Dict `chamber.py:426–435`: nur name/model/prana/integrity/cycle/alive/
+   breaker). Der globale `self._quota.get_status()` deckt nur den Streaming-Gate
+   (`chamber.py:337`), **nicht** den Per-Provider-Skip `:244`. ⇒ `providers_usable` bleibt
+   bei erschöpfter Free-Tier-Tagesquota strukturell >0 → `skip_collapse=False` → A blind
+   für genau das Runde-3-Krankheitsbild. `test_skip_collapse_quota` (global geformt) wäre
+   grün, die Produktion blind — §220.3-Modus.
+
+   **Operator-Entscheidung nötig (eine muss die Spec wählen):**
+   - **(a)** `stats()` um Per-Provider-Quota erweitern (`calls_today`/`daily_call_limit`) —
+     das ist eine `chamber.py`-Änderung und **verletzt den aktuellen Non-Scope** (§4, „nur
+     `moksha_health.py`"). Bewusstes Re-Scope. Macht A für sein Kernkrankheitsbild sehend.
+   - **(b)** Per-Provider-Quota-Skip als akzeptierten **Blindfleck** von A dokumentieren →
+     C darf dann **keine** Quota-Schwelle aus A-Daten ableiten. Hält A minimal, entwertet
+     aber A für den Hauptfall.
 
 ## 11. Schlussstatus
 
-DRAFT 0.5. Schnitt A misst Hard-Down, Degradation UND Skip-Kollaps; B/C korrekt gegated.
-Einzige tragende ungeprüfte Annahme: die vibe_core-Statusformen (§10.4). Kein G1, keine
-Implementierung, keine Aktivierung ohne erneutes Review von §5/§6/§8 und Operator-Go.
+DRAFT 0.6. Schnitt A misst Hard-Down, Degradation und Skip-Kollaps; B/C korrekt gegated.
+**Nicht ausführbar/Haiku-tauglich, bis §10.4 aufgelöst ist:** (4a) vibe_core-Dekodierung
+pinnen [braucht vibe_core-Umgebung]; (4b) Per-Provider-Quota-Datenlücke per Operator-
+Entscheidung (a)/(b) auflösen. Danach ist G1 plausibel. Kein G1/Impl./Aktivierung ohne beides
++ erneutes Review + Operator-Go.
+
+**Minor (für den C-Designer):** `skip_collapse` ist ein **Kapazitäts**-Prädikat („könnten
+wir kognizieren?"), in denselben Streak gefaltet wie die **Failure**-Prädikate
+`degraded`/`hard_down` („versucht und gescheitert?"). `skip_collapse` kann bei null Nachfrage
+feuern (Breaker transient offen, aber der Zyklus wollte keine Kognition) — ein Streak-
+Inkrement heißt also nicht immer „Kognition scheiterte".
 
 ## 12. Review-Historie
 
@@ -252,3 +280,13 @@ Implementierung, keine Aktivierung ohne erneutes Review von §5/§6/§8 und Oper
   Fix: neuer Zustand `skip_collapse = providers_usable==0` (§5); Test `test_skip_collapse_quota`
   (§6); vibe_core-Statusformen als Pin-Pflicht §10.4. `is_alive` bleibt die einzige
   ungeprüfte tragende Annahme (vibe_core nicht installiert). G1 weiterhin verwehrt.
+- **Vierte Runde (2026-07-17, Review von DRAFT 0.5):** 1 neuer HIGH-Befund — der normative
+  Kern §5.3 ist nicht ausführbar (undefinierte `_breaker_ok`/`_quota_ok` → Haiku müsste
+  raten). Und tiefer: der Per-Provider-Quota-Skip (`chamber.py:244`, `_is_within_quota` liest
+  `payload.calls_today`/`daily_call_limit`, `:514–520`) ist eine **Datenlücke** — diese
+  Felder stehen nicht in `stats()` (`:426–435`); der globale `_quota` deckt nur den
+  Streaming-Gate `:337`. Am Code verifiziert. `skip_collapse` ist damit für sein
+  Hauptkrankheitsbild (Free-Tier-Quota) blind, `test_skip_collapse_quota` wäre grün bei
+  blinder Produktion (§220.3). §10.4 neu gerahmt (4a Dekodierung / 4b Datenlücke) mit
+  expliziter Operator-Entscheidung (a) `stats()` erweitern [Re-Scope] vs. (b) Blindfleck
+  dokumentieren. Minor (Kapazität- vs. Failure-Prädikat) in §11 für C notiert. G1 verwehrt.
