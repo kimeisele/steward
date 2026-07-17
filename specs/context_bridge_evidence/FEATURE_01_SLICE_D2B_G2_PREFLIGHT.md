@@ -2,15 +2,15 @@
 
 > **Status:** DRAFT 0.1 — READ-ONLY G2 CONTRACT; G1 OFF; IMPLEMENTATION LOCKED
 >
-> **Investigated main:** `kimeisele/steward@ad09f81c369309b576eaac5d9ccec9ecabee0298`
+> **Investigated main:** `kimeisele/steward@f510aca72913692b605b1fec67ae393329b38a27`
 >
-> **Investigated tree:** `ecee4b57fe0e6f3d65e9ddae096c261573dba99b`
+> **Investigated tree:** `1fbc6c61963d175031e0fa96953c4f79e6267b4e`
 >
 > **D2b parent preflight:** `f582e0d63876df8be61e8970a0fe065a2b2c034e`
 >
 > **Writer-policy merge:** `0260c53950fbddbf037d607cca2031467744bcfa`
 >
-> **Earlier G2 scan pin:** `0260c53950fbddbf037d607cca2031467744bcfa`
+> **Earlier G2 scan pin:** `ad09f81c369309b576eaac5d9ccec9ecabee0298`
 >
 > **Date:** 2026-07-17
 
@@ -74,6 +74,7 @@ data/federation/kirtan_ledger.json
 data/federation/nadi_inbox.json
 data/federation/nadi_outbox.json
 data/federation/peers.json
+data/federation/quarantine/index.json
 data/federation/relay_seen_ids.json
 data/federation/steward_health.json
 ```
@@ -213,11 +214,35 @@ tempfile or target replace. It binds only:
 - baseline absence or HEAD blob/mode/byte hash for every target;
 - candidate byte hashes and sizes;
 - snapshot ID, payload hash, C0 hash, source blob, reviewed commit;
-- bounded status needed for deterministic recovery.
+- a closed status, replace cursor, fixed completed-target prefix, in-flight target, and
+  installed-target inode identities needed for deterministic recovery.
 
-It contains no raw candidate bytes, environment, token, exception text, wall-clock
-freshness, or foreign absolute path. Duplicate, malformed, oversized, stale, or foreign
+It contains no raw candidate bytes, environment, token, exception text, wall-clock or
+MTime freshness, or foreign absolute path. Duplicate, malformed, oversized, or foreign
 journals block recovery without mutation.
+
+The journal schema is closed and its status transitions are durable and monotone:
+
+```text
+status = prepared | replacing | replaced | read_back_validated
+prepared -> replacing -> replaced -> read_back_validated
+```
+
+`prepared` has cursor `0`, no completed targets, and no in-flight target. `replacing` has
+an in-flight target equal to the next member of the fixed replace order; after a
+successful dirfd-relative replace and fstat, that target's `{device, inode, mode,
+candidate_sha256}` is durably recorded and the cursor advances. `replaced` has cursor
+`4` and the complete four-target prefix. `read_back_validated` is allowed only after
+the final D1/attestation/read-back and Git fence. Backward transitions, skipped targets,
+unknown fields, duplicate target identities, or an installed target without its journal
+identity are invalid and require `manual_review`.
+
+Recovery never calls a journal "stale" from age or MTime. After the lock is acquired,
+an orphaned journal is classified only from its bound repository identity, reviewed HEAD,
+closed status, transaction names, baseline/candidate byte hashes, target types, and
+recorded inodes. A HEAD change, unsupported Git layout, missing/foreign inode, or any
+byte state outside the journal's baseline/candidate set is `manual_review` with no
+automatic mutation.
 
 ### 6.2 Four tempfiles
 
@@ -261,7 +286,8 @@ Recovery runs only under the same exclusive lock and only for exactly one strict
 |---|---|
 | all four candidate bytes match the journal | repeat final read-back/fence, then remove own temps/journal |
 | partial replace and all current bytes match the attestable four-file baseline | restore that baseline in fixed order, read back, then clean own transaction |
-| partial replace on a clean four-file-absent ephemeral baseline | remove only own journal-bound candidate temps and prove absence |
+| partial replace on a clean four-file-absent ephemeral baseline, with each installed candidate target's recorded inode still present and its candidate hash/mode matching | unlink only those journal-/candidate-bound target inodes dirfd-relatively, `fsync` each affected parent, remove own temps/journal, then prove all four targets absent in worktree, HEAD, and index |
+| four-file-absent baseline but an installed target lacks a matching recorded inode, parent, mode, or candidate hash | `manual_review`/`blocked`; do not guess whether the target is publisher-owned |
 | `legacy_bootstrap`, unknown/manual bytes, multiple journals, foreign temps, unsafe path | `manual_review`/`blocked`, no automatic mutation |
 | cleanup or final fence fails | visible blocked/manual-review result; preserve evidence |
 
