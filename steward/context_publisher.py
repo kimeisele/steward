@@ -100,6 +100,7 @@ class _GitTarget:
 class _WorktreeTarget:
     data: bytes
     sha256: str
+    mode: str
     stat_key: tuple[int, ...]
 
 
@@ -194,12 +195,26 @@ def _optional_directory(parent_fd: int, name: str) -> int | None:
         raise _ObservationFailure from None
 
 
-def _reject_unsupported_git_layout(root_fd: int, git_fd: int) -> None:
+def _layout_stat_key(value: os.stat_result) -> tuple[int, ...]:
+    return (
+        value.st_dev,
+        value.st_ino,
+        stat.S_IFMT(value.st_mode),
+        value.st_nlink,
+        value.st_uid,
+        stat.S_IMODE(value.st_mode),
+        value.st_size,
+        value.st_mtime_ns,
+        value.st_ctime_ns,
+    )
+
+
+def _git_layout_fingerprint(root_fd: int, git_fd: int) -> tuple[tuple[int, ...], ...]:
     root_git = os.stat(".git", dir_fd=root_fd, follow_symlinks=False)
-    opened_git = os.fstat(git_fd)
+    opened_git_before = os.fstat(git_fd)
     if not stat.S_ISDIR(root_git.st_mode) or (root_git.st_dev, root_git.st_ino) != (
-        opened_git.st_dev,
-        opened_git.st_ino,
+        opened_git_before.st_dev,
+        opened_git_before.st_ino,
     ):
         raise _ObservationFailure
     for relative in ("commondir", "gitdir"):
@@ -209,23 +224,38 @@ def _reject_unsupported_git_layout(root_fd: int, git_fd: int) -> None:
             pass
         else:
             raise _ObservationFailure
+    opened_git_after = os.fstat(git_fd)
+    if _layout_stat_key(opened_git_before) != _layout_stat_key(opened_git_after):
+        raise _ObservationFailure
     objects_fd = _optional_directory(git_fd, "objects")
     if objects_fd is None:
         raise _ObservationFailure
     try:
+        objects_before = os.fstat(objects_fd)
         info_fd = _optional_directory(objects_fd, "info")
         if info_fd is not None:
             try:
+                info_before = os.fstat(info_fd)
                 try:
                     os.stat("alternates", dir_fd=info_fd, follow_symlinks=False)
                 except FileNotFoundError:
                     pass
                 else:
                     raise _ObservationFailure
+                info_after = os.fstat(info_fd)
+                if _layout_stat_key(info_before) != _layout_stat_key(info_after):
+                    raise _ObservationFailure
             finally:
                 os.close(info_fd)
+        objects_after = os.fstat(objects_fd)
+        if _layout_stat_key(objects_before) != _layout_stat_key(objects_after):
+            raise _ObservationFailure
     finally:
         os.close(objects_fd)
+    fingerprint = [_layout_stat_key(opened_git_after), _layout_stat_key(objects_after)]
+    if info_fd is not None:
+        fingerprint.append(_layout_stat_key(info_after))
+    return tuple(fingerprint)
 
 
 def _bounded_process(
@@ -238,17 +268,21 @@ def _bounded_process(
     remaining = min(5.0, deadline - time.monotonic())
     if remaining <= 0:
         raise _ObservationFailure
-    process = subprocess.Popen(
-        arguments,
-        cwd="/",
-        env=_CHILD_ENV,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        close_fds=True,
-        pass_fds=(pass_fd,),
-        start_new_session=True,
-    )
+    null_fd = os.open(os.devnull, os.O_RDONLY | os.O_CLOEXEC)
+    try:
+        process = subprocess.Popen(
+            arguments,
+            cwd="/",
+            env=_CHILD_ENV,
+            stdin=null_fd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            close_fds=True,
+            pass_fds=(pass_fd,),
+            start_new_session=True,
+        )
+    finally:
+        os.close(null_fd)
     assert process.stdout is not None and process.stderr is not None
     stdout_fd = process.stdout.fileno()
     streams = {stdout_fd: (process.stdout, stdout_limit), process.stderr.fileno(): (process.stderr, 4096)}
@@ -335,9 +369,7 @@ def _parse_head(value: bytes) -> str:
 
 def _parse_tree(value: bytes) -> Mapping[str, _GitTarget]:
     result: dict[str, _GitTarget] = {}
-    for record in value.split(b"\0"):
-        if not record:
-            continue
+    for record in _nul_records(value):
         try:
             metadata, raw_path = record.split(b"\t", 1)
             mode, kind, blob = metadata.split(b" ")
@@ -352,9 +384,7 @@ def _parse_tree(value: bytes) -> Mapping[str, _GitTarget]:
 
 def _parse_index(value: bytes) -> Mapping[str, _GitTarget]:
     result: dict[str, _GitTarget] = {}
-    for record in value.split(b"\0"):
-        if not record:
-            continue
+    for record in _nul_records(value):
         try:
             metadata, raw_path = record.split(b"\t", 1)
             mode, blob, stage = metadata.split(b" ")
@@ -367,13 +397,29 @@ def _parse_index(value: bytes) -> Mapping[str, _GitTarget]:
     return MappingProxyType(result)
 
 
+def _nul_records(value: bytes) -> tuple[bytes, ...]:
+    if not value:
+        return ()
+    if not value.endswith(b"\0") or b"\0\0" in value:
+        raise _ObservationFailure
+    records = tuple(value[:-1].split(b"\0"))
+    if any(not record for record in records):
+        raise _ObservationFailure
+    return records
+
+
 def _read_git_evidence(
     git: str, git_fd: int, deadline: float
 ) -> tuple[str, Mapping[str, _GitTarget], Mapping[str, _GitTarget], Mapping[str, bytes]]:
     pathspec = ["--", *_TARGETS]
-    head = _parse_head(
+    raw_head = _parse_head(
         _git_command(git, git_fd, ["rev-parse", "--verify", "HEAD"], stdout_limit=4096, deadline=deadline)
     )
+    head = _parse_head(
+        _git_command(git, git_fd, ["rev-parse", "--verify", "HEAD^{commit}"], stdout_limit=4096, deadline=deadline)
+    )
+    if raw_head != head:
+        raise _ObservationFailure
     tree = _parse_tree(
         _git_command(git, git_fd, ["ls-tree", "-rz", head, *pathspec], stdout_limit=16384, deadline=deadline)
     )
@@ -422,7 +468,7 @@ def _read_target(parent_fd: int, name: str, limit: int) -> _WorktreeTarget | Non
         if _file_stat_key(after) != key or _file_stat_key(final_lstat) != key:
             raise _ObservationFailure
         raw = bytes(data)
-        return _WorktreeTarget(raw, hashlib.sha256(raw).hexdigest(), key)
+        return _WorktreeTarget(raw, hashlib.sha256(raw).hexdigest(), f"{before.st_mode:o}", key)
     finally:
         os.close(descriptor)
 
@@ -472,7 +518,7 @@ def _target_evidence(evidence: _RepositoryEvidence) -> Mapping[str, TargetEviden
             index_mode=index.mode if index else None,
             index_blob=index.blob if index else None,
             worktree_present=worktree is not None,
-            worktree_mode="100644" if worktree else None,
+            worktree_mode=worktree.mode if worktree else None,
             worktree_sha256=worktree.sha256 if worktree else None,
         )
     return MappingProxyType(result)
@@ -516,8 +562,8 @@ def _classify(
     if evidence.tree != evidence.index:
         return GenerationState.MANUAL_REVIEW, "index_differs_from_head", None
     present = {path for path, value in evidence.worktree.items() if value is not None}
-    if evidence.publisher_signal and len(present) < len(_TARGETS):
-        return GenerationState.MIXED, "transaction_partial_generation", None
+    if evidence.publisher_signal:
+        return GenerationState.MIXED, "transaction_generation_present", None
     if len(present) == len(_TARGETS):
         candidates = _candidates(evidence.worktree)
         try:
@@ -572,14 +618,22 @@ def inspect_repository_generation(
         git, git_identity = _safe_executable(("/usr/bin/git", "/bin/git"))
         root_fd = _open_repository_root(repository_root)
         git_fd = os.open(".git", _OPEN_DIRECTORY, dir_fd=root_fd)
-        _reject_unsupported_git_layout(root_fd, git_fd)
+        layout_fingerprint = _git_layout_fingerprint(root_fd, git_fd)
         steward_fd = _optional_directory(root_fd, ".steward")
         head, tree, index, head_blobs = _read_git_evidence(git, git_fd, deadline)
+        if _git_layout_fingerprint(root_fd, git_fd) != layout_fingerprint:
+            return _manual(repository_root, "git_layout_changed", head=head, race=True)
         worktree = _read_worktree(root_fd, steward_fd)
         publisher_signal, ambiguous_signal = _scan_signals(root_fd, steward_fd)
+        if _git_layout_fingerprint(root_fd, git_fd) != layout_fingerprint:
+            return _manual(repository_root, "git_layout_changed", head=head, race=True)
         second_head, second_tree, second_index, second_head_blobs = _read_git_evidence(git, git_fd, deadline)
+        if _git_layout_fingerprint(root_fd, git_fd) != layout_fingerprint:
+            return _manual(repository_root, "git_layout_changed", head=head, race=True)
         second_worktree = _read_worktree(root_fd, steward_fd)
         second_signals = _scan_signals(root_fd, steward_fd)
+        if _git_layout_fingerprint(root_fd, git_fd) != layout_fingerprint:
+            return _manual(repository_root, "git_layout_changed", head=head, race=True)
         if (head, tree, index, head_blobs, worktree, publisher_signal, ambiguous_signal) != (
             second_head,
             second_tree,

@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import json
 import os
+import stat
 import subprocess
+import sys
+import time
 from copy import deepcopy
 from pathlib import Path
 
@@ -221,6 +224,22 @@ def test_exact_transaction_signal_is_mixed(tmp_path):
     assert observation.publisher_signal is True
 
 
+def test_complete_valid_generation_with_transaction_signal_is_mixed(
+    tmp_path,
+    candidates,
+    candidate_attestation,
+):
+    repository = initialize_repository(tmp_path / "repo")
+    write_candidates(repository, candidates)
+    commit_all(repository)
+    (repository / ".steward" / ".context-publish-v1.00000000000000000000000000000000.txn").touch()
+
+    observation = inspect_repository_generation(repository, candidate_attestation)
+
+    assert observation.state is GenerationState.MIXED
+    assert observation.previous is None
+
+
 def test_unknown_publisher_signal_is_manual_review(tmp_path):
     repository = initialize_repository(tmp_path / "repo")
     (repository / "README.md").write_text("fixture\n")
@@ -247,6 +266,136 @@ def test_caller_path_is_not_used_to_select_git(tmp_path, monkeypatch):
     assert observation.state is GenerationState.ABSENT
 
 
+def test_child_environment_is_an_exact_allowlist(tmp_path, monkeypatch):
+    repository = initialize_repository(tmp_path / "repo")
+    (repository / "README.md").write_text("fixture\n")
+    commit_all(repository)
+    captured_environments = []
+    original_popen = context_publisher.subprocess.Popen
+
+    def capture_environment(*args, **kwargs):
+        captured_environments.append(kwargs["env"])
+        return original_popen(*args, **kwargs)
+
+    monkeypatch.setattr(context_publisher.subprocess, "Popen", capture_environment)
+    monkeypatch.setenv("HOME", "/untrusted")
+    monkeypatch.setenv("GIT_OBJECT_DIRECTORY", "/untrusted")
+    monkeypatch.setenv("DYLD_INSERT_LIBRARIES", "/untrusted")
+
+    observation = inspect_repository_generation(repository, APPROVED_ATTESTATION)
+
+    assert observation.state is GenerationState.ABSENT
+    assert captured_environments
+    assert all(environment == context_publisher._CHILD_ENV for environment in captured_environments)
+
+
+def test_unsafe_executable_path_is_rejected(tmp_path):
+    executable = tmp_path / "git"
+    executable.write_text("not trusted\n")
+    executable.chmod(0o777)
+
+    with pytest.raises(context_publisher._ObservationFailure):
+        context_publisher._safe_executable((os.fspath(executable),))
+
+
+def test_unsafe_fixed_system_git_is_fail_closed(tmp_path, monkeypatch):
+    repository = initialize_repository(tmp_path / "repo")
+    (repository / "README.md").write_text("fixture\n")
+    commit_all(repository)
+    original_lstat = context_publisher.os.lstat
+
+    def unsafe_git(path):
+        value = original_lstat(path)
+        if os.fspath(path) in {"/usr/bin/git", "/bin/git"} and stat.S_ISREG(value.st_mode):
+            fields = list(value)
+            fields[0] |= stat.S_IWGRP
+            return os.stat_result(fields)
+        return value
+
+    monkeypatch.setattr(context_publisher.os, "lstat", unsafe_git)
+
+    observation = inspect_repository_generation(repository, APPROVED_ATTESTATION)
+
+    assert observation.state is GenerationState.MANUAL_REVIEW
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        b"100644 blob " + b"a" * 40 + b"\tCLAUDE.md",
+        b"100644 blob " + b"a" * 40 + b"\tCLAUDE.md\0\0",
+    ],
+)
+def test_tree_parser_rejects_malformed_nul_termination(value):
+    with pytest.raises(context_publisher._ObservationFailure):
+        context_publisher._parse_tree(value)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        b"100644 " + b"a" * 40 + b" 0\tCLAUDE.md",
+        b"100644 " + b"a" * 40 + b" 0\tCLAUDE.md\0\0",
+    ],
+)
+def test_index_parser_rejects_malformed_nul_termination(value):
+    with pytest.raises(context_publisher._ObservationFailure):
+        context_publisher._parse_index(value)
+
+
+def test_worktree_mode_is_observed_not_invented(tmp_path):
+    repository = initialize_repository(tmp_path / "repo")
+    (repository / "README.md").write_text("fixture\n")
+    commit_all(repository)
+    target = repository / "CLAUDE.md"
+    target.write_text("untracked\n")
+    target.chmod(0o755)
+
+    observation = inspect_repository_generation(repository, APPROVED_ATTESTATION)
+
+    assert observation.targets["CLAUDE.md"].worktree_mode == "100755"
+
+
+def test_head_pointing_at_annotated_tag_is_manual_review(tmp_path):
+    repository = initialize_repository(tmp_path / "repo")
+    (repository / "CLAUDE.md").write_text("legacy\n")
+    commit_all(repository)
+    git(repository, "tag", "-a", "fixture-tag", "-m", "fixture")
+    tag_object = git(repository, "rev-parse", "fixture-tag^{tag}").strip()
+    (repository / ".git" / "HEAD").write_text(f"{tag_object}\n")
+
+    observation = inspect_repository_generation(repository, APPROVED_ATTESTATION)
+
+    assert observation.state is GenerationState.MANUAL_REVIEW
+    assert observation.previous is None
+
+
+@pytest.mark.parametrize("relative", ["commondir", "objects/info/alternates"])
+def test_transient_git_redirection_file_is_detected(tmp_path, monkeypatch, relative):
+    repository = initialize_repository(tmp_path / "repo")
+    (repository / "README.md").write_text("fixture\n")
+    commit_all(repository)
+    original_git_command = context_publisher._git_command
+    injected = False
+
+    def insert_and_remove_redirection(*args, **kwargs):
+        nonlocal injected
+        if not injected:
+            redirection = repository / ".git" / relative
+            redirection.parent.mkdir(parents=True, exist_ok=True)
+            redirection.write_text("../foreign\n")
+            redirection.unlink()
+            injected = True
+        return original_git_command(*args, **kwargs)
+
+    monkeypatch.setattr(context_publisher, "_git_command", insert_and_remove_redirection)
+
+    observation = inspect_repository_generation(repository, APPROVED_ATTESTATION)
+
+    assert observation.state is GenerationState.MANUAL_REVIEW
+    assert observation.race_detected is True
+
+
 def test_observation_does_not_change_git_state(tmp_path):
     repository = initialize_repository(tmp_path / "repo")
     (repository / "README.md").write_text("fixture\n")
@@ -256,6 +405,96 @@ def test_observation_does_not_change_git_state(tmp_path):
     inspect_repository_generation(repository, APPROVED_ATTESTATION)
 
     assert git(repository, "status", "--porcelain=v1", "-z", text=False) == before
+
+
+def test_observation_never_calls_forbidden_write_syscalls(tmp_path, monkeypatch):
+    repository = initialize_repository(tmp_path / "repo")
+    (repository / "README.md").write_text("fixture\n")
+    commit_all(repository)
+    original_open = context_publisher.os.open
+    forbidden_flags = os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APPEND
+
+    def read_only_open(path, flags, *args, **kwargs):
+        assert flags & forbidden_flags == 0
+        return original_open(path, flags, *args, **kwargs)
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("read-only observer invoked a forbidden write syscall")
+
+    monkeypatch.setattr(context_publisher.os, "open", read_only_open)
+    for name in ("chmod", "fsync", "link", "mkdir", "remove", "rename", "replace", "symlink", "unlink", "write"):
+        monkeypatch.setattr(context_publisher.os, name, forbidden)
+
+    observation = inspect_repository_generation(repository, APPROVED_ATTESTATION)
+
+    assert observation.state is GenerationState.ABSENT
+
+
+@pytest.mark.parametrize(
+    ("program", "stdout_limit", "timeout"),
+    [
+        ("import time;time.sleep(5)", 16, 0.1),
+        ("import os;os.write(1,b'x'*4096)", 16, 2.0),
+        ("import os;os.write(2,b'x'*8192)", 16, 2.0),
+    ],
+)
+def test_timeout_and_output_limits_kill_and_reap_child(program, stdout_limit, timeout, monkeypatch):
+    child_pid = None
+    original_popen = context_publisher.subprocess.Popen
+
+    def capture_child(*args, **kwargs):
+        nonlocal child_pid
+        process = original_popen(*args, **kwargs)
+        child_pid = process.pid
+        return process
+
+    monkeypatch.setattr(context_publisher.subprocess, "Popen", capture_child)
+    descriptor = os.open("/", os.O_RDONLY)
+    try:
+        with pytest.raises(context_publisher._ObservationFailure):
+            context_publisher._bounded_process(
+                [sys.executable, "-c", program],
+                pass_fd=descriptor,
+                stdout_limit=stdout_limit,
+                deadline=time.monotonic() + timeout,
+            )
+    finally:
+        os.close(descriptor)
+
+    assert child_pid is not None
+    with pytest.raises(ProcessLookupError):
+        os.kill(child_pid, 0)
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="Darwin helper contract")
+def test_darwin_helper_binds_expected_fd_and_has_no_repository_path(tmp_path, monkeypatch):
+    repository = initialize_repository(tmp_path / "repo")
+    git_fd = os.open(repository / ".git", context_publisher._OPEN_DIRECTORY)
+    captured = {}
+
+    def capture_command(arguments, **kwargs):
+        captured["arguments"] = arguments
+        captured.update(kwargs)
+        return b""
+
+    monkeypatch.setattr(context_publisher, "_bounded_process", capture_command)
+    try:
+        context_publisher._git_command(
+            "/usr/bin/git",
+            git_fd,
+            ["rev-parse", "--verify", "HEAD"],
+            stdout_limit=4096,
+            deadline=time.monotonic() + 5,
+        )
+        git_stat = os.fstat(git_fd)
+    finally:
+        os.close(git_fd)
+
+    arguments = captured["arguments"]
+    assert arguments[:5] == ["/usr/bin/python3", "-I", "-S", "-c", context_publisher._DARWIN_HELPER]
+    assert arguments[5:8] == [str(git_fd), str(git_stat.st_dev), str(git_stat.st_ino)]
+    assert os.fspath(repository) not in "\0".join(arguments)
+    assert captured["pass_fd"] == git_fd
 
 
 def test_in_place_mutation_on_same_inode_is_detected(tmp_path, monkeypatch):
