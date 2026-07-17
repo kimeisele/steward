@@ -2,9 +2,9 @@
 
 > **Status:** DRAFT 0.1 — READ-ONLY G2 CONTRACT; G1 OFF; IMPLEMENTATION LOCKED
 >
-> **Investigated main:** `kimeisele/steward@94f4d527d720a885ee772a9dcc878478661bf284`
+> **Investigated main:** `kimeisele/steward@9e08aab10b115fbff9160523dcd2dda7b201fb2d`
 >
-> **Investigated tree:** `5fb0d691f29280e1ab10cf36f19e1eb2c7d59e44`
+> **Investigated tree:** `7770289ef1f5dbeb9b3bed15c17c12af41fbdc48`
 >
 > **D2b parent preflight:** `f582e0d63876df8be61e8970a0fe065a2b2c034e`
 >
@@ -353,7 +353,7 @@ unsupported Git layout, missing/foreign inode, or any byte state outside the jou
 baseline/candidate set is `manual_review` with no automatic mutation.
 
 The serialized schema is bounded and typed: `schema` is one fixed ASCII identifier;
-`txid`, `head`, source blob, C0 hash, payload hash, snapshot ID, and candidate hashes are
+`txid`, `reviewed_head`, source blob, C0 hash, payload hash, snapshot ID, and candidate hashes are
 fixed lowercase-hex/ASCII identifiers of their contract lengths; `targets` is exactly the
 four-key ordered map; `journal` is one regular-file identity and `temps` is exactly the
 four-key ordered map of null-or-regular-file identities; every identity member is a
@@ -424,11 +424,28 @@ and `.steward` directory FDs with the safe flags, acquires the persistent lock i
 through the pinned `.steward` FD, verifies the dedicated isolated-worktree lease from
 the reviewed policy inputs, and independently fences the reviewed HEAD/attestation via
 the FD-bound Git read. Only after that anchor is held may it open and parse one journal.
-The journal's own and tempfile identities are then consistency checks against the anchor,
-never authority for it. If the anchor cannot be established, every recovery branch
-including cleanup returns `manual_review` with no mutation.
+The lease's protected set is the complete transaction namespace: root, `.git`, and
+`.steward` parents; the persistent lock inode; the journal name before open and inode
+after safe open; all four tempfile names before open and inodes after safe open; every
+target parent/name/inode; and unknown transaction-signal names. It is acquired before the
+journal read and remains held through parsing, every recovery or cleanup branch, all
+fsyncs, and the final evidence proof. The journal's own and tempfile identities are then
+consistency checks against the anchor, never authority for it. Any lock, journal,
+tempfile, parent, target, or namespace replacement invalidates the lease and returns
+`manual_review` with no mutation. If the anchor cannot be established, every recovery
+branch including cleanup returns `manual_review` with no mutation.
 
 Recovery runs only under that same exclusive lock and only for exactly one strict journal:
+
+Recovery does not add a second mutable cursor to this slice. The journal remains the
+forward transaction record while rollback or absent cleanup is in progress. Before every
+recovery mutation, the current state must equal the journal's cursor-specific forward
+state. If the process crashes or is interrupted after any rollback replace, unlink, or
+their parent `fsync`, the next invocation observes a state that is no longer that forward
+state and must return `manual_review` without further target, journal, or tempfile
+mutation. It preserves the journal and all remaining temps as evidence. A crash before
+the first recovery mutation, with the forward state still exact, may retry the same
+branch; no other partial state is auto-adopted.
 
 | Observed state | Allowed result |
 |---|---|
@@ -455,11 +472,14 @@ be embedded in code or journal.
 `fstat` followed by an unguarded name-based `unlink` is not sufficient. Before any
 absent-baseline cleanup, the publisher must hold the positively attested isolated-worktree
 lease, open each expected parent by its pinned dirfd, and compare its device, inode, type,
-link-count, and mode with the journal. The lease is an enforceable exclusion boundary,
-not a flag: it must prevent an untrusted process from renaming, replacing, linking, or
-unlinking any protected parent or target for the entire check-to-unlink interval. If the
-platform or deployment cannot enforce that boundary, recovery must return
-`manual_review` without attempting deletion. It then opens each installed target with
+link-count, and mode with the journal. This is the same complete lease from §7.2: it
+protects the root/.git/.steward parents, persistent lock inode, journal name/inode, all
+four tempfile names/inodes, every target parent/name/inode, and unknown transaction
+signals before parse and throughout recovery. The lease is an enforceable exclusion
+boundary, not a flag: it must prevent an untrusted process from renaming, replacing,
+linking, or unlinking any member for the entire check-to-unlink, proof, and cleanup
+interval. If the platform or deployment cannot enforce that boundary, recovery must
+return `manual_review` without attempting deletion. It then opens each installed target with
 `O_RDONLY | O_CLOEXEC | O_NOFOLLOW`, compares the complete journalized device/inode/type/
 link-count/mode/size tuple and candidate hash, and rechecks the parent immediately before
 the deletion fence. Before the first unlink, every target outside the installed candidate
@@ -501,10 +521,16 @@ The later code PR must include direct tests, not source-string assertions, for:
 - thread and cross-process lock contention, deadline, interruption, stale inode,
   unlink/recreate, symlink, hardlink, owner, mode, unsafe parent, and release order;
 - root, `.steward`, lock, journal, target, and tempfile replacement during every fence;
+- lease attacks replacing lock, journal, or tempfile names before parse and during every
+  recovery/cleanup stage; each must yield `manual_review` with no mutation;
 - `commondir`, `gitdir`, alternates, foreign index, HEAD change, unmerged index, staged
   delete, unexpected mode, duplicate/foreign target, and unsupported Git objects;
 - short write, `EINTR`, overflow, disk-full, file-/parent-`fsync` failure, read-back
   mutation, process crash after journal/temp/replace/read-back, and cleanup failure;
+- recovery-crash injection before and after every rollback replace, candidate unlink,
+  parent `fsync`, fourfold-absence proof, and journal/temp cleanup; after any recovery
+  mutation the expected result is evidence-preserving `manual_review` with no further
+  mutation, while an unchanged forward state may retry;
 - malformed/duplicate/foreign journal and temp names, wrong transaction ID, wrong parent,
   extra file, and unknown `.context-publish-*` signal;
 - legacy bootstrap, absent baseline, valid baseline, mixed generation, invalid schema,
