@@ -93,7 +93,8 @@ machen — LOGGING zuerst, kein erzwungenes Rot vor Beobachtung.
 **Recon abgeschlossen (RECON_01–04).** Die Fehlerklassen-Matrix ist vollständig belegt
 (RECON_04 §5). Kein offener Recon-Punkt ist vor der Spec zwingend.
 
-Nächster Gate = **eigene Feature-Spec** (Format wie Context Bridge). Zielarchitektur:
-vorhandene `vedana`/`health_anomaly`-Erkennung bei *anhaltendem* Kollaps nach außen
-sichtbar machen + persistierter Kollaps-Zähler über Runs; LOGGING vor Erzwingen; Rollback.
-**Kein Produktcode und keine Feature-Spec ohne ausdrückliches Operator-Go.**
+Feature-Spec liegt als **DRAFT** vor: `HEARTBEAT_FAILURE_PROPAGATION_FEATURE_01.md`
+(Status DRAFT 0.1 — NICHT G1). Zielarchitektur: vorhandene `vedana`/`health_anomaly`-
+Erkennung bei *anhaltendem* Kollaps nach außen sichtbar machen + persistierter Kollaps-
+Zähler über Runs; LOGGING vor Erzwingen; Rollback. Nächster Schritt: adversariales Review
+der DRAFT-Spec (§10 dort). **Kein G1, kein Produktcode ohne ausdrückliches Operator-Go.**
