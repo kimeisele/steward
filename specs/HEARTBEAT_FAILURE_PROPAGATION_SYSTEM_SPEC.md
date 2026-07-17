@@ -93,11 +93,11 @@ machen — LOGGING zuerst, kein erzwungenes Rot vor Beobachtung.
 **Recon abgeschlossen (RECON_01–04).** Die Fehlerklassen-Matrix ist vollständig belegt
 (RECON_04 §5). Kein offener Recon-Punkt ist vor der Spec zwingend.
 
-Feature-Spec liegt als **DRAFT 0.6** vor: `HEARTBEAT_FAILURE_PROPAGATION_FEATURE_01.md`
-(NICHT G1). **Vier** adversariale Review-Runden. Schnitt A misst Hard-Down, Degradation und
-Skip-Kollaps; Non-Atomicity als C-Blocker; Roundtrip getestet. **Zwei benannte, tragende
-Lücken im normativen Kern blockieren G1** (FEATURE-01 §10.4): (4a) vibe_core-Statusformen
-pinnen [braucht vibe_core-Umgebung]; (4b) Per-Provider-Quota-Datenlücke — `stats()` trägt
-`calls_today`/`daily_call_limit` nicht, also ist `skip_collapse` für Free-Tier-Quota blind —
-Operator-Entscheidung (a) `stats()` erweitern [Re-Scope] vs. (b) Blindfleck dokumentieren.
-**Kein G1, kein Produktcode ohne beides + erneutes Review + Operator-Go.**
+Feature-Spec liegt als **DRAFT 0.7** vor: `HEARTBEAT_FAILURE_PROPAGATION_FEATURE_01.md`
+(NICHT G1). **Fünf** adversariale Review-Runden. Schnitt A misst Hard-Down, Degradation und
+Skip-Kollaps; Non-Atomicity als C-Blocker; Roundtrip getestet. Der vermeintliche
+Per-Provider-Quota-Blindfleck (Runde 4) ist als **toter Pfad** aufgelöst (`calls_today` wird
+nie inkrementiert) — keine Operator-Entscheidung mehr nötig. **Einziger verbleibender
+G1-Blocker: §10.4a** — die vibe_core-Statusdekodierung (`breaker`/`quota`/`is_alive`
+`get_status`), zu pinnen in einer Umgebung *mit* `vibe_core`; dieses Environment kann es
+nicht. **Kein G1, kein Produktcode ohne 4a + erneutes Review + Operator-Go.**

@@ -2,9 +2,10 @@
 
 ## Sichtbarmachung anhaltenden kognitiven/Provider-Kollaps
 
-> **Status:** DRAFT 0.6 — VIER ADVERSARIAL-REVIEW-RUNDEN; NORMATIVER KERN §5.3 HAT ZWEI
-> BENANNTE, TRAGENDE LÜCKEN (§10.4: vibe_core-Dekodierung + Per-Provider-Quota-Datenlücke) —
-> NICHT G1, NICHT HAIKU-IMPLEMENTIERBAR, bis §10.4 aufgelöst ist. IMPL./AKTIVIERUNG GESPERRT
+> **Status:** DRAFT 0.7 — FÜNF ADVERSARIAL-REVIEW-RUNDEN. 4b (Per-Provider-Quota) als TOTER
+> PFAD aufgelöst; einzige verbleibende tragende Lücke ist §10.4a (vibe_core-Statusdekodierung).
+> NICHT G1 / nicht Haiku-implementierbar, bis 4a in einer vibe_core-Umgebung gepinnt ist.
+> IMPL./AKTIVIERUNG GESPERRT
 > **Datum:** 2026-07-17
 > **Produktionsbasis:** `kimeisele/steward@bf2fba2075a87463fc8e333f8f57d805fce4d030`
 > **Herkunft:** Phase-2 §7.3; Recon RECON_01–04; adversariales Review (§12)
@@ -76,9 +77,10 @@ Pro MOKSHA-Zyklus aus `stats()`: `providers_alive`, `providers_total`, `total_ca
 - `skip_collapse` = `providers_usable==0` (alle Provider **übersprungen** statt versucht:
   Quota erschöpft `chamber.py:244`, Breaker OPEN `:251`, Membran zu schwach `:255` — jeweils
   `continue` **ohne** `_record_call_failure`, also `fd=0`). `providers_usable` = pro Provider
-  `alive AND breaker≠OPEN AND within_quota`, ableitbar aus `stats()` (Felder `alive`,
-  `breaker`, chamber-`quota`) — **aber die Per-Provider-Quota fehlt heute in `stats()`, siehe
-  §10.4b (offene Operator-Entscheidung).** Zielt auf das schwerste Krankheitsbild — Quota-Erschöpfung über
+  `alive AND breaker≠OPEN AND within_quota(global)`, ableitbar aus `stats()` (Felder `alive`,
+  `breaker`, globaler `quota`). Lebende Eingänge: Breaker-OPEN, Membran, globale Quota. Der
+  Per-Provider-Quota-Skip (`:244`) ist toter Pfad (§10.4b), also keine Datenlücke. Zielt auf
+  das schwerste Krankheitsbild — Quota-Erschöpfung über
   einen Tag (RECON_04) und den vertieften Breaker-Steady-State —, das `degraded` (braucht
   `fd>0`) systematisch verfehlt.
 
@@ -165,10 +167,11 @@ Builder-Ebene:
   → `collapsed False`, `consecutive_collapsed_cycles==0` trotz `prev.streak=5`.
 - `test_no_provider_registered`: SVC_PROVIDER fehlt → Block mit `providers_total==0`,
   Streak == `prev.streak`; kein Fehler.
-- `test_skip_collapse_quota` (**Runde 3**): alle Provider im Skip-Zustand (über Quota bzw.
-  Breaker OPEN, via passend geformtem `breaker`/`quota`-Status), `cd==0, fd==0`, aber
-  `providers_usable==0` → `skip_collapse True`, Streak +1. Fängt den Quota-/Breaker-
-  Blindfleck, den `degraded` allein verfehlt.
+- `test_skip_collapse_breaker` (**Runde 3/5, lebender Pfad**): alle Provider mit Breaker
+  OPEN (echter Zustand über die 4a-gepinnte Statusform), `cd==0, fd==0`, aber
+  `providers_usable==0` → `skip_collapse True`, Streak +1. Treibt den **erreichbaren**
+  Skip-Pfad (`chamber.py:251`), nicht die tote Per-Provider-Quota-Form (`:244`) — sonst
+  „grüner Test, tote Produktion" (§220.3).
 
 Disk-Roundtrip-Ebene (**das eigentliche Novum — Befund 3**):
 - `test_roundtrip_increment`: Datei mit `cognition.consecutive_collapsed_cycles=N` +
@@ -221,32 +224,36 @@ None-Guard (Befund 6).
    „OPEN", wann „erschöpft") vor Implementierung gegen den echten `get_status()` pinnen,
    **nicht raten**. `_breaker_ok`/`_quota_ok` in §5.3 sind Platzhalter dafür.
 
-   **4b — Per-Provider-Quota ist eine DATENLÜCKE, kein Dekodier-Problem (Runde 4, HIGH):**
-   Der Skip-Pfad, den `skip_collapse` adressiert (`chamber.py:244`), nutzt
-   `_is_within_quota(payload)` (`chamber.py:514–520`) und liest **Per-Provider**-Felder
-   `payload.calls_today`/`daily_call_limit`/`tokens_today`. **Keines** steht in `stats()`
-   (Per-Provider-Dict `chamber.py:426–435`: nur name/model/prana/integrity/cycle/alive/
-   breaker). Der globale `self._quota.get_status()` deckt nur den Streaming-Gate
-   (`chamber.py:337`), **nicht** den Per-Provider-Skip `:244`. ⇒ `providers_usable` bleibt
-   bei erschöpfter Free-Tier-Tagesquota strukturell >0 → `skip_collapse=False` → A blind
-   für genau das Runde-3-Krankheitsbild. `test_skip_collapse_quota` (global geformt) wäre
-   grün, die Produktion blind — §220.3-Modus.
+   **4b — AUFGELÖST (Runde 5): der Per-Provider-Quota-Skip `:244` ist ein TOTER PFAD.**
+   Runde 4 rahmte dies als Datenlücke + Operator-Entscheidung. Am Code widerlegt: der Skip
+   `chamber.py:244` prüft `_is_within_quota(payload)`, das `payload.calls_today`/`tokens_today`
+   liest (`chamber.py:516/518`). Diese Zähler sind als `0` definiert (`chamber.py:80/81`) und
+   werden **nirgends im Repo inkrementiert** (verifiziert: null Writer; `_record_call_success`
+   aktualisiert die globale `self._quota`, nicht `payload.calls_today`). ⇒ `_is_within_quota`
+   liefert immer `True` ⇒ `:244` kann nicht feuern. **Keine reale Abdeckung geht verloren,
+   und es gibt keine (a)/(b)-Entscheidung mehr.** Die Limits sind zwar gesetzt
+   (`build_chamber` 1000/2880/1000, `:129/148/169`) — Budget beabsichtigt, nur nie verdrahtet.
 
-   **Operator-Entscheidung nötig (eine muss die Spec wählen):**
-   - **(a)** `stats()` um Per-Provider-Quota erweitern (`calls_today`/`daily_call_limit`) —
-     das ist eine `chamber.py`-Änderung und **verletzt den aktuellen Non-Scope** (§4, „nur
-     `moksha_health.py`"). Bewusstes Re-Scope. Macht A für sein Kernkrankheitsbild sehend.
-   - **(b)** Per-Provider-Quota-Skip als akzeptierten **Blindfleck** von A dokumentieren →
-     C darf dann **keine** Quota-Schwelle aus A-Daten ableiten. Hält A minimal, entwertet
-     aber A für den Hauptfall.
+   **Latent-Feature-Guard (macht die Spec zukunftsfest):** *Wird `payload.calls_today` je
+   inkrementiert, wird `:244` lebendig und 4b eine echte Per-Provider-Datenlücke — dann
+   `skip_collapse` erneut prüfen (Feld in `stats()` exponieren oder Blindfleck bewusst
+   tragen).*
+
+   **Lebende `skip_collapse`-Eingänge** sind damit: Breaker-OPEN (`:251`), schwache Membran
+   (`:255`) und **globale** Quota-Erschöpfung (`self._quota.check_before_request` am Kopf von
+   `invoke()`, `chamber.py:231–238`, `return None`). Alle drei sind aus `stats()` (`breaker`,
+   `integrity`/`alive`, globaler `quota`) unter 4a rekonstruierbar — 4b kollabiert in 4a.
+   *Hinweis:* Reviewer-Runde-5-Punkt „`_quota_ok` sei Streaming-only tot" ist am Code
+   widerlegt — der globale Quota-Check steht auch im non-streaming `invoke()` (`:231`), also
+   bleibt `_quota_ok` erreichbar und normativ.
 
 ## 11. Schlussstatus
 
-DRAFT 0.6. Schnitt A misst Hard-Down, Degradation und Skip-Kollaps; B/C korrekt gegated.
-**Nicht ausführbar/Haiku-tauglich, bis §10.4 aufgelöst ist:** (4a) vibe_core-Dekodierung
-pinnen [braucht vibe_core-Umgebung]; (4b) Per-Provider-Quota-Datenlücke per Operator-
-Entscheidung (a)/(b) auflösen. Danach ist G1 plausibel. Kein G1/Impl./Aktivierung ohne beides
-+ erneutes Review + Operator-Go.
+DRAFT 0.7. Schnitt A misst Hard-Down, Degradation und Skip-Kollaps; B/C korrekt gegated.
+**Einziger verbleibender G1-Blocker: §10.4a** — die vibe_core-Statusdekodierung
+(`_breaker_ok`/`_quota_ok`/`is_alive`), zu pinnen in einer Umgebung *mit* `vibe_core`; dieses
+Environment kann es nicht. Danach ist G1 plausibel. Kein G1/Impl./Aktivierung ohne 4a +
+erneutes Review + Operator-Go.
 
 **Minor (für den C-Designer):** `skip_collapse` ist ein **Kapazitäts**-Prädikat („könnten
 wir kognizieren?"), in denselben Streak gefaltet wie die **Failure**-Prädikate
@@ -290,3 +297,12 @@ Inkrement heißt also nicht immer „Kognition scheiterte".
   blinder Produktion (§220.3). §10.4 neu gerahmt (4a Dekodierung / 4b Datenlücke) mit
   expliziter Operator-Entscheidung (a) `stats()` erweitern [Re-Scope] vs. (b) Blindfleck
   dokumentieren. Minor (Kapazität- vs. Failure-Prädikat) in §11 für C notiert. G1 verwehrt.
+- **Fünfte Runde (2026-07-17, Review von DRAFT 0.6):** Runde 4 teilweise **entkräftet** — der
+  Per-Provider-Quota-Skip `:244` ist ein **toter Pfad**: `payload.calls_today` wird nirgends
+  inkrementiert (verifiziert: null Writer; def `=0` `chamber.py:80/81`), `_is_within_quota`
+  ist immer `True`. Also keine Operator-Entscheidung (a)/(b) — 4b aufgelöst, kollabiert in 4a.
+  Gegenprobe zu Reviewer-Punkt 3: der globale Quota-Check sitzt **auch** im non-streaming
+  `invoke()` (`chamber.py:231–238`), nicht nur Streaming → `_quota_ok` bleibt erreichbar/
+  normativ (Reviewer hier am Code widerlegt). Folgen: §10.4b neu (toter Pfad + Latent-Guard),
+  §5.1 präzisiert, `test_skip_collapse_quota` → `test_skip_collapse_breaker` (lebender Pfad).
+  Einziger G1-Blocker bleibt §10.4a (vibe_core-Dekodierung). G1 verwehrt.
