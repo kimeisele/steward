@@ -168,6 +168,45 @@ Darwins `/dev/fd/<n>` und das dort nicht vorhandene `/proc/self/fd/<n>` eigneten
 nicht als traversierbare Directory-Pfade. Diese nicht funktionierende Variante wird
 nicht als Implementierungsannahme verwendet.
 
+### 2.6 Positiver Ubuntu-24.04-Drill
+
+Der Darwin-Vertrag darf nicht auf Ubuntu extrapoliert werden. Deshalb lief ein isolierter
+echter GitHub-Hosted-Runner-Drill außerhalb des Steward-Repositories:
+
+- privater, nach dem Beweis archivierter Evidence-Repo:
+  `kimeisele/steward-d2-platform-drill`;
+- gepinnter Drill-Commit: `5c9fe5d473256d8414536c9b4d323d7a10a9257b`;
+- Workflow-Run: `29561708330`, Ergebnis `success`;
+- Runner-Image: `ubuntu-24.04`;
+- Evidence-Artifact SHA-256:
+  `ef21029863f9d1558e32e5f97ac55198f4f6d547f3520182fab3f94a3fd9f720`.
+
+Der Run belegte positiv:
+
+- Linux `6.17.0-1020-azure`, glibc 2.39;
+- `/usr/bin/git` war regulär, UID 0, Modus `0755`; Git-Version `2.54.0`;
+- `/proc/self/fd` war verfügbar und traversierbar;
+- `/usr/bin/python3` war wie im Review vermutet ein Symlink auf `python3.12`; diese
+  Tatsache wird **nicht** mehr durch einen falschen No-Symlink-Vertrag verdeckt;
+- Git lief ohne Python-Helper direkt mit
+  `--git-dir=/proc/self/fd/<geerbter git_dir_fd>`;
+- nach vollständigem Rename des ursprünglichen Repository-Pfads und Ersetzung durch ein
+  zweites Repository lieferte Git weiterhin den ursprünglichen Head
+  `321d3940d154d194a2c51b8b7ab12812124f52f1`, nicht den Ersatz-Head
+  `5a493650a66e6e16ca227bcfc22ba9dc544e8c4`;
+- `ls-tree`, `ls-files` und der dirfd-relative Worktree-Read blieben ebenfalls an der
+  ursprünglichen Instanz gebunden.
+
+Der Drill verwendete keine Steward-Produktdatei, keinen Workflow des Steward-Repos,
+keinen Token im Artefakt und keine Produktionsaktivierung. Sein Repo ist archiviert; der
+Steward-PR bleibt weiterhin exakt ein Dokumentationspfad.
+
+Damit ist die Ubuntu-Plattformprimitive vor Code positiv belegt. Der geforderte echte
+öffentliche D2a-Aufruf kann definitionsgemäß erst existieren, nachdem diese Spec seinen
+kleinen Code-Schnitt autorisiert. Das lockert das Gate nicht: Der D2a-Code-PR darf ohne
+den ungemockten `legacy_bootstrap`-Aufruf auf beiden vorhandenen Ubuntu-Python-Matrixjobs
+weder reviewfreigegeben noch gemergt werden.
+
 ---
 
 ## 3. D2a — exakter freigegebener Vertrag
@@ -245,32 +284,39 @@ D2a verwendet nur die in §2.5 belegten Plumbing-Kommandos. Verbindlich sind:
 - die Git-Executable wird nicht über das geerbte `PATH` gesucht. D2a prüft ausschließlich
   die festen POSIX-Systempfade `/usr/bin/git` und `/bin/git` und verwendet den ersten
   sicheren absoluten Treffer;
-- der FD-Helper wird ebenso wenig über `PATH` gewählt. D2a prüft ausschließlich
-  `/usr/bin/python3` und `/bin/python3` und verwendet den ersten sicheren absoluten
-  Treffer;
-- beide Executables und jede Komponente ihrer absoluten Pfade müssen per `lstat` regulär
+- die Git-Executable und jede Komponente ihres absoluten Pfads müssen per `lstat` regulär
   beziehungsweise Verzeichnis, keine Symlinks, UID `0` und weder gruppen- noch
   weltbeschreibbar sein. Fehlt ein solcher Treffer, bleibt D2a fail-closed
   `manual_review`;
-- beide validierten absoluten Executables und ihre Argumente werden als Listen ohne Shell
-  verwendet; vor und nach der Inspektion werden Device, Inode, Typ, UID, Modus,
-  `mtime_ns` und `ctime_ns` erneut verglichen;
+- die validierte Git-Executable und ihre Argumente werden als Liste ohne Shell verwendet;
+  vor und nach der Inspektion werden Device, Inode, Typ, UID, Modus, `mtime_ns` und
+  `ctime_ns` erneut verglichen;
 - `.git` muss ein reales Verzeichnis sein und wird ausschließlich relativ zum bereits
   sicher geöffneten Root-Directory-FD mit
   `O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW` geöffnet. `.git`-Datei,
   `commondir`, `gitdir` oder Object-Alternates sind im V1-Vertrag nicht unterstützt und
   blockieren fail-closed;
-- der Python-Helper erhält mit `close_fds=True` und `pass_fds=(git_dir_fd,)` exakt diesen
+- **Linux-/Ubuntu-Grenze:** `/proc/self/fd` muss vorhanden sein. Git wird direkt als
+  `[<git>, "--git-dir=/proc/self/fd/<git_dir_fd>", ...]` mit `close_fds=True`,
+  `pass_fds=(git_dir_fd,)` und Prozess-`cwd=/` gestartet. Der `/proc`-Eintrag muss im
+  Parent und durch einen positiven Kindprozess-Probe dieselben Device/Inode-Werte wie
+  `fstat(git_dir_fd)` zeigen; es gibt keinen Python-Helper und keinen Python-Pfadvertrag;
+- **Darwin-Grenze:** Weil `/dev/fd/<n>` dort nicht traversierbar ist, wird ausschließlich
+  der positiv belegte Systempfad `/usr/bin/python3` als isolierter Helper akzeptiert. Er
+  unterliegt derselben vollständigen UID-0-/No-Symlink-/No-Write-Komponentenprüfung wie
+  Git; `/bin/python3` oder ein `PATH`-Fallback sind nicht erlaubt;
+- der Darwin-Helper erhält mit `close_fds=True` und `pass_fds=(git_dir_fd,)` exakt diesen
   einen Repository-FD. Sein Prozess-`cwd` vor `fchdir()` ist `/`; er erhält keinen
   Repository-Pfad;
 - sein `-c`-Programm ist ein festes versioniertes ASCII-Literal. FD-Nummer, erwartetes
   Device/Inode, Git-Executable und geschlossene Git-Argumente werden ausschließlich als
   getrennte `argv`-Elemente übergeben und niemals in Helper-Quelltext interpoliert;
-- der feste versionierte Helper prüft den FD per `fstat()` gegen das vom Parent gebundene
+- der Darwin-Helper prüft den FD per `fstat()` gegen das vom Parent gebundene
   Device/Inode und Directory-Schema, ruft `os.fchdir(git_dir_fd)` und danach unmittelbar
   `os.execve(<validiertes git>, [<git>, "--git-dir=.", ...], <Allowlist-Env>)` auf;
-- Git sieht damit den Repository-Pfad weder als `cwd`, `-C`, `--git-dir=<Pfad>` noch als
-  Environmentwert. `.` bezeichnet nach `fchdir()` den bereits geöffneten `.git`-Inode;
+- Git sieht auf keiner Plattform den echten Repository-Pfad als `cwd`, `-C`,
+  `--git-dir=<Repository-Pfad>` oder Environmentwert. Es erhält ausschließlich die
+  geerbte FD-Bindung;
 - `preexec_fn`, `os.fchdir()` im Steward-Prozess und jede prozessglobale Parent-`cwd`-
   Mutation sind verboten; der Vertrag bleibt dadurch mit vorhandenen Threads
   vereinbar;
@@ -499,14 +545,17 @@ Vor Produktcode müssen mindestens folgende Tests rot sein.
 
 - vergiftetes Caller-`PATH` und ein dort platziertes Fake-`git` werden niemals zur
   Programmauswahl verwendet oder ausgeführt;
-- vergiftetes Caller-`PATH` kann ebenso wenig einen Fake-`python3` als Helper wählen;
-- Symlink, falscher Owner oder gruppen-/weltbeschreibbare System-Git-/Python-Executable
-  blockiert;
+- auf Linux wird überhaupt kein Python-Helper gestartet; ein Fake-`python3` bleibt
+  unbeobachtet;
+- auf Darwin kann vergiftetes Caller-`PATH` keinen Fake-`python3` wählen;
+- Symlink, falscher Owner oder gruppen-/weltbeschreibbare System-Git-Executable blockiert;
+  auf Darwin gilt derselbe negative Test zusätzlich für `/usr/bin/python3`;
 - die Child-Environment enthält bytegenau nur die erlaubten Schlüssel; `GIT_EXEC_PATH`,
   `GIT_*`-, `LD_*`-, `DYLD_*`- und Python-/Loader-Injection fehlen;
 - `.git`-Symlink, `.git`-Datei, `commondir`, `gitdir` und Object-Alternates blockieren;
-- der Helper erhält exakt den geöffneten `.git`-FD, keinen Repository-Pfad, macht
-  `fchdir()` nur im isolierten Kind und startet Git ausschließlich mit `--git-dir=.`;
+- Linux startet Git direkt mit dem geerbten `.git`-FD unter
+  `--git-dir=/proc/self/fd/<n>`; Darwin gibt exakt denselben FD an den isolierten Helper,
+  der `fchdir()` nur im Kind ausführt und Git mit `--git-dir=.` startet;
 - dynamische Werte bleiben separate `argv`-Elemente; adversariale Werte können den festen
   `-c`-Helpertext nicht erweitern oder neue Git-Argumente einschleusen;
 - ein adversarialer Test tauscht den Root-Pfad exakt zwischen Parent-Prüfung und
@@ -515,6 +564,10 @@ Vor Produktcode müssen mindestens folgende Tests rot sein.
   Sentinel-Head/-Blob des Ersatz-Repositories darf niemals beobachtet werden;
 - derselbe Test beweist, dass weder `preexec_fn` noch `chdir`/`fchdir` im Steward-Prozess
   verwendet wird;
+- ein ungemockter Linux-Integrationstest ruft auf dem echten GitHub-Hosted-Ubuntu-
+  Checkout die öffentliche `inspect_repository_generation()`-Grenze mit der bereits
+  reviewten Constitution-Testfixture auf und muss exakt `legacy_bootstrap` ohne Previous
+  Record zurückgeben. Dieser Test läuft in beiden bestehenden Python-Matrixjobs;
 - exakter Head-/Indexzustand wird aus NUL-getrennter Plumbing-Ausgabe geladen;
 - Stage-0 identisch zu HEAD wird akzeptiert;
 - staged Add/Modify/Delete und Stage 1/2/3 blockieren;
@@ -724,6 +777,8 @@ Nach Code-PR sind erforderlich:
 
 - adversariales Review auf einen exakt gepinnten Head;
 - Python 3.11, Python 3.12, Lint und Security grün;
+- in Python 3.11 und 3.12 der ungemockte öffentliche Ubuntu-Aufruf aus §5.2; ein
+  bestandener Mock-/Unit-Test ersetzt dieses Plattformgate nicht;
 - `git diff --check` und exakte Pfadprüfung;
 - erneuter Basisblobvergleich gegen den G2-Pin;
 - Bestätigung, dass kein Ziel, Runtime-State, Workflow oder Setting verändert wurde;
@@ -743,9 +798,9 @@ Nach Code-PR sind erforderlich:
   Prozess Root-Dateien verändern kann.
 - Vor Slice E existiert keine positive Produktionsfixture für eine getrackte,
   attestierte Vier-Artefakt-Baseline.
-- Der heutige Recon belegt die sicheren Git-/Python-Systempfade lokal. Falls ein späterer
-  Linux-Runner weder die erlaubte Git- noch die erlaubte Python-Executable unter
-  demselben Sicherheitsvertrag besitzt, muss D2a dort fail-closed blockieren statt auf
+- Der heutige Recon belegt den Git-Systempfad auf Darwin und Ubuntu sowie den nur auf
+  Darwin benötigten Python-Systempfad. Fehlt auf einer späteren Plattform die jeweils
+  erlaubte FD-Bindung oder System-Executable, muss D2a fail-closed blockieren statt auf
   `PATH` zurückzufallen.
 - Ein lokal vorhandenes Journal wäre erst nach D2b-Code und dessen eigener Review
   authentische Publisher-Provenance.
