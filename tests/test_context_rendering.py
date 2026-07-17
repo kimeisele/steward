@@ -251,6 +251,22 @@ def test_constitution_bound_generation_rejects_wrong_attestation_type(detached_c
     assert exc_info.value.code == "invalid_type"
 
 
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        {"schema": "steward.context.constitution-attestation/v2"},
+        {"status": "unverified"},
+    ],
+)
+def test_constitution_bound_generation_rejects_attestation_schema_or_status(detached_candidates, mutation):
+    attestation = replace(attestation_for_candidates(detached_candidates), **mutation)
+
+    with pytest.raises(ContractViolation) as exc_info:
+        validate_constitution_bound_persisted_generation(detached_candidates, attestation)
+
+    assert exc_info.value.code == "invalid_schema"
+
+
 def test_publication_artifact_bytes_alone_are_not_a_trusted_record(detached_candidates):
     with pytest.raises(ContractViolation) as exc_info:
         validate_persisted_generation(detached_candidates.publication_artifact)  # type: ignore[arg-type]
