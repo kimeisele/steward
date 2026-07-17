@@ -2,9 +2,11 @@
 
 > **Status:** EVIDENCE PACKAGE 0.1 — INVENTORY RECORDED; POLICY DECISION OPEN; G1 OFF
 >
-> **Investigated main:** `kimeisele/steward@53bfae41afbaec4338966a93975975dccc20e36a`
+> **Investigated main:** `kimeisele/steward@465d23b39423ddf0935483b9de3f6fc8900be1f2`
 >
 > **Parent D2b-preflight merge:** `f582e0d63876df8be61e8970a0fe065a2b2c034e`
+>
+> **Earlier writer scan pin:** `53bfae41afbaec4338966a93975975dccc20e36a`
 >
 > **Date:** 2026-07-17
 
@@ -16,23 +18,25 @@ journal, recovery, workflow, delivery, bootstrap, or activation is implemented h
 ## 1. Pin and scope
 
 The inspected clone was fast-forwarded to the current `origin/main` and was clean before
-the evidence branch was created. The D2b-preflight merge was followed by heartbeat-only
-runtime drift:
+the evidence branch was created. Since the earlier writer scan pin, only heartbeat-state
+files changed; the final evidence pin is `465d23b3…`:
 
 ```text
 .steward/.context_hash
 .steward/context.json
 .steward/federation_health.json
 .steward/marketplace.json
+.steward/sessions.json
 data/federation/kirtan_ledger.json
 data/federation/nadi_outbox.json
 data/federation/peers.json
+data/federation/relay_seen_ids.json
 data/federation/steward_health.json
 ```
 
 No Context Bridge module, test, feature spec, workflow, root contract, or repository
-setting changed in that drift. The current live GitHub query has one unrelated open PR,
-`#693`; this evidence branch is not used as a runtime-authority signal.
+setting changed in that drift. PR existence is a separate live GitHub fact and is not
+used as a runtime-authority signal by this package.
 
 Permitted scope for this package is this file under
 `specs/context_bridge_evidence/`. No product or workflow path is changed.
