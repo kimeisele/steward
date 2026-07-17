@@ -11,9 +11,10 @@
 > **Date:** 2026-07-17
 
 This is a read-only evidence package for §7.1 of
-`FEATURE_01_SLICE_D2B_PREFLIGHT.md`. It closes the question **which write-capable
-surfaces exist**, but it does not choose how they will be constrained. No writer, lock,
-journal, recovery, workflow, delivery, bootstrap, or activation is implemented here.
+`FEATURE_01_SLICE_D2B_PREFLIGHT.md`. It records a materially expanded set of **known**
+write-capable surfaces, but completeness remains an open evidence gate; it does not
+choose how those surfaces will be constrained. No writer, lock, journal, recovery,
+workflow, delivery, bootstrap, or activation is implemented here.
 
 ## 1. Pin and scope
 
@@ -27,7 +28,6 @@ files changed; the final evidence pin is `465d23b3…`:
 .steward/federation_health.json
 .steward/marketplace.json
 .steward/sessions.json
-data/federation/kirtan_ledger.json
 data/federation/nadi_outbox.json
 data/federation/peers.json
 data/federation/relay_seen_ids.json
@@ -173,6 +173,22 @@ engine. They accept a workspace and apply file changes; compound repair can invo
 paths by positive call-site reachability rather than assuming that “healer” means a
 separate clone.
 
+### 5.4 Arbitrary-path CLI and task-state writers
+
+`_handle_list_quarantine()` accepts the caller-provided `--export-report` path and
+creates its parent before writing JSON with `Path.write_text()`
+(`steward/__main__.py:196-210`). The option is not restricted to a quarantine-owned
+directory and has no D2b lock or target exclusion. A caller can therefore direct this
+writer at a Context target, journal, or temporary path; its normal use is not evidence
+that such a call is currently made.
+
+`A2AAdapter.save_tasks(path)` likewise accepts an arbitrary caller-provided path,
+creates its parent, and writes serialized in-flight tasks
+(`steward/a2a_adapter.py:288-314`). It has no D2b lock or target allowlist. This is a
+programmatic state writer that must be included in the later injection and call-site
+classification matrix, even though the current inventory does not establish a caller
+that targets the four canonical files.
+
 ## 6. Existing state and delivery writers
 
 - `steward/context_bridge.py:186-217,525-541` writes legacy `.steward/context.json`
@@ -189,9 +205,12 @@ separate clone.
 
 ## 7. Findings
 
-1. **The reachable writer set is larger than the default file tools.** Bash, structured
-   Git, dynamic tools, inherited child registries, actuators, fix pipelines, immune
-   rollback, and workflow/state writers all require explicit classification.
+1. **The reachable writer set is materially larger than the default file tools, but this
+   inventory is not closed.** Bash, structured Git, dynamic tools, inherited child
+   registries, actuators, fix pipelines, immune rollback, workflow/state writers,
+   `--export-report`, and `A2AAdapter.save_tasks(path)` all require explicit
+   classification. Additional arbitrary-path mutators must be found and classified
+   before any completeness claim or D2b implementation gate can close.
 2. **Current safety gates are not a D2b exclusion boundary.** Narasimha, Iron Dome,
    branch protection, auto-stash, marketplace slots, and dependency waves provide
    observability or local policy. None proves shared lock ownership and target-path
@@ -218,6 +237,8 @@ For any chosen boundary, the adversarial test contract must inject:
 - Bash redirection and an arbitrary helper subprocess;
 - Git checkout/stash/index mutation and actuator fallback;
 - a dynamically loaded `.steward/tools/*.py` writer;
+- the `--export-report` arbitrary-path CLI writer;
+- the `A2AAdapter.save_tasks(path)` arbitrary-path state writer;
 - child-agent and caller-supplied extra tools;
 - immune/healer/circuit-breaker rollback paths;
 - Git Nadi and heartbeat staging during lock, fence, temp, replace, read-back, and
@@ -228,7 +249,7 @@ Each injection must produce either a transaction-bound result or a fail-closed
 
 ## 9. Gate result
 
-The writer inventory is now positively expanded, but the policy boundary is unresolved.
+The writer inventory is materially expanded but not complete, and the policy boundary is unresolved.
 Therefore:
 
 - G1 remains **OFF**;
