@@ -258,10 +258,11 @@ def _git_layout_fingerprint(root_fd: int, git_fd: int) -> tuple[tuple[int, ...],
     return tuple(fingerprint)
 
 
-def _target_parent_fingerprint(steward_fd: int | None) -> tuple[tuple[int, ...], ...]:
-    if steward_fd is None:
-        return ()
-    return (_layout_stat_key(os.fstat(steward_fd)),)
+def _target_parent_fingerprint(root_fd: int, steward_fd: int | None) -> tuple[tuple[int, ...], ...]:
+    fingerprint = [_layout_stat_key(os.fstat(root_fd))]
+    if steward_fd is not None:
+        fingerprint.append(_layout_stat_key(os.fstat(steward_fd)))
+    return tuple(fingerprint)
 
 
 def _bounded_process(
@@ -632,14 +633,12 @@ def inspect_repository_generation(
         git_fd = os.open(".git", _OPEN_DIRECTORY, dir_fd=root_fd)
         layout_fingerprint = _git_layout_fingerprint(root_fd, git_fd)
         steward_fd = _optional_directory(root_fd, ".steward")
-        parent_fingerprint = _target_parent_fingerprint(steward_fd)
+        parent_fingerprint = _target_parent_fingerprint(root_fd, steward_fd)
         head, tree, index, head_blobs = _read_git_evidence(git, git_fd, deadline)
         if _git_layout_fingerprint(root_fd, git_fd) != layout_fingerprint:
             return _manual(repository_root, "git_layout_changed", head=head, race=True)
         worktree = _read_worktree(root_fd, steward_fd)
         publisher_signal, ambiguous_signal = _scan_signals(root_fd, steward_fd)
-        if _target_parent_fingerprint(steward_fd) != parent_fingerprint:
-            return _manual(repository_root, "target_parent_changed", head=head, race=True)
         if _git_layout_fingerprint(root_fd, git_fd) != layout_fingerprint:
             return _manual(repository_root, "git_layout_changed", head=head, race=True)
         second_head, second_tree, second_index, second_head_blobs = _read_git_evidence(git, git_fd, deadline)
@@ -647,7 +646,7 @@ def inspect_repository_generation(
             return _manual(repository_root, "git_layout_changed", head=head, race=True)
         second_worktree = _read_worktree(root_fd, steward_fd)
         second_signals = _scan_signals(root_fd, steward_fd)
-        if _target_parent_fingerprint(steward_fd) != parent_fingerprint:
+        if _target_parent_fingerprint(root_fd, steward_fd) != parent_fingerprint:
             return _manual(repository_root, "target_parent_changed", head=head, race=True)
         if _git_layout_fingerprint(root_fd, git_fd) != layout_fingerprint:
             return _manual(repository_root, "git_layout_changed", head=head, race=True)

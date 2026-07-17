@@ -1211,6 +1211,42 @@ def test_mutation_after_final_git_reference_is_detected_by_second_read(tmp_path,
     assert observation.race_detected is True
 
 
+def test_root_target_inode_swap_is_detected_by_parent_fingerprint(tmp_path, monkeypatch):
+    repository = initialize_repository(tmp_path / "repo")
+    target = repository / "CLAUDE.md"
+    target.write_text("head\n")
+    commit_all(repository)
+    target.write_text("dirty\n")
+    identical = tmp_path / "head-identical"
+    identical.write_text("head\n")
+    displaced = tmp_path / "dirty-original"
+    original_read = context_publisher._read_worktree
+    calls = 0
+
+    def exchange_for_both_reads(root_fd, steward_fd):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            target.rename(displaced)
+            identical.rename(target)
+            result = original_read(root_fd, steward_fd)
+        elif calls == 2:
+            result = original_read(root_fd, steward_fd)
+            target.rename(identical)
+            displaced.rename(target)
+        else:
+            result = original_read(root_fd, steward_fd)
+        return result
+
+    monkeypatch.setattr(context_publisher, "_read_worktree", exchange_for_both_reads)
+
+    observation = inspect_repository_generation(repository, APPROVED_ATTESTATION)
+
+    assert observation.state is GenerationState.MANUAL_REVIEW
+    assert observation.race_detected is True
+    assert target.read_text() == "dirty\n"
+
+
 def test_git_and_worktree_remain_bound_after_root_replacement(tmp_path, monkeypatch):
     repository = initialize_repository(tmp_path / "repo")
     (repository / "CLAUDE.md").write_text("original\n")
@@ -1271,7 +1307,8 @@ def test_git_and_worktree_remain_bound_after_root_replacement(tmp_path, monkeypa
 
     observation = inspect_repository_generation(repository, APPROVED_ATTESTATION)
 
-    assert observation.state is GenerationState.LEGACY_BOOTSTRAP
+    assert observation.state is GenerationState.MANUAL_REVIEW
+    assert observation.race_detected is True
     assert observation.head == original_head
     assert captured_tree == [original_tree, original_tree]
     assert captured_index == [original_index, original_index]
