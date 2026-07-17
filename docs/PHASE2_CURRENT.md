@@ -220,31 +220,48 @@ live pinnen, weil die Föderation weiterläuft.
   `specs/CONTEXT_BRIDGE_FEATURE_04.md`,
   `specs/CONTEXT_BRIDGE_GOVERNANCE_AMENDMENT_01.md` und
   `specs/context_bridge_evidence/**`.
-- Ausführlicher Beweis: `PHASE2_BEFUND.md` §§15–23.
+- Slice-D-G2-Preflight: PR `#627`, Merge
+  `4d1459c0dbfadf1da95a2582e765f4e367ac2455`.
+- Der Recon verwarf einen kombinierten Publisher-/Recovery-Mega-Patch und teilte Schnitt D
+  in D1 (reiner Persisted-Generation-Read-back) und D2 (POSIX-Publisher/Recovery).
+- D1-Code: PR `#633`, freigegebener Head
+  `0214e3c871c33cb839293a2d6727382b0c479fac`, Merge
+  `5995d7f4dd0688ec1da0f7afded491d9011620be`.
+- D1 liefert einen strikten strukturellen `PreviousPublishedRecord`-Validator und den
+  vollständigen reinen Vier-Artefakt-Read-back. Publication Record allein besitzt keine
+  Generationsautorität; der abschließende Renderer-Rebuild muss alle Bytes reproduzieren.
+- Nullable Comparison-State ist jetzt zwischen Snapshot, Record und Decision konsistent.
+  Separat gelesene bytegleiche Root-Bytes werden ohne Python-Objektidentitätsannahme
+  akzeptiert.
+- 124 gezielte Tests, 338 abgelehnte gesampelte Einzelbyte-Mutationen, vollständige CI in
+  Python 3.11/3.12, Lint und Security grün. Der eine lokale autonome Teardown-Timeout lief
+  isoliert grün; der übrige Lauf hatte 2.287 grüne Tests.
+- Merge-CI `29558191253` und Folgeheartbeat `29558194430` auf dem exakten Merge-Head waren
+  grün. Die Folge-Heads `ab1f4937…` und `511f5a87…` änderten ausschließlich zehn bekannte
+  Runtime-/Federation-State-Pfade.
+- Source, `CLAUDE.md` und beide D1-Produktblobs blieben identisch. Root-`AGENTS.md`,
+  Snapshot und Publication Record fehlen im Remote-Tree weiterhin absichtlich.
+- Ausführlicher Beweis: `PHASE2_BEFUND.md` §§15–24.
 
-## 6. Exakt nächster Auftrag: Slice-D-G2-Recon
+## 6. Exakt nächster Auftrag: Slice-D2-G2-Recon
 
-Slice C ist abgeschlossen. PR `#552` wurde auf dem exakt gebundenen Head vom Operator
-freigegeben und als Merge `1d009b6cc7f26adfb5e2d179688c5c8990fe9ede` regulär aufgenommen.
-Heartbeat `29444370093` war erfolgreich; Folgecommit `1d88a82391d52296bda9d6b8bace3e4442599487`
-änderte nur acht Runtime-State-Pfade. Source blieb auf dem freigegebenen Blob,
-`CLAUDE.md` blieb unverändert, Root-`AGENTS.md` und Publication-Artefakte blieben absent.
-
-Der nächste Auftrag ist ausschließlich read-only G2-Recon für Feature-01-Schnitt D:
-lokaler Publisher und Recovery. Vor jedem Code müssen bestehende Lock-/Atomic-Write-
-Primitiven, Pfadschutz, fsync-/Replace-Semantik, Publication-Record-Shape, Recovery-Caller,
-Modus-Fences und Tests erneut gegen aktuellen `main` gepinnt werden.
+D1 ist abgeschlossen und als nicht aktiviert verifiziert. Der nächste Auftrag ist
+ausschließlich read-only G2-Recon für D2: POSIX-Publisher und Recovery. Vor jedem Code
+müssen Git-/Index-/Worktree-Fence, P1-Bootstrapklasse, Thread-/`flock`-Lock, Pfadschutz,
+Temp-Generationsschema, vollständiger Write-Loop, Dateimodi, File-/Parent-fsync,
+Record-last, Fehlerklassen und Bootstrap-Recovery gegen aktuellen `main` festgelegt werden.
 
 Abbruchkriterium: Noch kein Publisher-, Writer-, Root-, Record-, Recovery-, Workflow-,
-Setting-, Delivery- oder Aktivierungspatch vor einer separat reviewten Slice-D-G2-Spec.
+Setting-, Delivery- oder Aktivierungspatch vor einer separat reviewten D2-G2-Spec.
 
 ## 7. Offene Agenda nach Feature-Spec 01
 
 Reihenfolge ist vorläufig und muss jeweils durch neuen Live-Recon bestätigt werden:
 
-1. Slice D ausschließlich read-only spezifizieren und adversarial reviewen; danach weiter
-   strikt nach den in §15 definierten Einzelschnitten und jeweils eigenem aktuellem G2
-   implementieren. Erst nach Required Checks, Governance und Operations-Drill aktivieren.
+1. D2 ausschließlich read-only spezifizieren und adversarial reviewen; danach weiter
+   strikt nach den in Feature 01 §15 definierten Einzelschnitten und jeweils eigenem
+   aktuellem G2 implementieren. Erst nach Required Checks, Governance und Operations-Drill
+   aktivieren.
 2. Danach Feature 02 (Current-Phase Reference Card) und Feature 03 (Action Signal
    Integrity) getrennt spezifizieren.
 3. Heartbeat-Fehlerpropagation read-only gegen kritische, degradierbare und externe/
@@ -288,11 +305,11 @@ Phase 1 ist read-only und historisch, aber nicht unfehlbar. Live-Code, Git-Objek
 Produktionslogs und neuere Phase-2-Beweise haben Vorrang. Widersprüche werden in Phase 2
 explizit korrigiert, niemals durch blindes Befolgen alter Aussagen.
 
-Feature 01 ist G1-freigegeben; Schnitte A und B sind implementiert und verifiziert.
-Slice C ist über PR #552 gemergt und per Folgeheartbeat als nicht aktiviert verifiziert.
-Der nächste Auftrag ist ausschließlich read-only Slice-D-G2-Recon für lokalen Publisher
-und Recovery. Vor reviewter Slice-D-Spec keinen Publisher-, Writer-, Root-, Record-,
-Recovery-, Workflow-, Setting-, Delivery- oder Aktivierungspatch erstellen. Pflege
-PHASE2_CURRENT als widerlegbares Cockpit und PHASE2_BEFUND als ausführliches externes
-Gehirn.
+Feature 01 ist G1-freigegeben; Schnitte A bis C sowie D1 sind implementiert und
+verifiziert. D1 ist über PR #633 gemergt und per Folgeheartbeat als nicht aktiviert
+verifiziert. Der nächste Auftrag ist ausschließlich read-only D2-G2-Recon für POSIX-
+Publisher und Recovery. Vor reviewter D2-G2-Spec keinen Publisher-, Writer-, Root-,
+Record-, Recovery-, Workflow-, Setting-, Delivery- oder Aktivierungspatch erstellen.
+Pflege PHASE2_CURRENT als widerlegbares Cockpit und PHASE2_BEFUND als ausführliches
+externes Gehirn.
 ```
