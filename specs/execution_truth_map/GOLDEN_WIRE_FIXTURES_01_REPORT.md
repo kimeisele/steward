@@ -1,6 +1,6 @@
-# GOLDEN WIRE FIXTURES 01 — MILESTONE REPORT
+# GOLDEN WIRE FIXTURES 01A — MILESTONE REPORT
 
-> Status: COMPLETE — positive parity and negative-boundary tests green
+> Status: COMPLETE — independent regeneration and negative-boundary parity green
 > Fixture branch: fixtures/federation-v1-golden-01
 > Scope: test-only artifacts and independent reference tests
 > Spec pin: ddf170d10a5d546af4b012a2d2335c37fcb44508
@@ -69,7 +69,32 @@ Steward und Agent City erzeugen aus dem gespeicherten Envelope unabhängig diese
 - Message Hash
 - Ed25519-Signaturprüfung
 
-## 4. Negative-Grenzen
+## 4. Positive-Regeneration-Parität (01A)
+
+Die beiden Repositories regenerieren die positiven Werte aus denselben semantischen
+Eingaben und den deterministischen Test-Seeds, ohne einander oder eine gemeinsame
+Runtime-Library zu importieren. Jede Zeile vergleicht den regenerierten Wert mit dem
+gespeicherten Fixture und dem Manifest.
+
+| Wert | Steward regeneriert | Agent City regeneriert | Fixture | byteidentisch |
+|---|---:|---:|---:|---:|
+| Origin/Target Enrollment Bytes | ja | ja | ja | ja |
+| Origin/Target Certificate Bytes | ja | ja | ja | ja |
+| node_id (Origin/Target) | ja | ja | ja | ja |
+| key_id (Origin/Target) | ja | ja | ja | ja |
+| request_digest | ja | ja | ja | ja |
+| idempotency_key | ja | ja | ja | ja |
+| delegate_task Request Bytes | ja | ja | ja | ja |
+| message_hash | ja | ja | ja | ja |
+| Domain-separated Signature Input | ja | ja | ja | ja |
+| Ed25519-Signatur | ja | ja | ja | ja |
+
+Die Provenance-Tests prüfen geschlossene Feldmengen, Root-Key-Bindung, Certificate-
+Root-Bindung, `node_id`/`key_id`, Domain Separation, Registry-/Certificate-/Activation-
+Epochs, Aktivierungs- und Gültigkeitsfenster, `rotation_kind`, `revocation_ref` sowie
+RFC-3339-Zeitsemantik am festen Prüfzeitpunkt `2026-07-18T11:00:00Z`.
+
+## 5. Negative-Grenzen und erste Fehlerphase (01A)
 
 17 Fälle sind im Manifest festgelegt und werden in beiden Repositories geprüft:
 
@@ -85,26 +110,50 @@ Steward und Agent City erzeugen aus dem gespeicherten Envelope unabhängig diese
 - widerrufener Key
 
 Jeder Fall besitzt einen maschinenlesbaren Reject-Code und eine benannte Validierungsphase.
+Die lokale Referenzvalidierung dispatcht ausschließlich nach dem geparsten Schema und
+prüft jede Nachricht in einer festen Phasenreihenfolge; weder Fall-ID noch Dateiname
+entscheidet den Reject-Code. Beide Repositories liefern dieselbe erste Fehlergrenze:
 
-## 5. Unabhängige Tests
+| Fixture | Steward first failure | Agent City first failure | erwartet | identisch |
+|---|---|---|---|---:|
+| non_nfc | rejected_noncanonical / sfdj_nfc | rejected_noncanonical / sfdj_nfc | rejected_noncanonical / sfdj_nfc | ja |
+| wrong_key_order | rejected_noncanonical / sfdj_key_order | rejected_noncanonical / sfdj_key_order | rejected_noncanonical / sfdj_key_order | ja |
+| duplicate_json_key | duplicate_json_key / parse | duplicate_json_key / parse | duplicate_json_key / parse | ja |
+| float | float_forbidden / number | float_forbidden / number | float_forbidden / number | ja |
+| negative_zero | rejected_noncanonical / number | rejected_noncanonical / number | rejected_noncanonical / number | ja |
+| missing_base64_padding | invalid_base64 / base64 | invalid_base64 / base64 | invalid_base64 / base64 | ja |
+| url_safe_base64 | url_safe_base64_forbidden / base64 | url_safe_base64_forbidden / base64 | url_safe_base64_forbidden / base64 | ja |
+| wrong_message_hash | message_hash_mismatch / message_hash | message_hash_mismatch / message_hash | message_hash_mismatch / message_hash | ja |
+| mutated_payload | message_hash_mismatch / message_hash | message_hash_mismatch / message_hash | message_hash_mismatch / message_hash | ja |
+| mutated_target_node_id | message_hash_mismatch / message_hash | message_hash_mismatch / message_hash | message_hash_mismatch / message_hash | ja |
+| wrong_signing_key | signature_invalid_wrong_key / signature | signature_invalid_wrong_key / signature | signature_invalid_wrong_key / signature | ja |
+| unregistered_signing_key | key_not_authorized / registry | key_not_authorized / registry | key_not_authorized / registry | ja |
+| wrong_target_resigned | wrong_target / target_match | wrong_target / target_match | wrong_target / target_match | ja |
+| same_delegation_different_digest | duplicate_conflict / target_dedupe | duplicate_conflict / target_dedupe | duplicate_conflict / target_dedupe | ja |
+| same_message_id_different_bytes | message_id_conflict / message_dedupe | message_id_conflict / message_dedupe | message_id_conflict / message_dedupe | ja |
+| expired_certificate | certificate_expired / registry_time | certificate_expired / registry_time | certificate_expired / registry_time | ja |
+| revoked_certificate | key_revoked / registry_status | key_revoked / registry_status | key_revoked / registry_status | ja |
+
+## 6. Unabhängige Tests
 
 Steward:
 
-    pytest -q tests/federation_v1/test_golden_wire.py
-    20 passed
+    pytest -q tests/federation_v1
+    23 passed
 
 Agent City:
 
-    pytest -q tests/federation_v1/test_golden_wire.py
-    20 passed
+    pytest -q tests/federation_v1
+    23 passed
 
-Die Referenzmodule sind repo-lokal und importieren keine Runtime-Federation-Implementierung
-des jeweils anderen Repositories. Die Fixture-Dateien wurden identisch kopiert und über
-Manifest-SHA-256 verifiziert.
+Die Referenzmodule und Builder sind repo-lokal und importieren weder Runtime-Federation-
+Implementierung noch Test-Builder des jeweils anderen Repositories. Die Fixture-Dateien
+wurden identisch kopiert und über Manifest-SHA-256 verifiziert. Die Negativtests beweisen
+zudem, dass die erwartete Grenze jeweils die erste fehlschlagende allgemeine Phase ist.
 
-## 6. Gate
+## 7. Gate
 
-Golden Wire Fixtures 01 ist testseitig abgeschlossen. Das Ergebnis beweist die positive
+Golden Wire Fixtures 01A ist testseitig abgeschlossen. Das Ergebnis beweist die positive
 SFDJ-/Digest-/ID-/Signature-Parität und die vereinbarten Reject-Grenzen; es implementiert
 keinen produktiven Handler und behauptet keine Ledger-/Recovery-/Workflow-Wirkung.
 

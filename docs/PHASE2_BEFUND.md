@@ -2631,3 +2631,30 @@ Der vollständige Milestone-Bericht liegt unter:
 Unabhängige Referenztests sind in Steward und Agent City vorhanden und bestanden jeweils
 `20 passed`. Kein Runtime-Handler, Ledger, Workflow, Provider-Crucible oder Produktionspfad
 wurde verändert. Phase 1 und Context Bridge bleiben unverändert.
+
+## §33 — GOLDEN WIRE FIXTURES 01A: UNABHÄNGIGE REGENERATION (2026-07-18)
+
+Agent B hat die gespeicherten Fixtures akzeptiert, aber die erste Abnahme bis zum Beweis
+repo-lokaler unabhängiger Regeneration blockiert. Diese Testhärtung ist abgeschlossen:
+
+- Steward und Agent City bauen Enrollment, Certificate, `node_id`, `key_id`,
+  `request_digest`, Idempotency-Key, vollständigen Request, SFDJ-1-Bytes, Message-Hash,
+  Domain-Signature-Input und Ed25519-Signatur jeweils aus semantischen Eingaben und den
+  deterministischen Test-Seeds neu; die Ergebnisse sind byteidentisch zu Fixtures und
+  Manifest.
+- Beide Seiten prüfen die vollständige Provenance-Bindung einschließlich geschlossener
+  Feldmengen, Root-/Certificate-Key-Bindung, Epochs, RFC-3339-Zeitfenster,
+  `rotation_kind` und `revocation_ref` am festen Fixture-Prüfzeitpunkt.
+- Eine allgemeine, phasenweise Referenzvalidierung beweist für alle 17 Negativfälle die
+  erste fehlschlagende Grenze. Die Reject-Codes werden nicht aus Fall-ID oder Dateiname
+  abgeleitet; Steward und Agent City liefern dieselbe Code-/Phasenmatrix.
+
+Der aktualisierte vollständige Bericht ist:
+
+`specs/execution_truth_map/GOLDEN_WIRE_FIXTURES_01_REPORT.md`
+
+Die erweiterten repo-lokalen Testmodule liegen unter
+`tests/federation_v1/hardening.py` und `tests/federation_v1/test_golden_wire_01a.py` in
+beiden Repositories. Beide Suiten bestehen mit `23 passed`. Es wurden ausschließlich
+Tests, Fixtures/Bericht und diese Befund-Dokumentation geändert; Produktcode, Phase 1,
+Context Bridge, Handler, Ledger, Workflow und Produktionsintegration bleiben unverändert.
