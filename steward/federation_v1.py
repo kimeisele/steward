@@ -20,7 +20,7 @@ import threading
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Iterable, Mapping
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
@@ -38,6 +38,7 @@ KEY_RE = re.compile(r"^key_[0-9a-f]{64}$")
 ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 TIME_RE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")
+JsonValue = object
 
 REQUEST_KEYS = {
     "contract_version",
@@ -164,13 +165,13 @@ class ValidatedFederationV1KeyRegistry:
     @classmethod
     def from_provenance(
         cls,
-        enrollments: Iterable[Mapping[str, Any]],
-        certificates: Iterable[Mapping[str, Any]],
+        enrollments: Iterable[Mapping[str, JsonValue]],
+        certificates: Iterable[Mapping[str, JsonValue]],
         *,
         now: str,
     ) -> "ValidatedFederationV1KeyRegistry":
         current = _time(now)
-        roots: dict[str, tuple[bytes, Mapping[str, Any]]] = {}
+        roots: dict[str, tuple[bytes, Mapping[str, JsonValue]]] = {}
         for enrollment in enrollments:
             if not isinstance(enrollment, Mapping) or set(enrollment) != ENROLLMENT_KEYS:
                 raise V1Reject("provenance_schema", "provenance")
@@ -287,7 +288,7 @@ def _string(value: str) -> str:
     )
 
 
-def _canonical(value: Any, depth: int = 0) -> str:
+def _canonical(value: JsonValue, depth: int = 0) -> str:
     if depth > 16:
         raise V1Reject("max_depth", "sfdj_schema")
     if value is None:
@@ -325,15 +326,15 @@ def _canonical(value: Any, depth: int = 0) -> str:
     raise V1Reject("unsupported_type", "sfdj_schema")
 
 
-def canonical_bytes(value: Any) -> bytes:
+def canonical_bytes(value: JsonValue) -> bytes:
     raw = _canonical(value).encode("utf-8")
     if len(raw) > MAX_WIRE_BYTES:
         raise V1Reject("envelope_limit", "sfdj_size")
     return raw
 
 
-def _pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    result: dict[str, Any] = {}
+def _pairs(pairs: list[tuple[str, JsonValue]]) -> dict[str, JsonValue]:
+    result: dict[str, JsonValue] = {}
     for key, value in pairs:
         if key in result:
             raise V1Reject("duplicate_json_key", "parse")
@@ -341,7 +342,7 @@ def _pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
-def parse_canonical(raw: bytes) -> dict[str, Any]:
+def parse_canonical(raw: bytes) -> dict[str, JsonValue]:
     if raw.startswith(b"\xef\xbb\xbf"):
         raise V1Reject("bom_forbidden", "parse")
     try:
@@ -396,7 +397,7 @@ def _b64(raw: bytes) -> str:
     return base64.b64encode(raw).decode("ascii")
 
 
-def _digest(value: Any) -> str:
+def _digest(value: JsonValue) -> str:
     return hashlib.sha256(canonical_bytes(value)).hexdigest()
 
 
@@ -408,7 +409,7 @@ def _derive_key_id(public_key: bytes) -> str:
     return "key_" + hashlib.sha256(public_key).hexdigest()
 
 
-def _verify_root_signature(public_key: bytes, domain: str, body: Mapping[str, Any], signature: bytes) -> None:
+def _verify_root_signature(public_key: bytes, domain: str, body: Mapping[str, JsonValue], signature: bytes) -> None:
     digest = _digest(body)
     try:
         Ed25519PublicKey.from_public_bytes(public_key).verify(
@@ -422,7 +423,7 @@ def _signature_input(digest: str) -> bytes:
     return DOMAIN_DELEGATION.encode("utf-8") + b"\x00" + bytes.fromhex(digest)
 
 
-def request_digest(payload: Mapping[str, Any], source_node_id: str, target_node_id: str) -> str:
+def request_digest(payload: Mapping[str, JsonValue], source_node_id: str, target_node_id: str) -> str:
     fields = (
         "delegation_id",
         "origin_task_id",
@@ -447,7 +448,7 @@ def request_digest(payload: Mapping[str, Any], source_node_id: str, target_node_
 
 def build_request(
     *,
-    payload: Mapping[str, Any],
+    payload: Mapping[str, JsonValue],
     source_node_id: str,
     target_node_id: str,
     message_id: str,
@@ -483,7 +484,7 @@ def build_request(
 
 def build_admission_receipt(
     *,
-    request: Mapping[str, Any],
+    request: Mapping[str, JsonValue],
     target_node_id: str,
     origin_node_id: str,
     message_id: str,
@@ -552,7 +553,7 @@ def validate_envelope(
     expected_target: str,
     expected_operation: str = "delegate_task",
     now: str | None = None,
-) -> dict[str, Any]:
+) -> dict[str, JsonValue]:
     value = parse_canonical(raw)
     expected_keys = REQUEST_KEYS if expected_operation == "delegate_task" else RECEIPT_KEYS
     if set(value) != expected_keys:
@@ -650,7 +651,7 @@ def _carrier_operation(inner_operation: str) -> str:
     raise V1Reject("unsupported_contract", "carrier_operation")
 
 
-def build_carrier(raw: bytes) -> dict[str, Any]:
+def build_carrier(raw: bytes) -> dict[str, JsonValue]:
     inner = parse_canonical(raw)
     operation = _carrier_operation(str(inner["operation"]))
     encoded = _b64(raw)
@@ -664,7 +665,7 @@ def build_carrier(raw: bytes) -> dict[str, Any]:
     }
 
 
-def carrier_inner(carrier: Mapping[str, Any], *, expected_target: str) -> tuple[dict[str, Any], bytes]:
+def carrier_inner(carrier: Mapping[str, JsonValue], *, expected_target: str) -> tuple[dict[str, JsonValue], bytes]:
     if (
         set(carrier) != {"operation", "source", "target", "payload"}
         or not isinstance(carrier.get("payload"), Mapping)
@@ -706,7 +707,7 @@ def _process_lock(path: Path):
             fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
 
 
-def _atomic_json(path: Path, data: Any) -> None:
+def _atomic_json(path: Path, data: JsonValue) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent))
     try:
@@ -720,7 +721,7 @@ def _atomic_json(path: Path, data: Any) -> None:
             os.unlink(temporary)
 
 
-def _load_json(path: Path, required_record_keys: set[str]) -> dict[str, Any]:
+def _load_json(path: Path, required_record_keys: set[str]) -> dict[str, JsonValue]:
     if not path.exists():
         return {"delegations": {}, "findings": []}
     try:
@@ -769,7 +770,7 @@ class TargetAdmissionLedger:
         self.path = Path(path)
         self._lock = threading.RLock()
 
-    def get(self, delegation_id: str) -> dict[str, Any] | None:
+    def get(self, delegation_id: str) -> dict[str, JsonValue] | None:
         with self._lock, _process_lock(self.path):
             return _load_json(self.path, TARGET_RECORD_KEYS)["delegations"].get(delegation_id)
 
@@ -782,14 +783,14 @@ class TargetAdmissionLedger:
     def commit(
         self,
         *,
-        request: Mapping[str, Any],
+        request: Mapping[str, JsonValue],
         request_wire_bytes: bytes,
-        request_carrier: Mapping[str, Any],
-        receipt: Mapping[str, Any],
+        request_carrier: Mapping[str, JsonValue],
+        receipt: Mapping[str, JsonValue],
         receipt_wire_bytes: bytes,
         state: str,
         reason_code: str | None = None,
-    ) -> tuple[str, dict[str, Any]]:
+    ) -> tuple[str, dict[str, JsonValue]]:
         delegation_id = str(request["payload"]["delegation_id"])
         request_digest_value = str(request["payload"]["request_digest"])
         with self._lock, _process_lock(self.path):
@@ -843,7 +844,7 @@ class OriginDelegationLedger:
         self.path = Path(path)
         self._lock = threading.RLock()
 
-    def get(self, delegation_id: str) -> dict[str, Any] | None:
+    def get(self, delegation_id: str) -> dict[str, JsonValue] | None:
         with self._lock, _process_lock(self.path):
             return _load_json(self.path, ORIGIN_RECORD_KEYS)["delegations"].get(delegation_id)
 
@@ -861,7 +862,9 @@ class OriginDelegationLedger:
                 document["delegations"][delegation_id]["send_state"] = "sent"
                 _atomic_json(self.path, document)
 
-    def create_request(self, *, request_wire_bytes: bytes, request_carrier: Mapping[str, Any]) -> dict[str, Any]:
+    def create_request(
+        self, *, request_wire_bytes: bytes, request_carrier: Mapping[str, JsonValue]
+    ) -> dict[str, JsonValue]:
         request = parse_canonical(request_wire_bytes)
         delegation_id = request["payload"]["delegation_id"]
         with self._lock, _process_lock(self.path):
@@ -889,8 +892,8 @@ class OriginDelegationLedger:
             return record
 
     def apply_receipt(
-        self, *, receipt: Mapping[str, Any], receipt_wire_bytes: bytes, receipt_carrier: Mapping[str, Any]
-    ) -> dict[str, Any]:
+        self, *, receipt: Mapping[str, JsonValue], receipt_wire_bytes: bytes, receipt_carrier: Mapping[str, JsonValue]
+    ) -> dict[str, JsonValue]:
         delegation_id = receipt["payload"]["delegation_id"]
         with self._lock, _process_lock(self.path):
             document = _load_json(self.path, ORIGIN_RECORD_KEYS)
@@ -971,8 +974,8 @@ class FederationV1Origin:
         self.enabled = enabled
 
     def create(
-        self, *, payload: Mapping[str, Any], target_node_id: str, message_id: str, issued_at: str, expires_at: str
-    ) -> tuple[bytes, dict[str, Any]]:
+        self, *, payload: Mapping[str, JsonValue], target_node_id: str, message_id: str, issued_at: str, expires_at: str
+    ) -> tuple[bytes, dict[str, JsonValue]]:
         if not self.enabled:
             raise V1Reject("feature_disabled", "feature_gate")
         delegation_id = str(payload.get("delegation_id", ""))
@@ -1020,15 +1023,15 @@ class FederationV1Origin:
             raise V1Reject("origin_request_conflict", "origin_ledger")
         return stored_wire, stored_carrier
 
-    def retransmit(self, delegation_id: str) -> dict[str, Any]:
+    def retransmit(self, delegation_id: str) -> dict[str, JsonValue]:
         record = self.ledger.get(delegation_id)
         if record is None:
             raise V1Reject("unknown_delegation", "origin_ledger")
         return dict(record["request_carrier"])
 
     def apply_receipt(
-        self, *, carrier: Mapping[str, Any], registry: ValidatedFederationV1KeyRegistry, now: str | None = None
-    ) -> dict[str, Any]:
+        self, *, carrier: Mapping[str, JsonValue], registry: ValidatedFederationV1KeyRegistry, now: str | None = None
+    ) -> dict[str, JsonValue]:
         if not self.enabled:
             raise V1Reject("feature_disabled", "feature_gate")
         inner, raw = carrier_inner(carrier, expected_target=self.node_id)
@@ -1061,7 +1064,7 @@ class FederationV1Admission:
         self.enabled = enabled
 
     @staticmethod
-    def _policy_allows(payload: Mapping[str, Any]) -> bool:
+    def _policy_allows(payload: Mapping[str, JsonValue]) -> bool:
         """Admission-only policy: validate the V1 capability envelope, never execute it."""
         authority = payload.get("authority")
         return (
@@ -1076,8 +1079,13 @@ class FederationV1Admission:
         )
 
     def handle(
-        self, carrier: Mapping[str, Any], *, now: str, origin_authorized: bool = True, capability_available: bool = True
-    ) -> dict[str, Any] | None:
+        self,
+        carrier: Mapping[str, JsonValue],
+        *,
+        now: str,
+        origin_authorized: bool = True,
+        capability_available: bool = True,
+    ) -> dict[str, JsonValue] | None:
         if not self.enabled:
             return None
         try:
