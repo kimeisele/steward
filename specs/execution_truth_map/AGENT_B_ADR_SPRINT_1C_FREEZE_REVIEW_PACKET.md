@@ -1,6 +1,6 @@
 # AGENT-B REVIEW PACKET — FEDERATION DELEGATION V1 SPRINT 1C FREEZE
 
-> Version: Sprint 1C Freeze / Contract Draft 0.5
+> Version: Sprint 1C Freeze / Contract Draft 0.5 corrected (four direct review fixes)
 > Status: READY FOR GOLDEN FIXTURES — nur Dokumentations-Gate; keine Fixtures, kein Produktcode
 > Datum: 2026-07-18
 > Review-Ziel: abschließende Prüfung des engen Federation-V1-Wire-Vertrags
@@ -189,6 +189,19 @@ Normative Regeln:
   Unbekannte Kompromisszeit erzeugt historical_uncertain; issued_at < revoked_at allein
   genügt nicht. Gelöschte Provenance ist unavailable, nie verified; Retention umfasst
   not_after plus Envelope-TTL, Clock-Skew und Audit-Retention.
+
+Die beiden Provenance-Records sind selbst geschlossene SFDJ-1-Objekte. Root Enrollment
+verwendet exakt enrollment_version=federation-root-enrollment-v1, identity_root_public_key
+(PublicKeyB64, 32 Bytes), node_id, not_before, provenance_digest (HashHex), registry_epoch
+(Integer) und root_signature (64-Byte SignatureB64). Signiert wird SFDJ-1 aller Felder ohne
+root_signature mit Domain STEWARD-FEDERATION-ROOT-ENROLLMENT-V1 plus NUL.
+Das Signing-Key-Certificate verwendet exakt activation_at, activation_epoch,
+certificate_epoch, certificate_version=federation-signing-key-auth-v1,
+identity_root_public_key, key_id, node_id, not_after, not_before, registry_epoch,
+revocation_ref (HashHex oder null), rotation_kind=regular|emergency_compromise,
+signer_key (PublicKeyB64) und root_signature. Signiert wird SFDJ-1 aller Felder ohne
+root_signature mit Domain STEWARD-FEDERATION-SIGNING-KEY-AUTH-V1 plus NUL. Unknown-Fields
+sind verboten; Activation und Epochs werden vor Registry-Aktivierung geprüft.
 
 Auswirkungen: Steward und Agent City müssen dieselben SFDJ-/Ed25519-/Root-Certificate-
 Bytes prüfen; Steward Protocol erhält ein geschlossenes, sprachneutrales Wire-Profil.
@@ -399,20 +412,28 @@ message_hash, Signatur, Key, receipt_content_digest selbst oder display_*.
 
 delegation_status_query ist geschlossen, max 2 KiB, Pflichtfelder:
 delegation_id, request_message_id, known_request_digest, query_scope.
-query_scope ist ausschließlich lifecycle_and_receipts. Nur der kryptografisch gebundene
-Origin darf die eigene delegation_id abfragen; Relay nur mit expliziter Delegation-Lesefreigabe.
-Falsches Target/unauthenticated -> lokales Finding/Quarantine, keine Netzwerkantwort; Rate-
-Limit/Audit lokal; read-only, keine Arbeit.
+query_scope ist ausschließlich lifecycle_and_receipts. Ein authentifizierter und korrekt
+adressierter Origin darf abfragen; bei eigenem Ledger-Eintrag kommt der echte Snapshot,
+bei unbekannter oder fremder delegation_id derselbe minimale UNKNOWN-Snapshot ohne
+Reason-/Timing-Differenz. Relay bleibt auf eine explizit delegationsgebundene Lesefreigabe
+beschränkt. Falsches Target/unauthenticated -> lokales Finding/Quarantine, keine
+Netzwerkantwort; Rate-Limit/Audit lokal; read-only, keine Arbeit.
 
 delegation_status ist geschlossen, max 8 KiB:
 delegation_id, request_message_id, snapshot_id, snapshot_version, target_state,
 target_work_id (nur für UNKNOWN/REJECTED/EXPIRED nullable), request_digest,
-observed_receipt_stages (unique, max fünf), terminal_status (nur RESULT_REPORTED nicht-null)
+observed_receipt_stages (unique, max fünf), terminal_status (completed|failed oder null,
+nur RESULT_REPORTED nicht-null; verified/failed_verification gehören ausschließlich zum
+Origin-Ledger und zur verification-Receipt)
 und as_of. target_state Enum UNKNOWN, ACCEPTED, EXECUTING, RECOVERY_REQUIRED,
 RESULT_REPORTED, REJECTED, EXPIRED. snapshot_version monoton pro Delegation.
 Response enthält keine Worker-/Lease-Identität, Stacktraces, Secrets, Pfade, fremde
-Delegationen oder nicht vertragliche Evidence. UNKNOWN ist minimal und verrät nichts über
-andere IDs/Capabilities. Status ist signiert, aber keine Receipt/Verification.
+Delegationen oder nicht vertragliche Evidence. Ein authentifizierter Origin erhält bei
+Ledger-Eintrag für genau seine ID den echten Snapshot. Bei unbekannter ID oder einer ID,
+die einem anderen Origin gehört, erhält er denselben minimalen UNKNOWN-Snapshot mit
+identischen Feldern, Größenklasse, Statuswerten und ohne unterschiedliche Reason-/Timing-
+Evidence. Damit ist UNKNOWN kein Existenzorakel. Status ist signiert, aber keine
+Receipt/Verification.
 
 ### 4.6 JSON-Beispiele (semantische Fixtures)
 
@@ -451,8 +472,8 @@ Kanonischer Request-Body vor Hash/Signatur:
   "issued_at": "2026-07-18T11:00:00Z",
   "expires_at": "2026-07-18T11:05:00Z",
   "message_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-  "signature": "BASE64_ED25519_64_BYTES_WITH_PADDING",
-  "signer_key": "BASE64_ED25519_PUBLIC_KEY",
+  "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+  "signer_key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
   "key_id": "key_3333333333333333333333333333333333333333333333333333333333333333"
 }
 ~~~
@@ -474,47 +495,83 @@ Admission Receipt:
     "receipt_id": "rcpt_0001",
     "receipt_stage": "admission",
     "receipt_content_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "issuer_role": "target_node",
     "status": "accepted",
     "target_work_id": "work_0001"
   },
   "issued_at": "2026-07-18T11:00:01Z",
   "expires_at": "2026-07-18T11:05:01Z",
   "message_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-  "signature": "BASE64_ED25519_64_BYTES_WITH_PADDING",
-  "signer_key": "BASE64_ED25519_PUBLIC_KEY",
+  "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+  "signer_key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
   "key_id": "key_4444444444444444444444444444444444444444444444444444444444444444"
 }
 ~~~
 
-Status Query and minimal UNKNOWN response:
+Application-Reissue (gleiche semantische delegate_task-Payload, neuer Envelope):
 
 ~~~json
 {
-  "operation": "delegation_status_query",
+  "contract_version": "federation-delegation-v1",
+  "message_id": "msg_req_0002",
+  "request_message_id": "msg_req_0001",
+  "causation_message_id": "msg_status_0001",
+  "source_node_id": "ag_11111111111111111111111111111111",
+  "target_node_id": "ag_22222222222222222222222222222222",
+  "operation": "delegate_task",
+  "correlation_id": "del_0001",
   "payload": {
     "delegation_id": "del_0001",
-    "known_request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    "query_scope": "lifecycle_and_receipts",
-    "request_message_id": "msg_req_0001"
-  }
+    "origin_task_id": "task_0001",
+    "capability": "fix_repository",
+    "intent": {"kind": "repair", "version": "v1"},
+    "task_description": "Repair the bounded federation defect.",
+    "target_repo": "agent-city",
+    "authority": {"allowed_actions": ["branch","commit","read","test"],"denied_actions": ["context_bridge_activation","merge","secret_access"],"repo_scope": "agent-city"},
+    "expected_outcome": {"kind": "verified_tests_and_observation"},
+    "verification_contract": {"postcondition_kind": "tests_and_runtime_observation","required_evidence": ["runtime_observation","test_result"]},
+    "deadline": "2026-07-18T12:00:00Z",
+    "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "idempotency_key": "fedv1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "issued_at": "2026-07-18T11:02:00Z",
+  "expires_at": "2026-07-18T11:07:00Z",
+  "message_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+  "signer_key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+  "key_id": "key_3333333333333333333333333333333333333333333333333333333333333333"
 }
 ~~~
 
+Die neue message_id, Zeit, message_hash und Signatur sind neu; request_message_id,
+delegation_id, request_digest, idempotency_key und correlation_id bleiben unverändert.
+Der gezeigte Digest ist ein Formwert, nicht der Hash dieses Prosa-Beispiels.
+
+Status Query payload (embedded under the full signed envelope):
+
 ~~~json
 {
-  "operation": "delegation_status",
-  "payload": {
-    "as_of": "2026-07-18T11:01:00Z",
-    "delegation_id": "del_0001",
-    "observed_receipt_stages": [],
-    "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    "request_message_id": "msg_req_0001",
-    "snapshot_id": "snap_0001",
-    "snapshot_version": 0,
-    "target_state": "UNKNOWN",
-    "target_work_id": null,
-    "terminal_status": null
-  }
+  "delegation_id": "del_0001",
+  "known_request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "query_scope": "lifecycle_and_receipts",
+  "request_message_id": "msg_req_0001"
+}
+~~~
+
+Minimal UNKNOWN response payload (embedded under delegation_status envelope):
+
+~~~json
+{
+  "as_of": "2026-07-18T11:01:00Z",
+  "delegation_id": "del_0001",
+  "observed_receipt_stages": [],
+  "request_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "request_message_id": "msg_req_0001",
+  "snapshot_id": "snap_0001",
+  "snapshot_version": 0,
+  "target_state": "UNKNOWN",
+  "target_work_id": null,
+  "terminal_status": null
 }
 ~~~
 

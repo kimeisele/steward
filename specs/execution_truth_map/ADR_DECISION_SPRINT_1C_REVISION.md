@@ -61,6 +61,13 @@ STEWARD-FEDERATION-ROOT-ENROLLMENT-V1\0
 Die Registry akzeptiert ein Enrollment nur nach korrekter Root-Signatur, Node-ID-Ableitung,
 Registry-Epoch-Prüfung und Kollisionsprüfung.
 
+Im Sprint-1C-Freeze ist dieser Record geschlossen: exakt
+enrollment_version=federation-root-enrollment-v1, identity_root_public_key (PublicKeyB64,
+32 rohe Bytes), node_id, not_before, provenance_digest (HashHex), registry_epoch (Integer
+0..2^63-1) und root_signature (SignatureB64, 64 Bytes), keine Unknown-Fields/null. Die
+Signatur ist Ed25519 über Domain STEWARD-FEDERATION-ROOT-ENROLLMENT-V1 plus NUL und die
+rohen SHA-256-Bytes der SFDJ-1-Codierung ohne root_signature.
+
 ### Stabile Node-ID
 
 ~~~text
@@ -85,6 +92,14 @@ STEWARD-FEDERATION-SIGNING-KEY-AUTH-V1\0
 ~~~
 
 Eine Registry-Zeile ohne Root-signiertes Key-Certificate ist keine ausreichende Key-Bindung.
+
+Das Certificate ist ebenfalls geschlossen: activation_at, activation_epoch,
+certificate_epoch, certificate_version=federation-signing-key-auth-v1,
+identity_root_public_key, key_id, node_id, not_after, not_before, registry_epoch,
+revocation_ref (HashHex oder null), rotation_kind=regular|emergency_compromise,
+signer_key (PublicKeyB64) und root_signature. Seine Root-Signatur verwendet dieselbe
+SFDJ-1-Regel mit Domain STEWARD-FEDERATION-SIGNING-KEY-AUTH-V1 plus NUL. Activation,
+Epochs, Key-ID-/Node-ID-Ableitung und Zeitfenster werden vor Aktivierung geprüft.
 
 ### key_id und Aktivierung
 
@@ -281,6 +296,10 @@ Payload:
 }
 ~~~
 
+Für Target-Status ist terminal_status ausschließlich completed, failed oder null; verified
+und failed_verification gehören ausschließlich dem Origin-Ledger und der verification-
+Receipt. Bei unbekannter ID oder fremdem Origin liefert das Target denselben minimalen
+UNKNOWN-Snapshot wie bei einer unbekannten Delegation; keine Reason-/Timing-Differenz.
 snapshot_version ist monoton pro delegation_id. Query-Replay ist idempotent; neue Queries
 erzeugen keine Arbeit. Wiring verlangt Emitter, exact target, read_status Authority,
 read-only Target-Handler, Snapshot-Result, Replay-/Rate-Limit-/UNKNOWN-/Wrong-Target-Tests

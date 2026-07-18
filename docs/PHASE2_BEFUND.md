@@ -2585,3 +2585,23 @@ den nächsten Milestone: Golden-Wire-Fixtures plus unabhängige Steward-/Agent-C
 und Signaturtests. Noch gesperrt bleiben Produktcode, Handler, Ledger-/Workflow-Änderungen,
 Crucible-Ausführung, Merge, Phase 1 und Context Bridge. ADR-03, ADR-05 und ADR-10 bleiben
 spätere Managed-Task-, Produktions- und Integrationsblocker.
+
+## §31 — AGENT-B FREEZE REVIEW: VIER DIREKTE KORREKTUREN (2026-07-18)
+
+Agent B hat Draft 0.5 fast akzeptiert und vier direkte Inkonsistenzen vor Fixture-Start
+markiert. Im korrigierten Draft 0.5 und Freeze-Packet sind sie geschlossen:
+
+- `delegation_status.terminal_status` ist ausschließlich `completed`, `failed` oder
+  `null`; `verified`/`failed_verification` gehören nur Origin-Ledger und Verification-
+  Receipt.
+- Bei fehlendem Ledger-Eintrag oder fremdem Origin liefert Status Query denselben
+  minimalen `UNKNOWN`-Snapshot ohne Reason-, Größen- oder Timing-Orakel.
+- Root-Enrollment-Record und Signing-Key-Authorization-Certificate besitzen geschlossene,
+  bytegenaue SFDJ-1-Felder, Domains, Signaturinputs, Epochs, Aktivierung, Zeitfenster,
+  key_id/node_id und Revocation-Referenz.
+- Das Admission-Beispiel enthält nun das verpflichtende `issuer_role=target_node`; die
+  JSON-Beispiele wurden auf schemaförmige Base64-/Issuer-Felder geprüft.
+
+Der nächste Milestone bleibt ausschließlich Golden-Wire-Fixtures und unabhängige Parser- /
+Signaturtests. Kein Produktcode, Handler, Ledger, Workflow, Merge, Crucible, Phase 1 oder
+Context-Bridge-Resume ist dadurch autorisiert.

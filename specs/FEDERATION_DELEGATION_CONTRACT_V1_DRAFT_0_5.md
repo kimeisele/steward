@@ -236,15 +236,21 @@ Geschlossenes Payload-Maximum 2 KiB, alle Felder Pflicht und nicht-null:
 
 | Feld | Typ / Enum | Digest/Authority/Privacy |
 |---|---|---|
-| delegation_id | IdString | Query-Bindung; nur eigene kryptografisch gebundene ID |
+| delegation_id | IdString | Query-Bindung; echte Daten nur bei eigenem Ledger-Eintrag, sonst indistinguishable UNKNOWN |
 | request_message_id | IdString | muss erste delegate_task-Message sein; Query-Kausalität |
 | known_request_digest | HashHex | Target vergleicht gegen Ledger; Bindungs-/Konfliktnachweis |
 | query_scope | Enum exakt lifecycle_and_receipts | keine Erweiterung in V1 |
 
-Nur der registrierte Origin darf seine Delegation abfragen. Ein Relay benötigt eine
-explizite, auf diese delegation_id begrenzte Leseberechtigung. Falsches Target oder
-unauthentifizierter Sender erzeugt nur lokales Finding/Quarantine, keine Netzwerkantwort.
-Rate-Limit und Audit sind lokal. Query ist read-only und erzeugt keine Arbeit.
+Ein authentifizierter und korrekt adressierter Origin darf eine Statusabfrage senden. Das
+Target prüft zunächst die Sender-Authority. Findet es einen Ledger-Eintrag für genau diesen
+Origin und die gebundene delegation_id, liefert es den echten Snapshot. Findet es keinen
+Eintrag oder gehört die ID zu einem anderen Origin, liefert es denselben minimalen UNKNOWN-
+Snapshot: identische Felder, Statuswerte, Größenklasse und keine unterschiedliche Reason-
+oder Timing-Evidence. Damit wird weder bestätigt noch verneint, ob eine fremde Delegation
+existiert. Ein Relay benötigt zusätzlich eine explizite, auf diese delegation_id begrenzte
+Leseberechtigung. Falsches Target oder unauthentifizierter Sender erzeugt nur lokales
+Finding/Quarantine, keine Netzwerkantwort. Rate-Limit und Audit sind lokal. Query ist
+read-only und erzeugt keine Arbeit.
 
 ### 6.4 delegation_status
 
@@ -260,13 +266,14 @@ Geschlossenes Payload-Maximum 8 KiB, alle Felder Pflicht außer ausdrücklich nu
 | target_work_id | IdString oder null | non-null für ACCEPTED/EXECUTING/RECOVERY_REQUIRED/RESULT_REPORTED; null für UNKNOWN/REJECTED/EXPIRED |
 | request_digest | HashHex | verifizierte Bindung |
 | observed_receipt_stages | Array 0..5, unique, Enum aus fünf Stages, SFDJ-sortiert | nur beobachtete Stufen |
-| terminal_status | Enum completed|failed|verified|failed_verification oder null | non-null nur bei RESULT_REPORTED |
+| terminal_status | Enum completed|failed oder null | non-null nur bei RESULT_REPORTED; Origin-Verification ist niemals Target-Status |
 | as_of | Timestamp | Snapshot-Zeit |
 
 Die Antwort enthält niemals Worker-Identität, Lease-Owner, Stacktrace, Secret, Dateipfad,
 interne Evidence oder fremde Delegationen. UNKNOWN offenbart keine Existenz anderer IDs,
-Capabilities oder Knoten. Eine korrekt authentifizierte, korrekt adressierte Origin darf
-für ihre eigene unbekannte ID den minimalen UNKNOWN-Snapshot erhalten. Das Statusobjekt
+Capabilities oder Knoten. Eine korrekt authentifizierte, korrekt adressierte Origin erhält
+bei unbekannter oder fremder ID denselben minimalen UNKNOWN-Snapshot wie bei der eigenen
+unbekannten ID. Das Statusobjekt
 ist weder Receipt noch Verification; es ist signiert und über Request-Root/Kausalitäts-ID
 gebunden.
 
@@ -286,6 +293,67 @@ Root-Enrollment und Signing-Key-Autorisierung verwenden:
 STEWARD-FEDERATION-ROOT-ENROLLMENT-V1\0 bzw.
 STEWARD-FEDERATION-SIGNING-KEY-AUTH-V1\0. Node-ID-Kollisionen werden quarantänisiert;
 kein stilles Überschreiben oder Umbenennen. Signing-Key-Rotation hält node_id stabil.
+
+### 7.1 Bytegenaue Root-Enrollment-Schema
+
+Root-Provenance ist kein frei erfundenes Registry-Objekt. Der kanonische, signierte
+Enrollment-Record ist ein geschlossenes SFDJ-1-Objekt mit exakt diesen Pflichtfeldern und
+ohne Unknown-Fields oder null:
+
+~~~json
+{
+  "enrollment_version": "federation-root-enrollment-v1",
+  "identity_root_public_key": "PublicKeyB64",
+  "node_id": "ag_...32 lowercase hex...",
+  "not_before": "YYYY-MM-DDTHH:MM:SSZ",
+  "provenance_digest": "64 lowercase hex",
+  "registry_epoch": 0,
+  "root_signature": "SignatureB64"
+}
+~~~
+
+enrollment_version ist exakt der Literalwert; identity_root_public_key decodiert zu 32
+rohen Ed25519-Bytes; node_id muss aus dessen lowercase Hexdarstellung abgeleitet werden;
+provenance_digest ist ein SHA-256-Hash der externen Enrollment-Provenance, kein freier
+Text; registry_epoch ist Integer 0..2^63-1; not_before ist Timestamp; root_signature
+decodiert zu 64 Bytes. Der Signatur-Input ist
+UTF8(STEWARD-FEDERATION-ROOT-ENROLLMENT-V1\0) || SHA256(SFDJ-1(canonical record ohne
+root_signature)) als rohe Digestbytes. Die Registry akzeptiert den Record nur nach
+Signatur-, Ableitungs-, Epoch- und Kollisionsprüfung.
+
+### 7.2 Bytegenaue Signing-Key-Authorization-Certificate-Schema
+
+Das Root-signierte Certificate ist ebenfalls geschlossen, ohne Unknown-Fields und mit
+expliziter Nullable-Regel nur bei revocation_ref:
+
+~~~json
+{
+  "activation_at": "YYYY-MM-DDTHH:MM:SSZ",
+  "activation_epoch": 0,
+  "certificate_epoch": 0,
+  "certificate_version": "federation-signing-key-auth-v1",
+  "identity_root_public_key": "PublicKeyB64",
+  "key_id": "key_...64 lowercase hex...",
+  "node_id": "ag_...32 lowercase hex...",
+  "not_after": "YYYY-MM-DDTHH:MM:SSZ",
+  "not_before": "YYYY-MM-DDTHH:MM:SSZ",
+  "registry_epoch": 0,
+  "revocation_ref": null,
+  "rotation_kind": "regular",
+  "signer_key": "PublicKeyB64",
+  "root_signature": "SignatureB64"
+}
+~~~
+
+certificate_version ist exakt der Literalwert; key_id muss aus den rohen Bytes von
+signer_key abgeleitet werden; node_id und Root-Key müssen zusammenpassen; Activation- und
+Gültigkeitszeiten sind Timestamp und not_before <= activation_at <= not_after; Epochs sind
+Integer 0..2^63-1; rotation_kind ist regular oder emergency_compromise; revocation_ref ist
+null bei nicht widerrufenem Certificate oder ein HashHex des unveränderlichen Revocation-
+Records. Die Root-Signatur nutzt
+UTF8(STEWARD-FEDERATION-SIGNING-KEY-AUTH-V1\0) || SHA256(SFDJ-1(canonical certificate
+ohne root_signature)) als rohe Digestbytes. Aktivierung erfolgt erst ab activation_at und
+nach Registry-Statusprüfung; ein Registry-Eintrag ohne dieses Certificate ist ungültig.
 
 **Root-Recovery ist ausdrücklich kein V1-Protokollbestandteil:**
 
