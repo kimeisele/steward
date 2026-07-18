@@ -1,15 +1,50 @@
 # HEARTBEAT-FEHLERPROPAGATION — MASTER-SYSTEMSPEZIFIKATION
 
-> **Status:** DRAFT 0.1 — RECON-PHASE; NOCH KEINE FEATURE-SPEC; IMPLEMENTIERUNG UND
-> AKTIVIERUNG GESPERRT
-> **Datum:** 2026-07-17
-> **Produktionsbasis:** `kimeisele/steward@bf2fba2075a87463fc8e333f8f57d805fce4d030`
+> **Status:** RECONCILED 1.0 — RECON ABGESCHLOSSEN; FEATURE 01 SCHNITT A IMPLEMENTIERT
+> UND PRODUKTIV SICHTBAR; SCHNITT B/C NICHT FREIGEGEBEN
+> **Datum:** 2026-07-18
+> **Aktuelle Produktionsbasis:**
+> `kimeisele/steward@24f86ec0749a1eff919921a947189ee5c459a4c8`
+> **Historische Recon-Basis:**
+> `kimeisele/steward@bf2fba2075a87463fc8e333f8f57d805fce4d030`
 > **Plan-Herkunft:** Phase-2 `docs/PHASE2_CURRENT.md` §7.3 (Heartbeat-Fehlerpropagation)
-> **Sperre:** Aus diesem Dokument darf noch kein Produktivpatch abgeleitet werden. Erst nach
-> abgeschlossenem Recon und separat reviewter Feature-Spec wird ein kleinster Root-Cause-
-> Patch autorisiert.
+> **Sperre:** Schnitt A ist historische, gemergte Realität und kein neuer Auftrag. Schnitt B
+> (Eskalation) und C (Run-rot) bleiben bis zu eigenen Specs, Produktionsdaten und explizitem
+> Operator-Go gesperrt. Keine weitere Implementierung aus diesem Masterdokument ableiten.
 
 ---
+
+## 0R. AUTORITATIVE RECONCILIATION (2026-07-18)
+
+Dieser Abschnitt ersetzt die frühere Kopfzeilenbehauptung „noch keine Feature-Spec oder
+Implementierung". Die darunter erhaltene Recon-/Review-Prosa bleibt historische Evidence.
+
+### Tatsächlicher Lieferstand
+
+| Gegenstand | Stand | Beleg |
+|---|---|---|
+| RECON_01–04 | abgeschlossen | `specs/heartbeat_failure_propagation_evidence/` |
+| Feature 01 Schnitt A | implementiert | Commits `71a207e39efa84396b8f030a58a66b7abd77b513`, `899135cee8af79efa74139fc10da7e015508eef0` |
+| Merge | auf `main` | PR `#759`, Merge `281c7112bb90d0fe1440d25bf8229dfe12980f17` |
+| Direkte Tests | grün | `pytest -q tests/test_moksha_health.py` → `17 passed` am aktuellen Recon-Pin |
+| Produktionsartefakt | vorhanden | `.steward/federation_health.json:cognition` am Live-Pin |
+| Schnitt B | nicht implementiert | eigenes G2-/Operator-Gate erforderlich |
+| Schnitt C | gesperrt | A-Daten, Schwelle, atomares Persistenzfundament, Kill-Switch und Operator-Go fehlen |
+
+### Aktueller Produktionszustand
+
+Am Live-Pin sind drei Provider alive und usable. `hard_down`, `degraded` und
+`skip_collapse` sind `false`, `decode_error` ist `null`, der persistierte Streak ist `0`.
+Schnitt A beobachtet damit produktiv, ändert aber weiterhin keinen Kontrollfluss und keinen
+Workflow-Exit.
+
+Das übergeordnete Problem ist nicht geschlossen: Agent City Run `29644618328` endete am
+selben Tag grün, obwohl der State-Push mit `GH006 Protected branch update failed` scheiterte.
+Das ist ein separater, live belegter Fehlerkanal. Schnitt A misst Provider-/Kognitionszustand;
+es behauptet keine allgemeine Workflow-Wahrheit.
+
+Vollständiger aktueller Recon:
+`specs/execution_truth_map/EXECUTION_TRUTH_MAP_RECON.md`.
 
 ## 0. WARUM DIESE BAUSTELLE EXISTIERT
 
@@ -64,14 +99,16 @@ Run-Exit-Status.
 Ordner `CONTEXT_BRIDGE_*` / `context_bridge_evidence/`), Identitäts-Rename, Key-Rotation,
 Quarantäne-Cleanup. Kein Sammelpatch.
 
-## 3. ISOLATION (gegen Parallel-Agenten-Merge-Konflikte)
+## 3. HISTORISCHE ISOLATION UND HEUTIGE DOKUMENTROLLE
 
-Diese Baustelle lebt **ausschließlich** in:
+Während Recon und Schnitt-A-Entwicklung lebte diese Baustelle **ausschließlich** in:
 - `specs/HEARTBEAT_FAILURE_PROPAGATION_SYSTEM_SPEC.md` (dieses Dokument)
 - `specs/heartbeat_failure_propagation_evidence/**`
 
-Sie schreibt **nicht** in `docs/PHASE2_BEFUND.md`, `docs/PHASE2_CURRENT.md` oder in
-`context_bridge_*`-Pfade. Dadurch entstehen keine Merge-Kollisionen mit anderen Agenten.
+Die damalige Parallelitätsregel untersagte Phase-2-Schreibzugriffe. Sie ist für den
+akzeptierten Dokumentationsmilestone vom 2026-07-18 superseded: `docs/PHASE2_BEFUND.md`
+erhält nun ausdrücklich nur die kompakte autoritative Zusammenfassung. Context-Bridge-
+Pfade und `docs/PHASE2_CURRENT.md` bleiben unberührt.
 
 ## 4. EVIDENZ-INDEX
 
@@ -88,17 +125,22 @@ Erkennung (`vedana` Provider-Puls → `health_anomaly`) ist nur nach innen verdr
 verwaist". Zielrichtung: vorhandene Erkennung bei *anhaltendem* Kollaps nach außen sichtbar
 machen — LOGGING zuerst, kein erzwungenes Rot vor Beobachtung.
 
-## 5. NÄCHSTER GATE
+## 5. GATE-STATUS NACH SCHNITT A
 
 **Recon abgeschlossen (RECON_01–04).** Die Fehlerklassen-Matrix ist vollständig belegt
-(RECON_04 §5). Kein offener Recon-Punkt ist vor der Spec zwingend.
+(RECON_04 §5). Feature 01 wurde siebenmal reviewt; Schnitt A wurde anschließend mit PR
+`#759` implementiert, reviewgehärtet und gemergt. Die Statusform-Gegenprüfung ist im Code
+als `_validate_protocol_shape_once()` sowie in direkten Tests enthalten.
 
-Feature-Spec liegt als **DRAFT 1.0 — bedingtes Go** vor:
-`HEARTBEAT_FAILURE_PROPAGATION_FEATURE_01.md`. **Sieben** Review-Runden, keine offenen
-Designfehler. Schnitt A misst Hard-Down, Degradation und Skip-Kollaps; §5.3 vollständig
-definiert und **fail-laut** (Dekoder werfen bei `steward-protocol`-Form-Drift statt still
-„gesund" zu lesen); §10.4a gepinnt (`vibe_core` via PyPI-Paket `steward-protocol`);
-Per-Provider-Quota als toter Pfad aufgelöst; Membran-Skip bewusst nicht erfasst.
-**Verbleibend vor formalem G1:** (i) Statusform-Gegenprüfung gegen die Produktions-
-`steward-protocol`-Version als **erster Implementierungsschritt**; (ii) normales
-Deployment-Gate. **Kein Produktcode ohne Operator-Go.**
+Schnitt A misst Hard-Down, Degradation und Skip-Kollaps und persistiert den Streak. Er ist
+reines Instrument: kein `raise`, kein Exit-Gate, keine Eskalation. Damit ist A geliefert,
+nicht die gesamte Heartbeat-Fehlerpropagation.
+
+**Nächste getrennte Gates:**
+
+1. B nur nach Auswertung belastbarer A-Produktionsdaten und eigener Spec: sichtbare
+   Eskalation ohne Run-rot.
+2. C bleibt gesperrt, bis Prädikat und Schwelle empirisch feststehen, der Health-Write
+   atomar ist und ein Default-off Kill-Switch plus Operator-Go vorliegt.
+3. Allgemeine Workflow-Fehler wie Agent-City-Git-Push sind nicht Teil von A und benötigen
+   einen getrennten Vertrag; sie dürfen nicht nachträglich in Feature 01 hineingezogen werden.
