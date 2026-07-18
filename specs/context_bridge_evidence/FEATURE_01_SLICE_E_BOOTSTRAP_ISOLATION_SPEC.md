@@ -1,6 +1,6 @@
 # Context Bridge Slice E — Bootstrap and Publisher Isolation
 
-**Status:** DRAFT 1.0 — E0 architecture decisions closed; implementation forbidden
+**Status:** E0 APPROVED — E1 implementation permitted; E2/E3/G1/D2b/canonical activation forbidden
 
 **Parent contract:** `FEATURE_01_SLICE_D2B_WRITER_POLICY_PREFLIGHT.md`,
 `FEATURE_01_SLICE_D2B_G2_PREFLIGHT.md`
