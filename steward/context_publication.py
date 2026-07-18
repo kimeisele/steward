@@ -15,12 +15,13 @@ import os
 import re
 import secrets
 import stat
+import sys
 import threading
 import time
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Mapping, Protocol, runtime_checkable
+from typing import Mapping
 
 import steward.context_publisher as observer
 from steward.context_contract import ConstitutionAttestation, ContractViolation
@@ -80,19 +81,85 @@ _OPEN_FILE = observer._OPEN_FILE
 _THREAD_LOCK_GUARD = threading.Lock()
 _THREAD_LOCKS: dict[tuple[int, int], threading.Lock] = {}
 _LEASE_TOKEN = object()
+_ISOLATION_TOKEN = object()
 
 
-@runtime_checkable
-class PublisherIsolation(Protocol):
-    """Externally attested process/worktree capability consumed by the publisher."""
+class PublisherIsolation:
+    """Opaque process/worktree attestation issued by the isolated bootstrap."""
 
-    repository_root: Path
-    root_fd: int
-    git_fd: int
-    steward_fd: int
+    __slots__ = (
+        "repository_root",
+        "root_fd",
+        "git_fd",
+        "steward_fd",
+        "_pid",
+        "_root_anchor",
+        "_git_anchor",
+        "_steward_anchor",
+        "_closed",
+    )
+
+    def __init__(
+        self,
+        token: object,
+        repository_root: Path,
+        root_fd: int,
+        git_fd: int,
+        steward_fd: int,
+    ) -> None:
+        if token is not _ISOLATION_TOKEN:
+            raise TypeError("isolation_constructor_private")
+        if not isinstance(repository_root, Path) or not repository_root.is_absolute():
+            raise ValueError("repository_path_invalid")
+        self.repository_root = repository_root
+        self.root_fd = root_fd
+        self.git_fd = git_fd
+        self.steward_fd = steward_fd
+        self._pid = os.getpid()
+        self._root_anchor = _directory_anchor(root_fd)
+        self._git_anchor = _directory_anchor(git_fd)
+        self._steward_anchor = _directory_anchor(steward_fd)
+        self._closed = False
+
+    @classmethod
+    def _from_bootstrap(
+        cls,
+        token: object,
+        repository_root: Path,
+        root_fd: int,
+        git_fd: int,
+        steward_fd: int,
+    ) -> "PublisherIsolation":
+        return cls(token, repository_root, root_fd, git_fd, steward_fd)
 
     def verify(self) -> bool:
-        """Return true only while the dedicated process/worktree remains pinned."""
+        if self._closed or os.getpid() != self._pid:
+            return False
+        fresh_root: int | None = None
+        try:
+            if _directory_anchor(self.root_fd) != self._root_anchor:
+                return False
+            if _directory_anchor(self.git_fd) != self._git_anchor:
+                return False
+            if _directory_anchor(self.steward_fd) != self._steward_anchor:
+                return False
+            fresh_root = observer._open_repository_root(self.repository_root)
+            return _directory_anchor(fresh_root) == self._root_anchor
+        except (OSError, ValueError, observer._ObservationFailure):
+            return False
+        finally:
+            if fresh_root is not None:
+                os.close(fresh_root)
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        for descriptor in (self.git_fd, self.steward_fd, self.root_fd):
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
 
 
 class PublicationMode(str, Enum):
@@ -1596,6 +1663,8 @@ def publish_context(
         return _result(PublicationState.BLOCKED, "disabled")
     if selected_mode is PublicationMode.PREVIEW:
         return _result(PublicationState.BLOCKED, "preview_only")
+    if selected_mode is PublicationMode.CANONICAL and sys.platform == "darwin":
+        return _result(PublicationState.MANUAL_REVIEW, "unsupported_platform")
     if not isinstance(repository_root, Path) or not repository_root.is_absolute():
         return _result(PublicationState.BLOCKED, "repository_path_invalid")
     if not isinstance(lease, PublisherLease):
