@@ -170,7 +170,31 @@ class TestCognitionBlock:
         cog = report["cognition"]
 
         assert cog["decode_error"] is not None
-        assert cog["consecutive_collapsed_cycles"] == 2  # frozen, not guessed
+        assert cog["hard_down"] is False
+        assert cog["degraded"] is False
+        assert cog["consecutive_collapsed_cycles"] == 2  # genuinely undecidable -> frozen
+
+    def test_decode_error_does_not_mask_degraded(self):
+        """Befund 1: an unambiguous collapse signal (degraded) must not be masked
+        by an unrelated breaker/quota shape drift — only the undecidable
+        skip_collapse signal is allowed to freeze the streak."""
+        stats = {
+            "providers": [
+                {"name": "p0", "alive": True, "breaker": {"failure_count": 0}},  # missing 'state'
+            ],
+            "total_calls": 0,
+            "total_failures": 1,  # fd=1, cd=0 -> degraded True regardless of decode drift
+            "quota": {},
+        }
+        ServiceRegistry.register(SVC_PROVIDER, StatsOnlyProvider(stats))
+
+        prev = {"consecutive_collapsed_cycles": 2, "total_calls": 0, "total_failures": 0}
+        report = _build_health_report(prev)
+        cog = report["cognition"]
+
+        assert cog["decode_error"] is not None
+        assert cog["degraded"] is True
+        assert cog["consecutive_collapsed_cycles"] == 3  # advanced, not frozen
 
 
 class TestDiskRoundtrip:
@@ -224,3 +248,71 @@ class TestDiskRoundtrip:
 
         assert result is None
         assert "moksha_health_report:ok" in ctx.operations
+
+
+class TestProtocolShapeValidation:
+    """Befund 3: spec §5.3a claims execute() validates the installed
+    steward-protocol shape once on first call — this must actually happen."""
+
+    def test_validate_protocol_shape_matches_installed_package(self):
+        """Re-runs the impl-step-1 version cross-check as a regression test:
+        the real installed steward-protocol get_status() shapes must decode
+        cleanly through the pinned decoders."""
+        from steward.hooks.moksha_health import _breaker_ok, _quota_ok
+        from vibe_core.runtime.circuit_breaker import CircuitBreaker, CircuitBreakerConfig
+        from vibe_core.runtime.quota_manager import OperationalQuota
+
+        assert _breaker_ok(CircuitBreaker(CircuitBreakerConfig()).get_status()) is True
+        assert _quota_ok(OperationalQuota().get_status()) is True
+
+    def test_validate_protocol_shape_once_sets_flag(self, monkeypatch):
+        import steward.hooks.moksha_health as mh
+
+        monkeypatch.setattr(mh, "_version_validated", False)
+        mh._validate_protocol_shape_once()
+        assert mh._version_validated is True
+
+    def test_validate_protocol_shape_runs_only_once(self, monkeypatch):
+        import steward.hooks.moksha_health as mh
+
+        monkeypatch.setattr(mh, "_version_validated", False)
+        calls = []
+        real_breaker_ok = mh._breaker_ok
+
+        def spy(b):
+            calls.append(b)
+            return real_breaker_ok(b)
+
+        monkeypatch.setattr(mh, "_breaker_ok", spy)
+        mh._validate_protocol_shape_once()
+        mh._validate_protocol_shape_once()
+        mh._validate_protocol_shape_once()
+
+        assert len(calls) == 1  # validated once, subsequent calls are no-ops
+
+    def test_execute_triggers_validation(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        import steward.hooks.moksha_health as mh
+
+        monkeypatch.setattr(mh, "_version_validated", False)
+        hook = MokshaHealthReportHook()
+        ctx = PhaseContext(cwd=str(tmp_path))
+
+        hook.execute(ctx)
+
+        assert mh._version_validated is True
+
+    def test_validate_protocol_shape_detects_drift(self, monkeypatch, caplog):
+        import logging
+
+        import steward.hooks.moksha_health as mh
+        from vibe_core.runtime.circuit_breaker import CircuitBreaker
+
+        monkeypatch.setattr(mh, "_version_validated", False)
+        monkeypatch.setattr(CircuitBreaker, "get_status", lambda self: {"failure_count": 0})
+
+        with caplog.at_level(logging.ERROR, logger="STEWARD.HOOKS.MOKSHA_HEALTH"):
+            mh._validate_protocol_shape_once()
+
+        assert mh._version_validated is True  # non-fatal: logged, not raised
+        assert any("shape drift" in r.message for r in caplog.records)
