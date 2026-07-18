@@ -1,6 +1,8 @@
 # ADR-06 — FEDERATION-SIGNATURVERTRAG
 
-> **Status:** ACCEPTED 1.0 — FEDERATION-DELEGATION-V1-SCOPE
+> **Status:** OPEN / REVISION REQUIRED — SPRINT 1B
+> **Hinweis:** Der folgende Sprint-1-Text ist historischer Befund; Draft 0.3 bleibt bis zur
+> Agent-B-Bestätigung von Identity-, Rotation-, Revocation- und Domain-Regeln offen.
 > **Datum:** 2026-07-18
 > **Entscheider:** Codebase-Agent, zur Review durch Agent B
 > **Geltungsbereich:** V1-Federation-Envelope; keine allgemeine Trust-/Identity-Neuordnung

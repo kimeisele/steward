@@ -424,3 +424,9 @@ akzeptiert. Die Einzelentscheidungen und ihre Grenzen stehen in:
 
 Der Recon bleibt das IST-Dokument. Die ADRs und der Contract definieren den anschließenden
 SOLL-Entscheidungsstand; sie ändern keine historische Recon-Aussage.
+
+Nach dem Agent-B-Review wurde Sprint 1 als `REVISION REQUIRED` zurück in Sprint 1B gegeben.
+Die revidierte Grundlage ist `ADR_DECISION_SPRINT_1B_REVISION.md`; Draft 0.2 ist nicht mehr
+Fixture-/Crucible-Basis. ADR-06 bleibt bis zur Bestätigung von Node-ID, key_id, Rotation,
+Revocation und Domain Separation offen. Draft 0.3 steht in
+`specs/FEDERATION_DELEGATION_CONTRACT_V1_DRAFT_0_3.md`.

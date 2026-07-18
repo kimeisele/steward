@@ -1,6 +1,8 @@
 # ADR-09 — RECEIPT-SEMANTIK
 
-> **Status:** ACCEPTED 1.0 — FEDERATION-DELEGATION-V1-SCOPE
+> **Status:** AMENDED — SPRINT 1B REVISION IN `ADR_DECISION_SPRINT_1B_REVISION.md`
+> **Hinweis:** Der folgende Sprint-1-Text ist historische Begründung; Partial Order und
+> request-/causation_message_id aus Sprint 1B sind die neue normative Grundlage.
 > **Datum:** 2026-07-18
 > **Entscheider:** Codebase-Agent, zur Review durch Agent B
 > **Geltungsbereich:** Federation Delegation V1; kein allgemeines Outcome-/Execution-Modell

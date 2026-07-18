@@ -1,6 +1,8 @@
 # ADR-08 — RETRY-, RECOVERY- UND IDEMPOTENZVERTRAG
 
-> **Status:** ACCEPTED 1.0 — FEDERATION-DELEGATION-V1-SCOPE
+> **Status:** AMENDED — SPRINT 1B REVISION IN `ADR_DECISION_SPRINT_1B_REVISION.md`
+> **Hinweis:** Der folgende Sprint-1-Text ist historische Begründung; request_digest und
+> Application-Reissue werden ausschließlich in Sprint 1B normativ ergänzt.
 > **Datum:** 2026-07-18
 > **Entscheider:** Codebase-Agent, zur Review durch Agent B
 > **Geltungsbereich:** Delegation Request, Admission, Result und Recovery; keine Provider-Spine

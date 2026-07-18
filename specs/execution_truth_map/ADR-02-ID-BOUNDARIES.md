@@ -1,6 +1,8 @@
 # ADR-02 — EXECUTION-, CORRELATION- UND MESSAGE-ID
 
-> **Status:** ACCEPTED 1.0 — FEDERATION-DELEGATION-V1-SCOPE
+> **Status:** AMENDED — SPRINT 1B REVISION IN `ADR_DECISION_SPRINT_1B_REVISION.md`
+> **Hinweis:** Der folgende Sprint-1-Text ist historische Begründung; Draft 0.3 und Sprint
+> 1B sind für normative Regeln maßgeblich.
 > **Datum:** 2026-07-18
 > **Entscheider:** Codebase-Agent, zur Review durch Agent B
 > **Geltungsbereich:** Federation Delegation Contract V1; keine universelle Execution Spine

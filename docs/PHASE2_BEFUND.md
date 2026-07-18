@@ -2423,6 +2423,9 @@ D2b, G1, Publisher, Delivery und Canonical-Aktivierung bleiben gesperrt.
 
 ## §27 — ADR DECISION SPRINT 1: FEDERATION DELEGATION V1 (2026-07-18)
 
+> Historischer Sprint-1-Stand; durch §28 und Draft 0.3 revidiert. Nicht als Fixture- oder
+> Crucible-Basis verwenden.
+
 Der Codebase-Agent hat für Agent B die fünf ausdrücklich beauftragten Federation-ADRs
 erneut am Live-Code geprüft. Alle fünf Entscheidungen sind für den Delegation-V1-Scope
 `ACCEPTED`; keine Entscheidung ist eine universelle Execution-Spine-Entscheidung und keine
@@ -2467,3 +2470,44 @@ aber weiterhin `NOT IMPLEMENTATION-READY`. Vor Implementierung bleiben erforderl
 Agent-B-Review, Golden-Wire-Fixtures, Ledger-/Lease-Crucible und ein echter
 Steward→Agent-City-Delegations-Crucible. Phase 1, Context Bridge und Produktcode bleiben
 unangetastet.
+
+## §28 — ADR DECISION SPRINT 1B: REVISION REQUIRED (2026-07-18)
+
+Agent B hat Draft 0.2 als architektonisch tragfähig, aber noch nicht fixture- oder
+crucible-ready bewertet. Die elf normativen Lücken wurden in einem gezielten Sprint 1B
+behandelt, ohne Produktcode zu ändern:
+
+- Transport-Retransmission und Application-Reissue sind getrennt.
+- `request_digest` wird über eine exakt definierte semantische Request-Payload berechnet;
+  `idempotency_key` ist deterministisch daraus abgeleitet.
+- Node-ID, `key_id`, stabile Registry-Provenance, Rotation und Revocation sind neu gefasst;
+  ADR-06 bleibt bis zur Agent-Bestätigung `OPEN / REVISION REQUIRED`.
+- Domain Separation ist Bestandteil des Signaturinputs.
+- Canonical JSON, Zeitprofil, Unicode, Zahlen, Base64, Limits und Versionsliteral sind
+  explizit festgelegt.
+- Receipt-Stufen bilden einen Partial Order; Out-of-Order, Reject-Seitenpfad und Replay sind
+  getrennt geregelt.
+- `request_message_id` und `causation_message_id` ersetzen `subject_message_id`.
+- Target- und Origin-Ledger sind getrennte Zustandsbesitzer.
+- Capability-Status lautet `declared`, `partially_wired`, `code_complete`,
+  `crucible_verified`, `production_proven`, `unavailable` oder `legacy`.
+
+Die vollständige Revision steht in:
+
+`specs/execution_truth_map/ADR_DECISION_SPRINT_1B_REVISION.md`
+
+Die aktualisierte Blocker-Matrix steht in:
+
+`specs/execution_truth_map/ADR_SPRINT_1B_BLOCKER_MATRIX.md`
+
+Die neue Contract-Fassung ist:
+
+`specs/FEDERATION_DELEGATION_CONTRACT_V1_DRAFT_0_3.md`
+
+Das self-contained Review-Packet für die nächste Agent-B-Prüfung ist:
+
+`specs/execution_truth_map/AGENT_B_ADR_SPRINT_1B_REVIEW_PACKET.md`
+
+Draft 0.3 bleibt `NOT IMPLEMENTATION-READY`, bis Agent B die revidierten Crypto-, Digest-,
+Partial-Order-, Ledger- und Statusregeln bestätigt. Golden-Wire-Fixtures, Crucible-Design,
+Produktcode, Phase 1 und Context Bridge bleiben gesperrt.

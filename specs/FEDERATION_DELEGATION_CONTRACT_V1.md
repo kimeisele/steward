@@ -1,4 +1,8 @@
-# FEDERATION DELEGATION CONTRACT V1
+# FEDERATION DELEGATION CONTRACT V1 — DRAFT 0.2 (SUPERSEDED)
+
+> **Superseded:** Diese Draft-0.2-Fassung ist historisch und nicht mehr normative Wire-,
+> Fixture- oder Crucible-Basis. Die normative Revision steht in
+> `specs/FEDERATION_DELEGATION_CONTRACT_V1_DRAFT_0_3.md`.
 
 > **Status:** DRAFT 0.2 — ADR DECISION SPRINT 1 ACCEPTED; ADVERSARIAL-/READINESS-REVIEW
 > PENDING; NOT IMPLEMENTATION-READY

@@ -6,6 +6,10 @@
 > **Scope:** nur Federation Delegation Contract V1; keine Execution-Spine-Entscheidung,
 > kein Produktcode
 
+> **Hinweis:** Agent-B-Review hat Draft 0.2 als `REVISION REQUIRED` bewertet. Diese
+> Sprint-1-Fassung ist historisch; die revidierte Grundlage ist
+> `ADR_DECISION_SPRINT_1B_REVISION.md` und Draft 0.3.
+
 ## 1. Geprüfter Bestand
 
 Dieser Review prüft die fünf einzeln vorgelegten ADRs gegen den aktualisierten Contract:

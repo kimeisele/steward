@@ -1,6 +1,8 @@
 # ADR-07 — CAPABILITY-WIRING-DEFINITION
 
-> **Status:** ACCEPTED 1.0 — FEDERATION-DELEGATION-V1-SCOPE
+> **Status:** AMENDED — SPRINT 1B REVISION IN `ADR_DECISION_SPRINT_1B_REVISION.md`
+> **Hinweis:** Der folgende Sprint-1-Text ist historische Begründung; die neuen Statusstufen
+> stehen in der Sprint-1B-Revision.
 > **Datum:** 2026-07-18
 > **Entscheider:** Codebase-Agent, zur Review durch Agent B
 > **Geltungsbereich:** Nachweis, wann eine Federation-Operation als implementiert gelten darf

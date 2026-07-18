@@ -4,6 +4,9 @@
 > Datum: 2026-07-18
 > Scope: Federation Delegation Contract V1; keine universelle Execution Spine; kein Produktcode
 
+> Historischer Sprint-1-Stand. Agent B hat Draft 0.2 als `REVISION REQUIRED` bewertet. Die
+> aktuelle normative Revision steht in `AGENT_B_ADR_SPRINT_1B_REVIEW_PACKET.md` und Draft 0.3.
+
 Dieses Dokument ist vollständig eigenständig und enthält die technische Review-Unterlage.
 Dateipfade und historische Pins dienen als Nachweis, sind aber keine Voraussetzung zum
 Verständnis der Entscheidungen.
