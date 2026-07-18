@@ -18,6 +18,13 @@
 `data/federation/relay_seen_ids.json`, and `data/federation/steward_health.json`.
 No E0 source, spec, or implementation path is overlapped by that drift.
 
+**Pin semantics:** The commit and tree above are the immutable evidence point,
+not a claim that the moving `main` alias will still equal them at review time.
+Before review or merge, `pin..origin/main` must be queried and reported. Drift
+limited to the eleven runtime/federation paths listed above does not require a
+new documentation commit; any product, workflow, test, policy, or Context-
+Bridge-spec drift invalidates the pin and requires a new comparison or repin.
+
 **Related unmerged code:** PR #728, head `e280e199f111776c132713d4fec05fabe57041d5`
 
 ## 1. Purpose
