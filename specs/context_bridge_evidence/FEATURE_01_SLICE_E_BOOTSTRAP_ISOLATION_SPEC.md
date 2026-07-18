@@ -1,6 +1,6 @@
 # Context Bridge Slice E — Bootstrap and Publisher Isolation
 
-**Status:** DRAFT 0.5 — E0 architecture decisions closed; implementation forbidden
+**Status:** DRAFT 0.6 — E0 architecture decisions closed; implementation forbidden
 
 **Parent contract:** `FEATURE_01_SLICE_D2B_WRITER_POLICY_PREFLIGHT.md`,
 `FEATURE_01_SLICE_D2B_G2_PREFLIGHT.md`
@@ -170,7 +170,6 @@ The exact `execveat` argv is:
   --clearenv
   --preserve-fd 3 --preserve-fd 4 --preserve-fd 5
   --ro-bind /proc/self/fd/5 /
-  --dir /input
   --ro-bind /proc/self/fd/4 /input/source.bundle
   --tmpfs /work
   --proc /proc --dev /dev --tmpfs /tmp
@@ -193,6 +192,14 @@ the verified Bubblewrap executable consumed by `execveat`. Only FDs 3, 4, and
 5 cross the Bubblewrap launch. All three `--preserve-fd` arguments are
 mandatory. A launch that cannot preserve exactly those FDs is unsupported and
 returns `manual_review` before any workspace or transaction namespace exists.
+The runtime root itself must already contain exactly these empty, root-owned
+mode-`0555` mountpoint directories before the root bind: `/input`, `/work`,
+`/proc`, `/dev`, and `/tmp`. `/input` is the parent for the sealed bundle;
+`/work`, `/proc`, `/dev`, and `/tmp` are subsequently mounted over those
+directories. Bubblewrap must not create a mountpoint beneath the read-only root,
+and a missing, non-directory, writable, or symlink mountpoint is
+`manual_review` before launch. This is why no `--dir` operation appears after
+the root bind.
 `--clearenv` is mandatory. The only worker environment variables are the nine
 `LANG`/`LC_ALL`/`PATH`/`GIT_*` assignments shown above; every other inherited
 variable, loader variable, proxy, credential, and unlisted `GIT_*` override is
@@ -271,6 +278,36 @@ exactly as in D2a, the sole export command is:
 ```text
 git --git-dir=/proc/self/fd/<source-git-fd> bundle create - HEAD
 ```
+
+The exporter child has this exact process contract at `execveat`: host
+UID/GID/effective UID/GID `65532/65532`; CWD `/` established before exec; umask
+`077`; `PR_SET_NO_NEW_PRIVS=1`; dumpable `0`; empty inheritable, permitted,
+effective, bounding, and ambient capability sets; and no supplementary groups.
+Its initial descriptors are exactly FD 0=`/dev/null` read-only, FD 1=the
+supervisor-owned bundle memfd writable, FD 2=the supervisor-owned bounded
+stderr pipe writable, FD 3=the pinned source-`.git` directory read-only, and
+FD 4=the `O_CLOEXEC` exec-status pipe writable. The child executes
+`close_range(5, UINT_MAX, CLOSE_RANGE_UNSHARE)`, verifies that only FDs 0..4
+remain, and fails closed if the syscall or verification fails. No cgroup,
+repository-root, event-root, socket, loader, credential, or caller FD is
+inherited. The exporter has no IPC socket and cannot open a host path supplied
+by the caller.
+
+The exporter environment is exactly the nine variables listed in §4.2; it has
+no `HOME`, `XDG_*`, `LD_*`, proxy, credential, or unlisted `GIT_*` variable.
+The supervisor validates the source local configuration through the pinned
+`.git` FD before each Git invocation. The only accepted local keys are
+`core.repositoryformatversion`, `core.filemode`, `core.bare`,
+`core.logallrefupdates`, and `extensions.objectformat`, with their canonical
+scalar types and values; every `include.*` or `includeIf.*` key/section,
+`core.hooksPath`, `core.fsmonitor`, filter/process/clean/smudge command,
+credential helper, SSH command, upload-pack, receive-pack, pager, alias, and
+any other local key is a `manual_review` block. The parser rejects a changed
+or unreadable config before spawning Git, and the second D2a round proves that
+the validated config bytes and parent/layout identities did not change. Thus
+local config cannot introduce an include, executable hook, external helper,
+or alternate object/config path. Global and system config remain disabled by
+the six explicit `GIT_CONFIG_*` settings.
 
 Its host environment is exactly the nine-variable D2b allowlist, its stdout is
 streamed directly into a private `memfd_create(MFD_ALLOW_SEALING)` descriptor,
@@ -381,10 +418,12 @@ every node below the runtime root except the byte-identical
 - regular files are root-owned mode `0444` or `0555`, have bounded integer
   `size`, lowercase-hex SHA-256, and `git_blob` only for repository-derived
   files;
-- `role` is one of `python`, `python_stdlib`, `python_native`, `worker`,
+- `role` is one of `mountpoint`, `python`, `python_stdlib`, `python_native`, `worker`,
   `git`, `git_core`, `git_template`, `elf_loader`, or `shared_library`.
 
-The closed entry set contains `/usr/bin/python3.12`, the complete packaged
+The closed entry set contains the five required empty mountpoint directories
+`input`, `work`, `proc`, `dev`, and `tmp` at the runtime-root top level, plus
+`/usr/bin/python3.12`, the complete packaged
 Python 3.12 standard library and `lib-dynload`, the worker entrypoint and every
 importable Steward module in its reviewed static import closure, `/usr/bin/git`,
 every invoked `git-core` helper, Git templates, the ELF loader, and the complete
