@@ -2696,3 +2696,57 @@ Der Plan steht auf dem separaten Branch `plan/federation-delegation-implementati
 und wartet erneut auf Agent-B-Review. Bis zur Entscheidung bleiben Produktcode, Context
 Bridge, Execution-Spine-Gesamtspec, Provider-Failover-Umbau, Merge-Autorität und
 produktive Aktivierung gesperrt.
+
+## §35 — FEDERATION DELEGATION IMPLEMENTATION SLICE 01 (2026-07-18)
+
+Die Implementierung ist auf separaten, nicht gemergten Branches erfolgt und wartet auf
+die erneute Agent-B-Abnahme. Die exakten Remote-Pins und die vollständige, self-contained
+Review-Unterlage stehen in:
+
+`specs/execution_truth_map/AGENT_B_FEDERATION_DELEGATION_IMPLEMENTATION_SLICE_01_REVIEW.md`
+
+Implementierungspins:
+
+- Steward `impl/federation-delegation-slice-01`:
+  `e83c919209c17dd1bf2377c811ce10e689078539`
+- Agent City `impl/federation-delegation-slice-01`:
+  `58493604c545b23b3926d56d71b46afb0bd2fbe1`
+
+Der ausschließlich freigegebene Slice ist nun produktseitig vorhanden:
+
+`Steward V1 Origin -> geschlossener exakt adressierter Carrier -> Agent-City-V1-Ingress ->
+SFDJ-/Provenance-/Signatur-/Authority-Prüfung -> atomarer ACCEPTED-/REJECTED-Admission-
+Ledger -> vollständig gespeichertes signiertes Admission-Receipt -> geschlossener Receipt-
+Carrier -> Steward-ID-Korrelation`.
+
+Belegt ist insbesondere:
+
+- vollständige Request- und Receipt-Wire-Bytes, getrennte Message-/Receipt-IDs, Hashes,
+  Signatur und Sendestatus im Ledger;
+- First-Set-/Duplicate-Match-Semantik für `target_work_id`;
+- durable, idempotente REJECTED-Receipts;
+- Carrier-Mutation-Quarantäne ohne Netzwerkantwort;
+- default-deaktiviertes Feature-Gate und unveränderte Legacy-`OP_DELEGATE_TASK`-/Titel-
+  Pfade;
+- repo-lokale, unabhängige Steward-/Agent-City-Adapter ohne neue gemeinsame Runtime-
+  Library.
+
+Gemessene Ergebnisse nach dem letzten Commit:
+
+- Steward Slice plus Golden Fixtures: `52 passed`;
+- Agent City Slice plus Golden Fixtures: `52 passed`;
+- Steward Legacy Federation Gateway/Quarantine: `61 passed`;
+- Agent-City-Federation-Regression inklusive NADI/Relay: `142 passed`;
+- admission-only Cross-Repo-Crucible mit separatem Agent-City-Checkout: `1 passed`;
+- Ruff und `py_compile` für beide neuen Adapter/Testgrenzen: sauber/pass.
+
+Der Crucible erzeugt den Request aus semantischen Eingaben, bestätigt bytegleiche Golden-
+Request-Bytes, validiert und persistiert die Admission in Agent City, korreliert das
+signierte Receipt in Steward und bestätigt identisches Replay samt unverändertem
+`target_work_id`.
+
+Noch ausdrücklich gesperrt: Worker-/Tool-Ausführung, Started-/Terminal-/Verification-
+Receipts, Status Query, Lease/Recovery-Automation, Managed-Task-COMPLETED, Provider-
+Failover, Context Bridge, Execution-Spine-Gesamtspec, automatische Merge-Autorität,
+produktive Aktivierung und Merge. Phase 1 bleibt unverändert. Der Agent-B-Entscheidungs-
+status ist bis zur Review `IMPLEMENTATION REVIEW REQUESTED`.
