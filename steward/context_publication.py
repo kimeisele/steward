@@ -119,6 +119,10 @@ class PublisherIsolation:
         self._root_anchor = _directory_anchor(root_fd)
         self._git_anchor = _directory_anchor(git_fd)
         self._steward_anchor = _directory_anchor(steward_fd)
+        if not _directory_child_matches(root_fd, ".git", self._git_anchor):
+            raise ValueError("isolation_repository_binding")
+        if not _directory_child_matches(root_fd, ".steward", self._steward_anchor):
+            raise ValueError("isolation_repository_binding")
         self._closed = False
 
     @classmethod
@@ -464,6 +468,18 @@ def _open_steward(root_fd: int) -> int:
 
 def _open_git(root_fd: int) -> int:
     return os.open(".git", _OPEN_DIRECTORY, dir_fd=root_fd)
+
+
+def _directory_child_matches(root_fd: int, name: str, expected: tuple[int, int, int, int]) -> bool:
+    descriptor: int | None = None
+    try:
+        descriptor = os.open(name, _OPEN_DIRECTORY, dir_fd=root_fd)
+        return _directory_anchor(descriptor) == expected
+    except (OSError, ValueError):
+        return False
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
 
 
 def _parent_fd(root_fd: int, steward_fd: int, path: str) -> tuple[int, str]:

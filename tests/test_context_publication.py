@@ -187,6 +187,31 @@ def test_canonical_is_blocked_on_unsupported_darwin(tmp_path, candidates_and_att
     assert not (repository / ".steward" / publication._LOCK).exists()
 
 
+def test_isolation_rejects_directory_fds_from_different_repositories(tmp_path):
+    first = initialize_repository(tmp_path / "first")
+    second = initialize_repository(tmp_path / "second")
+    commit_all(first)
+    commit_all(second)
+    root_fd = publication.observer._open_repository_root(first)
+    git_fd = publication._open_git(root_fd)
+    foreign_root_fd = publication.observer._open_repository_root(second)
+    steward_fd = publication._open_steward(foreign_root_fd)
+    try:
+        with pytest.raises(ValueError, match="isolation_repository_binding"):
+            publication.PublisherIsolation(
+                publication._ISOLATION_TOKEN,
+                first,
+                root_fd,
+                git_fd,
+                steward_fd,
+            )
+    finally:
+        os.close(git_fd)
+        os.close(steward_fd)
+        os.close(root_fd)
+        os.close(foreign_root_fd)
+
+
 def test_closed_publisher_lease_cannot_publish(tmp_path, candidates_and_attestation):
     payload, snapshot, _, attestation = candidates_and_attestation
     repository = initialize_repository(tmp_path / "repo")
