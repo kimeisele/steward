@@ -2658,3 +2658,29 @@ Die erweiterten repo-lokalen Testmodule liegen unter
 beiden Repositories. Beide Suiten bestehen mit `23 passed`. Es wurden ausschließlich
 Tests, Fixtures/Bericht und diese Befund-Dokumentation geändert; Produktcode, Phase 1,
 Context Bridge, Handler, Ledger, Workflow und Produktionsintegration bleiben unverändert.
+
+## §34 — FEDERATION DELEGATION IMPLEMENTATION PLAN 01 (2026-07-18)
+
+Nach der 01A-Abnahme ist ausschließlich ein Implementierungsplan vorbereitet; noch kein
+Produktcode ist freigegeben oder geändert. Der Plan liegt self-contained unter:
+
+`specs/execution_truth_map/FEDERATION_DELEGATION_IMPLEMENTATION_PLAN_01.md`
+
+Der kleinste vorgesehene reale Slice lautet:
+
+`Steward signierter V1-Request -> exakter Agent-City-Carrier -> SFDJ-/Provenance-/Authority-
+Prüfung -> durable Target-Admission vor Side Effect -> signiertes admission-Receipt ->
+Origin-Korrelation über IDs`.
+
+Der Slice erzeugt keinen Worker und kein Tool, keine Started-/Terminal-/Verification-
+Receipt, keine Status-Query, keine Recovery, keinen Managed-Task-Abschluss und keine
+Produktivaktivierung. Legacy-`OP_DELEGATE_TASK` und Titelmatching bleiben isoliert. Der
+Plan entscheidet `wire_bytes_b64` als unsignierten Transportcarrier für unveränderte
+SFDJ-1-Bytes, repo-lokale Produktionsadapter ohne gemeinsame Runtime-Library, einen
+persistenten Target-Admission-/Dedupe-Ledger sowie ein Wiring-Manifest mit deaktiviertem
+Default-Gate.
+
+Der Plan steht auf dem separaten Branch `plan/federation-delegation-implementation-01`
+und wartet auf Agent-B-Review. Bis zur Entscheidung bleiben Produktcode, Context Bridge,
+Execution-Spine-Gesamtspec, Provider-Failover-Umbau, Merge-Autorität und produktive
+Aktivierung gesperrt.
