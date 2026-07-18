@@ -6,6 +6,7 @@ import copy
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -141,6 +142,25 @@ def test_closed_publisher_lease_cannot_publish(tmp_path, candidates_and_attestat
     assert (repository / ".steward" / ".context-publish-v1.lock").exists()
 
 
+def test_lock_path_replacement_invalidates_lease(tmp_path):
+    repository = initialize_repository(tmp_path / "repo")
+    commit_all(repository)
+    lease = acquire_publisher_lease(repository)
+    lock_path = repository / ".steward" / publication._LOCK
+    subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from pathlib import Path; import sys; p=Path(sys.argv[1]); p.unlink(); p.touch(mode=0o600)",
+            str(lock_path),
+        ],
+        check=True,
+    )
+
+    assert not lease.verify()
+    lease.close()
+
+
 def test_legacy_bootstrap_never_auto_overwritten(tmp_path, candidates_and_attestation):
     payload, snapshot, _, attestation = candidates_and_attestation
     repository = initialize_repository(tmp_path / "repo")
@@ -265,6 +285,22 @@ def test_namespace_is_scanned_only_after_lease_lock(tmp_path, candidates_and_att
     assert lock_seen and all(lock_seen)
 
 
+def test_recovery_rejects_incoherent_git_state():
+    view = type(
+        "RecoveryView",
+        (),
+        {
+            "tree": {"CLAUDE.md": "head"},
+            "index": {},
+            "reason": "index_differs_from_head",
+            "state": publication.observer.GenerationState.MANUAL_REVIEW,
+        },
+    )()
+
+    with pytest.raises(ValueError, match="recovery_git_state_untrusted"):
+        publication._validate_recovery_view_state("replacing", view)
+
+
 def test_prepared_transaction_recovers_without_target_mutation(tmp_path, candidates_and_attestation, monkeypatch):
     payload, snapshot, _, attestation = candidates_and_attestation
     repository = initialize_repository(tmp_path / "repo")
@@ -375,6 +411,31 @@ def test_head_change_between_replacements_stops_transaction(tmp_path, candidates
     assert result.state is PublicationState.MANUAL_REVIEW
     assert (repository / "CLAUDE.md").read_bytes() == candidates.claude_md
     assert list((repository / ".steward").glob(".context-publish-v1.*.txn"))
+
+
+def test_external_target_writer_is_fenced(tmp_path, candidates_and_attestation, monkeypatch):
+    payload, snapshot, _, attestation = candidates_and_attestation
+    repository = initialize_repository(tmp_path / "repo")
+    commit_all(repository)
+    original_replace = publication._replace_one
+
+    def replace_after_external_writer(*args, **kwargs):
+        subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "from pathlib import Path; Path(__import__('sys').argv[1]).write_bytes(b'foreign')",
+                str(repository / "CLAUDE.md"),
+            ],
+            check=True,
+        )
+        return original_replace(*args, **kwargs)
+
+    monkeypatch.setattr(publication, "_replace_one", replace_after_external_writer)
+    result = publish(repository, payload, snapshot, attestation)
+
+    assert result.state is PublicationState.MANUAL_REVIEW
+    assert (repository / "CLAUDE.md").read_bytes() == b"foreign"
 
 
 def test_foreign_candidate_binding_preserves_journal(tmp_path, candidates_and_attestation, monkeypatch):

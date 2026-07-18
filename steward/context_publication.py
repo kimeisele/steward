@@ -209,7 +209,9 @@ class PublisherLease:
                 return False
             if _directory_anchor(self._steward_fd) != self._steward_anchor:
                 return False
-            return _same_identity(self._lock.identity, _identity(os.fstat(self._lock.descriptor)))
+            lock_identity = _identity(os.fstat(self._lock.descriptor))
+            path_identity = _identity(os.stat(_LOCK, dir_fd=self._steward_fd, follow_symlinks=False))
+            return _same_identity(self._lock.identity, lock_identity) and _same_identity(lock_identity, path_identity)
         except (OSError, ValueError):
             return False
 
@@ -665,7 +667,12 @@ def _journal_template(
     }
 
 
-def _write_journal(descriptor: int, steward_fd: int, journal: Mapping[str, object]) -> None:
+def _write_journal(
+    descriptor: int,
+    steward_fd: int,
+    journal: Mapping[str, object],
+    lease: PublisherLease,
+) -> None:
     txid = journal.get("txid")
     if not isinstance(txid, str):
         raise ValueError("journal_txid")
@@ -673,6 +680,8 @@ def _write_journal(descriptor: int, steward_fd: int, journal: Mapping[str, objec
     value = _canonical_json(journal)
     if len(value) > _JOURNAL_MAX_BYTES:
         raise ValueError("journal_size")
+    if not lease.verify():
+        raise ValueError("publisher_lease_changed")
     expected = journal["journal"]
     if not isinstance(expected, Mapping) or not _same_identity(expected, _identity(os.fstat(descriptor))):
         raise ValueError("journal_replaced")
@@ -681,6 +690,8 @@ def _write_journal(descriptor: int, steward_fd: int, journal: Mapping[str, objec
     _write_all(descriptor, value)
     os.fsync(descriptor)
     os.fsync(steward_fd)
+    if not lease.verify():
+        raise ValueError("publisher_lease_changed")
 
 
 def _validate_journal_schema(parsed: object, journal_name: str) -> dict[str, object]:
@@ -859,9 +870,13 @@ def _prepare_temp(
     journal: dict[str, object],
     path: str,
     data: bytes,
+    lease: PublisherLease,
 ) -> None:
     parent_kind, name = _temp_name(path, journal["txid"])
     parent_fd = root_fd if parent_kind == 0 else steward_fd
+    prior_parent = _parent_identity(parent_fd)
+    if not lease.verify():
+        raise ValueError("publisher_lease_changed")
     descriptor = os.open(
         name,
         os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | os.O_NOFOLLOW,
@@ -882,27 +897,36 @@ def _prepare_temp(
         raise ValueError("temp_changed")
     os.fsync(parent_fd)
     journal["temps"][path] = {**temp_identity, "candidate_sha256": hashlib.sha256(data).hexdigest()}
-    _refresh_parent_bindings(journal, root_fd, steward_fd, parent_fd)
-    _write_journal(journal_fd, steward_fd, journal)
+    _advance_parent_bindings_after_own_mutation(journal, root_fd, steward_fd, parent_fd, prior_parent)
+    _write_journal(journal_fd, steward_fd, journal, lease)
 
 
-def _refresh_parent_bindings(
+def _advance_parent_bindings_after_own_mutation(
     journal: dict[str, object],
     root_fd: int,
     steward_fd: int,
     parent_fd: int,
+    prior_parent: Mapping[str, int | str],
 ) -> None:
     current_parent = _parent_identity(parent_fd)
+    if not all(current_parent.get(key) == prior_parent.get(key) for key in ("device", "inode", "type", "mode")):
+        raise ValueError("parent_changed")
     targets = journal["targets"]
     for target_path in _TARGETS:
         target_parent_fd, _ = _parent_fd(root_fd, steward_fd, target_path)
         if target_parent_fd == parent_fd:
-            targets[target_path]["parent"] = dict(current_parent)
-            targets[target_path]["baseline"]["parent"] = dict(current_parent)
+            if not _same_identity(targets[target_path]["parent"], prior_parent):
+                raise ValueError("parent_changed")
+            targets[target_path]["parent"]["link_count"] = current_parent["link_count"]
+            targets[target_path]["baseline"]["parent"]["link_count"] = current_parent["link_count"]
     if parent_fd == root_fd:
-        journal["repository"]["root"] = dict(current_parent)
+        if not _same_identity(journal["repository"]["root"], prior_parent):
+            raise ValueError("parent_changed")
+        journal["repository"]["root"]["link_count"] = current_parent["link_count"]
     elif parent_fd == steward_fd:
-        journal["repository"]["steward"] = dict(current_parent)
+        if not _same_identity(journal["repository"]["steward"], prior_parent):
+            raise ValueError("parent_changed")
+        journal["repository"]["steward"]["link_count"] = current_parent["link_count"]
 
 
 def _fence_parent(root_fd: int, steward_fd: int, path: str, expected: Mapping[str, object]) -> int:
@@ -954,6 +978,9 @@ def _replace_one(
     candidates: PublicationCandidates,
     index: int,
     lease: PublisherLease,
+    git_fd: int,
+    attestation: ConstitutionAttestation,
+    expected_git_view: _View,
 ) -> None:
     path = _TARGETS[index]
     txid = journal["txid"]
@@ -971,9 +998,13 @@ def _replace_one(
         or temp.data != _candidate_bytes(candidates, path)
     ):
         raise ValueError("temp_changed")
+    _fence_parent(root_fd, steward_fd, path, record["parent"])
+    prior_parent = _parent_identity(parent_fd)
+    current_git = _view(root_fd, git_fd, steward_fd, attestation, _safe_git()[0], lease.deadline)
+    if not _same_git_view(expected_git_view, current_git):
+        raise ValueError("git_changed_before_replace")
     if not lease.verify():
         raise ValueError("publisher_lease_changed")
-    _fence_parent(root_fd, steward_fd, path, record["parent"])
     target_name = path.removeprefix(".steward/")
     os.replace(temp_name, target_name, src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
     descriptor = os.open(target_name, _OPEN_FILE, dir_fd=parent_fd)
@@ -986,7 +1017,7 @@ def _replace_one(
     if installed is None or installed.data != _candidate_bytes(candidates, path):
         raise ValueError("readback_failed")
     os.fsync(parent_fd)
-    _refresh_parent_bindings(journal, root_fd, steward_fd, parent_fd)
+    _advance_parent_bindings_after_own_mutation(journal, root_fd, steward_fd, parent_fd, prior_parent)
     if not lease.verify():
         raise ValueError("publisher_lease_changed")
     record["installed"] = {**installed.identity, "candidate_sha256": hashlib.sha256(installed.data).hexdigest()}
@@ -999,7 +1030,7 @@ def _replace_one(
     else:
         journal["status"] = "replaced"
         journal["in_flight_target"] = None
-    _write_journal(journal_fd, steward_fd, journal)
+    _write_journal(journal_fd, steward_fd, journal, lease)
 
 
 def _cleanup_transaction(
@@ -1008,7 +1039,11 @@ def _cleanup_transaction(
     journal_fd: int,
     journal: Mapping[str, object],
     parent_fences: Mapping[int, Mapping[str, int | str]] | None = None,
+    *,
+    lease: PublisherLease,
 ) -> None:
+    if not lease.verify():
+        raise ValueError("publisher_lease_changed")
     _validate_transaction_namespace(root_fd, steward_fd, journal)
     txid = journal["txid"]
     active_parent_fences: dict[int, dict[str, int | str]] = {
@@ -1034,8 +1069,12 @@ def _cleanup_transaction(
         _require_owned_file(parent_fd, name)
         if state is None or not _same_stat_identity(expected, state.identity):
             raise ValueError("temp_cleanup_identity")
+        if not lease.verify():
+            raise ValueError("publisher_lease_changed")
         os.unlink(name, dir_fd=parent_fd)
         os.fsync(parent_fd)
+        if not lease.verify():
+            raise ValueError("publisher_lease_changed")
         active_parent_fences[parent_key] = _parent_identity(parent_fd)
     identity = journal["journal"]
     if not _same_identity(identity, _identity(os.fstat(journal_fd))):
@@ -1044,8 +1083,12 @@ def _cleanup_transaction(
         active_parent_fences[int(steward_fd)] = _parent_identity(steward_fd)
     if not _same_identity(_parent_identity(steward_fd), active_parent_fences[int(steward_fd)]):
         raise ValueError("repository_parent_changed")
+    if not lease.verify():
+        raise ValueError("publisher_lease_changed")
     os.unlink(f".context-publish-v1.{txid}.txn", dir_fd=steward_fd)
     os.fsync(steward_fd)
+    if not lease.verify():
+        raise ValueError("publisher_lease_changed")
 
 
 def _create_transaction(
@@ -1058,10 +1101,14 @@ def _create_transaction(
     lease: PublisherLease,
 ) -> PublicationResult:
     txid = secrets.token_hex(16)
+    if not lease.verify():
+        raise ValueError("publisher_lease_changed")
     journals, temps, unknown = _scan_namespace(root_fd, steward_fd)
     if journals or temps or unknown:
         raise ValueError("transaction_namespace_ambiguous")
     name = f".context-publish-v1.{txid}.txn"
+    if not lease.verify():
+        raise ValueError("publisher_lease_changed")
     journal_fd = os.open(
         name,
         os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | os.O_NOFOLLOW,
@@ -1069,18 +1116,31 @@ def _create_transaction(
         dir_fd=steward_fd,
     )
     try:
+        if not lease.verify():
+            raise ValueError("publisher_lease_changed")
         journal_identity = _identity(os.fstat(journal_fd))
         journal = _journal_template(txid, journal_identity, root_fd, git_fd, steward_fd, view, candidates, attestation)
-        _write_journal(journal_fd, steward_fd, journal)
+        _write_journal(journal_fd, steward_fd, journal, lease)
         for path in _TARGETS:
-            _prepare_temp(root_fd, steward_fd, journal_fd, journal, path, _candidate_bytes(candidates, path))
+            _prepare_temp(root_fd, steward_fd, journal_fd, journal, path, _candidate_bytes(candidates, path), lease)
         _validate_transaction_namespace(root_fd, steward_fd, journal)
         for index in range(len(_TARGETS)):
             if not lease.verify():
                 raise ValueError("publisher_lease_changed")
             _validate_transaction_namespace(root_fd, steward_fd, journal)
             _fence_targets(root_fd, steward_fd, journal, candidates, index)
-            _replace_one(root_fd, steward_fd, journal_fd, journal, candidates, index, lease)
+            _replace_one(
+                root_fd,
+                steward_fd,
+                journal_fd,
+                journal,
+                candidates,
+                index,
+                lease,
+                git_fd,
+                attestation,
+                view,
+            )
             current = _view(root_fd, git_fd, steward_fd, attestation, _safe_git()[0], lease.deadline)
             if not _same_git_view(view, current):
                 raise ValueError("git_changed_during_transaction")
@@ -1090,8 +1150,8 @@ def _create_transaction(
         if not _same_git_view(view, current) or not lease.verify():
             raise ValueError("final_transaction_fence")
         journal["status"] = "read_back_validated"
-        _write_journal(journal_fd, steward_fd, journal)
-        _cleanup_transaction(root_fd, steward_fd, journal_fd, journal)
+        _write_journal(journal_fd, steward_fd, journal, lease)
+        _cleanup_transaction(root_fd, steward_fd, journal_fd, journal, lease=lease)
         return _result(PublicationState.PUBLISHED, "published", txid)
     except (OSError, ValueError, ContractViolation, TimeoutError, observer._ObservationFailure) as error:
         return _result(PublicationState.MANUAL_REVIEW, type(error).__name__.lower(), txid)
@@ -1225,9 +1285,12 @@ def _prepare_recovery_temp(
     journal: Mapping[str, object],
     path: str,
     data: bytes,
+    lease: PublisherLease,
 ) -> tuple[int, str]:
     parent_kind, name = _temp_name(path, journal["txid"])
     parent_fd = root_fd if parent_kind == 0 else steward_fd
+    if not lease.verify():
+        raise ValueError("publisher_lease_changed")
     if _safe_file_state(parent_fd, name, PERSISTED_TARGET_MAX_BYTES[path]) is not None:
         raise ValueError("recovery_temp_present")
     descriptor = os.open(
@@ -1255,6 +1318,8 @@ def _prepare_recovery_temp(
     if check is None or check.data != data or check.identity != identity:
         raise ValueError("recovery_temp_changed")
     os.fsync(parent_fd)
+    if not lease.verify():
+        raise ValueError("publisher_lease_changed")
     return parent_fd, name
 
 
@@ -1286,14 +1351,20 @@ def _rollback_partial_transaction(
         data = _baseline_bytes(view, journal, path)
         parent_fd, target_name = _parent_fd(root_fd, steward_fd, path)
         if data is None:
+            if not lease.verify():
+                raise ValueError("publisher_lease_changed")
             os.unlink(target_name, dir_fd=parent_fd)
             os.fsync(parent_fd)
+            if not lease.verify():
+                raise ValueError("publisher_lease_changed")
             if _safe_file_state(parent_fd, target_name, PERSISTED_TARGET_MAX_BYTES[path]) is not None:
                 raise ValueError("recovery_unlink_failed")
         else:
-            _, temp_name = _prepare_recovery_temp(root_fd, steward_fd, journal, path, data)
+            _, temp_name = _prepare_recovery_temp(root_fd, steward_fd, journal, path, data, lease)
             parent_states[int(parent_fd)] = _parent_identity(parent_fd)
             _fence_recovery_state(root_fd, steward_fd, journal, candidates, view, cursor, restored, parent_states)
+            if not lease.verify():
+                raise ValueError("publisher_lease_changed")
             os.replace(temp_name, target_name, src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
             descriptor = os.open(target_name, _OPEN_FILE, dir_fd=parent_fd)
             try:
@@ -1308,31 +1379,39 @@ def _rollback_partial_transaction(
                 or restored_state.identity["mode"] != baseline["mode"]
             ):
                 raise ValueError("recovery_readback_failed")
+            os.fsync(parent_fd)
+            if not lease.verify():
+                raise ValueError("publisher_lease_changed")
         parent_states[int(parent_fd)] = _parent_identity(parent_fd)
         restored.add(path)
         current = _view(root_fd, git_fd, steward_fd, attestation, _safe_git()[0], deadline)
         if not _same_git_view(view, current) or not lease.verify():
             raise ValueError("git_changed_during_recovery")
     _fence_recovery_state(root_fd, steward_fd, journal, candidates, view, cursor, restored, parent_states)
-    _cleanup_transaction(root_fd, steward_fd, journal_fd, journal, parent_states)
+    _cleanup_transaction(root_fd, steward_fd, journal_fd, journal, parent_states, lease=lease)
     return _result(PublicationState.BLOCKED, "recovered_rollback", journal["txid"])
 
 
-def _validate_recovery_view_state(status: object, state: observer.GenerationState) -> None:
+def _validate_recovery_view_state(status: object, view: _View) -> None:
+    if status == "replacing":
+        if view.tree != view.index:
+            raise ValueError("recovery_git_state_untrusted")
+        if view.reason not in {
+            "partial_generated_state",
+            "generation_contract_invalid",
+            "generation_not_head_bound",
+            "head_bound_generation_valid",
+            "all_targets_absent",
+            "transaction_generation_present",
+        }:
+            raise ValueError("recovery_state_untrusted")
+        return
     allowed = {
         "prepared": {observer.GenerationState.ABSENT, observer.GenerationState.VALID},
-        "replacing": {
-            observer.GenerationState.MIXED,
-            observer.GenerationState.UNBOUND,
-            observer.GenerationState.VALID,
-            observer.GenerationState.ABSENT,
-            observer.GenerationState.INVALID,
-            observer.GenerationState.MANUAL_REVIEW,
-        },
         "replaced": {observer.GenerationState.VALID, observer.GenerationState.UNBOUND},
         "read_back_validated": {observer.GenerationState.VALID, observer.GenerationState.UNBOUND},
     }
-    if state not in allowed.get(status, set()):
+    if view.state not in allowed.get(status, set()):
         raise ValueError("recovery_state_untrusted")
 
 
@@ -1389,7 +1468,7 @@ def _recover_existing(
         _validate_transaction_namespace(root_fd, steward_fd, journal)
         git, _ = _safe_git()
         view = _view(root_fd, git_fd, steward_fd, attestation, git, deadline)
-        _validate_recovery_view_state(journal["status"], view.state)
+        _validate_recovery_view_state(journal["status"], view)
         _validate_journal_binding(root_fd, git_fd, steward_fd, journal, candidates, attestation, view)
         _validate_transaction_files(root_fd, steward_fd, journal)
         status = journal.get("status")
@@ -1399,14 +1478,14 @@ def _recover_existing(
             current = _view(root_fd, git_fd, steward_fd, attestation, _safe_git()[0], deadline)
             if not _same_git_view(view, current) or not lease.verify():
                 raise ValueError("git_changed_during_recovery")
-            _cleanup_transaction(root_fd, steward_fd, journal_fd, journal)
+            _cleanup_transaction(root_fd, steward_fd, journal_fd, journal, lease=lease)
             return _result(PublicationState.BLOCKED, "recovered_prepared", journal["txid"])
         if status in {"replaced", "read_back_validated"} and cursor == 4:
             _fence_targets(root_fd, steward_fd, journal, candidates, 4)
             current = _view(root_fd, git_fd, steward_fd, attestation, _safe_git()[0], deadline)
             if not _same_git_view(view, current) or not lease.verify():
                 raise ValueError("git_changed_during_recovery")
-            _cleanup_transaction(root_fd, steward_fd, journal_fd, journal)
+            _cleanup_transaction(root_fd, steward_fd, journal_fd, journal, lease=lease)
             return _result(PublicationState.PUBLISHED, "recovered_generation", journal["txid"])
         if status == "replacing" and isinstance(cursor, int) and 1 <= cursor <= 3:
             return _rollback_partial_transaction(
