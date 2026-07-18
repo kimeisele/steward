@@ -11,11 +11,10 @@ import json
 import math
 import re
 import unicodedata
-from collections.abc import Mapping, Sequence
 from typing import Any
 
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 
 DOMAIN_DELEGATION = "STEWARD-FEDERATION-DELEGATION-V1"
 DOMAIN_ROOT_ENROLLMENT = "STEWARD-FEDERATION-ROOT-ENROLLMENT-V1"

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import json
 import shutil
 from pathlib import Path
 
@@ -198,7 +197,6 @@ def make_fixtures() -> None:
 
     origin_identity = build_provenance("origin", origin_root, origin_signing, artifacts)
     target_identity = build_provenance("target", target_root, target_signing, artifacts)
-    unregistered_node = derive_node_id(unregistered["public"])
     unregistered_key_id = derive_key_id(unregistered["public"])
 
     origin_signing["node_id"] = origin_identity["node_id"]
@@ -219,7 +217,7 @@ def make_fixtures() -> None:
         issued_at="2026-07-18T11:00:00Z",
         expires_at="2026-07-18T11:05:00Z",
     )
-    envelope_bytes = write_canonical("messages/delegate_task.json", envelope, artifacts)
+    write_canonical("messages/delegate_task.json", envelope, artifacts)
     request_digest = payload["request_digest"]
     message_hash = envelope["message_hash"]
     write_bytes(

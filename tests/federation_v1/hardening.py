@@ -204,7 +204,8 @@ def validate_message(raw: bytes, *, origin_node: str, target_node: str, authoriz
     if set(value) != {"contract_version", "message_id", "request_message_id", "source_node_id", "target_node_id", "operation", "correlation_id", "payload", "issued_at", "expires_at", "message_hash", "signature", "signer_key", "key_id"}:
         return "schema", "schema"
     try:
-        rfc3339(value["issued_at"]); rfc3339(value["expires_at"])
+        rfc3339(value["issued_at"])
+        rfc3339(value["expires_at"])
     except ValueError:
         return "timestamp_invalid", "timestamp"
     try:
