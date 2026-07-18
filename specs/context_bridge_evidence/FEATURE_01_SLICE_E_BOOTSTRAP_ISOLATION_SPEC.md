@@ -1,27 +1,28 @@
 # Context Bridge Slice E — Bootstrap and Publisher Isolation
 
-**Status:** DRAFT 0.9 — E0 architecture decisions closed; implementation forbidden
+**Status:** DRAFT 1.0 — E0 architecture decisions closed; implementation forbidden
 
 **Parent contract:** `FEATURE_01_SLICE_D2B_WRITER_POLICY_PREFLIGHT.md`,
 `FEATURE_01_SLICE_D2B_G2_PREFLIGHT.md`
 
-**Recon pin:** `origin/main` at `8f996ac519830228fc8647a6d9256de1b242b9a8`
+**Recon pin:** `origin/main` at `e8de55c737d141bfe95c6694b4ab7ffb38cb4266`
 
-**Pinned tree:** `c83ba08a3414b47aecbcf9314368e940b14c5379`
+**Pinned tree:** `6b089fd2c175821ebb84a9f3f9fbaf435bf6cc58`
 
 **Pin drift:** Compared with the initial E0 base `9bc785337103d94dfe70c26510030ac05e618135`,
 `origin/main` advanced only in runtime/federation state: `.steward/.context_hash`,
 `.steward/context.json`, `.steward/federation_health.json`,
-`.steward/marketplace.json`, `.steward/sessions.json`,
-`data/federation/nadi_inbox.json`, `data/federation/nadi_outbox.json`,
-`data/federation/peers.json`, `data/federation/quarantine/index.json`,
-`data/federation/relay_seen_ids.json`, and `data/federation/steward_health.json`.
+`.steward/marketplace.json`, `.steward/memory.json`, `.steward/sessions.json`,
+`data/federation/kirtan_ledger.json`, `data/federation/nadi_inbox.json`,
+`data/federation/nadi_outbox.json`, `data/federation/peers.json`,
+`data/federation/quarantine/index.json`, `data/federation/relay_seen_ids.json`,
+and `data/federation/steward_health.json`.
 No E0 source, spec, or implementation path is overlapped by that drift.
 
 **Pin semantics:** The commit and tree above are the immutable evidence point,
 not a claim that the moving `main` alias will still equal them at review time.
 Before review or merge, `pin..origin/main` must be queried and reported. Drift
-limited to the eleven runtime/federation paths listed above does not require a
+limited to the thirteen runtime/federation paths listed above does not require a
 new documentation commit; any product, workflow, test, policy, or Context-
 Bridge-spec drift invalidates the pin and requires a new comparison or repin.
 
@@ -195,7 +196,7 @@ returns `manual_review` before any workspace or transaction namespace exists.
 The runtime root itself must already contain exactly these root-owned mode-`0555`
 mountpoint directories before the root bind: `/input`, `/work`, `/proc`, `/dev`,
 `/tmp`, and `/source.git`. `/input` is the one mountpoint containing a file: it
-contains exactly the regular bundle placeholder below. `/source.git` is an empty
+contains exactly the regular bundle placeholder below. `/source.git` is a
 directory containing exactly its config placeholder below. The other four
 mountpoints (`/work`, `/proc`, `/dev`, and `/tmp`) must be empty. `/work`,
 `/proc`, `/dev`, and `/tmp` are subsequently mounted over those directories;
@@ -204,14 +205,18 @@ mountpoints (`/work`, `/proc`, `/dev`, and `/tmp`) must be empty. `/work`,
 `/input/source.bundle`, root-owned mode `0444`, size `0`, and SHA-256
 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`.
 `/source.git/config` must likewise be root-owned mode `0444`, size `0`, and
-have that same empty-file SHA-256. Bubblewrap replaces the directory with the
-sealed FD-3 source bind and the file with the sealed FD-4 config bind; it
+have that same empty-file SHA-256. The runtime root must also contain the
+regular placeholder `/bundle`, root-owned mode `0444`, size `0`, with that same
+empty-file SHA-256. Bubblewrap replaces the directory with the sealed FD-3
+source bind, the config file with the sealed FD-4 config bind, and `/bundle`
+with the sealed FD-9 bundle bind for metadata verification; it
 must not create a mountpoint or bind target beneath the read-only root. A
 missing, non-directory, writable, symlink, unexpectedly populated, or differently
 hashed mountpoint/placeholder is `manual_review` before launch. For `/input`,
 “unexpectedly populated” means anything other than the single named bundle
 placeholder; for `/source.git`, anything other than its single named config
-placeholder is unexpected.
+placeholder is unexpected; `/bundle` must be exactly the named empty-file
+placeholder until the metadata invocation.
 This is why no `--dir`
 operation appears after the root bind.
 `--clearenv` is mandatory. The only worker environment variables are the nine
@@ -499,7 +504,8 @@ The closed entry set contains the six required mountpoint directories
 `input`, `work`, `proc`, `dev`, `tmp`, and `source.git` at the runtime-root top
 level; `work`, `proc`, `dev`, and `tmp` are empty, while `input` contains only
 the regular `input/source.bundle` bind placeholder and `source.git` contains
-only the regular `source.git/config` bind placeholder. Both placeholders have
+only the regular `source.git/config` bind placeholder. The top-level regular
+`bundle` file is the third bind placeholder. All three placeholders have
 exactly the empty-file identity above, `kind=regular`, `role=bind_placeholder`,
 and `git_blob=null`, plus `/usr/bin/python3.12`, the complete packaged
 Python 3.12 standard library and `lib-dynload`, the worker entrypoint and every
