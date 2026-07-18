@@ -1,0 +1,71 @@
+{
+  "manifest_version": "federation-wiring-v1",
+  "contract_version": "federation-delegation-v1",
+  "scope": "admission_only_slice_01",
+  "feature_gate": {
+    "name": "FEDERATION_V1_DELEGATION_ENABLED",
+    "default": false
+  },
+  "entries": [
+    {
+      "operation": "delegate_task",
+      "direction": "Steward->Agent City",
+      "repository": "kimeisele/steward + kimeisele/agent-city",
+      "targeting": "carrier.target == inner.target_node_id == registered Agent City node_id",
+      "emitter": "steward.federation_v1.FederationV1Origin.create",
+      "transport": "closed V1 carrier with wire_bytes_b64",
+      "admission_handler": "city.federation_v1.FederationV1Admission.handle",
+      "authority_gate": "root-certified origin signing key + request authority + fix_repository capability",
+      "fachhandler": "TargetAdmissionLedger.commit; no worker dispatch",
+      "result_operation": "federation_v1.delegation_receipt",
+      "failure_operation": "local finding/quarantine or authenticated admission=rejected receipt",
+      "idempotency_store": "TargetAdmissionLedger keyed by delegation_id and request_digest",
+      "receipt_emitter": "city.federation_v1.build_admission_receipt",
+      "e2e_test": "tests/test_federation_v1_cross_repo_crucible.py",
+      "lifecycle_maturity": "crucible_verified",
+      "disposition": "disabled",
+      "production_evidence": "Admission-only cross-repo crucible passed with deterministic fixtures"
+    },
+    {
+      "operation": "delegation_receipt",
+      "direction": "Agent City->Steward",
+      "repository": "kimeisele/agent-city + kimeisele/steward",
+      "targeting": "carrier.target == inner.target_node_id == origin node_id",
+      "emitter": "city.federation_v1.FederationV1Admission.handle",
+      "transport": "closed V1 receipt carrier with wire_bytes_b64",
+      "admission_handler": "steward.federation_v1.FederationV1Origin.apply_receipt",
+      "authority_gate": "root-certified target signing key + request-root binding",
+      "fachhandler": "OriginDelegationLedger.apply_receipt; first-set target_work_id",
+      "result_operation": "origin admission_received or admission_rejected ledger state",
+      "failure_operation": "local finding/quarantine",
+      "idempotency_store": "OriginDelegationLedger keyed by delegation_id and receipt_id/content digest",
+      "receipt_emitter": "not applicable; target-owned",
+      "e2e_test": "tests/test_federation_v1_cross_repo_crucible.py",
+      "lifecycle_maturity": "crucible_verified",
+      "disposition": "disabled",
+      "production_evidence": "Admission receipt verified and applied exactly once in crucible"
+    },
+    {
+      "operation": "delegation_status_query",
+      "direction": "Origin->Target",
+      "repository": "both",
+      "targeting": "not implemented in slice 01",
+      "lifecycle_maturity": "declared",
+      "disposition": "unavailable"
+    },
+    {
+      "operation": "delegation_status",
+      "direction": "Target->Origin",
+      "repository": "both",
+      "targeting": "not implemented in slice 01",
+      "lifecycle_maturity": "declared",
+      "disposition": "unavailable"
+    }
+  ],
+  "legacy_isolation": {
+    "legacy_operation": "OP_DELEGATE_TASK",
+    "fallback": false,
+    "title_matching": false,
+    "worker_execution": false
+  }
+}
