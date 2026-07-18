@@ -2833,3 +2833,47 @@ Worker-/Tool-Ausführung, Status Query, Lease/Recovery, Terminal-/Verification-R
 Managed-Task-Abschluss, Provider-Failover, Context Bridge und Execution-Spine bleiben
 gesperrt. Die Feature-Branches sind nicht mehr die Wahrheitsquelle; die obigen
 `main`-Pins sind autoritativ.
+
+## §38 — FEDERATION DELEGATION SLICE 02: EXISTING DISPATCH SURFACE RECON (2026-07-18)
+
+Nach dem dokumentierten Admin-Bypass von Agent-City-PR #2209 wurde ein ausschließlicher
+Read-only-Recon der vorhandenen Dispatch-Oberflächen durchgeführt. Die aktuellen
+Remote-Pins zum Recon sind Steward `main`
+`2dd7cd9288fb451b6172ee2bf78328772acb2716` und Agent City `main`
+`a854f590391f73da10b33f402c321fd68f3fd0b5`. Heartbeat-Commits wurden bei der
+semantischen Historienbewertung explizit ausgeschlossen; der aktuelle Steward-Head ist
+dennoch als Live-Pin dokumentiert.
+
+Der vollständige, self-contained Befund steht in:
+
+`specs/execution_truth_map/FEDERATION_DELEGATION_SLICE_02_EXISTING_DISPATCH_SURFACE_RECON.md`
+
+Autoritativer Ist-Befund:
+
+- Slice 01A besitzt eine durable, idempotente V1-Admission mit signiertem Receipt und
+  synthetischem `target_work_id`, aber noch keine Mission, Task-, Queue- oder Worker-
+  Zuweisung und keinen V1-`started`-Pfad.
+- Agent City besitzt Sankalpa-Missionen/-Registry, den reinen Capability-/Scoring-
+  `mission_router`, den in-memory `CityRouter` sowie Spawner/Pokedex; keine dieser
+  Komponenten besitzt heute zugleich V1-Delegationsbindung, dauerhafte Work-Ownership
+  und crashsichere First-Set-Semantik.
+- Steward besitzt den produktiv verwendeten legacy TaskManager/Autonomy-Pfad. Er ist
+  UUID-/Status-basiert, aber nicht V1-korreliert; legacy `OP_DELEGATE_TASK` und
+  Titelmatching bleiben isoliert.
+- Es existiert kein `WorkerRegistry`, keine V1-Serviceverdrahtung im Agent-City-
+  Factory-Registry und kein `started`-Receipt-Builder/Handler.
+
+Der Manifest-Wahrheitsrand wurde erneut geprüft: `docs/FEDERATION_DELEGATION_WIRING_MANIFEST_01.json`
+ist ausschließlich versionierte Capability-/Audit-Dokumentation. Kein Runtime-Code in
+Steward oder Agent City importiert oder verwendet es als Health-State. Manuelle Werte
+wie `crucible_verified`, `disabled`, Testresultate und Merge-Pins sind historische,
+beleggebundene Milestone-Aussagen. Provider-, Node-, Heartbeat-, Ledger- und aktuelle
+Capability-Gesundheit müssen aus Messung, persistentem Runtime-State oder reproduzierbaren
+Probes stammen und werden nicht manuell in dieses Dokument geschrieben.
+
+Die Empfehlung lautet: Slice 02 ist als nächster enger Abschnitt gerechtfertigt, aber
+erst nach einem Agent-B-geprüften Plan, der den target-owned Assignment-Record, die
+atomare Admission-to-Assignment-Grenze, Duplicate/Crash-Verhalten und die Entstehung
+eines einzigen `started`-Receipts entscheidet. Noch kein Produktcode, keine Worker-/Tool-
+Ausführung, kein Status Query, keine Recovery-Automation, keine Verification oder
+Context-Bridge-Aktivierung.
