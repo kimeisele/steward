@@ -27,13 +27,29 @@ from .reference import (
 
 FIXTURE_NOW = "2026-07-18T11:00:00Z"
 ENROLLMENT_FIELDS = {
-    "enrollment_version", "identity_root_public_key", "node_id", "not_before",
-    "provenance_digest", "registry_epoch", "root_signature",
+    "enrollment_version",
+    "identity_root_public_key",
+    "node_id",
+    "not_before",
+    "provenance_digest",
+    "registry_epoch",
+    "root_signature",
 }
 CERTIFICATE_FIELDS = {
-    "activation_at", "activation_epoch", "certificate_epoch", "certificate_version",
-    "identity_root_public_key", "key_id", "node_id", "not_after", "not_before",
-    "registry_epoch", "revocation_ref", "rotation_kind", "signer_key", "root_signature",
+    "activation_at",
+    "activation_epoch",
+    "certificate_epoch",
+    "certificate_version",
+    "identity_root_public_key",
+    "key_id",
+    "node_id",
+    "not_after",
+    "not_before",
+    "registry_epoch",
+    "revocation_ref",
+    "rotation_kind",
+    "signer_key",
+    "root_signature",
 }
 
 
@@ -77,7 +93,9 @@ def build_enrollment(label: str, root_private: Ed25519PrivateKey) -> tuple[dict[
     return _signed(body, root_private, DOMAIN_ROOT_ENROLLMENT)
 
 
-def build_certificate(root_private: Ed25519PrivateKey, signing_public: bytes, node: str) -> tuple[dict[str, Any], bytes, str]:
+def build_certificate(
+    root_private: Ed25519PrivateKey, signing_public: bytes, node: str
+) -> tuple[dict[str, Any], bytes, str]:
     root_public = root_private.public_key().public_bytes_raw()
     body = {
         "activation_at": "2026-07-18T00:05:00Z",
@@ -97,7 +115,9 @@ def build_certificate(root_private: Ed25519PrivateKey, signing_public: bytes, no
     return _signed(body, root_private, DOMAIN_SIGNING_KEY_AUTH)
 
 
-def build_payload(origin_node: str, target_node: str, description: str = "Repair the bounded federation defect.") -> dict[str, Any]:
+def build_payload(
+    origin_node: str, target_node: str, description: str = "Repair the bounded federation defect."
+) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "delegation_id": "del_golden_0001",
         "origin_task_id": "task_golden_0001",
@@ -105,26 +125,55 @@ def build_payload(origin_node: str, target_node: str, description: str = "Repair
         "intent": {"kind": "repair", "version": "v1"},
         "task_description": description,
         "target_repo": "agent-city",
-        "authority": {"allowed_actions": ["branch", "commit", "read", "test"], "denied_actions": ["context_bridge_activation", "merge", "secret_access"], "repo_scope": "agent-city"},
+        "authority": {
+            "allowed_actions": ["branch", "commit", "read", "test"],
+            "denied_actions": ["context_bridge_activation", "merge", "secret_access"],
+            "repo_scope": "agent-city",
+        },
         "expected_outcome": {"kind": "verified_tests_and_observation"},
-        "verification_contract": {"postcondition_kind": "tests_and_runtime_observation", "required_evidence": ["runtime_observation", "test_result"]},
+        "verification_contract": {
+            "postcondition_kind": "tests_and_runtime_observation",
+            "required_evidence": ["runtime_observation", "test_result"],
+        },
         "deadline": "2026-07-18T12:00:00Z",
     }
-    semantic = {"contract_version": "federation-delegation-v1", "operation": "delegate_task", "source_node_id": origin_node, "target_node_id": target_node, "payload": payload}
+    semantic = {
+        "contract_version": "federation-delegation-v1",
+        "operation": "delegate_task",
+        "source_node_id": origin_node,
+        "target_node_id": target_node,
+        "payload": payload,
+    }
     request = hashlib.sha256(canonical_bytes(semantic)).hexdigest()
     return {**payload, "request_digest": request, "idempotency_key": "fedv1:" + request}
 
 
-def build_request(origin_node: str, target_node: str, signing_private: Ed25519PrivateKey, signing_key_b64: str, key: str) -> tuple[dict[str, Any], bytes, str, str]:
+def build_request(
+    origin_node: str, target_node: str, signing_private: Ed25519PrivateKey, signing_key_b64: str, key: str
+) -> tuple[dict[str, Any], bytes, str, str]:
     payload = build_payload(origin_node, target_node)
     envelope = {
-        "contract_version": "federation-delegation-v1", "message_id": "msg_req_golden_0001", "request_message_id": "msg_req_golden_0001",
-        "source_node_id": origin_node, "target_node_id": target_node, "operation": "delegate_task", "correlation_id": payload["delegation_id"],
-        "payload": payload, "issued_at": "2026-07-18T11:00:00Z", "expires_at": "2026-07-18T11:05:00Z", "signer_key": signing_key_b64, "key_id": key,
+        "contract_version": "federation-delegation-v1",
+        "message_id": "msg_req_golden_0001",
+        "request_message_id": "msg_req_golden_0001",
+        "source_node_id": origin_node,
+        "target_node_id": target_node,
+        "operation": "delegate_task",
+        "correlation_id": payload["delegation_id"],
+        "payload": payload,
+        "issued_at": "2026-07-18T11:00:00Z",
+        "expires_at": "2026-07-18T11:05:00Z",
+        "signer_key": signing_key_b64,
+        "key_id": key,
     }
     message = hashlib.sha256(canonical_bytes(envelope)).hexdigest()
     signature_input = DOMAIN_DELEGATION.encode() + b"\x00" + bytes.fromhex(message)
-    return {**envelope, "message_hash": message, "signature": _b64(signing_private.sign(signature_input))}, signature_input, payload["request_digest"], message
+    return (
+        {**envelope, "message_hash": message, "signature": _b64(signing_private.sign(signature_input))},
+        signature_input,
+        payload["request_digest"],
+        message,
+    )
 
 
 def validate_provenance(raw: bytes, root_public: bytes, now: str = FIXTURE_NOW) -> tuple[str, str] | None:
@@ -161,6 +210,7 @@ def validate_provenance(raw: bytes, root_public: bytes, now: str = FIXTURE_NOW) 
             return "enrollment_not_active", "registry_time"
         body = {k: v for k, v in value.items() if k != "root_signature"}
         from .reference import verify_digest
+
         digest = digest_hex(canonical_bytes(body))
         if not verify_digest(root_public, DOMAIN_ROOT_ENROLLMENT, digest, value["root_signature"]):
             return "root_signature_invalid", "signature"
@@ -175,13 +225,23 @@ def validate_provenance(raw: bytes, root_public: bytes, now: str = FIXTURE_NOW) 
         return "certificate_key_binding", "provenance"
     body = {k: v for k, v in value.items() if k != "root_signature"}
     from .reference import verify_digest
+
     digest = digest_hex(canonical_bytes(body))
     if not verify_digest(root_public, DOMAIN_SIGNING_KEY_AUTH, digest, value["root_signature"]):
         return "certificate_signature_invalid", "signature"
     return None
 
 
-def validate_message(raw: bytes, *, origin_node: str, target_node: str, authorized_key_ids: set[str], existing_bytes: bytes | None = None, existing_request_digest: str | None = None, now: str = FIXTURE_NOW) -> tuple[str, str] | None:
+def validate_message(
+    raw: bytes,
+    *,
+    origin_node: str,
+    target_node: str,
+    authorized_key_ids: set[str],
+    existing_bytes: bytes | None = None,
+    existing_request_digest: str | None = None,
+    now: str = FIXTURE_NOW,
+) -> tuple[str, str] | None:
     try:
         value = parse_canonical(raw)
     except SFDJReject as exc:
@@ -201,7 +261,22 @@ def validate_message(raw: bytes, *, origin_node: str, target_node: str, authoriz
         if code == "float_forbidden":
             phase = "number"
         return code, phase
-    if set(value) != {"contract_version", "message_id", "request_message_id", "source_node_id", "target_node_id", "operation", "correlation_id", "payload", "issued_at", "expires_at", "message_hash", "signature", "signer_key", "key_id"}:
+    if set(value) != {
+        "contract_version",
+        "message_id",
+        "request_message_id",
+        "source_node_id",
+        "target_node_id",
+        "operation",
+        "correlation_id",
+        "payload",
+        "issued_at",
+        "expires_at",
+        "message_hash",
+        "signature",
+        "signer_key",
+        "key_id",
+    }:
         return "schema", "schema"
     try:
         rfc3339(value["issued_at"])
@@ -225,21 +300,49 @@ def validate_message(raw: bytes, *, origin_node: str, target_node: str, authoriz
     if value["key_id"] not in authorized_key_ids:
         return "key_not_authorized", "registry"
     from .reference import verify_digest
+
     if not verify_digest(signer, DOMAIN_DELEGATION, value["message_hash"], value["signature"]):
         return "signature_invalid_wrong_key", "signature"
     if existing_bytes is not None and value["message_id"] == "msg_req_golden_0001" and raw != existing_bytes:
         return "message_id_conflict", "message_dedupe"
-    if existing_request_digest is not None and value["payload"].get("delegation_id") == "del_golden_0001" and value["payload"].get("request_digest") != existing_request_digest:
+    if (
+        existing_request_digest is not None
+        and value["payload"].get("delegation_id") == "del_golden_0001"
+        and value["payload"].get("request_digest") != existing_request_digest
+    ):
         return "duplicate_conflict", "target_dedupe"
     return None
 
 
-def validate_fixture(raw: bytes, *, root_public: bytes, origin_node: str, target_node: str, authorized_key_ids: set[str], existing_bytes: bytes | None = None, existing_request_digest: str | None = None) -> tuple[str, str] | None:
+def validate_fixture(
+    raw: bytes,
+    *,
+    root_public: bytes,
+    origin_node: str,
+    target_node: str,
+    authorized_key_ids: set[str],
+    existing_bytes: bytes | None = None,
+    existing_request_digest: str | None = None,
+) -> tuple[str, str] | None:
     """Dispatch by parsed schema, never by fixture filename or case identifier."""
     try:
         value = parse_canonical(raw)
     except SFDJReject:
-        return validate_message(raw, origin_node=origin_node, target_node=target_node, authorized_key_ids=authorized_key_ids, existing_bytes=existing_bytes, existing_request_digest=existing_request_digest)
+        return validate_message(
+            raw,
+            origin_node=origin_node,
+            target_node=target_node,
+            authorized_key_ids=authorized_key_ids,
+            existing_bytes=existing_bytes,
+            existing_request_digest=existing_request_digest,
+        )
     if "certificate_version" in value:
         return validate_provenance(raw, root_public)
-    return validate_message(raw, origin_node=origin_node, target_node=target_node, authorized_key_ids=authorized_key_ids, existing_bytes=existing_bytes, existing_request_digest=existing_request_digest)
+    return validate_message(
+        raw,
+        origin_node=origin_node,
+        target_node=target_node,
+        authorized_key_ids=authorized_key_ids,
+        existing_bytes=existing_bytes,
+        existing_request_digest=existing_request_digest,
+    )

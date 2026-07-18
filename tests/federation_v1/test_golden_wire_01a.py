@@ -36,7 +36,10 @@ def _raw(relative: str) -> bytes:
 
 def test_positive_artifacts_are_independently_regenerated() -> None:
     identities = {}
-    for label, root_label, signing_label in (("origin", "origin_identity_root", "origin_signing_key"), ("target", "target_identity_root", "target_signing_key")):
+    for label, root_label, signing_label in (
+        ("origin", "origin_identity_root", "origin_signing_key"),
+        ("target", "target_identity_root", "target_signing_key"),
+    ):
         enrollment, enrollment_input, enrollment_digest = build_enrollment(label, _private(root_label))
         enrollment_raw = canonical_bytes(enrollment)
         assert enrollment_raw == _raw(f"provenance/{label}_root_enrollment.json")
@@ -44,9 +47,13 @@ def test_positive_artifacts_are_independently_regenerated() -> None:
         root_public = _public(root_label)
         node = derive_node_id(root_public)
         signing_public = _public(signing_label)
-        certificate, certificate_input, certificate_digest = build_certificate(_private(root_label), signing_public, node)
+        certificate, certificate_input, certificate_digest = build_certificate(
+            _private(root_label), signing_public, node
+        )
         assert canonical_bytes(certificate) == _raw(f"provenance/{label}_signing_key_certificate.json")
-        assert certificate_input.hex().encode() == _raw(f"provenance/{label}_signing_key_certificate.signature_input.hex")
+        assert certificate_input.hex().encode() == _raw(
+            f"provenance/{label}_signing_key_certificate.signature_input.hex"
+        )
         assert validate_provenance(enrollment_raw, root_public) is None
         assert validate_provenance(canonical_bytes(certificate), root_public) is None
         assert enrollment["identity_root_public_key"] == KEYS[root_label]["public_key_b64"]
@@ -56,10 +63,19 @@ def test_positive_artifacts_are_independently_regenerated() -> None:
         assert certificate["key_id"] == MANIFEST["positive"]["root_enrollment"][label]["key_id"]
         assert rfc3339(certificate["activation_at"]) <= rfc3339(FIXTURE_NOW) <= rfc3339(certificate["not_after"])
         assert certificate["registry_epoch"] == certificate["certificate_epoch"] == certificate["activation_epoch"] == 1
-        identities[label] = {"node": node, "key": certificate["key_id"], "enrollment_digest": enrollment_digest, "certificate_digest": certificate_digest}
+        identities[label] = {
+            "node": node,
+            "key": certificate["key_id"],
+            "enrollment_digest": enrollment_digest,
+            "certificate_digest": certificate_digest,
+        }
 
     request, signature_input, request_digest, message_hash = build_request(
-        identities["origin"]["node"], identities["target"]["node"], _private("origin_signing_key"), KEYS["origin_signing_key"]["public_key_b64"], identities["origin"]["key"]
+        identities["origin"]["node"],
+        identities["target"]["node"],
+        _private("origin_signing_key"),
+        KEYS["origin_signing_key"]["public_key_b64"],
+        identities["origin"]["key"],
     )
     assert canonical_bytes(request) == _raw("messages/delegate_task.json")
     assert signature_input.hex().encode() == _raw("messages/delegate_task.signature_input.hex")
@@ -73,24 +89,62 @@ def test_provenance_closed_schema_and_time_invariants() -> None:
     for label, root_label in (("origin", "origin_identity_root"), ("target", "target_identity_root")):
         enrollment = parse_canonical(_raw(f"provenance/{label}_root_enrollment.json"))
         certificate = parse_canonical(_raw(f"provenance/{label}_signing_key_certificate.json"))
-        assert set(enrollment) == {"enrollment_version", "identity_root_public_key", "node_id", "not_before", "provenance_digest", "registry_epoch", "root_signature"}
-        assert set(certificate) == {"activation_at", "activation_epoch", "certificate_epoch", "certificate_version", "identity_root_public_key", "key_id", "node_id", "not_after", "not_before", "registry_epoch", "revocation_ref", "rotation_kind", "signer_key", "root_signature"}
+        assert set(enrollment) == {
+            "enrollment_version",
+            "identity_root_public_key",
+            "node_id",
+            "not_before",
+            "provenance_digest",
+            "registry_epoch",
+            "root_signature",
+        }
+        assert set(certificate) == {
+            "activation_at",
+            "activation_epoch",
+            "certificate_epoch",
+            "certificate_version",
+            "identity_root_public_key",
+            "key_id",
+            "node_id",
+            "not_after",
+            "not_before",
+            "registry_epoch",
+            "revocation_ref",
+            "rotation_kind",
+            "signer_key",
+            "root_signature",
+        }
         assert enrollment["identity_root_public_key"] == certificate["identity_root_public_key"]
         assert enrollment["node_id"] == certificate["node_id"] == derive_node_id(_public(root_label))
         assert certificate["key_id"] == derive_key_id(base64.b64decode(certificate["signer_key"], validate=True))
         assert certificate["rotation_kind"] == "regular" and certificate["revocation_ref"] is None
-        assert rfc3339(enrollment["not_before"]) <= rfc3339(certificate["activation_at"]) == rfc3339(certificate["not_before"])
+        assert (
+            rfc3339(enrollment["not_before"])
+            <= rfc3339(certificate["activation_at"])
+            == rfc3339(certificate["not_before"])
+        )
         assert rfc3339(certificate["not_before"]) <= rfc3339(FIXTURE_NOW) <= rfc3339(certificate["not_after"])
 
 
 def test_negative_fixtures_fail_at_first_general_validation_phase() -> None:
     positive = _raw("messages/delegate_task.json")
     request = parse_canonical(positive)
-    authorized = {MANIFEST["positive"]["request"]["origin_key_id"], MANIFEST["positive"]["root_enrollment"]["target"]["key_id"]}
+    authorized = {
+        MANIFEST["positive"]["request"]["origin_key_id"],
+        MANIFEST["positive"]["root_enrollment"]["target"]["key_id"],
+    }
     observed: list[tuple[str, str, str]] = []
     for case in MANIFEST["negative"]:
         raw = _raw(case["path"])
-        result = validate_fixture(raw, root_public=_public("origin_identity_root"), origin_node=request["source_node_id"], target_node=MANIFEST["positive"]["request"]["target_node_id"], authorized_key_ids=authorized, existing_bytes=positive, existing_request_digest=request["payload"]["request_digest"])
+        result = validate_fixture(
+            raw,
+            root_public=_public("origin_identity_root"),
+            origin_node=request["source_node_id"],
+            target_node=MANIFEST["positive"]["request"]["target_node_id"],
+            authorized_key_ids=authorized,
+            existing_bytes=positive,
+            existing_request_digest=request["payload"]["request_digest"],
+        )
         assert result is not None, case["id"]
         code, phase = result
         observed.append((case["id"], code, phase))

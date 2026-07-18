@@ -48,7 +48,9 @@ def _classify_negative(raw: bytes) -> str:
             return "certificate_expired"
         return "unclassified"
     if "signature" in value:
-        expected_hash = digest_hex(canonical_bytes({k: v for k, v in value.items() if k not in {"message_hash", "signature"}}))
+        expected_hash = digest_hex(
+            canonical_bytes({k: v for k, v in value.items() if k not in {"message_hash", "signature"}})
+        )
         if expected_hash != value.get("message_hash"):
             return "message_hash_mismatch"
         if "-" in value["signature"] or "_" in value["signature"]:
@@ -72,10 +74,16 @@ def _classify_negative(raw: bytes) -> str:
             MANIFEST["positive"]["root_enrollment"]["target"]["key_id"],
         }:
             return "key_not_authorized"
-        if value["message_id"] == "msg_req_golden_0001" and raw != (ROOT / "messages" / "delegate_task.json").read_bytes():
+        if (
+            value["message_id"] == "msg_req_golden_0001"
+            and raw != (ROOT / "messages" / "delegate_task.json").read_bytes()
+        ):
             return "message_id_conflict"
         positive_payload = parse_canonical((ROOT / "messages" / "delegate_task.json").read_bytes())["payload"]
-        if value.get("payload", {}).get("delegation_id") == positive_payload["delegation_id"] and value.get("payload", {}).get("request_digest") != positive_payload["request_digest"]:
+        if (
+            value.get("payload", {}).get("delegation_id") == positive_payload["delegation_id"]
+            and value.get("payload", {}).get("request_digest") != positive_payload["request_digest"]
+        ):
             return "duplicate_conflict"
     return "unclassified"
 
@@ -141,7 +149,9 @@ def test_delegate_task_positive_is_exact_and_verifiable() -> None:
     payload = envelope["payload"]
     assert request_digest(payload, envelope["source_node_id"], envelope["target_node_id"]) == payload["request_digest"]
     assert payload["idempotency_key"] == "fedv1:" + payload["request_digest"]
-    expected_hash = digest_hex(canonical_bytes({k: v for k, v in envelope.items() if k not in {"message_hash", "signature"}}))
+    expected_hash = digest_hex(
+        canonical_bytes({k: v for k, v in envelope.items() if k not in {"message_hash", "signature"}})
+    )
     assert expected_hash == envelope["message_hash"]
     public = _public("origin_signing_key")
     assert verify_digest(public, DOMAIN_DELEGATION, envelope["message_hash"], envelope["signature"])

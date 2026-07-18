@@ -82,9 +82,7 @@ def signed_record(body: dict, private: Ed25519PrivateKey, domain: str) -> tuple[
 def build_provenance(label: str, root: dict, signing: dict, artifacts: dict) -> dict:
     node_id = derive_node_id(root["public"])
     key_id = derive_key_id(signing["public"])
-    provenance_digest = hashlib.sha256(
-        ("golden-wire-provenance-v1:" + label).encode("utf-8")
-    ).hexdigest()
+    provenance_digest = hashlib.sha256(("golden-wire-provenance-v1:" + label).encode("utf-8")).hexdigest()
 
     enrollment_body = {
         "enrollment_version": "federation-root-enrollment-v1",
@@ -98,8 +96,7 @@ def build_provenance(label: str, root: dict, signing: dict, artifacts: dict) -> 
         enrollment_body, root["private"], DOMAIN_ROOT_ENROLLMENT
     )
     write_canonical(f"provenance/{label}_root_enrollment.json", enrollment, artifacts)
-    write_bytes(f"provenance/{label}_root_enrollment.signature_input.hex",
-                enrollment_input.encode("ascii"), artifacts)
+    write_bytes(f"provenance/{label}_root_enrollment.signature_input.hex", enrollment_input.encode("ascii"), artifacts)
 
     certificate_body = {
         "activation_at": "2026-07-18T00:05:00Z",
@@ -120,8 +117,9 @@ def build_provenance(label: str, root: dict, signing: dict, artifacts: dict) -> 
         certificate_body, root["private"], DOMAIN_SIGNING_KEY_AUTH
     )
     write_canonical(f"provenance/{label}_signing_key_certificate.json", certificate, artifacts)
-    write_bytes(f"provenance/{label}_signing_key_certificate.signature_input.hex",
-                certificate_input.encode("ascii"), artifacts)
+    write_bytes(
+        f"provenance/{label}_signing_key_certificate.signature_input.hex", certificate_input.encode("ascii"), artifacts
+    )
 
     return {
         "node_id": node_id,
@@ -231,30 +229,42 @@ def make_fixtures() -> None:
     def write_negative(name: str, data: bytes, expected: str, phase: str) -> None:
         relative = f"negative/{name}.bin"
         write_bytes(relative, data, artifacts)
-        negative.append({
-            "id": name,
-            "path": relative,
-            "expected_reject_code": expected,
-            "validation_phase": phase,
-        })
+        negative.append(
+            {
+                "id": name,
+                "path": relative,
+                "expected_reject_code": expected,
+                "validation_phase": phase,
+            }
+        )
 
     write_negative("non_nfc", b'{"x":"e\\u0301"}', "rejected_noncanonical", "sfdj_nfc")
     write_negative("wrong_key_order", b'{"b":1,"a":2}', "rejected_noncanonical", "sfdj_key_order")
     write_negative("duplicate_json_key", b'{"a":1,"a":2}', "duplicate_json_key", "parse")
     write_negative("float", b'{"n":1.0}', "float_forbidden", "number")
     write_negative("negative_zero", b'{"n":-0}', "rejected_noncanonical", "number")
-    write_negative("missing_base64_padding", canonical_bytes({**envelope, "signature": envelope["signature"][:-1]}),
-                   "invalid_base64", "base64")
-    write_negative("url_safe_base64", canonical_bytes({**envelope, "signature": "-" + envelope["signature"][1:]}),
-                   "url_safe_base64_forbidden", "base64")
-    write_negative("wrong_message_hash", canonical_bytes({**envelope, "message_hash": "0" * 64}),
-                   "message_hash_mismatch", "message_hash")
+    write_negative(
+        "missing_base64_padding",
+        canonical_bytes({**envelope, "signature": envelope["signature"][:-1]}),
+        "invalid_base64",
+        "base64",
+    )
+    write_negative(
+        "url_safe_base64",
+        canonical_bytes({**envelope, "signature": "-" + envelope["signature"][1:]}),
+        "url_safe_base64_forbidden",
+        "base64",
+    )
+    write_negative(
+        "wrong_message_hash",
+        canonical_bytes({**envelope, "message_hash": "0" * 64}),
+        "message_hash_mismatch",
+        "message_hash",
+    )
     mutated_payload = {**envelope, "payload": {**envelope["payload"], "task_description": "mutated"}}
-    write_negative("mutated_payload", canonical_bytes(mutated_payload),
-                   "message_hash_mismatch", "message_hash")
+    write_negative("mutated_payload", canonical_bytes(mutated_payload), "message_hash_mismatch", "message_hash")
     mutated_target = {**envelope, "target_node_id": origin_identity["node_id"]}
-    write_negative("mutated_target_node_id", canonical_bytes(mutated_target),
-                   "message_hash_mismatch", "message_hash")
+    write_negative("mutated_target_node_id", canonical_bytes(mutated_target), "message_hash_mismatch", "message_hash")
     wrong_key_envelope = build_envelope(
         payload=payload,
         source_node_id=origin_identity["node_id"],
@@ -267,8 +277,7 @@ def make_fixtures() -> None:
         issued_at="2026-07-18T11:00:00Z",
         expires_at="2026-07-18T11:05:00Z",
     )
-    write_negative("wrong_signing_key", canonical_bytes(wrong_key_envelope),
-                   "signature_invalid_wrong_key", "signature")
+    write_negative("wrong_signing_key", canonical_bytes(wrong_key_envelope), "signature_invalid_wrong_key", "signature")
     unregistered_envelope = build_envelope(
         payload=payload,
         source_node_id=origin_identity["node_id"],
@@ -281,8 +290,7 @@ def make_fixtures() -> None:
         issued_at="2026-07-18T11:00:00Z",
         expires_at="2026-07-18T11:05:00Z",
     )
-    write_negative("unregistered_signing_key", canonical_bytes(unregistered_envelope),
-                   "key_not_authorized", "registry")
+    write_negative("unregistered_signing_key", canonical_bytes(unregistered_envelope), "key_not_authorized", "registry")
     wrong_target_envelope = build_envelope(
         payload=request_payload(origin_identity, {"node_id": "ag_" + "3" * 32}),
         source_node_id=origin_identity["node_id"],
@@ -295,8 +303,7 @@ def make_fixtures() -> None:
         issued_at="2026-07-18T11:00:00Z",
         expires_at="2026-07-18T11:05:00Z",
     )
-    write_negative("wrong_target_resigned", canonical_bytes(wrong_target_envelope),
-                   "wrong_target", "target_match")
+    write_negative("wrong_target_resigned", canonical_bytes(wrong_target_envelope), "wrong_target", "target_match")
 
     duplicate_payload = request_payload(origin_identity, target_identity, "Different request body.")
     duplicate_envelope = build_envelope(
@@ -311,8 +318,9 @@ def make_fixtures() -> None:
         issued_at="2026-07-18T11:00:00Z",
         expires_at="2026-07-18T11:05:00Z",
     )
-    write_negative("same_delegation_different_digest", canonical_bytes(duplicate_envelope),
-                   "duplicate_conflict", "target_dedupe")
+    write_negative(
+        "same_delegation_different_digest", canonical_bytes(duplicate_envelope), "duplicate_conflict", "target_dedupe"
+    )
 
     same_message_envelope = build_envelope(
         payload=duplicate_payload,
@@ -326,8 +334,12 @@ def make_fixtures() -> None:
         issued_at="2026-07-18T11:01:00Z",
         expires_at="2026-07-18T11:06:00Z",
     )
-    write_negative("same_message_id_different_bytes", canonical_bytes(same_message_envelope),
-                   "message_id_conflict", "message_dedupe")
+    write_negative(
+        "same_message_id_different_bytes",
+        canonical_bytes(same_message_envelope),
+        "message_id_conflict",
+        "message_dedupe",
+    )
 
     expired_body = {
         **{
@@ -348,23 +360,26 @@ def make_fixtures() -> None:
     }
     expired_record, _, _ = signed_record(expired_body, origin_root["private"], DOMAIN_SIGNING_KEY_AUTH)
     write_canonical("negative/expired_certificate.json", expired_record, artifacts)
-    negative.append({
-        "id": "expired_certificate",
-        "path": "negative/expired_certificate.json",
-        "expected_reject_code": "certificate_expired",
-        "validation_phase": "registry_time",
-    })
+    negative.append(
+        {
+            "id": "expired_certificate",
+            "path": "negative/expired_certificate.json",
+            "expected_reject_code": "certificate_expired",
+            "validation_phase": "registry_time",
+        }
+    )
 
-    revoked_body = {**expired_body, "not_after": "2027-12-31T23:59:59Z",
-                    "revocation_ref": "f" * 64}
+    revoked_body = {**expired_body, "not_after": "2027-12-31T23:59:59Z", "revocation_ref": "f" * 64}
     revoked_record, _, _ = signed_record(revoked_body, origin_root["private"], DOMAIN_SIGNING_KEY_AUTH)
     write_canonical("negative/revoked_certificate.json", revoked_record, artifacts)
-    negative.append({
-        "id": "revoked_certificate",
-        "path": "negative/revoked_certificate.json",
-        "expected_reject_code": "key_revoked",
-        "validation_phase": "registry_status",
-    })
+    negative.append(
+        {
+            "id": "revoked_certificate",
+            "path": "negative/revoked_certificate.json",
+            "expected_reject_code": "key_revoked",
+            "validation_phase": "registry_status",
+        }
+    )
 
     positive = {
         "root_enrollment": {

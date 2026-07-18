@@ -83,9 +83,7 @@ def _canonical(value: Any, depth: int = 0) -> str:
                 raise SFDJReject("object_key_limit")
             keys.append(key)
         keys.sort(key=lambda item: item.encode("utf-8"))
-        members = ",".join(
-            _string_json(key) + ":" + _canonical(value[key], depth + 1) for key in keys
-        )
+        members = ",".join(_string_json(key) + ":" + _canonical(value[key], depth + 1) for key in keys)
         return "{" + members + "}"
     raise SFDJReject("unsupported_type")
 
@@ -113,7 +111,11 @@ def parse_canonical(raw: bytes) -> dict[str, Any]:
         text = raw.decode("utf-8")
     except UnicodeDecodeError as exc:
         raise SFDJReject("invalid_utf8") from exc
-    value = json.loads(text, object_pairs_hook=_reject_duplicate_keys, parse_constant=lambda _: (_ for _ in ()).throw(SFDJReject("float_forbidden")))
+    value = json.loads(
+        text,
+        object_pairs_hook=_reject_duplicate_keys,
+        parse_constant=lambda _: (_ for _ in ()).throw(SFDJReject("float_forbidden")),
+    )
     canonical = canonical_bytes(value)
     if canonical != raw:
         raise SFDJReject("rejected_noncanonical")
