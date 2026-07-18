@@ -2562,10 +2562,10 @@ normativ geschlossen; es wurde kein Produktcode geändert:
 - Root-Verlust/-Kompromittierung ist kein Federation-Recovery-Pfad: Node fail-closed für
   neue V1-Nachrichten; manuelle out-of-band Governance/Neu-Enrollment außerhalb V1; keine
   Quorum-, automatische Übernahme- oder Root-Replacement-Semantik; Historie/Audit bleiben.
-- Status Query ist auf die kryptografisch gebundene eigene `delegation_id` beschränkt.
-  Antwort ist ein minimales Snapshot-Schema ohne fremde Delegationen, Worker-/Lease-
-  Details, Stacktraces, Secrets, Pfade oder unvereinbarte Evidence; `UNKNOWN` verrät keine
-  anderen Zustände; Rate-Limit und Audit-Finding bleiben lokal.
+- Status Query autorisiert echte Daten nur für die kryptografisch gebundene eigene
+  `delegation_id`; fremde oder unbekannte IDs erhalten denselben minimalen UNKNOWN-Snapshot.
+  Die Antwort enthält keine fremden Delegationen, Worker-/Lease-Details, Stacktraces,
+  Secrets, Pfade oder unvereinbarte Evidence; Rate-Limit und Audit-Finding bleiben lokal.
 
 SFDJ-1 bleibt unverändert eingefroren. ADR-02, ADR-06, ADR-07, ADR-08 und ADR-09 sind im
 engen Federation-V1-Wire-Scope `ACCEPTED`. Die Contract-Fassung ist:
@@ -2605,3 +2605,29 @@ markiert. Im korrigierten Draft 0.5 und Freeze-Packet sind sie geschlossen:
 Der nächste Milestone bleibt ausschließlich Golden-Wire-Fixtures und unabhängige Parser- /
 Signaturtests. Kein Produktcode, Handler, Ledger, Workflow, Merge, Crucible, Phase 1 oder
 Context-Bridge-Resume ist dadurch autorisiert.
+
+## §32 — GOLDEN WIRE FIXTURES 01: POSITIVE PARITY UND NEGATIVE GRENZEN (2026-07-18)
+
+Die Freeze-Abnahme hat Draft 0.5 für Golden Fixtures freigegeben. Auf dem separaten
+Fixture-Branch wurden ausschließlich deterministische Testartefakte und unabhängige
+Referenztests erstellt:
+
+- vier synthetische, als nicht-produktiv markierte Ed25519-Testschlüssel für Origin/Target
+  Root und Signing-Key,
+- Root-Enrollment- und Signing-Key-Certificate-Provenance mit SFDJ-1-Bytes, Digest,
+  Domain-Signatur, `node_id` und `key_id`,
+- ein vollständig berechneter `delegate_task`-Envelope mit Request-Digest,
+  Idempotency-Key, Message-Hash und Ed25519-Signatur,
+- 17 negative Fixtures mit maschinenlesbarem Reject-Code und Validierungsphase.
+
+Die Artefakte und SHA-256-Manifest liegen unter:
+
+`tests/fixtures/federation_v1/`
+
+Der vollständige Milestone-Bericht liegt unter:
+
+`specs/execution_truth_map/GOLDEN_WIRE_FIXTURES_01_REPORT.md`
+
+Unabhängige Referenztests sind in Steward und Agent City vorhanden und bestanden jeweils
+`20 passed`. Kein Runtime-Handler, Ledger, Workflow, Provider-Crucible oder Produktionspfad
+wurde verändert. Phase 1 und Context Bridge bleiben unverändert.
