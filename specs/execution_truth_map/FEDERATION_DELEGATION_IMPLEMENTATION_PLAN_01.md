@@ -1,7 +1,7 @@
 # FEDERATION DELEGATION IMPLEMENTATION PLAN 01
 
-> Status: DRAFT FOR AGENT-B REVIEW — kein Produktcode in diesem Dokument-Schritt
-> Version: 0.1
+> Status: REVISION 0.2 FOR AGENT-B REVIEW — kein Produktcode in diesem Dokument-Schritt
+> Version: 0.2
 > Datum: 2026-07-18
 > Scope: kleinster realer vertikaler Federation-V1-Slice
 > Gate: Golden Wire Fixtures 01A akzeptiert; Draft 0.5 normativ eingefroren
@@ -94,11 +94,12 @@ testen:
 Golden Fixtures bleiben die Paritätsgrenze; ein späteres gemeinsames Paket darf erst nach
 bewiesener Produktionsparität als separates Design entschieden werden.
 
-### 3.2 Transportcarrier versus V1-Wire
+### 3.2 Geschlossene Transportcarrier versus V1-Wire
 
-Der bestehende dateibasierte Nadi-/Federation-Transport bleibt Carrier und ist nicht der
-V1-Signaturvertrag. Damit keine Legacy-JSON-Serialisierung die kanonischen V1-Bytes
-verändert, transportiert der Carrier:
+Der bestehende dateibasierte Nadi-/Federation-Transport bleibt der physische Transport.
+Der V1-Carrier an seiner Produktionsgrenze ist jedoch ein geschlossenes, eigenes Objekt
+und nicht der V1-Signaturvertrag. Damit keine Legacy-JSON-Serialisierung die kanonischen
+V1-Bytes verändert, transportiert der Carrier ausschließlich:
 
 ```json
 {
@@ -112,11 +113,44 @@ verändert, transportiert der Carrier:
 }
 ```
 
-Der Carrier ist nicht signiert und erhält keine Autorität. Der Agent-City-V1-Adapter
-dekodiert `wire_bytes_b64` und prüft ausschließlich die darin enthaltenen V1-Bytes. Der
-Carrier `target` muss ebenfalls exakt dem V1-`target_node_id` entsprechen; `*`, Broadcast,
-Peer-Liste oder implizites Routing sind verboten. Unbekannte oder nicht adressierte Carrier
-werden lokal quarantänisiert und erzeugen keine Netzwerkantwort.
+Receipt Carrier:
+
+```json
+{
+  "operation": "federation_v1.delegation_receipt",
+  "source": "<target node_id>",
+  "target": "<origin node_id>",
+  "payload": {
+    "wire_bytes_b64": "<RFC-4648-Base64 der exakten SFDJ-1-Receipt-Bytes>",
+    "wire_version": "federation-delegation-v1"
+  }
+}
+```
+
+Für beide Carrier gilt normativ:
+
+- Top-Level-Feldmenge exakt `operation`, `source`, `target`, `payload`;
+- Payload-Feldmenge exakt `wire_version`, `wire_bytes_b64`;
+- `wire_version` exakt `federation-delegation-v1`;
+- `wire_bytes_b64` verwendet RFC-4648-Standardalphabet mit erforderlichem Padding,
+  ohne Whitespace oder URL-safe Zeichen; dekodiert höchstens 256 KiB innerer SFDJ-1-
+  Bytes, also höchstens 349528 Base64-Zeichen;
+- `source` und `target` sind gültige Node-IDs, niemals `*`, leer, Broadcast oder Peer-
+  Liste;
+- Request: `carrier.source == inner.source_node_id`, `carrier.target == inner.target_node_id`
+  und `carrier.operation` passt ausschließlich zu innerem `operation=delegate_task`;
+- Receipt: `carrier.source == inner.source_node_id`, `carrier.target == inner.target_node_id`
+  und `carrier.operation` passt ausschließlich zu innerem `operation=delegation_receipt`;
+- unbekannte Felder, Carrier-/Inner-Mismatch, falsche Operation, falsche Version,
+  Überschreitung der Größe oder ungültiges Base64 sind fail-closed;
+- der Carrier selbst ist nicht signiert und überträgt keine Authority. Authority,
+  Provenance, Kausalität und Signatur stammen ausschließlich aus den inneren V1-Bytes;
+- jeder Carrier-/Inner-Mismatch erzeugt nur lokales Finding/Quarantine und keine
+  Netzwerkantwort.
+
+Der Agent-City-V1-Adapter dekodiert `wire_bytes_b64` und prüft ausschließlich die darin
+enthaltenen V1-Bytes. Physische Nadi-Metadaten außerhalb dieser V1-Carrier-Grenze dürfen
+nicht in den signierten V1-Hash einfließen und dürfen keine V1-Felder überschreiben.
 
 Die Legacy-Carrier-Felder `timestamp`, `ttl_s`, `correlation_id` und generische Payload-
 Schlüssel dürfen nicht als Ersatz für V1-IDs oder V1-Zeitwerte verwendet werden.
@@ -148,11 +182,17 @@ Der Origin-Ledger speichert mindestens:
 ```text
 delegation_id, origin_task_id, request_message_id, correlation_id,
 target_node_id, request_digest, idempotency_key, request_message_hash,
+request_wire_bytes, request_carrier_bytes, request_carrier_source,
+request_carrier_target, request_carrier_operation, request_send_status,
 send_state, admission_receipt_id?, target_work_id?, last_evidence_hash?
 ```
 
 `send_state` ist für diesen Slice auf `created`, `sent`, `admission_received` oder
 `admission_rejected` begrenzt. Kein Eintrag wird als `COMPLETED` oder `VERIFIED` markiert.
+
+`request_wire_bytes` und `request_carrier_bytes` sind unveränderlich gespeicherte Bytes
+oder unveränderliche Content-Adressen. Transport-Retransmission liest exakt diese
+gespeicherten Bytes erneut; IDs, Zeitwerte, Hash und Signatur werden nicht neugeneriert.
 
 ### 4.2 Agent-City-Transportadapter
 
@@ -206,7 +246,9 @@ Live-State bestätigt; keine neue Datenbankplattform im Plan). Eine Transaktion 
 received -> validated -> admitted|rejected
 ```
 
-Bei `admitted` werden in derselben durable Operation gespeichert:
+Die signierten Receipt-Bytes werden vor dem Commit deterministisch aus dem validierten
+Request, dem einmalig erzeugten `target_work_id` und dem Target-Key gebaut. Bei
+`admitted` werden in derselben atomaren durable Operation gespeichert:
 
 ```text
 delegation_id
@@ -220,11 +262,38 @@ request_message_id/message_hash
 target_work_id (opaque, einmalig erzeugt)
 admission_receipt_id
 admission_receipt_content_digest
+admission_receipt_message_id
+admission_receipt_message_hash
+admission_receipt_signature
+admission_receipt_wire_bytes
+admission_receipt_send_status
 state=ACCEPTED
 ```
 
+Erst wenn der vollständige Target-Ledger-Eintrag und die vollständigen signierten
+Receipt-Wire-Bytes atomar dauerhaft gespeichert sind, gilt die Admission als `ACCEPTED`.
 Es gibt keinen Worker-Handle außerhalb dieses Ledger-Eintrags und keinen Side Effect vor
-dem Commit. `target_work_id` ist genau einmal pro `delegation_id` zulässig.
+dem Commit. Crash nach diesem Commit und vor dem Transport erzeugt kein neues Receipt;
+der Sendepfad retransmittiert die gespeicherten identischen Bytes und aktualisiert nur
+`admission_receipt_send_status`. `target_work_id` ist genau einmal pro `delegation_id`
+zulässig.
+
+Eine authentifizierte fachliche Ablehnung wird ebenfalls dauerhaft und idempotent
+gespeichert:
+
+```text
+delegation_id, request_message_id, correlation_id, origin_node_id,
+target_node_id, request_digest, idempotency_key, state=REJECTED,
+reason_code, receipt_message_id, receipt_id, receipt_content_digest,
+receipt_message_hash, receipt_signature, receipt_wire_bytes,
+receipt_send_status
+```
+
+Identischer Replay eines `REJECTED`-Requests retransmittiert exakt dieses gespeicherte
+Reject-Receipt; es entstehen weder eine neue `receipt_id` noch eine neue `message_id`.
+Gleiche `delegation_id` mit anderem Digest bleibt `duplicate_conflict` und erzeugt keine
+neue Admissionentscheidung. Unauthentifizierte, falsch adressierte oder kryptografisch
+ungültige Eingänge bleiben Finding/Quarantine ohne Receipt und ohne Ledger-Datensatz.
 
 Dedupe-Regeln im Slice:
 
@@ -252,11 +321,21 @@ target_work_id = durable Ledger-ID
 request_message_id = erste Request-message_id
 correlation_id = delegation_id
 receipt_content_digest = Digest des semantischen Receipt-Inhalts
+receipt_message_id = neue Receipt-Envelope-ID
+message_hash = Hash des vollständigen Receipt-Envelopes ohne Hash/Signatur
+signature = Ed25519-Signatur des Receipt-Envelopes
+receipt_wire_bytes = vollständige kanonische signierte Receipt-Bytes
+send_status = pending|sent|retryable
 ```
 
 Für fachlich authentifizierte Ablehnungen gilt `issuer_role=target_node`,
 `status=rejected`, kein `target_work_id` und ein zulässiger `reason_code` aus Draft 0.5.
 Ein Receipt enthält keine Worker-, Stacktrace-, Pfad- oder Secret-Daten.
+
+Die vollständigen Receipt-Bytes, `message_id`, `receipt_id`,
+`receipt_content_digest`, `message_hash`, Signatur und `send_status` werden mit dem
+Target-Ledger-Eintrag atomar persistiert. Der Transport darf erst nach diesem Commit
+beginnen.
 
 Transport-Retransmission desselben Receipt verwendet identische Bytes und dieselbe
 `message_id`/`receipt_id`. Eine echte Application-Reissue ist im ersten Slice nicht
@@ -268,10 +347,15 @@ Der Steward-Receipt-Handler akzeptiert eine Admission nur, wenn:
 
 - Signatur, Target, Registry und Receipt-Schema gültig sind;
 - `request_message_id` auf den gespeicherten Request-Root zeigt;
-- `delegation_id`, `correlation_id`, `request_digest` und `target_work_id` zum Origin-
-  Ledger passen;
+- `delegation_id`, `correlation_id` und `request_digest` zum Origin-Ledger passen;
 - die Receipt-ID und der `receipt_content_digest` noch nicht widersprüchlich gespeichert
   sind.
+
+Beim ersten gültigen `admission=accepted`-Receipt besitzt der Origin-Ledger noch kein
+`target_work_id`; der Receipt-Wert wird genau einmal atomar gesetzt. Ein identischer
+Duplicate muss denselben Wert enthalten und bestätigt ihn. Ein abweichender zweiter Wert
+ist ein Receipt-/Ledger-Konflikt und wird fail-closed quarantänisiert. Bei
+`admission=rejected` ist `target_work_id` zwingend null und wird niemals gesetzt.
 
 Die Zuordnung erfolgt ausschließlich über diese IDs. Titel, Beschreibung, Listenposition,
 `delegated:<title>`-Substring und implizite Peer-Reihenfolge sind im V1-Pfad verboten.
@@ -334,15 +418,27 @@ Draft-0.5-Achsen `lifecycle_maturity` und `disposition` sind maßgeblich.
   Eingang erzeugen lokale Quarantine ohne Netzwerkantwort;
 - fachliche Authority-Ablehnung erzeugt ein korrekt signiertes `admission=rejected`-
   Receipt;
-- Crash-Simulation vor Ledger-Commit erzeugt keinen Admission-Handle. Crash-Recovery
-  nach Commit ist ein negativer Scope-Test: nicht implementiert, kein blinder Re-Run.
+- Crash nach atomarem Admission-Commit, aber vor Receipt-Transport: Ledger `ACCEPTED`,
+  genau ein `target_work_id`, vollständige Receipt-Bytes vorhanden, Replay sendet exakt
+  dieselben Bytes und erzeugt kein neues Receipt;
+- Crash vor Admission-Commit: kein Ledger-Eintrag, kein `target_work_id`, kein Receipt;
+- identisches `REJECTED`-Replay: dieselben Reject-Receipt-Bytes, keine neue Receipt- oder
+  Envelope-`message_id`;
+- der Test beweist Admission-Atomizität, implementiert aber keine allgemeine Recovery-
+  Engine und keinen blinden Re-Run.
 
 ### Gate C — Carrier- und Korrelationstests
 
 - Carrier verändert die inneren V1-Bytes nicht;
+- Carrier-Source, Carrier-Target und Carrier-Operation werden jeweils einzeln mutiert:
+  lokale Quarantine, kein Ledger-Eintrag, keine Netzwerkantwort;
+- unbekannte Carrier-Felder, falsche Carrier-Version, ungültiges Base64 und Wildcard-
+  Target werden an derselben Carrier-Grenze fail-closed abgewiesen;
 - Carrier-Target und V1-Target müssen identisch sein;
 - Receipt kommt mit neuem Receipt-`message_id`, aber unverändertem Request-Root zurück;
 - Origin korreliert nur über `delegation_id`, `request_message_id`, Digest und Receipt-ID;
+- erstes `accepted`-Receipt setzt `target_work_id`, identisches Duplicate bestätigt denselben
+  Wert, abweichender zweiter Wert wird als Receipt-/Ledger-Konflikt abgelehnt;
 - zwei gleiche Titel mit unterschiedlichen IDs werden getrennt behandelt;
 - keine V1-Message aktiviert den Legacy-Titelcallback.
 
@@ -382,13 +478,18 @@ Der Slice ist nur dann abgeschlossen, wenn alle folgenden Aussagen belegbar sind
 2. Ein echter Steward->Agent-City-Transportlauf erzeugt durable Admission vor jedem
    Side Effect.
 3. `target_work_id` entsteht höchstens einmal pro `delegation_id`.
-4. Das Admission-Receipt ist signiert, schema-valid, request-root-korreliert und beim
-   Origin genau einmal anwendbar.
-5. Falsches Target, falscher/unerlaubter Key, Digest-Konflikt und Message-Konflikt sind
+4. Das Admission-Receipt ist vor dem atomaren Commit vollständig signiert und gespeichert;
+   Receipt-Bytes, Hash, Signatur, IDs und Sendestatus sind beim Origin genau einmal
+   anwendbar und retransmittierbar.
+5. Authentifizierte `REJECTED`-Entscheidungen sind dauerhaft und idempotent; ungültige
+   Eingänge erzeugen keinen Receipt-Datensatz.
+6. Request- und Receipt-Carrier besitzen geschlossene Felder, exaktes Targeting und
+   unveränderte innere V1-Bytes.
+7. Falsches Target, falscher/unerlaubter Key, Digest-Konflikt und Message-Konflikt sind
    fail-closed und maschinenlesbar sichtbar.
-6. Legacy-`OP_DELEGATE_TASK` und Titelmatching sind im V1-Pfad nicht erreichbar.
-7. Wiring-Manifest, positive/negative Unit-Tests und der Admission-Crucible sind grün.
-8. Es gibt keine Worker-Ausführung, keine Verification, keinen Managed-Task-Abschluss,
+8. Legacy-`OP_DELEGATE_TASK` und Titelmatching sind im V1-Pfad nicht erreichbar.
+9. Wiring-Manifest, positive/negative Unit-Tests und der Admission-Crucible sind grün.
+10. Es gibt keine Worker-Ausführung, keine Verification, keinen Managed-Task-Abschluss,
    keine Recovery-Automation und keine produktive Aktivierung in diesem Diff.
 
 ## 9. Harte Stop-Gates und offene Entscheidungen
@@ -426,4 +527,6 @@ Bitte diesen Plan als Implementierungs-Gate prüfen:
 
 **Erwartete Entscheidung:** `ACCEPTED FOR IMPLEMENTATION SLICE 01`, `REVISION REQUIRED`
 oder `BLOCKED BY CONTRACT`. Bis zu `ACCEPTED FOR IMPLEMENTATION SLICE 01` bleibt der
-Produktcode unverändert.
+Produktcode unverändert. Revision 0.2 beschränkt sich auf die fünf von Agent B geforderten
+Implementierungsgrenzen und die dazugehörigen Test-Gates; bei Annahme ist keine weitere
+breite Planrunde vorgesehen.

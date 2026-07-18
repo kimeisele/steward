@@ -2659,7 +2659,7 @@ beiden Repositories. Beide Suiten bestehen mit `23 passed`. Es wurden ausschlie�
 Tests, Fixtures/Bericht und diese Befund-Dokumentation geändert; Produktcode, Phase 1,
 Context Bridge, Handler, Ledger, Workflow und Produktionsintegration bleiben unverändert.
 
-## §34 — FEDERATION DELEGATION IMPLEMENTATION PLAN 01 (2026-07-18)
+## §34 — FEDERATION DELEGATION IMPLEMENTATION PLAN 01 / REVISION 0.2 (2026-07-18)
 
 Nach der 01A-Abnahme ist ausschließlich ein Implementierungsplan vorbereitet; noch kein
 Produktcode ist freigegeben oder geändert. Der Plan liegt self-contained unter:
@@ -2680,7 +2680,19 @@ SFDJ-1-Bytes, repo-lokale Produktionsadapter ohne gemeinsame Runtime-Library, ei
 persistenten Target-Admission-/Dedupe-Ledger sowie ein Wiring-Manifest mit deaktiviertem
 Default-Gate.
 
+Agent B verlangte fünf enge Präzisierungen; Revision 0.2 schließt ausschließlich diese:
+
+- ACCEPTED- und REJECTED-Admission persistieren atomar vollständige signierte Receipt-
+  Bytes, Message-/Receipt-IDs, Hash, Signatur und Sendestatus;
+- Request- und Receipt-Carrier besitzen geschlossene Felder, Größen-/Base64-Regeln,
+  Source-/Target-/Operation-Bindung und keinen Legacy-Fallback;
+- der Origin setzt `target_work_id` beim ersten gültigen Accepted-Receipt, bestätigt ihn
+  bei identischem Duplicate und quarantänisiert abweichende Werte;
+- Request-Wire-Bytes und Carrier-Metadaten werden unveränderlich gespeichert und für
+  Retransmission exakt wiederverwendet;
+- Crash-, Reject-Replay- und Carrier-Mutations-Gates sind als Tests festgelegt.
+
 Der Plan steht auf dem separaten Branch `plan/federation-delegation-implementation-01`
-und wartet auf Agent-B-Review. Bis zur Entscheidung bleiben Produktcode, Context Bridge,
-Execution-Spine-Gesamtspec, Provider-Failover-Umbau, Merge-Autorität und produktive
-Aktivierung gesperrt.
+und wartet erneut auf Agent-B-Review. Bis zur Entscheidung bleiben Produktcode, Context
+Bridge, Execution-Spine-Gesamtspec, Provider-Failover-Umbau, Merge-Autorität und
+produktive Aktivierung gesperrt.
