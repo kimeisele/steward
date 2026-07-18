@@ -1,6 +1,6 @@
 # EXECUTION FOUNDATION — ADR-BACKLOG
 
-> **Status:** OPEN — FRAGEN INVENTARISIERT, KEINE ENTSCHEIDUNGEN
+> **Status:** MIXED — ADR-02/-06/-07/-08/-09 ACCEPTED (enger V1-Scope); ADR-01/-03/-04/-05/-10 OPEN
 > **Datum:** 2026-07-18
 > **Quelle:** akzeptierter `EXECUTION_TRUTH_MAP_RECON.md`
 > **Regel:** Dieses Backlog stellt Fragen. Es beantwortet sie nicht und autorisiert keine
@@ -18,8 +18,31 @@ Jede Frage wird später in einem eigenen ADR entschieden. Ein ADR braucht mindes
 - adversariales Review,
 - expliziten Status `accepted`, `rejected` oder `superseded`.
 
-Bis dahin ist jede Frage `OPEN`. Reihenfolge bedeutet Abhängigkeit, nicht vorweggenommene
-Antwort.
+Vor dem Decision Sprint war jede Frage `OPEN`. Seit Sprint 1 sind nur ADR-02, -06, -07,
+-08 und -09 ausdrücklich entschieden; die übrigen Fragen bleiben `OPEN`. Reihenfolge
+bedeutet Abhängigkeit, nicht vorweggenommene Antwort.
+
+Sprint 1B hat Agent-Bs Review aufgenommen. Draft 0.2 ist für Golden-Wire-Fixtures und
+Crucible-Design gesperrt. Die revidierten Regeln stehen in
+`ADR_DECISION_SPRINT_1B_REVISION.md`; die normative Contract-Fassung ist Draft 0.3.
+
+Sprint 1C hat die verbleibenden Draft-0.3-Lücken normativ ergänzt. Der Freeze umfasst
+Draft 0.5, geschlossene V1-Payload-Schemas, manuelle/out-of-band Root-Recovery und ein
+datensparsames Status Query. SFDJ-1 bleibt unverändert eingefroren. Vollständiges Packet:
+`AGENT_B_ADR_SPRINT_1C_FREEZE_REVIEW_PACKET.md`.
+
+## Decision Sprint 1 — Ergebnisübersicht
+
+| ADR | Status | Einzelentscheidung |
+|---|---|---|
+| ADR-02 | ACCEPTED / SPRINT 1C FREEZE | Request-Root, Kausalitäts-IDs, Reissue-Bindung |
+| ADR-06 | ACCEPTED / SPRINT 1C FREEZE | Root-/Key-Provenance, Revocation, SFDJ-1, Domain Separation |
+| ADR-07 | ACCEPTED / SPRINT 1C FREEZE | geschlossene Schemas, Wiring-Manifest, zwei Statusachsen |
+| ADR-08 | ACCEPTED / SPRINT 1C FREEZE | at-least-once, Digest-Dedupe, Recovery/Reissue |
+| ADR-09 | ACCEPTED / SPRINT 1C FREEZE | Receipt-Stufen, Partial Order, Replay/Reissue |
+
+Die Einzel-ADRs enthalten Optionen, Auswirkungen, Gegenargument und Implementierungsreife.
+Eine `ACCEPTED`-Entscheidung autorisiert noch keinen Produktcode.
 
 ## ADR-01 — Kanonische Ausführungsidentität
 
@@ -35,7 +58,7 @@ Workflow und Verification hinweg kanonisch, und wo wird sie erzeugt und persisti
 **Frage:** Sind Execution-ID, Correlation-ID und Message-ID zwingend getrennte Identitäten,
 und welche Kardinalitäts- und Ableitungsregeln gelten zwischen ihnen?
 
-**Status:** OPEN
+**Status:** ACCEPTED / SPRINT 1C FREEZE — enger Federation-V1-Scope; Details: Draft 0.5
 
 **Recon-Bezug:** Truth Map §3; mehrere Transport-IDs existieren, Correlation ist häufig leer.
 
@@ -71,7 +94,7 @@ Outcome, ein Health-Signal oder eine verbindliche Kombination davon?
 **Frage:** Welches kanonische Federation-Signaturformat gilt für Signaturscope, Hash,
 Encoding, Key-Provenance und Hub-Mutationen?
 
-**Status:** OPEN
+**Status:** ACCEPTED / SPRINT 1C FREEZE — enger Federation-V1-Scope; Details: Draft 0.5
 
 **Recon-Bezug:** Truth Map §7.4; Steward und Agent City verifizieren unterschiedliche Bytes.
 
@@ -81,7 +104,7 @@ Encoding, Key-Provenance und Hub-Mutationen?
 Authority-Gate, Result-Operation und End-to-End-Test deklarieren, bevor sie als implementiert
 gilt?
 
-**Status:** OPEN
+**Status:** ACCEPTED / SPRINT 1C FREEZE — enger Federation-V1-Scope; Details: Draft 0.5
 
 **Recon-Bezug:** Truth Map §7.1–7.3; `ALL_OPERATIONS` kodiert keine Richtung oder Vollständigkeit.
 
@@ -90,7 +113,7 @@ gilt?
 **Frage:** Welche Idempotenzregeln gelten für Retry, Timeout, Crash-Recovery und doppelte
 Nachrichten, insbesondere nach partiell ausgeführten Tool Calls?
 
-**Status:** OPEN
+**Status:** ACCEPTED / SPRINT 1C FREEZE — enger Federation-V1-Scope; Details: Draft 0.5
 
 **Recon-Bezug:** Truth Map §3.2, §5 und §7.5; keine stabile Execution-Korrelation vorhanden.
 
@@ -99,7 +122,7 @@ Nachrichten, insbesondere nach partiell ausgeführten Tool Calls?
 **Frage:** Welche getrennten Receipts bestätigen Transport, Annahme, Ausführungsbeginn,
 terminales Ergebnis und verifizierte Wirkung, und wer darf sie ausstellen?
 
-**Status:** OPEN
+**Status:** ACCEPTED / SPRINT 1C FREEZE — enger Federation-V1-Scope; Details: Draft 0.5
 
 **Recon-Bezug:** Truth Map §6; heutiges `DeliveryReceipt` bestätigt keine konkrete Wirkung.
 
@@ -114,6 +137,8 @@ terminales Ergebnis und verifizierte Wirkung, und wer darf sie ausstellen?
 
 ## Gate
 
-Kein ADR ist durch die Federation Delegation Contract V1 Spec oder eine spätere
-Execution-Spine-Spec implizit beantwortet. Wo die Federation-Spec von einer offenen Frage
-abhängt, muss sie den ADR als Blocker nennen und darf keinen Default erfinden.
+ADR-02, -06, -07, -08 und -09 sind im engen Federation-V1-Wire-Scope ACCEPTED. Draft 0.5
+ist READY FOR GOLDEN FIXTURES; das autorisiert noch keinen Code, keine Fixtures-Ausführung
+und keinen Crucible. ADR-01, -03, -04, -05 und -10 bleiben OPEN und dürfen nicht implizit
+durch den Wire-Vertrag beantwortet werden. ADR-03 ist vor ManagedTask-COMPLETED-Mapping,
+ADR-05 vor Produktions-Crucible und ADR-10 vor vollständiger Integration zwingend.

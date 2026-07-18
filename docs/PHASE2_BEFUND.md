@@ -2410,8 +2410,8 @@ Die zehn noch nicht entschiedenen Architekturfragen stehen ohne erfundene Antwor
    `specs/HEARTBEAT_FAILURE_PROPAGATION_SYSTEM_SPEC.md` und
    `specs/HEARTBEAT_FAILURE_PROPAGATION_FEATURE_01.md`.
 2. Federation Delegation wird als eigener V1-Vertrag vorbereitet:
-   `specs/FEDERATION_DELEGATION_CONTRACT_V1.md`. Die Fassung ist DRAFT 0.1, durch ADRs und
-   adversariales Review blockiert und autorisiert keinen Produktcode.
+   `specs/FEDERATION_DELEGATION_CONTRACT_V1.md`. Die Fassung ist DRAFT 0.2, durch offene
+   ADRs und adversariales/readiness Review blockiert und autorisiert keinen Produktcode.
 3. Eine große Execution-Spine-System-Spec bleibt gesperrt. Eine spätere Spine muss aus den
    entschiedenen Heartbeat- und Federation-Verträgen abstrahieren, nicht umgekehrt.
 
@@ -2420,3 +2420,380 @@ Die zehn noch nicht entschiedenen Architekturfragen stehen ohne erfundene Antwor
 Dieser Milestone ändert ausschließlich Dokumentation. Phase 1 bleibt read-only. Die
 Context Bridge bleibt gemäß §25 geparkt; PR `#728` ist offen und nicht freigegeben. E1,
 D2b, G1, Publisher, Delivery und Canonical-Aktivierung bleiben gesperrt.
+
+## §27 — ADR DECISION SPRINT 1: FEDERATION DELEGATION V1 (2026-07-18)
+
+> Historischer Sprint-1-Stand; durch §28 und Draft 0.3 revidiert. Nicht als Fixture- oder
+> Crucible-Basis verwenden.
+
+Der Codebase-Agent hat für Agent B die fünf ausdrücklich beauftragten Federation-ADRs
+erneut am Live-Code geprüft. Alle fünf Entscheidungen sind für den Delegation-V1-Scope
+`ACCEPTED`; keine Entscheidung ist eine universelle Execution-Spine-Entscheidung und keine
+autorisiert Produktcode:
+
+| ADR | Entscheidung |
+|---|---|
+| ADR-02 | getrennte Identitätsrollen; V1 `correlation_id == delegation_id`, `message_id` pro logischer Message |
+| ADR-06 | expliziter kanonischer Envelope, SHA-256/Ed25519/base64, gebundener `signer_key`, keine Hub-Mutation |
+| ADR-07 | vollständiges Emitter→Transport→Target→Authority→Handler→Result→Test-Wiring als Implementierungs-Gate |
+| ADR-08 | at-least-once Transport, durable idempotenter Receiver, sichtbares `RECOVERY_REQUIRED` statt Blind-Retry |
+| ADR-09 | typisierte Receipts `transport_committed → admission → started → terminal → verification` |
+
+Einzelbegründungen, Optionen, Auswirkungen, Gegenargumente und Readiness stehen in:
+
+`specs/execution_truth_map/ADR-02-ID-BOUNDARIES.md`
+
+`specs/execution_truth_map/ADR-06-FEDERATION-SIGNATURE.md`
+
+`specs/execution_truth_map/ADR-07-CAPABILITY-WIRING.md`
+
+`specs/execution_truth_map/ADR-08-RETRY-RECOVERY-IDEMPOTENZ.md`
+
+`specs/execution_truth_map/ADR-09-RECEIPT-SEMANTIK.md`
+
+Der Contract wurde zu Draft 0.2 reconciliiert:
+
+`specs/FEDERATION_DELEGATION_CONTRACT_V1.md`
+
+Damit sind Wire-Objekte, Signaturbytes, Targeting, Idempotenz und Receipt-Stufen explizit
+beschrieben. Der separate Widerspruchs- und Implementierungsreife-Review steht in:
+
+`specs/execution_truth_map/ADR_DECISION_SPRINT_1_REVIEW.md`
+
+Er findet keinen direkten Widerspruch zwischen den fünf Entscheidungen; der Contract bleibt
+dennoch `NOT IMPLEMENTATION-READY`. Verbleibende Blocker sind ADR-05 (Workflow-Wahrheit) und ADR-10
+(Statusadapter); ADR-01/-03/-04 bleiben bewusst außerhalb dieses Sprints offen.
+
+Der durchgeführte Widerspruchs- und Implementierungsreife-Review steht in
+`specs/execution_truth_map/ADR_DECISION_SPRINT_1_REVIEW.md`: kein direkter Widerspruch,
+aber weiterhin `NOT IMPLEMENTATION-READY`. Vor Implementierung bleiben erforderlich:
+Agent-B-Review, Golden-Wire-Fixtures, Ledger-/Lease-Crucible und ein echter
+Steward→Agent-City-Delegations-Crucible. Phase 1, Context Bridge und Produktcode bleiben
+unangetastet.
+
+## §28 — ADR DECISION SPRINT 1B: REVISION REQUIRED (2026-07-18)
+
+Agent B hat Draft 0.2 als architektonisch tragfähig, aber noch nicht fixture- oder
+crucible-ready bewertet. Die elf normativen Lücken wurden in einem gezielten Sprint 1B
+behandelt, ohne Produktcode zu ändern:
+
+- Transport-Retransmission und Application-Reissue sind getrennt.
+- `request_digest` wird über eine exakt definierte semantische Request-Payload berechnet;
+  `idempotency_key` ist deterministisch daraus abgeleitet.
+- Node-ID, `key_id`, stabile Registry-Provenance, Rotation und Revocation sind neu gefasst;
+  ADR-06 bleibt bis zur Agent-Bestätigung `OPEN / REVISION REQUIRED`.
+- Domain Separation ist Bestandteil des Signaturinputs.
+- Canonical JSON, Zeitprofil, Unicode, Zahlen, Base64, Limits und Versionsliteral sind
+  explizit festgelegt.
+- Receipt-Stufen bilden einen Partial Order; Out-of-Order, Reject-Seitenpfad und Replay sind
+  getrennt geregelt.
+- `request_message_id` und `causation_message_id` ersetzen `subject_message_id`.
+- Target- und Origin-Ledger sind getrennte Zustandsbesitzer.
+- Capability-Status lautet `declared`, `partially_wired`, `code_complete`,
+  `crucible_verified`, `production_proven`, `unavailable` oder `legacy`.
+
+Die vollständige Revision steht in:
+
+`specs/execution_truth_map/ADR_DECISION_SPRINT_1B_REVISION.md`
+
+Die aktualisierte Blocker-Matrix steht in:
+
+`specs/execution_truth_map/ADR_SPRINT_1B_BLOCKER_MATRIX.md`
+
+Die neue Contract-Fassung ist:
+
+`specs/FEDERATION_DELEGATION_CONTRACT_V1_DRAFT_0_3.md`
+
+Das self-contained Review-Packet für die nächste Agent-B-Prüfung ist:
+
+`specs/execution_truth_map/AGENT_B_ADR_SPRINT_1B_REVIEW_PACKET.md`
+
+Draft 0.3 bleibt `NOT IMPLEMENTATION-READY`, bis Agent B die revidierten Crypto-, Digest-,
+Partial-Order-, Ledger- und Statusregeln bestätigt. Golden-Wire-Fixtures, Crucible-Design,
+Produktcode, Phase 1 und Context Bridge bleiben gesperrt.
+
+## §29 — ADR DECISION SPRINT 1C: DRAFT 0.4 NOCH NICHT FIXTURE-READY (2026-07-18)
+
+Agent B bewertet Draft 0.3 als wesentlich verbessert, aber noch nicht bereit für Golden-
+Wire-Fixtures. Ein enger Sprint 1C behandelt ausschließlich die verbliebenen normativen
+Lücken:
+
+- Wrong-Target wird ausschließlich internes Finding/Quarantine; keine automatische signierte Antwort.
+- Root-Identity erhält Enrollment, Root-signierte Key-Certificates, Aktivierung, Rotation,
+  Root-Ablösung, Collision-Handling und Revocation-Provenance.
+- Revocation erhält `not_before`, `not_after`, `revoked_at`, `revocation_effective_at`,
+  `revocation_reason`, reguläre Rotation und emergency compromise.
+- Canonical JSON wird als sprachneutrales SFDJ-1-Profil mit NFC-Reject, rekursiver Prüfung,
+  Escape-, Zahlen-, Größen- und Bytegleichheitsregeln festgelegt.
+- Receipt-Retransmission und Receipt-Reissue werden getrennt; `receipt_id` bleibt beim
+  Reissue gleich, `receipt_content_digest` bindet den fachlichen Inhalt.
+- `request_message_id` bleibt immer der erste Request; `causation_message_id` folgt der
+  unmittelbaren Status-/Recovery-Ursache.
+- `delegation_status_query` und `delegation_status` erhalten vollständige Schemas,
+  Authority-, Privacy-, Rate-Limit-, Replay- und Wiring-Regeln.
+- Capability-Reife und Disposition werden als zwei Achsen modelliert.
+
+Die vollständige Revision steht in:
+
+`specs/execution_truth_map/ADR_DECISION_SPRINT_1C_REVISION.md`
+
+Draft 0.4 steht in:
+
+`specs/FEDERATION_DELEGATION_CONTRACT_V1_DRAFT_0_4.md`
+
+Das self-contained Review-Packet steht in:
+
+`specs/execution_truth_map/AGENT_B_ADR_SPRINT_1C_REVIEW_PACKET.md`
+
+Die Entscheidung bleibt `NOT READY FOR GOLDEN FIXTURES`. Produktcode, Phase 1 und Context
+Bridge bleiben unverändert; ADR-05 und ADR-10 bleiben spätere Produktions-/Integrations-
+Blocker.
+
+## §30 — ADR DECISION SPRINT 1C FREEZE: DRAFT 0.5 READY FOR GOLDEN FIXTURES (2026-07-18)
+
+Agent B hat Draft 0.4 als architektonisch tragfähig, aber wegen drei eng begrenzter Freeze-
+Aufgaben noch nicht fixture-ready bewertet. Diese Aufgaben sind nun dokumentarisch und
+normativ geschlossen; es wurde kein Produktcode geändert:
+
+- Geschlossene V1-Payload-Schemas für `delegate_task`, `delegation_receipt` mit den Stufen
+  `transport_committed`, `admission`, `started`, `terminal`, `verification`, sowie
+  `delegation_status_query` und `delegation_status`: Typen, Pflichtfelder, Nullability,
+  Limits, Enums, Unknown-Field-Verbot, Digest-Bindung und Authority-/Privacy-Semantik.
+- Root-Verlust/-Kompromittierung ist kein Federation-Recovery-Pfad: Node fail-closed für
+  neue V1-Nachrichten; manuelle out-of-band Governance/Neu-Enrollment außerhalb V1; keine
+  Quorum-, automatische Übernahme- oder Root-Replacement-Semantik; Historie/Audit bleiben.
+- Status Query autorisiert echte Daten nur für die kryptografisch gebundene eigene
+  `delegation_id`; fremde oder unbekannte IDs erhalten denselben minimalen UNKNOWN-Snapshot.
+  Die Antwort enthält keine fremden Delegationen, Worker-/Lease-Details, Stacktraces,
+  Secrets, Pfade oder unvereinbarte Evidence; Rate-Limit und Audit-Finding bleiben lokal.
+
+SFDJ-1 bleibt unverändert eingefroren. ADR-02, ADR-06, ADR-07, ADR-08 und ADR-09 sind im
+engen Federation-V1-Wire-Scope `ACCEPTED`. Die Contract-Fassung ist:
+
+`specs/FEDERATION_DELEGATION_CONTRACT_V1_DRAFT_0_5.md`
+
+Das vollständige self-contained Agent-B-Freeze-Packet ist:
+
+`specs/execution_truth_map/AGENT_B_ADR_SPRINT_1C_FREEZE_REVIEW_PACKET.md`
+
+Die endgültige Matrix ist:
+
+`specs/execution_truth_map/ADR_SPRINT_1C_FINAL_BLOCKER_MATRIX.md`
+
+Damit ist Draft 0.5 `READY FOR GOLDEN FIXTURES`. Dieser Status autorisiert ausschließlich
+den nächsten Milestone: Golden-Wire-Fixtures plus unabhängige Steward-/Agent-City-Parser-
+und Signaturtests. Noch gesperrt bleiben Produktcode, Handler, Ledger-/Workflow-Änderungen,
+Crucible-Ausführung, Merge, Phase 1 und Context Bridge. ADR-03, ADR-05 und ADR-10 bleiben
+spätere Managed-Task-, Produktions- und Integrationsblocker.
+
+## §31 — AGENT-B FREEZE REVIEW: VIER DIREKTE KORREKTUREN (2026-07-18)
+
+Agent B hat Draft 0.5 fast akzeptiert und vier direkte Inkonsistenzen vor Fixture-Start
+markiert. Im korrigierten Draft 0.5 und Freeze-Packet sind sie geschlossen:
+
+- `delegation_status.terminal_status` ist ausschließlich `completed`, `failed` oder
+  `null`; `verified`/`failed_verification` gehören nur Origin-Ledger und Verification-
+  Receipt.
+- Bei fehlendem Ledger-Eintrag oder fremdem Origin liefert Status Query denselben
+  minimalen `UNKNOWN`-Snapshot ohne Reason-, Größen- oder Timing-Orakel.
+- Root-Enrollment-Record und Signing-Key-Authorization-Certificate besitzen geschlossene,
+  bytegenaue SFDJ-1-Felder, Domains, Signaturinputs, Epochs, Aktivierung, Zeitfenster,
+  key_id/node_id und Revocation-Referenz.
+- Das Admission-Beispiel enthält nun das verpflichtende `issuer_role=target_node`; die
+  JSON-Beispiele wurden auf schemaförmige Base64-/Issuer-Felder geprüft.
+
+Der nächste Milestone bleibt ausschließlich Golden-Wire-Fixtures und unabhängige Parser- /
+Signaturtests. Kein Produktcode, Handler, Ledger, Workflow, Merge, Crucible, Phase 1 oder
+Context-Bridge-Resume ist dadurch autorisiert.
+
+## §32 — GOLDEN WIRE FIXTURES 01: POSITIVE PARITY UND NEGATIVE GRENZEN (2026-07-18)
+
+Die Freeze-Abnahme hat Draft 0.5 für Golden Fixtures freigegeben. Auf dem separaten
+Fixture-Branch wurden ausschließlich deterministische Testartefakte und unabhängige
+Referenztests erstellt:
+
+- vier synthetische, als nicht-produktiv markierte Ed25519-Testschlüssel für Origin/Target
+  Root und Signing-Key,
+- Root-Enrollment- und Signing-Key-Certificate-Provenance mit SFDJ-1-Bytes, Digest,
+  Domain-Signatur, `node_id` und `key_id`,
+- ein vollständig berechneter `delegate_task`-Envelope mit Request-Digest,
+  Idempotency-Key, Message-Hash und Ed25519-Signatur,
+- 17 negative Fixtures mit maschinenlesbarem Reject-Code und Validierungsphase.
+
+Die Artefakte und SHA-256-Manifest liegen unter:
+
+`tests/fixtures/federation_v1/`
+
+Der vollständige Milestone-Bericht liegt unter:
+
+`specs/execution_truth_map/GOLDEN_WIRE_FIXTURES_01_REPORT.md`
+
+Unabhängige Referenztests sind in Steward und Agent City vorhanden und bestanden jeweils
+`20 passed`. Kein Runtime-Handler, Ledger, Workflow, Provider-Crucible oder Produktionspfad
+wurde verändert. Phase 1 und Context Bridge bleiben unverändert.
+
+## §33 — GOLDEN WIRE FIXTURES 01A: UNABHÄNGIGE REGENERATION (2026-07-18)
+
+Agent B hat die gespeicherten Fixtures akzeptiert, aber die erste Abnahme bis zum Beweis
+repo-lokaler unabhängiger Regeneration blockiert. Diese Testhärtung ist abgeschlossen:
+
+- Steward und Agent City bauen Enrollment, Certificate, `node_id`, `key_id`,
+  `request_digest`, Idempotency-Key, vollständigen Request, SFDJ-1-Bytes, Message-Hash,
+  Domain-Signature-Input und Ed25519-Signatur jeweils aus semantischen Eingaben und den
+  deterministischen Test-Seeds neu; die Ergebnisse sind byteidentisch zu Fixtures und
+  Manifest.
+- Beide Seiten prüfen die vollständige Provenance-Bindung einschließlich geschlossener
+  Feldmengen, Root-/Certificate-Key-Bindung, Epochs, RFC-3339-Zeitfenster,
+  `rotation_kind` und `revocation_ref` am festen Fixture-Prüfzeitpunkt.
+- Eine allgemeine, phasenweise Referenzvalidierung beweist für alle 17 Negativfälle die
+  erste fehlschlagende Grenze. Die Reject-Codes werden nicht aus Fall-ID oder Dateiname
+  abgeleitet; Steward und Agent City liefern dieselbe Code-/Phasenmatrix.
+
+Der aktualisierte vollständige Bericht ist:
+
+`specs/execution_truth_map/GOLDEN_WIRE_FIXTURES_01_REPORT.md`
+
+Die erweiterten repo-lokalen Testmodule liegen unter
+`tests/federation_v1/hardening.py` und `tests/federation_v1/test_golden_wire_01a.py` in
+beiden Repositories. Beide Suiten bestehen mit `23 passed`. Es wurden ausschließlich
+Tests, Fixtures/Bericht und diese Befund-Dokumentation geändert; Produktcode, Phase 1,
+Context Bridge, Handler, Ledger, Workflow und Produktionsintegration bleiben unverändert.
+
+## §34 — FEDERATION DELEGATION IMPLEMENTATION PLAN 01 / REVISION 0.2 (2026-07-18)
+
+Nach der 01A-Abnahme ist ausschließlich ein Implementierungsplan vorbereitet; noch kein
+Produktcode ist freigegeben oder geändert. Der Plan liegt self-contained unter:
+
+`specs/execution_truth_map/FEDERATION_DELEGATION_IMPLEMENTATION_PLAN_01.md`
+
+Der kleinste vorgesehene reale Slice lautet:
+
+`Steward signierter V1-Request -> exakter Agent-City-Carrier -> SFDJ-/Provenance-/Authority-
+Prüfung -> durable Target-Admission vor Side Effect -> signiertes admission-Receipt ->
+Origin-Korrelation über IDs`.
+
+Der Slice erzeugt keinen Worker und kein Tool, keine Started-/Terminal-/Verification-
+Receipt, keine Status-Query, keine Recovery, keinen Managed-Task-Abschluss und keine
+Produktivaktivierung. Legacy-`OP_DELEGATE_TASK` und Titelmatching bleiben isoliert. Der
+Plan entscheidet `wire_bytes_b64` als unsignierten Transportcarrier für unveränderte
+SFDJ-1-Bytes, repo-lokale Produktionsadapter ohne gemeinsame Runtime-Library, einen
+persistenten Target-Admission-/Dedupe-Ledger sowie ein Wiring-Manifest mit deaktiviertem
+Default-Gate.
+
+Agent B verlangte fünf enge Präzisierungen; Revision 0.2 schließt ausschließlich diese:
+
+- ACCEPTED- und REJECTED-Admission persistieren atomar vollständige signierte Receipt-
+  Bytes, Message-/Receipt-IDs, Hash, Signatur und Sendestatus;
+- Request- und Receipt-Carrier besitzen geschlossene Felder, Größen-/Base64-Regeln,
+  Source-/Target-/Operation-Bindung und keinen Legacy-Fallback;
+- der Origin setzt `target_work_id` beim ersten gültigen Accepted-Receipt, bestätigt ihn
+  bei identischem Duplicate und quarantänisiert abweichende Werte;
+- Request-Wire-Bytes und Carrier-Metadaten werden unveränderlich gespeichert und für
+  Retransmission exakt wiederverwendet;
+- Crash-, Reject-Replay- und Carrier-Mutations-Gates sind als Tests festgelegt.
+
+Der Plan steht auf dem separaten Branch `plan/federation-delegation-implementation-01`
+und wartet erneut auf Agent-B-Review. Bis zur Entscheidung bleiben Produktcode, Context
+Bridge, Execution-Spine-Gesamtspec, Provider-Failover-Umbau, Merge-Autorität und
+produktive Aktivierung gesperrt.
+
+## §35 — FEDERATION DELEGATION IMPLEMENTATION SLICE 01 (2026-07-18)
+
+Die Implementierung ist auf separaten, nicht gemergten Branches erfolgt und wartet auf
+die erneute Agent-B-Abnahme. Die exakten Remote-Pins und die vollständige, self-contained
+Review-Unterlage stehen in:
+
+`specs/execution_truth_map/AGENT_B_FEDERATION_DELEGATION_IMPLEMENTATION_SLICE_01_REVIEW.md`
+
+Implementierungspins:
+
+- Steward `impl/federation-delegation-slice-01`:
+  `e83c919209c17dd1bf2377c811ce10e689078539`
+- Agent City `impl/federation-delegation-slice-01`:
+  `58493604c545b23b3926d56d71b46afb0bd2fbe1`
+
+Der ausschließlich freigegebene Slice ist nun produktseitig vorhanden:
+
+`Steward V1 Origin -> geschlossener exakt adressierter Carrier -> Agent-City-V1-Ingress ->
+SFDJ-/Provenance-/Signatur-/Authority-Prüfung -> atomarer ACCEPTED-/REJECTED-Admission-
+Ledger -> vollständig gespeichertes signiertes Admission-Receipt -> geschlossener Receipt-
+Carrier -> Steward-ID-Korrelation`.
+
+Belegt ist insbesondere:
+
+- vollständige Request- und Receipt-Wire-Bytes, getrennte Message-/Receipt-IDs, Hashes,
+  Signatur und Sendestatus im Ledger;
+- First-Set-/Duplicate-Match-Semantik für `target_work_id`;
+- durable, idempotente REJECTED-Receipts;
+- Carrier-Mutation-Quarantäne ohne Netzwerkantwort;
+- default-deaktiviertes Feature-Gate und unveränderte Legacy-`OP_DELEGATE_TASK`-/Titel-
+  Pfade;
+- repo-lokale, unabhängige Steward-/Agent-City-Adapter ohne neue gemeinsame Runtime-
+  Library.
+
+Gemessene Ergebnisse nach dem letzten Commit:
+
+- Steward Slice plus Golden Fixtures: `52 passed`;
+- Agent City Slice plus Golden Fixtures: `52 passed`;
+- Steward Legacy Federation Gateway/Quarantine: `61 passed`;
+- Agent-City-Federation-Regression inklusive NADI/Relay: `142 passed`;
+- admission-only Cross-Repo-Crucible mit separatem Agent-City-Checkout: `1 passed`;
+- Ruff und `py_compile` für beide neuen Adapter/Testgrenzen: sauber/pass.
+
+Der Crucible erzeugt den Request aus semantischen Eingaben, bestätigt bytegleiche Golden-
+Request-Bytes, validiert und persistiert die Admission in Agent City, korreliert das
+signierte Receipt in Steward und bestätigt identisches Replay samt unverändertem
+`target_work_id`.
+
+Noch ausdrücklich gesperrt: Worker-/Tool-Ausführung, Started-/Terminal-/Verification-
+Receipts, Status Query, Lease/Recovery-Automation, Managed-Task-COMPLETED, Provider-
+Failover, Context Bridge, Execution-Spine-Gesamtspec, automatische Merge-Autorität,
+produktive Aktivierung und Merge. Phase 1 bleibt unverändert. Der Agent-B-Entscheidungs-
+status ist bis zur Review `IMPLEMENTATION REVIEW REQUESTED`.
+
+## §36 — FEDERATION DELEGATION SLICE 01A: AGENT-B-BLOCKER REVISION (2026-07-18)
+
+Agent B hat vier enge Produktcode-Blocker benannt; kein neuer ADR- oder Plan-Sprint war
+erforderlich. Die Revision ist auf denselben separaten Branches umgesetzt:
+
+- Steward: `0248dc4efbd514eaf20bb2c1ed79101d87eb4516`
+- Agent City: `0caa6fb536cc5b5883ffde89e66282af5c6e26bc`
+
+Das vollständige aktualisierte self-contained Review-Paket ist:
+
+`specs/execution_truth_map/AGENT_B_FEDERATION_DELEGATION_IMPLEMENTATION_SLICE_01_REVIEW.md`
+
+Geschlossene Blocker:
+
+- `FederationV1Origin.create` gibt nur noch exakt persistierte Request-/Carrier-Bytes
+  zurück; gleiche bestehende Requests werden aus dem Ledger wiedergegeben, Digest-,
+  Message-ID-, Payload- und Wire-Konflikte erzeugen `origin_request_conflict` plus
+  persistentes Finding.
+- Origin-Receipt-Anwendung erzwingt Source-/Target-Bindung, ursprüngliche
+  `delegation_id`, `correlation_id`, `request_message_id` und
+  `causation_message_id`; falsch signierte Kausalität oder ein anderer registrierter
+  Knoten mutieren den Ledger nicht.
+- Beide Validatoren akzeptieren ausschließlich einen typisierten,
+  provenance-validierten `ValidatedFederationV1KeyRegistry`-Snapshot. Root Enrollment,
+  Root-Signatur, Certificate, Node-/Key-Ableitung, Epochs, Zeitfenster, Rotation und
+  Revocation werden vor der Envelope-Prüfung erzwungen.
+- Bestehende, aber unlesbare oder semantisch ungültige Ledger-Dateien lösen
+  `ledger_corrupt` aus. Alle Ledger-RMW-Operationen besitzen zusätzlich zur
+  Thread-Sperre eine repo-lokale Interprozess-Sperre um den vollständigen
+  `read -> modify -> fsync -> replace`-Abschnitt.
+
+Gemessene Revisionsergebnisse:
+
+- Steward Slice/Fixtures: `65 passed`;
+- Agent City Slice/Hardening/Fixtures: `64 passed`;
+- Cross-Repo Admission-Crucible: `1 passed`;
+- Steward Legacy Gateway/Quarantine: `61 passed`;
+- Agent-City NADI/Relay: `90 passed`;
+- Ruff und `py_compile` für beide neuen Adapter/Testgrenzen: sauber/pass.
+
+Die Tests decken nun zusätzlich Origin-Idempotenz und Konflikte, falsche registrierte
+Receipt-Quelle, Correlation/Causation/Target-Bindung, Provenance-Zeit-/Revocation-
+Grenzen, korrupten Ledger-State sowie parallele unabhängige Ledger-Instanzen und
+Updates ab. Feature-Gate, Legacy-Pfade, Phase 1, Context Bridge und alle weiterhin
+gesperrten Runtime-/Workflow-Funktionen bleiben unverändert. Agent-B-Status ist nun
+`REVISION REVIEW REQUESTED`; Merge und produktive Aktivierung bleiben ausstehend.

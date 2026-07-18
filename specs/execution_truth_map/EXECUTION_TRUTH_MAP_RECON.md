@@ -21,8 +21,9 @@ Beweisrang:
 3. Dokumentprosa nur als historische Behauptung.
 
 Jeder Soll-Vertrag liegt außerhalb dieses Dokuments. Der nächste Soll-Vertrag steht in
-`specs/FEDERATION_DELEGATION_CONTRACT_V1.md`. Offene Architekturentscheidungen stehen
-unbeantwortet in `specs/execution_truth_map/ADR_BACKLOG.md`.
+`specs/FEDERATION_DELEGATION_CONTRACT_V1.md`. Offene Architekturentscheidungen stehen in
+`specs/execution_truth_map/ADR_BACKLOG.md`; ADR-02/-06/-07/-08/-09 wurden im anschließenden
+Decision Sprint 1 für den engen Federation-Delegation-V1-Scope ausdrücklich akzeptiert.
 
 ## 1. Live-Pins und Recon-Isolation
 
@@ -408,3 +409,29 @@ spec-bereit. Zuerst gelten zwei engere Gates:
 
 Erst aus diesen belegten Verträgen darf später abstrahiert werden. Dieses Dokument selbst
 ist abgeschlossenes IST und kein Implementierungsauftrag.
+
+## 13. Nachfolgende ADR-Entscheidung
+
+Die in diesem Recon zunächst offenen Fragen ADR-02, ADR-06, ADR-07, ADR-08 und ADR-09
+wurden nach erneuter Live-Code-Prüfung für den engen Federation-Delegation-V1-Scope
+akzeptiert. Die Einzelentscheidungen und ihre Grenzen stehen in:
+
+- `ADR-02-ID-BOUNDARIES.md`
+- `ADR-06-FEDERATION-SIGNATURE.md`
+- `ADR-07-CAPABILITY-WIRING.md`
+- `ADR-08-RETRY-RECOVERY-IDEMPOTENZ.md`
+- `ADR-09-RECEIPT-SEMANTIK.md`
+
+Der Recon bleibt das IST-Dokument. Die ADRs und der Contract definieren den anschließenden
+SOLL-Entscheidungsstand; sie ändern keine historische Recon-Aussage.
+
+Nach dem Agent-B-Review wurde Sprint 1 als `REVISION REQUIRED` zurück in Sprint 1B gegeben.
+Die revidierte Grundlage ist `ADR_DECISION_SPRINT_1B_REVISION.md`; Draft 0.2 ist nicht mehr
+Fixture-/Crucible-Basis. ADR-06 bleibt bis zur Bestätigung von Node-ID, key_id, Rotation,
+Revocation und Domain Separation offen. Draft 0.3 steht in
+`specs/FEDERATION_DELEGATION_CONTRACT_V1_DRAFT_0_3.md`.
+
+Nach dem Sprint-1C-Freeze ist Draft 0.5 die aktuelle, geschlossene Federation-V1-Wire-
+Fassung und `READY FOR GOLDEN FIXTURES`. Diese Statusänderung betrifft ausschließlich den
+nachfolgenden Soll-Vertrag; der historische IST-Recon bleibt unverändert. Produktcode,
+Phase 1 und Context Bridge sind weiterhin nicht autorisiert.
