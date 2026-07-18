@@ -5,9 +5,9 @@
 **Parent contract:** `FEATURE_01_SLICE_D2B_WRITER_POLICY_PREFLIGHT.md`,
 `FEATURE_01_SLICE_D2B_G2_PREFLIGHT.md`
 
-**Recon pin:** `origin/main` at `c2fb7a59276c48744a426011d694843ec1010c0b`
+**Recon pin:** `origin/main` at `8f996ac519830228fc8647a6d9256de1b242b9a8`
 
-**Pinned tree:** `822ae2a3dbaae93f5a9c4920171d17c91fd7a5ed`
+**Pinned tree:** `c83ba08a3414b47aecbcf9314368e940b14c5379`
 
 **Pin drift:** Compared with the initial E0 base `9bc785337103d94dfe70c26510030ac05e618135`,
 `origin/main` advanced only in runtime/federation state: `.steward/.context_hash`,
