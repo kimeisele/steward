@@ -1,6 +1,6 @@
 # Context Bridge Slice E — Bootstrap and Publisher Isolation
 
-**Status:** DRAFT 0.8 — E0 architecture decisions closed; implementation forbidden
+**Status:** DRAFT 0.9 — E0 architecture decisions closed; implementation forbidden
 
 **Parent contract:** `FEATURE_01_SLICE_D2B_WRITER_POLICY_PREFLIGHT.md`,
 `FEATURE_01_SLICE_D2B_G2_PREFLIGHT.md`
@@ -194,17 +194,24 @@ mandatory. A launch that cannot preserve exactly those FDs is unsupported and
 returns `manual_review` before any workspace or transaction namespace exists.
 The runtime root itself must already contain exactly these root-owned mode-`0555`
 mountpoint directories before the root bind: `/input`, `/work`, `/proc`, `/dev`,
-and `/tmp`. `/input` is the one non-empty mountpoint: it contains exactly the
-regular placeholder file below. The other four mountpoints (`/work`, `/proc`,
-`/dev`, and `/tmp`) must be empty. `/work`, `/proc`, `/dev`, and `/tmp` are
-subsequently mounted over those directories. `/input` must contain the regular placeholder file
+`/tmp`, and `/source.git`. `/input` is the one mountpoint containing a file: it
+contains exactly the regular bundle placeholder below. `/source.git` is an empty
+directory containing exactly its config placeholder below. The other four
+mountpoints (`/work`, `/proc`, `/dev`, and `/tmp`) must be empty. `/work`,
+`/proc`, `/dev`, and `/tmp` are subsequently mounted over those directories;
+`/source.git` is subsequently replaced by the read-only source-Git bind.
+`/input` must contain the regular placeholder file
 `/input/source.bundle`, root-owned mode `0444`, size `0`, and SHA-256
 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`.
-Bubblewrap replaces that existing placeholder with the sealed FD-4 bind; it
+`/source.git/config` must likewise be root-owned mode `0444`, size `0`, and
+have that same empty-file SHA-256. Bubblewrap replaces the directory with the
+sealed FD-3 source bind and the file with the sealed FD-4 config bind; it
 must not create a mountpoint or bind target beneath the read-only root. A
 missing, non-directory, writable, symlink, unexpectedly populated, or differently
 hashed mountpoint/placeholder is `manual_review` before launch. For `/input`,
-“unexpectedly populated” means anything other than the single named placeholder.
+“unexpectedly populated” means anything other than the single named bundle
+placeholder; for `/source.git`, anything other than its single named config
+placeholder is unexpected.
 This is why no `--dir`
 operation appears after the root bind.
 `--clearenv` is mandatory. The only worker environment variables are the nine
@@ -273,38 +280,89 @@ runtime/supervisor manifest, and request/nonces. Bundle creation is forbidden
 before this event and its request-directory fsync complete.
 
 The source Git executable is opened and hash/stat-verified from the same closed
-runtime manifest as §4.6 and executed from its FD with `execveat`, never by
-`PATH` or a re-resolved absolute path. The supervisor launches it through the
-same reviewed native launch path as §4.2 using
+runtime manifest as §4.6. It is passed as FD 8 to the isolated exporter and
+executed only through `/proc/self/fd/8`; it is never selected by `PATH` or a
+re-resolved absolute path. The supervisor launches the verified Bubblewrap
+exporter through the same reviewed native launch path as §4.2 using
 `clone3(flags=CLONE_PIDFD|CLONE_INTO_CGROUP, exit_signal=SIGCHLD)` into the
 opened `<request_id>/exporter` cgroup. The returned exporter pidfd, cgroup
 identity, executable FD identity, and launch result are durably recorded before
-the supervisor consumes output. With the source `.git` FD passed and bound
-exactly as in D2a, the sole export command is:
+the supervisor consumes output. With the source `.git` FD and sealed config
+snapshot passed and bound exactly as in D2a, the sole export command inside
+the isolated exporter is:
 
 ```text
-git --git-dir=/proc/self/fd/<source-git-fd> bundle create - HEAD
+git --git-dir=/source.git bundle create - HEAD
 ```
 
-The exporter child has this exact process contract at `execveat`: host
-UID/GID/effective UID/GID `65532/65532`; CWD `/` established before exec; umask
-`077`; `PR_SET_NO_NEW_PRIVS=1`; dumpable `0`; empty inheritable, permitted,
-effective, bounding, and ambient capability sets; and no supplementary groups.
-Its initial descriptors are exactly FD 0=`/dev/null` read-only, FD 1=the
+The exporter child has this exact process contract at `execveat`: it is the
+verified Bubblewrap executable in the exporter cgroup, with host UID/GID and
+effective UID/GID `65532/65532`; CWD `/` established before exec; umask `077`;
+`PR_SET_NO_NEW_PRIVS=1`; dumpable `0`; empty inheritable, permitted, effective,
+bounding, and ambient capability sets; and no supplementary groups. Its
+initial descriptors are exactly FD 0=`/dev/null` read-only, FD 1=the
 supervisor-owned bundle memfd writable, FD 2=the supervisor-owned bounded
-stderr pipe writable, FD 3=the pinned source-`.git` directory read-only, and
-FD 4=the `O_CLOEXEC` exec-status pipe writable. The child executes
-`close_range(5, UINT_MAX, CLOSE_RANGE_UNSHARE)`, verifies that only FDs 0..4
-remain, and fails closed if the syscall or verification fails. No cgroup,
-repository-root, event-root, socket, loader, credential, or caller FD is
-inherited. The exporter has no IPC socket and cannot open a host path supplied
-by the caller.
+stderr pipe writable, FD 3=the pinned source-`.git` directory read-only, FD
+4=the sealed config-snapshot memfd read-only, FD 5=the verified immutable
+runtime-root directory read-only, FD 6=the `O_CLOEXEC` exec-status pipe
+writable, and FD 7=the verified Bubblewrap executable opened with
+`O_RDONLY|O_CLOEXEC`, and FD 8=the verified Git executable opened with
+`O_RDONLY|O_CLOEXEC`. The child executes `close_range(9, UINT_MAX,
+CLOSE_RANGE_UNSHARE)`, verifies that only FDs 0..8 remain, and fails closed if
+the syscall or verification fails. No cgroup, event-root, IPC socket, loader,
+credential, or caller FD is inherited beyond these explicitly named inputs.
+
+The exporter `execveat` argv is exactly:
+
+```text
+[FD 7: verified /usr/bin/bwrap; execveat(AT_EMPTY_PATH)]
+  --die-with-parent --new-session --unshare-all
+  --uid 65532 --gid 65532 --clearenv
+  --preserve-fd 3 --preserve-fd 4 --preserve-fd 5
+  --preserve-fd 8
+  --ro-bind /proc/self/fd/5 /
+  --ro-bind /proc/self/fd/3 /source.git
+  --ro-bind /proc/self/fd/4 /source.git/config
+  --proc /proc --dev /dev --tmpfs /tmp
+  --chdir /
+  --setenv LANG C
+  --setenv LC_ALL C
+  --setenv PATH /usr/bin:/bin
+  --setenv GIT_OPTIONAL_LOCKS 0
+  --setenv GIT_NO_REPLACE_OBJECTS 1
+  --setenv GIT_PAGER cat
+  --setenv GIT_CONFIG_NOSYSTEM 1
+  --setenv GIT_CONFIG_GLOBAL /dev/null
+  --setenv GIT_CONFIG_SYSTEM /dev/null
+  -- /proc/self/fd/8 --git-dir=/source.git bundle create - HEAD
+```
+
+The runtime-root bind targets `/source.git` and `/source.git/config` already
+exist as exact directory/empty-file entries in §4.6. The source Git directory
+is read-only bound, the verified Git executable is preserved as FD 8, and the config snapshot is read-only bound over its live
+`config` member. Therefore Git has no path through which it can read the
+mutable source config; an in-flight replace of the original config is
+unreachable to the exporter. `bundle verify` and `bundle list-heads` use the
+same argv with only the final Git subcommand changed and the same FD/mount
+contract. For those two metadata invocations, the sealed bundle is additionally
+opened read-only as FD 9, `--preserve-fd 9` is added, and
+`--ro-bind /proc/self/fd/9 /bundle` is added; the final commands are exactly
+`/proc/self/fd/8 bundle verify /bundle` and
+`/proc/self/fd/8 bundle list-heads /bundle`. The child closes and verifies
+FDs through 9 in this mode. The exporter has no IPC socket and cannot open a
+host path supplied by the caller.
 
 The exporter environment is exactly the nine variables listed in §4.2; it has
 no `HOME`, `XDG_*`, `LD_*`, proxy, credential, or unlisted `GIT_*` variable.
-The supervisor validates the source local configuration through the pinned
-`.git` FD before each Git invocation. It computes `config_sha256` as SHA-256 of
-the exact raw UTF-8 config bytes and binds that hash in both D2a evidence rounds.
+Before event zero, the supervisor reads the source config through a
+dirfd-relative, no-symlink FD using the D2a stat/read/stat fence, copies those
+exact raw UTF-8 bytes into a sealed `memfd_create(MFD_ALLOW_SEALING)` config
+snapshot, and computes `config_sha256` over the snapshot bytes. A short read,
+growth, inode/parent drift, parse failure, or seal failure is `manual_review`.
+Event zero binds this hash and the sealed snapshot identity; the same immutable
+config FD is reused for every Git invocation and is never re-read from the
+source path. Both D2a evidence rounds must retain the same config hash and
+parent/layout identities.
 After parsing, the effective normalized object has exactly these keys and
 values: `core.repositoryformatversion=0`, `core.bare=false`,
 `core.filemode` one of the exact booleans `true` or `false`,
@@ -316,9 +374,10 @@ values: `core.repositoryformatversion=0`, `core.bare=false`,
 invalid scalar syntax, or any other value is `manual_review`. Every `include.*` or `includeIf.*` key/section,
 `core.hooksPath`, `core.fsmonitor`, filter/process/clean/smudge command,
 credential helper, SSH command, upload-pack, receive-pack, pager, alias, and
-any other local key is a `manual_review` block. The parser rejects a changed
-or unreadable config before spawning Git, and the second D2a round proves that
-the validated `config_sha256` and parent/layout identities did not change. Thus
+any other local key is a `manual_review` block. The parser rejects an invalid
+snapshot before spawning Git, and the second D2a round proves that the source
+config identity, `config_sha256`, and parent/layout identities did not change.
+Thus
 local config cannot introduce an include, executable hook, external helper,
 or alternate object/config path. Global and system config remain disabled by
 the six explicit `GIT_CONFIG_*` settings.
@@ -340,8 +399,9 @@ event zero may participate in source export.
 
 After the second evidence round, the supervisor hashes the bundle and seals it
 with `F_SEAL_WRITE|F_SEAL_SHRINK|F_SEAL_GROW|F_SEAL_SEAL`. It then runs the
-same FD-executed Git binary with `bundle verify /proc/self/fd/<bundle-fd>` and
-`bundle list-heads /proc/self/fd/<bundle-fd>`. Every Git invocation in both
+same isolated exporter with the preserved Git FD 8 and the commands
+`bundle verify /bundle` and `bundle list-heads /bundle`, with the sealed bundle
+provided as read-only FD 9. Every Git invocation in both
 D2a rounds, export, verify, and list-heads uses the exporter cgroup, atomic
 clone3 pidfd, execveat, spawn event, bounded wait, and reap contract above;
 there is no unobserved metadata-command exception. Verification must succeed and
@@ -435,12 +495,13 @@ every node below the runtime root except the byte-identical
 - `role` is one of `mountpoint`, `bind_placeholder`, `python`, `python_stdlib`, `python_native`, `worker`,
   `git`, `git_core`, `git_template`, `elf_loader`, or `shared_library`.
 
-The closed entry set contains the five required mountpoint directories
-`input`, `work`, `proc`, `dev`, and `tmp` at the runtime-root top level; `work`,
-`proc`, `dev`, and `tmp` are empty, while `input` contains only the
-regular `input/source.bundle` bind placeholder with exactly the empty-file
-identity above, `kind=regular`, `role=bind_placeholder`, and `git_blob=null`,
-plus `/usr/bin/python3.12`, the complete packaged
+The closed entry set contains the six required mountpoint directories
+`input`, `work`, `proc`, `dev`, `tmp`, and `source.git` at the runtime-root top
+level; `work`, `proc`, `dev`, and `tmp` are empty, while `input` contains only
+the regular `input/source.bundle` bind placeholder and `source.git` contains
+only the regular `source.git/config` bind placeholder. Both placeholders have
+exactly the empty-file identity above, `kind=regular`, `role=bind_placeholder`,
+and `git_blob=null`, plus `/usr/bin/python3.12`, the complete packaged
 Python 3.12 standard library and `lib-dynload`, the worker entrypoint and every
 importable Steward module in its reviewed static import closure, `/usr/bin/git`,
 every invoked `git-core` helper, Git templates, the ELF loader, and the complete
@@ -705,7 +766,7 @@ The `facts` object has no keys beyond the following stage-specific schemas:
 | Stage | Exact `facts` keys and types |
 |---|---|
 | `preflight` | `bootstrap_nonce`, `worker_start_nonce`, `worker_auth_nonce` (`nonce64`); `reviewed_head`, `reviewed_tree` (`hex40`); `source_root_identity`, `source_git_identity`, `evidence_root_identity` (exact identity objects); `runtime_manifest_sha256`, `supervisor_sha256`, `source_config_sha256`, `exporter_argv_sha256`, `exporter_environment_sha256`, `worker_argv_sha256`, `worker_environment_sha256` (`hex64`); `uid_map`, `gid_map` (exact `[65532,65532,1]`); `exporter_cgroup_identity`, `worker_cgroup_identity` (exact identity objects) |
-| `spawn` | `process_kind` (`exporter` or `worker`); `clone_flags` (exact integer `8589938688`, the Linux x86-64 value `CLONE_PIDFD|CLONE_INTO_CGROUP`); `exit_signal` (exact integer `17`, `SIGCHLD`); `pidfd_inode`, `process_pid` (positive integers); `cgroup_identity`, `executable_identity` (exact identity objects); `executable_sha256`, `argv_sha256`, `environment_sha256` (`hex64`); `execveat_result` (`entered` or `failed`) |
+| `spawn` | `process_kind` (`exporter` or `worker`); `clone_flags` (exact integer `8589938688`, the Linux x86-64 value `CLONE_PIDFD|CLONE_INTO_CGROUP`); `exit_signal` (exact integer `17`, `SIGCHLD`); `pidfd_inode`, `process_pid` (positive integers); `cgroup_identity`, `executable_identity`, `git_executable_identity` (exact identity objects); `executable_sha256`, `git_executable_sha256`, `argv_sha256`, `environment_sha256` (`hex64`); `execveat_result` (`entered` or `failed`) |
 | `ipc` | `direction`, `sequence`, `message_type`, and `payload_hash` copied exactly from the accepted envelope; `envelope_hash` (`hex64`); `outer_pidfd_inode`, `worker_pidfd_inode`, `worker_cgroup_inode` (positive integers, with `worker_pidfd_inode` `null` only before `AUTH_CONFIRM`) |
 | `wait` | `process_kind` (`exporter` or `worker`); `result_class` (closed §5.2 value or `null` for exporter); `wait_code`, `wait_signal` (bounded integer or `null`); `cgroup_populated` (exact integer `0`); `output_sha256` (`hex64` or `null`) |
 | `recovery` | `prior_final_sequence` (integer `0..127`); `prior_final_hash` (`hex64`); `exporter_cgroup_identity`, `worker_cgroup_identity` (exact identity objects); `exporter_kill_result`, `worker_kill_result` (`not_present`, `killed`, or `failed`); `exporter_populated`, `worker_populated` (integer `0` or `1`); `recovery_class` (`supervisor_crash` or `evidence_failure`) |
@@ -889,8 +950,9 @@ for all of the following:
    `clone3(flags=CLONE_PIDFD|CLONE_INTO_CGROUP, exit_signal=SIGCHLD)`,
    Bubblewrap `execveat` from FD 6,
    exact argv/environment/CWD, `--clearenv`, exact D2b Git variables, and only
-   preserved FDs 3/4/5; path-exec and any post-spawn pidfd acquisition used as
-   an outer-launch fallback fail closed. The separately specified
+   the mode-specific preserved FDs (worker 3/4/5; exporter 3/4/5/8 and
+   metadata FD 9); path-exec and any post-spawn pidfd acquisition used as an
+   outer-launch fallback fail closed. The separately specified
    SCM-credential worker handshake still requires its worker `pidfd_open`.
 2. Darwin and unsupported-platform behavior: canonical is blocked before lock,
    workspace, journal, tempfile, or target creation.
@@ -898,8 +960,10 @@ for all of the following:
    wrong executable hash, symlink, unmanifested import, and changed FD 5 fail
    before workspace creation.
 4. Bundle creation begins only after durable event zero and is performed by a
-   separately cgroup-/pidfd-bound, execveat-launched exporter from the pinned
-   source/Git FDs with the exact Git command, two identical D2a evidence rounds, commit/tree/index checks,
+   separately cgroup-/pidfd-bound, execveat-launched Bubblewrap exporter with
+   the pinned source-Git FD, sealed config-snapshot FD, and verified Git FD;
+   its exact Git command runs only inside the read-only source/config mounts,
+   with two identical D2a evidence rounds, commit/tree/index checks,
    strict limits, bundle verify/list-heads, seals, and worker clone verification.
    The sealed FD-4 bundle cannot be rewritten or replaced.
 5. Capability issuance rejects arbitrary classes, tokens, path-only claims,
@@ -961,7 +1025,8 @@ options:
    executable sets are enumerated by the closed content-addressed runtime
    manifest and mounted from FD 5.
 4. **Source:** after durable event zero, a separately cgroup-/pidfd-bound
-   execveat Git process runs the exact FD-bound command and creates a
+   execveat Bubblewrap exporter runs the exact Git executable from preserved FD
+   8 over a read-only source-Git tree and sealed config snapshot, creating a
    size-bounded bundle only between two identical D2a evidence rounds; commit/tree/index, bundle heads,
    seals, and worker clone are all verified.
 5. **Capability and IPC:** worker-local opaque capability only; closed RFC-8785
