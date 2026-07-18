@@ -2911,3 +2911,31 @@ Matrix, Origin-Korrelation, Wiring-/Legacy-Isolation, Definition of Done und Age
 Reviewfragen. Noch kein Produktcode, keine Mission, kein Worker/Cartridge, kein Tool,
 keine Recovery-/Lease-Automation, kein Status Query, keine terminale oder Verification-
 Receipt-Logik und keine Aktivierung.
+
+## §40 — FEDERATION DELEGATION PLAN 02: ASSIGNMENT/STARTED-KORREKTUR (2026-07-18)
+
+Agent B hat Plan 02 Revision 0.1 wegen einer semantisch falschen Verwendung von
+`receipt_stage=started` zurückgewiesen. Die Revision 0.2 wählt deshalb ausdrücklich Weg A:
+
+- Slice 02 endet bei `ACCEPTED -> ASSIGNED` im bestehenden target-owned
+  `TargetAdmissionLedger`.
+- `ASSIGNED` bedeutet nur unveränderlicher beobachteter Candidate-Snapshot, Authority-
+  Bindung, Epoch und atomar persistierte signierte target-lokale Assignment-Attestation.
+- Es gibt kein externes Receipt, kein `started`, keine Reservation, keine Mission, kein
+  Queue Item und keine Ausführung.
+- Das eingefrorene `started`-Receipt bleibt einem späteren Slice mit durablem Work Item
+  oder echter Scheduler-Reservation vorbehalten.
+- Steward besitzt in diesem Slice kein Assignment-Evidence-Objekt und behauptet daher
+  keine unabhängige Verification. Eine spätere externe Attestation wäre nur eine signed
+  target attestation, keine Verification Receipt.
+- Candidate-Staleness wird über `observed_candidate_snapshot`, `observed_at` und einen
+  vor Commit erneut geprüften Source-Observation-Token begrenzt. Eine fortbestehende
+  Availability oder Ownership wird nicht behauptet.
+
+Der vollständige revidierte Plan steht in:
+
+`specs/execution_truth_map/FEDERATION_DELEGATION_IMPLEMENTATION_PLAN_02.md`
+
+Noch kein Produktcode und weiterhin gesperrt: Mission, Queue, Worker/Cartridge, Tool,
+LLM, Git, Lease/Recovery, terminale/Verification-Receipts, Status Query, Provider
+Failover, Context Bridge und Aktivierung.
