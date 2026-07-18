@@ -31,6 +31,41 @@ GIT_ENV = {
     "PATH": "/usr/bin:/bin",
 }
 
+DARWIN_MUTATION_UNSUPPORTED = pytest.mark.skipif(
+    sys.platform == "darwin",
+    reason="D2b canonical mutation requires the reviewed Linux isolation contract",
+)
+
+
+class FixtureIsolation:
+    def __init__(self, repository: Path):
+        self.repository_root = repository
+        self.root_fd = publication.observer._open_repository_root(repository)
+        self.steward_fd = publication._open_steward(self.root_fd)
+        self.git_fd = publication._open_git(self.root_fd)
+        self._anchors = (
+            publication._directory_anchor(self.root_fd),
+            publication._directory_anchor(self.git_fd),
+            publication._directory_anchor(self.steward_fd),
+        )
+        self._valid = True
+
+    def verify(self) -> bool:
+        try:
+            if not self._valid:
+                return False
+            return (
+                publication._directory_anchor(self.root_fd),
+                publication._directory_anchor(self.git_fd),
+                publication._directory_anchor(self.steward_fd),
+            ) == self._anchors
+        except OSError:
+            return False
+
+    def close(self) -> None:
+        for descriptor in (self.git_fd, self.steward_fd, self.root_fd):
+            os.close(descriptor)
+
 
 def git(repository: Path, *arguments: str) -> str:
     return subprocess.run(
@@ -78,11 +113,13 @@ def candidates_and_attestation(models):
 
 
 def publish(repository, payload, snapshot, attestation):
-    lease = acquire_publisher_lease(repository)
+    isolation = FixtureIsolation(repository)
+    lease = acquire_publisher_lease(isolation)
     try:
         return publish_context(repository, payload, snapshot, attestation, mode=PublicationMode.CANONICAL, lease=lease)
     finally:
         lease.close()
+        isolation.close()
 
 
 def test_disabled_is_a_pure_no_write_gate(tmp_path, candidates_and_attestation):
@@ -119,13 +156,16 @@ def test_canonical_requires_explicit_isolated_worktree_attestation(tmp_path, can
     assert result.state is PublicationState.BLOCKED
     assert result.reason == "publisher_lease_required"
     assert not (repository / ".steward" / ".context-publish-v1.lock").exists()
+    with pytest.raises(ValueError, match="publisher_isolation_required"):
+        acquire_publisher_lease(repository)
 
 
 def test_closed_publisher_lease_cannot_publish(tmp_path, candidates_and_attestation):
     payload, snapshot, _, attestation = candidates_and_attestation
     repository = initialize_repository(tmp_path / "repo")
     commit_all(repository)
-    lease = acquire_publisher_lease(repository)
+    isolation = FixtureIsolation(repository)
+    lease = acquire_publisher_lease(isolation)
     lease.close()
 
     result = publish_context(
@@ -140,12 +180,14 @@ def test_closed_publisher_lease_cannot_publish(tmp_path, candidates_and_attestat
     assert result.state is PublicationState.BLOCKED
     assert result.reason == "publisher_lease_invalid"
     assert (repository / ".steward" / ".context-publish-v1.lock").exists()
+    isolation.close()
 
 
 def test_lock_path_replacement_invalidates_lease(tmp_path):
     repository = initialize_repository(tmp_path / "repo")
     commit_all(repository)
-    lease = acquire_publisher_lease(repository)
+    isolation = FixtureIsolation(repository)
+    lease = acquire_publisher_lease(isolation)
     lock_path = repository / ".steward" / publication._LOCK
     subprocess.run(
         [
@@ -159,6 +201,33 @@ def test_lock_path_replacement_invalidates_lease(tmp_path):
 
     assert not lease.verify()
     lease.close()
+    isolation.close()
+
+
+def test_lock_owner_change_invalidates_lease(tmp_path, monkeypatch):
+    repository = initialize_repository(tmp_path / "repo")
+    commit_all(repository)
+    isolation = FixtureIsolation(repository)
+    lease = acquire_publisher_lease(isolation)
+    try:
+        monkeypatch.setattr(publication.os, "geteuid", lambda: os.getuid() + 1)
+        assert not lease.verify()
+    finally:
+        lease.close()
+        isolation.close()
+
+
+def test_external_isolation_capability_loss_invalidates_lease(tmp_path):
+    repository = initialize_repository(tmp_path / "repo")
+    commit_all(repository)
+    isolation = FixtureIsolation(repository)
+    lease = acquire_publisher_lease(isolation)
+    isolation._valid = False
+    try:
+        assert not lease.verify()
+    finally:
+        lease.close()
+        isolation.close()
 
 
 def test_legacy_bootstrap_never_auto_overwritten(tmp_path, candidates_and_attestation):
@@ -175,6 +244,7 @@ def test_legacy_bootstrap_never_auto_overwritten(tmp_path, candidates_and_attest
     assert not (repository / "AGENTS.md").exists()
 
 
+@DARWIN_MUTATION_UNSUPPORTED
 def test_canonical_absent_baseline_publishes_four_targets(tmp_path, candidates_and_attestation):
     payload, snapshot, candidates, attestation = candidates_and_attestation
     repository = initialize_repository(tmp_path / "repo")
@@ -210,6 +280,35 @@ def test_valid_head_bound_generation_is_no_op(tmp_path, candidates_and_attestati
     assert result.transaction_id is None
     assert not list(repository.glob(".context-publish-v1.*.tmp"))
     assert not list((repository / ".steward").glob(".context-publish-v1.*.txn"))
+
+
+def test_no_op_rechecks_git_and_namespace_before_return(tmp_path, candidates_and_attestation, monkeypatch):
+    payload, snapshot, candidates, attestation = candidates_and_attestation
+    repository = initialize_repository(tmp_path / "repo")
+    (repository / "CLAUDE.md").write_bytes(candidates.claude_md)
+    (repository / "AGENTS.md").write_bytes(candidates.agents_md)
+    (repository / ".steward" / "context-snapshot.json").write_bytes(candidates.snapshot_artifact)
+    (repository / ".steward" / "context-publication.json").write_bytes(candidates.publication_artifact)
+    commit_all(repository)
+    original_view = publication._view
+    calls = 0
+
+    def mutate_on_final_view(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        view = original_view(*args, **kwargs)
+        if calls == 3:
+            (repository / "README.md").write_text("no-op race\n")
+            git(repository, "add", "README.md")
+            git(repository, "commit", "-qm", "no-op race")
+            view = original_view(*args, **kwargs)
+        return view
+
+    monkeypatch.setattr(publication, "_view", mutate_on_final_view)
+    result = publish(repository, payload, snapshot, attestation)
+
+    assert result.state is PublicationState.MANUAL_REVIEW
+    assert result.reason == "no_op_fence_changed"
 
 
 def test_unexpected_baseline_mode_is_not_overwritten(tmp_path, candidates_and_attestation):
@@ -262,6 +361,7 @@ def test_unknown_transaction_signal_fails_closed(tmp_path, candidates_and_attest
     assert (repository / ".context-publish-v1.foreign.signal").read_text() == "foreign\n"
 
 
+@DARWIN_MUTATION_UNSUPPORTED
 def test_namespace_is_scanned_only_after_lease_lock(tmp_path, candidates_and_attestation, monkeypatch):
     payload, snapshot, _, attestation = candidates_and_attestation
     repository = initialize_repository(tmp_path / "repo")
@@ -301,6 +401,7 @@ def test_recovery_rejects_incoherent_git_state():
         publication._validate_recovery_view_state("replacing", view)
 
 
+@DARWIN_MUTATION_UNSUPPORTED
 def test_prepared_transaction_recovers_without_target_mutation(tmp_path, candidates_and_attestation, monkeypatch):
     payload, snapshot, _, attestation = candidates_and_attestation
     repository = initialize_repository(tmp_path / "repo")
@@ -326,6 +427,7 @@ def test_prepared_transaction_recovers_without_target_mutation(tmp_path, candida
     assert not list((repository / ".steward").glob(".context-publish-v1.*.txn"))
 
 
+@DARWIN_MUTATION_UNSUPPORTED
 def test_partial_replace_recovers_four_file_absent_baseline(tmp_path, candidates_and_attestation, monkeypatch):
     payload, snapshot, candidates, attestation = candidates_and_attestation
     repository = initialize_repository(tmp_path / "repo")
@@ -354,6 +456,7 @@ def test_partial_replace_recovers_four_file_absent_baseline(tmp_path, candidates
     assert not list((repository / ".steward").glob(".context-publish-v1.*.txn"))
 
 
+@DARWIN_MUTATION_UNSUPPORTED
 def test_partial_replace_restores_present_baseline(tmp_path, candidates_and_attestation, monkeypatch):
     payload, snapshot, candidates, attestation = candidates_and_attestation
     repository = initialize_repository(tmp_path / "repo")
@@ -388,6 +491,7 @@ def test_partial_replace_restores_present_baseline(tmp_path, candidates_and_atte
     assert not list((repository / ".steward").glob(".context-publish-v1.*.txn"))
 
 
+@DARWIN_MUTATION_UNSUPPORTED
 def test_head_change_between_replacements_stops_transaction(tmp_path, candidates_and_attestation, monkeypatch):
     payload, snapshot, candidates, attestation = candidates_and_attestation
     repository = initialize_repository(tmp_path / "repo")
@@ -413,6 +517,7 @@ def test_head_change_between_replacements_stops_transaction(tmp_path, candidates
     assert list((repository / ".steward").glob(".context-publish-v1.*.txn"))
 
 
+@DARWIN_MUTATION_UNSUPPORTED
 def test_external_target_writer_is_fenced(tmp_path, candidates_and_attestation, monkeypatch):
     payload, snapshot, _, attestation = candidates_and_attestation
     repository = initialize_repository(tmp_path / "repo")
