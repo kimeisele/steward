@@ -2306,3 +2306,45 @@ zulässige Schritt ist ausschließlich ein neuer read-only D2-G2-Preflight. Publ
 Writer, Lock, Root-/Record-Mutation, Recovery, `.gitignore`, Workflow, Settings, Delivery
 und Aktivierung bleiben bis zu dessen Review vollständig gesperrt. Vollständige Evidence:
 `specs/context_bridge_evidence/FEATURE_01_SLICE_D1_PRODUCTION.md`.
+
+## §25 — CONTEXT BRIDGE SLICE E: E0 ABGESCHLOSSEN UND GEPARKT (2026-07-18)
+
+### Ergebnis
+
+Slice E (Bootstrap and Publisher Isolation) hat das E0-Spec-Gate erreicht. Der geprüfte
+Spec-Head war `cedd9a4b09d22060b970b5e428eb4ca17e19695c`; PR `#775` wurde regulär gemergt.
+Der Merge-Commit ist `29bfa331293b4ebfe0e8de874f125c4fc9805c4d`, der aktuelle Main-Tree ist
+`571cdf5722fe443877d0bc819fb85f9c2c574854`.
+
+Die maßgebliche Spec ist:
+
+`specs/context_bridge_evidence/FEATURE_01_SLICE_E_BOOTSTRAP_ISOLATION_SPEC.md`
+
+Der Slice-E-Merge enthielt ausschließlich diese Spezifikation; es wurden kein Publisher,
+kein Writer, kein Workflow, kein Root- oder Runtime-State und keine Canonical-Aktivierung
+geändert. Der Status der Spec ist E0 APPROVED. Das autorisiert den späteren E1-Start, nicht
+die Aktivierung des Context-Bridge-Produktionspfads.
+
+### Was E0 verbindlich festlegt
+
+Der E0-Vertrag schreibt den späteren Isolations- und Beweisrahmen fest: dedizierter
+Bubblewrap-Worker und Source-Exporter, FD-gebundene Source-Git-/Config-/Bundle-Eingaben,
+clone3-/UID-/GID-Mapping, pidfd- und cgroup-Bindung, SCM-Credentials mit Challenge,
+deterministische IPC-/Evidence-Kette sowie einen echten Fence-Race-Drill. Der geprüfte
+Recon-Pin war `e8de55c737d141bfe95c6694b4ab7ffb38cb4266`; der dazugehörige Tree war
+`6b089fd2c175821ebb84a9f3f9fbaf435bf6cc58`. Die dort dokumentierten 13 Runtime-/Federation-
+Driftpfade waren nicht Teil des Slice-E-Spec-Scope.
+
+### Bewusster Parkzustand
+
+Es gibt derzeit keinen aktiven Context-Bridge-Coding-Auftrag. Bei einer späteren
+Wiederaufnahme ist E1 der nächste isolierte Schritt: Bootstrap-Implementierung und direkte
+Unit-Tests, weiterhin ohne D2b-Caller-Wiring. Erst danach dürfen E2 (echter Linux-
+Isolations-/Race-Drill) und E3 (Crash-/Recovery-Evidence) bearbeitet werden. G1, D2b,
+Publisher, Delivery und Canonical-Aktivierung bleiben bis zu ihren jeweils separat
+reviewten Gates gesperrt. Neue Projektprioritäten haben Vorrang und dürfen nicht mit diesem
+geparkten Strang vermischt werden.
+
+Diese Sektion ist ein Kontinuitätsanker, kein neuer Arbeitsauftrag. Phase 1 bleibt vollständig
+read-only. Eine neue Session liest zuerst `docs/PHASE2_CURRENT.md`, danach diese Sektion und
+die E0-Spec; sie muss den Live-Head erneut über GitHub verifizieren, bevor sie E1 plant.

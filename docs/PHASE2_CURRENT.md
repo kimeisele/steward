@@ -1,6 +1,6 @@
 # PHASE 2 CURRENT — Fresh-Session-Cockpit
 
-**Aktualisiert:** 2026-07-15, 19:51 Europe/Berlin
+**Aktualisiert:** 2026-07-18, 14:31 Europe/Berlin
 **Zweck:** Ein neuer Lead-Agent soll mit dieser Datei in wenigen Minuten arbeitsfähig sein.
 Der ausführliche Beweis- und Operationsverlauf bleibt in `docs/PHASE2_BEFUND.md`.
 
@@ -21,6 +21,24 @@ Wenn Live-Realität oder neuer Beweis einer älteren Aussage widersprechen, gilt
 Beweis. Phase 1 wird trotzdem nicht umgeschrieben: Phase 2 nennt die alte Aussage, widerlegt
 oder präzisiert sie und dokumentiert den Produktionsbeweis. **Read-only bedeutet
 Nachvollziehbarkeit, nicht Unfehlbarkeit.**
+
+## 1a. Context Bridge Slice E — sauber geparkt
+
+Der Sicherheitsstrang ist auf einem freigegebenen E0-Gate geparkt. Es gibt keinen aktiven
+Implementierungsauftrag in dieser Session. Beim späteren Wiederaufnehmen zuerst den
+verlinkten Slice-E-Vertrag und §25 des ausführlichen Befunds lesen.
+
+- PR `steward#775`, E0-Head `cedd9a4b09d22060b970b5e428eb4ca17e19695c`, regulär gemergt als
+  `29bfa331293b4ebfe0e8de874f125c4fc9805c4d`.
+- Gemergter Main-Head: `29bfa331293b4ebfe0e8de874f125c4fc9805c4d`; Tree:
+  `571cdf5722fe443877d0bc819fb85f9c2c574854`.
+- Einziger Slice-E-Pfad: `specs/context_bridge_evidence/FEATURE_01_SLICE_E_BOOTSTRAP_ISOLATION_SPEC.md`.
+- E0 ist freigegeben; E1 (Bootstrap-Implementierung und Unit-Tests ohne D2b-Caller-Wiring)
+  ist der spätere Resume-Punkt.
+- E2 (echter Linux-Isolations-/Race-Drill), E3 (Crash-/Recovery-Evidence), G1, D2b,
+  Publisher, Delivery und Canonical-Aktivierung bleiben gesperrt.
+- Der Merge änderte für Slice E ausschließlich Spezifikation; keine Runtime-, Workflow-,
+  Root-Datei- oder Aktivierungsfläche.
 
 ## 2. Rolle und Sicherheitsvertrag
 
@@ -63,14 +81,14 @@ Arbeitsflächen; die Lesewahrheit kommt über Live-`gh api` aus GitHub.
 
 ## 4. Gepinnter Produktionsstand
 
-Code-/Dokument-Snapshot: 2026-07-15 19:51 Europe/Berlin.
+Code-/Dokument-Snapshot: 2026-07-18 14:31 Europe/Berlin.
 
 ### Steward
 
 - Repo: `kimeisele/steward`
-- Head: `004ac087cca7b2bd925c40b81b8f000f9541b7d1`
-- Tree: `5357c4a583b75f1230d418b843029f6cf0475f4d`
-- Commit: `Merge pull request #549 from kimeisele/spec/context-bridge-feature-01c-preflight`
+- Head: `29bfa331293b4ebfe0e8de874f125c4fc9805c4d`
+- Tree: `571cdf5722fe443877d0bc819fb85f9c2c574854`
+- Commit: `Merge pull request #775 from kimeisele/spec/context-bridge-slice-e-bootstrap`
 - Slice-A-Merge: `1b1ef63d9d873a08acb812f18ba102b73174838c`
 - Slice-B-Merge: `a750e0f3826e0067656062e02c3b7c896db35cde`
 - Phase 1: Blob `2f8a8e4e3b9624859c9ae25a754f3cd93120df66`, read-only
@@ -243,26 +261,35 @@ live pinnen, weil die Föderation weiterläuft.
   Snapshot und Publication Record fehlen im Remote-Tree weiterhin absichtlich.
 - Ausführlicher Beweis: `PHASE2_BEFUND.md` §§15–24.
 
-## 6. Exakt nächster Auftrag: Slice-D2-G2-Recon
+### Context Bridge Slice E: E0 abgeschlossen, bewusst geparkt
 
-D1 ist abgeschlossen und als nicht aktiviert verifiziert. Der nächste Auftrag ist
-ausschließlich read-only G2-Recon für D2: POSIX-Publisher und Recovery. Vor jedem Code
-müssen Git-/Index-/Worktree-Fence, P1-Bootstrapklasse, Thread-/`flock`-Lock, Pfadschutz,
-Temp-Generationsschema, vollständiger Write-Loop, Dateimodi, File-/Parent-fsync,
-Record-last, Fehlerklassen und Bootstrap-Recovery gegen aktuellen `main` festgelegt werden.
+- E0-Spec: `specs/context_bridge_evidence/FEATURE_01_SLICE_E_BOOTSTRAP_ISOLATION_SPEC.md`.
+- PR `#775`, E0-Head `cedd9a4b09d22060b970b5e428eb4ca17e19695c`, Merge
+  `29bfa331293b4ebfe0e8de874f125c4fc9805c4d`.
+- E0-Review: PASS. Die Spec bindet dedizierten Bubblewrap-Worker, Source-Git-/Config-/Bundle-
+  FDs, pidfd/cgroup, SCM-Credentials, Evidence-Kette und den echten Fence-Race-Drill.
+- E1 ist nur der spätere Resume-Punkt: Bootstrap-Implementierung und Unit-Tests, ohne D2b-
+  Caller-Wiring. E2, E3, G1, D2b, Delivery und Canonical-Aktivierung bleiben gesperrt.
+- Keine Slice-E-Produktionsänderung; der Merge enthält für Slice E ausschließlich Spec.
 
-Abbruchkriterium: Noch kein Publisher-, Writer-, Root-, Record-, Recovery-, Workflow-,
-Setting-, Delivery- oder Aktivierungspatch vor einer separat reviewten D2-G2-Spec.
+## 6. Aktiver Auftrag: bewusst pausiert
+
+Es gibt für den Context-Bridge-Strang keinen aktiven Coding-Auftrag. Bei Wiederaufnahme ist
+E1 zuerst separat zu planen und zu implementieren; D2b darf nicht vor E2/E3/G1 freigegeben
+werden. Neue Prioritäten außerhalb dieses Teilprojekts haben Vorrang und werden nicht mit
+dem geparkten Strang vermischt.
+
+Abbruchkriterium: Kein E1-Code, kein Publisher-, Writer-, Root-, Record-, Recovery-,
+Workflow-, Setting-, Delivery- oder Aktivierungspatch ohne neuen, separat reviewten
+Arbeitsauftrag und die jeweils erforderliche Spec-/Evidence-Freigabe.
 
 ## 7. Offene Agenda nach Feature-Spec 01
 
 Reihenfolge ist vorläufig und muss jeweils durch neuen Live-Recon bestätigt werden:
 
-1. D2 ausschließlich read-only spezifizieren und adversarial reviewen; danach weiter
-   strikt nach den in Feature 01 §15 definierten Einzelschnitten und jeweils eigenem
-   aktuellem G2 implementieren. Erst nach Required Checks, Governance und Operations-Drill
-   aktivieren.
-2. Danach Feature 02 (Current-Phase Reference Card) und Feature 03 (Action Signal
+1. Geparkten Context-Bridge-Strang nur bei Wiederaufnahme fortsetzen: E1-Implementierung,
+   danach E2/E3 und erst dann D2b/G1 gemäß den jeweiligen Gates.
+2. Feature 02 (Current-Phase Reference Card) und Feature 03 (Action Signal
    Integrity) getrennt spezifizieren.
 3. Heartbeat-Fehlerpropagation read-only gegen kritische, degradierbare und externe/
    Post-Action-Fehlerklassen zerlegen; dieser ältere Auftrag ist nicht aufgehoben, aber
@@ -306,10 +333,11 @@ Produktionslogs und neuere Phase-2-Beweise haben Vorrang. Widersprüche werden i
 explizit korrigiert, niemals durch blindes Befolgen alter Aussagen.
 
 Feature 01 ist G1-freigegeben; Schnitte A bis C sowie D1 sind implementiert und
-verifiziert. D1 ist über PR #633 gemergt und per Folgeheartbeat als nicht aktiviert
-verifiziert. Der nächste Auftrag ist ausschließlich read-only D2-G2-Recon für POSIX-
-Publisher und Recovery. Vor reviewter D2-G2-Spec keinen Publisher-, Writer-, Root-,
-Record-, Recovery-, Workflow-, Setting-, Delivery- oder Aktivierungspatch erstellen.
-Pflege PHASE2_CURRENT als widerlegbares Cockpit und PHASE2_BEFUND als ausführliches
-externes Gehirn.
+verifiziert, aber nicht aktiviert. Slice E hat E0 erreicht: PR #775 wurde als
+`29bfa331293b4ebfe0e8de874f125c4fc9805c4d` gemergt. Der Strang ist bewusst geparkt;
+es gibt keinen aktiven Context-Bridge-Coding-Auftrag. Bei Wiederaufnahme ist E1
+(Bootstrap-Implementierung und Unit-Tests, ohne D2b-Caller-Wiring) der nächste Schritt;
+E2/E3/G1/D2b/Delivery/Canonical-Aktivierung bleiben bis zu ihren separaten Gates gesperrt.
+Neue Prioritäten dürfen diesen Auftrag überholen. Pflege PHASE2_CURRENT als widerlegbares
+Cockpit und PHASE2_BEFUND als ausführliches externes Gehirn.
 ```
