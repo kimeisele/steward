@@ -2750,3 +2750,50 @@ Receipts, Status Query, Lease/Recovery-Automation, Managed-Task-COMPLETED, Provi
 Failover, Context Bridge, Execution-Spine-Gesamtspec, automatische Merge-Autorität,
 produktive Aktivierung und Merge. Phase 1 bleibt unverändert. Der Agent-B-Entscheidungs-
 status ist bis zur Review `IMPLEMENTATION REVIEW REQUESTED`.
+
+## §36 — FEDERATION DELEGATION SLICE 01A: AGENT-B-BLOCKER REVISION (2026-07-18)
+
+Agent B hat vier enge Produktcode-Blocker benannt; kein neuer ADR- oder Plan-Sprint war
+erforderlich. Die Revision ist auf denselben separaten Branches umgesetzt:
+
+- Steward: `0248dc4efbd514eaf20bb2c1ed79101d87eb4516`
+- Agent City: `0caa6fb536cc5b5883ffde89e66282af5c6e26bc`
+
+Das vollständige aktualisierte self-contained Review-Paket ist:
+
+`specs/execution_truth_map/AGENT_B_FEDERATION_DELEGATION_IMPLEMENTATION_SLICE_01_REVIEW.md`
+
+Geschlossene Blocker:
+
+- `FederationV1Origin.create` gibt nur noch exakt persistierte Request-/Carrier-Bytes
+  zurück; gleiche bestehende Requests werden aus dem Ledger wiedergegeben, Digest-,
+  Message-ID-, Payload- und Wire-Konflikte erzeugen `origin_request_conflict` plus
+  persistentes Finding.
+- Origin-Receipt-Anwendung erzwingt Source-/Target-Bindung, ursprüngliche
+  `delegation_id`, `correlation_id`, `request_message_id` und
+  `causation_message_id`; falsch signierte Kausalität oder ein anderer registrierter
+  Knoten mutieren den Ledger nicht.
+- Beide Validatoren akzeptieren ausschließlich einen typisierten,
+  provenance-validierten `ValidatedFederationV1KeyRegistry`-Snapshot. Root Enrollment,
+  Root-Signatur, Certificate, Node-/Key-Ableitung, Epochs, Zeitfenster, Rotation und
+  Revocation werden vor der Envelope-Prüfung erzwungen.
+- Bestehende, aber unlesbare oder semantisch ungültige Ledger-Dateien lösen
+  `ledger_corrupt` aus. Alle Ledger-RMW-Operationen besitzen zusätzlich zur
+  Thread-Sperre eine repo-lokale Interprozess-Sperre um den vollständigen
+  `read -> modify -> fsync -> replace`-Abschnitt.
+
+Gemessene Revisionsergebnisse:
+
+- Steward Slice/Fixtures: `65 passed`;
+- Agent City Slice/Hardening/Fixtures: `64 passed`;
+- Cross-Repo Admission-Crucible: `1 passed`;
+- Steward Legacy Gateway/Quarantine: `61 passed`;
+- Agent-City NADI/Relay: `90 passed`;
+- Ruff und `py_compile` für beide neuen Adapter/Testgrenzen: sauber/pass.
+
+Die Tests decken nun zusätzlich Origin-Idempotenz und Konflikte, falsche registrierte
+Receipt-Quelle, Correlation/Causation/Target-Bindung, Provenance-Zeit-/Revocation-
+Grenzen, korrupten Ledger-State sowie parallele unabhängige Ledger-Instanzen und
+Updates ab. Feature-Gate, Legacy-Pfade, Phase 1, Context Bridge und alle weiterhin
+gesperrten Runtime-/Workflow-Funktionen bleiben unverändert. Agent-B-Status ist nun
+`REVISION REVIEW REQUESTED`; Merge und produktive Aktivierung bleiben ausstehend.
