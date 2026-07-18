@@ -2301,10 +2301,12 @@ Am Merge- und Folge-Head blieben identisch beziehungsweise absent:
 - Root-`AGENTS.md` absent,
 - Snapshot- und Publication-Artefakt absent.
 
-D1 ist damit abgeschlossen, aber Feature 01 weiterhin nicht aktiviert. Der nächste
-zulässige Schritt ist ausschließlich ein neuer read-only D2-G2-Preflight. Publisher,
-Writer, Lock, Root-/Record-Mutation, Recovery, `.gitignore`, Workflow, Settings, Delivery
-und Aktivierung bleiben bis zu dessen Review vollständig gesperrt. Vollständige Evidence:
+D1 ist damit abgeschlossen, aber Feature 01 weiterhin nicht aktiviert. Zum Zeitpunkt dieses
+D1-Abschlusses war ein neuer read-only D2-G2-Preflight der nächste zulässige Schritt. Dieser
+historische D1-Auftrag wurde durch den späteren Slice-E-E0-Gate überholt; der aktuelle
+Parkzustand und der nächste Resume-Punkt stehen in §25. Publisher, Writer, Lock,
+Root-/Record-Mutation, Recovery, `.gitignore`, Workflow, Settings, Delivery und Aktivierung
+bleiben vollständig gesperrt. Vollständige D1-Evidence:
 `specs/context_bridge_evidence/FEATURE_01_SLICE_D1_PRODUCTION.md`.
 
 ## §25 — CONTEXT BRIDGE SLICE E: E0 ABGESCHLOSSEN UND GEPARKT (2026-07-18)
@@ -2348,3 +2350,9 @@ geparkten Strang vermischt werden.
 Diese Sektion ist ein Kontinuitätsanker, kein neuer Arbeitsauftrag. Phase 1 bleibt vollständig
 read-only. Eine neue Session liest zuerst `docs/PHASE2_CURRENT.md`, danach diese Sektion und
 die E0-Spec; sie muss den Live-Head erneut über GitHub verifizieren, bevor sie E1 plant.
+
+Die Parkdokumentation selbst wurde anschließend mit PR `#791` gemergt. Der aktuelle Main-Head
+ist `a7f881d519539eb4649f22b415183efec7018eb4`, Tree
+`c1f0cacbf9487957145ebf275d444dd866804413`; gegenüber dem E0-/Park-Basisstand kam nur
+zwischenzeitlicher Runtime-/Federation-State hinzu. Das ändert weder den E0-Vertrag noch den
+geparkten Resume-Punkt.
