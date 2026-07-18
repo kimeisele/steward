@@ -2410,8 +2410,8 @@ Die zehn noch nicht entschiedenen Architekturfragen stehen ohne erfundene Antwor
    `specs/HEARTBEAT_FAILURE_PROPAGATION_SYSTEM_SPEC.md` und
    `specs/HEARTBEAT_FAILURE_PROPAGATION_FEATURE_01.md`.
 2. Federation Delegation wird als eigener V1-Vertrag vorbereitet:
-   `specs/FEDERATION_DELEGATION_CONTRACT_V1.md`. Die Fassung ist DRAFT 0.1, durch ADRs und
-   adversariales Review blockiert und autorisiert keinen Produktcode.
+   `specs/FEDERATION_DELEGATION_CONTRACT_V1.md`. Die Fassung ist DRAFT 0.2, durch offene
+   ADRs und adversariales/readiness Review blockiert und autorisiert keinen Produktcode.
 3. Eine große Execution-Spine-System-Spec bleibt gesperrt. Eine spätere Spine muss aus den
    entschiedenen Heartbeat- und Federation-Verträgen abstrahieren, nicht umgekehrt.
 
@@ -2420,3 +2420,50 @@ Die zehn noch nicht entschiedenen Architekturfragen stehen ohne erfundene Antwor
 Dieser Milestone ändert ausschließlich Dokumentation. Phase 1 bleibt read-only. Die
 Context Bridge bleibt gemäß §25 geparkt; PR `#728` ist offen und nicht freigegeben. E1,
 D2b, G1, Publisher, Delivery und Canonical-Aktivierung bleiben gesperrt.
+
+## §27 — ADR DECISION SPRINT 1: FEDERATION DELEGATION V1 (2026-07-18)
+
+Der Codebase-Agent hat für Agent B die fünf ausdrücklich beauftragten Federation-ADRs
+erneut am Live-Code geprüft. Alle fünf Entscheidungen sind für den Delegation-V1-Scope
+`ACCEPTED`; keine Entscheidung ist eine universelle Execution-Spine-Entscheidung und keine
+autorisiert Produktcode:
+
+| ADR | Entscheidung |
+|---|---|
+| ADR-02 | getrennte Identitätsrollen; V1 `correlation_id == delegation_id`, `message_id` pro logischer Message |
+| ADR-06 | expliziter kanonischer Envelope, SHA-256/Ed25519/base64, gebundener `signer_key`, keine Hub-Mutation |
+| ADR-07 | vollständiges Emitter→Transport→Target→Authority→Handler→Result→Test-Wiring als Implementierungs-Gate |
+| ADR-08 | at-least-once Transport, durable idempotenter Receiver, sichtbares `RECOVERY_REQUIRED` statt Blind-Retry |
+| ADR-09 | typisierte Receipts `transport_committed → admission → started → terminal → verification` |
+
+Einzelbegründungen, Optionen, Auswirkungen, Gegenargumente und Readiness stehen in:
+
+`specs/execution_truth_map/ADR-02-ID-BOUNDARIES.md`
+
+`specs/execution_truth_map/ADR-06-FEDERATION-SIGNATURE.md`
+
+`specs/execution_truth_map/ADR-07-CAPABILITY-WIRING.md`
+
+`specs/execution_truth_map/ADR-08-RETRY-RECOVERY-IDEMPOTENZ.md`
+
+`specs/execution_truth_map/ADR-09-RECEIPT-SEMANTIK.md`
+
+Der Contract wurde zu Draft 0.2 reconciliiert:
+
+`specs/FEDERATION_DELEGATION_CONTRACT_V1.md`
+
+Damit sind Wire-Objekte, Signaturbytes, Targeting, Idempotenz und Receipt-Stufen explizit
+beschrieben. Der separate Widerspruchs- und Implementierungsreife-Review steht in:
+
+`specs/execution_truth_map/ADR_DECISION_SPRINT_1_REVIEW.md`
+
+Er findet keinen direkten Widerspruch zwischen den fünf Entscheidungen; der Contract bleibt
+dennoch `NOT IMPLEMENTATION-READY`. Verbleibende Blocker sind ADR-05 (Workflow-Wahrheit) und ADR-10
+(Statusadapter); ADR-01/-03/-04 bleiben bewusst außerhalb dieses Sprints offen.
+
+Der durchgeführte Widerspruchs- und Implementierungsreife-Review steht in
+`specs/execution_truth_map/ADR_DECISION_SPRINT_1_REVIEW.md`: kein direkter Widerspruch,
+aber weiterhin `NOT IMPLEMENTATION-READY`. Vor Implementierung bleiben erforderlich:
+Agent-B-Review, Golden-Wire-Fixtures, Ledger-/Lease-Crucible und ein echter
+Steward→Agent-City-Delegations-Crucible. Phase 1, Context Bridge und Produktcode bleiben
+unangetastet.

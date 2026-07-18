@@ -1,6 +1,6 @@
 # EXECUTION FOUNDATION — ADR-BACKLOG
 
-> **Status:** OPEN — FRAGEN INVENTARISIERT, KEINE ENTSCHEIDUNGEN
+> **Status:** MIXED — ADR-02/-06/-07/-08/-09 ACCEPTED; ADR-01/-03/-04/-05/-10 OPEN
 > **Datum:** 2026-07-18
 > **Quelle:** akzeptierter `EXECUTION_TRUTH_MAP_RECON.md`
 > **Regel:** Dieses Backlog stellt Fragen. Es beantwortet sie nicht und autorisiert keine
@@ -18,8 +18,22 @@ Jede Frage wird später in einem eigenen ADR entschieden. Ein ADR braucht mindes
 - adversariales Review,
 - expliziten Status `accepted`, `rejected` oder `superseded`.
 
-Bis dahin ist jede Frage `OPEN`. Reihenfolge bedeutet Abhängigkeit, nicht vorweggenommene
-Antwort.
+Vor dem Decision Sprint war jede Frage `OPEN`. Seit Sprint 1 sind nur ADR-02, -06, -07,
+-08 und -09 ausdrücklich entschieden; die übrigen Fragen bleiben `OPEN`. Reihenfolge
+bedeutet Abhängigkeit, nicht vorweggenommene Antwort.
+
+## Decision Sprint 1 — Ergebnisübersicht
+
+| ADR | Status | Einzelentscheidung |
+|---|---|---|
+| ADR-02 | ACCEPTED | getrennte ID-Rollen; V1 `correlation_id == delegation_id`, Message-ID pro logischer Message |
+| ADR-06 | ACCEPTED | expliziter kanonischer Envelope, SHA-256/Ed25519/base64, `signer_key` gebunden, keine Hub-Mutation |
+| ADR-07 | ACCEPTED | vollständiges Wiring-Manifest als Implementierungs-/CI-Gate |
+| ADR-08 | ACCEPTED | at-least-once Transport + durable idempotenter Receiver + sichtbares Recovery |
+| ADR-09 | ACCEPTED | typisierte Receipt-Stufen von Transport bis Origin-Verification |
+
+Die Einzel-ADRs enthalten Optionen, Auswirkungen, Gegenargument und Implementierungsreife.
+Eine `ACCEPTED`-Entscheidung autorisiert noch keinen Produktcode.
 
 ## ADR-01 — Kanonische Ausführungsidentität
 
@@ -35,7 +49,7 @@ Workflow und Verification hinweg kanonisch, und wo wird sie erzeugt und persisti
 **Frage:** Sind Execution-ID, Correlation-ID und Message-ID zwingend getrennte Identitäten,
 und welche Kardinalitäts- und Ableitungsregeln gelten zwischen ihnen?
 
-**Status:** OPEN
+**Status:** ACCEPTED — Decision Sprint 1; Details: `ADR-02-ID-BOUNDARIES.md`
 
 **Recon-Bezug:** Truth Map §3; mehrere Transport-IDs existieren, Correlation ist häufig leer.
 
@@ -71,7 +85,7 @@ Outcome, ein Health-Signal oder eine verbindliche Kombination davon?
 **Frage:** Welches kanonische Federation-Signaturformat gilt für Signaturscope, Hash,
 Encoding, Key-Provenance und Hub-Mutationen?
 
-**Status:** OPEN
+**Status:** ACCEPTED — Decision Sprint 1; Details: `ADR-06-FEDERATION-SIGNATURE.md`
 
 **Recon-Bezug:** Truth Map §7.4; Steward und Agent City verifizieren unterschiedliche Bytes.
 
@@ -81,7 +95,7 @@ Encoding, Key-Provenance und Hub-Mutationen?
 Authority-Gate, Result-Operation und End-to-End-Test deklarieren, bevor sie als implementiert
 gilt?
 
-**Status:** OPEN
+**Status:** ACCEPTED — Decision Sprint 1; Details: `ADR-07-CAPABILITY-WIRING.md`
 
 **Recon-Bezug:** Truth Map §7.1–7.3; `ALL_OPERATIONS` kodiert keine Richtung oder Vollständigkeit.
 
@@ -90,7 +104,7 @@ gilt?
 **Frage:** Welche Idempotenzregeln gelten für Retry, Timeout, Crash-Recovery und doppelte
 Nachrichten, insbesondere nach partiell ausgeführten Tool Calls?
 
-**Status:** OPEN
+**Status:** ACCEPTED — Decision Sprint 1; Details: `ADR-08-RETRY-RECOVERY-IDEMPOTENZ.md`
 
 **Recon-Bezug:** Truth Map §3.2, §5 und §7.5; keine stabile Execution-Korrelation vorhanden.
 
@@ -99,7 +113,7 @@ Nachrichten, insbesondere nach partiell ausgeführten Tool Calls?
 **Frage:** Welche getrennten Receipts bestätigen Transport, Annahme, Ausführungsbeginn,
 terminales Ergebnis und verifizierte Wirkung, und wer darf sie ausstellen?
 
-**Status:** OPEN
+**Status:** ACCEPTED — Decision Sprint 1; Details: `ADR-09-RECEIPT-SEMANTIK.md`
 
 **Recon-Bezug:** Truth Map §6; heutiges `DeliveryReceipt` bestätigt keine konkrete Wirkung.
 
@@ -114,6 +128,9 @@ terminales Ergebnis und verifizierte Wirkung, und wer darf sie ausstellen?
 
 ## Gate
 
-Kein ADR ist durch die Federation Delegation Contract V1 Spec oder eine spätere
-Execution-Spine-Spec implizit beantwortet. Wo die Federation-Spec von einer offenen Frage
-abhängt, muss sie den ADR als Blocker nennen und darf keinen Default erfinden.
+ADR-02, -06, -07, -08 und -09 sind durch den Decision Sprint 1 ausdrücklich entschieden;
+ihre Einzel-ADRs bleiben bis zur Agent-B-Review und dem Implementierungsreife-Gate
+maßgeblich. ADR-01, -03, -04, -05 und -10 bleiben OPEN. Keine Entscheidung darf durch die
+Federation Delegation V1 Spec oder eine spätere Execution-Spine-Spec implizit erweitert
+werden. Wo ein Contract-Detail von einem offenen ADR abhängt, muss es weiterhin explizit
+als Blocker markiert werden.

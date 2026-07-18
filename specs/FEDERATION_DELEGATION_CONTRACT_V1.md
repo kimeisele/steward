@@ -1,10 +1,12 @@
 # FEDERATION DELEGATION CONTRACT V1
 
-> **Status:** DRAFT 0.1 — PREPARED FOR ADR + ADVERSARIAL REVIEW; NOT IMPLEMENTATION-READY
+> **Status:** DRAFT 0.2 — ADR DECISION SPRINT 1 ACCEPTED; ADVERSARIAL-/READINESS-REVIEW
+> PENDING; NOT IMPLEMENTATION-READY
 > **Datum:** 2026-07-18
 > **IST-Basis:** `specs/execution_truth_map/EXECUTION_TRUTH_MAP_RECON.md`
 > **ADR-Basis:** `specs/execution_truth_map/ADR_BACKLOG.md`
-> **Sperre:** Kein Produktcode, keine Aktivierung und kein Cross-Repo-Merge aus dieser Fassung.
+> **Sperre:** Kein Produktcode, keine Aktivierung und kein Cross-Repo-Implementierungsmerge
+> aus dieser Fassung.
 
 ---
 
@@ -17,8 +19,8 @@ Execution-Spine-Spec und führt kein universelles Execution-Modell ein.
 Die Abschnitte sind bewusst getrennt:
 
 - §1–2: belegtes IST,
-- §3–9: SOLL-Vertrag für Federation Delegation V1,
-- §10: offene ADR-Blocker,
+- §3–9: SOLL-Vertrag für Federation Delegation V1 auf Basis ADR-02/-06/-07/-08/-09,
+- §10: verbleibende ADR-Blocker,
 - §11–13: Tests, Rollout und Definition of Ready.
 
 ## 1. Belegtes IST
@@ -76,73 +78,162 @@ Steward Managed Task
 - keine Abwärtskompatibilität durch Titelmatching,
 - kein Broadcast als Ersatz für Targeting.
 
-## 3. Vertragsobjekte
+## 3. Vertragsobjekte und Wire-Objekte
 
 ### 3.1 Delegation Request
 
-Ein V1-Request benötigt mindestens folgende semantische Felder. Die endgültige Wire-
-Serialisierung bleibt bis ADR-06/ADR-07 reviewpflichtig.
+Ein V1-Request benötigt exakt die folgenden semantischen Felder. Die Wire-Serialisierung
+folgt ADR-06; unbekannte Pflichtfelder, fehlende Pflichtfelder oder nicht kanonische Bytes
+sind kein V1-Request.
 
 | Feld | Typ | Vertrag |
 |---|---|---|
-| `contract_version` | String | exakt unterstützte Delegation-Version |
-| `delegation_id` | opaque String | über den gesamten Delegationspfad unverändert; V1-lokal, keine universelle Execution-ID-Behauptung |
-| `origin_task_id` | String | exakte persistente Task-ID beim Ursprung |
-| `source_node_id` | String | kryptographisch gebundener Sender |
-| `target_node_id` | String | exakter kryptographischer Zielknoten |
-| `capability` | String | verlangte Fähigkeit, nicht freier Rollentitel |
-| `intent` | strukturierter Wert | erlaubter, versionierter Intent; keine reine Prosa als Dispatchschlüssel |
-| `task_title` | String | nur Darstellung; niemals Korrelation oder Idempotenz |
-| `task_description` | String | begrenzter Arbeitskontext |
-| `target_repo` | String/Null | kanonischer Repository-Identifier |
-| `authority` | strukturierter Wert | erlaubte Aktionen und ausdrücklich verbotene Aktionen |
-| `expected_outcome` | strukturierter Wert | fachliche Zielbedingung |
-| `verification_contract` | strukturierter Wert | vom Ursprung prüfbare Postcondition/Evidence-Anforderung |
-| `deadline` | Timestamp/Null | Annahme-/Ausführungsgrenze |
-| `idempotency_key` | String | stabile Retry-/Duplicate-Grenze |
+| `contract_version` | Envelope-String | exakt unterstützte Delegation-Version |
+| `message_id` | Envelope-String | pro logischer Federation-Message eindeutig; bei Retry derselben Bytes unverändert |
+| `correlation_id` | Envelope-String | in V1 exakt derselbe Wert wie `delegation_id`; viele Messages → eine Delegation |
+| `source_node_id` | Envelope-String | kryptographisch gebundener Sender |
+| `target_node_id` | Envelope-String | exakter kryptographischer Zielknoten |
+| `payload.delegation_id` | Payload-String | Origin-erzeugt, über den gesamten Delegationspfad unverändert; V1-lokal, keine universelle Execution-ID-Behauptung |
+| `payload.origin_task_id` | Payload-String | exakte persistente Task-ID beim Ursprung |
+| `payload.capability` | Payload-String | verlangte Fähigkeit, nicht freier Rollentitel |
+| `payload.intent` | Payload-Struktur | erlaubter, versionierter Intent; keine reine Prosa als Dispatchschlüssel |
+| `payload.task_title` | Payload-String | nur Darstellung; niemals Korrelation oder Idempotenz |
+| `payload.task_description` | Payload-String | begrenzter Arbeitskontext |
+| `payload.target_repo` | Payload-String/Null | kanonischer Repository-Identifier |
+| `payload.authority` | Payload-Struktur | erlaubte Aktionen und ausdrücklich verbotene Aktionen |
+| `payload.expected_outcome` | Payload-Struktur | fachliche Zielbedingung |
+| `payload.verification_contract` | Payload-Struktur | vom Ursprung prüfbare Postcondition/Evidence-Anforderung |
+| `payload.deadline` | Payload-Timestamp/Null | Annahme-/Ausführungsgrenze |
+| `payload.idempotency_key` | Payload-String | bindet den kanonischen Request-Body; widersprüchliche Wiederverwendung wird abgelehnt |
 
-`delegation_id` beantwortet ADR-01/02 nicht. Es ist nur die zwingende Identität dieses
-Federation-Vertrags. Ob und wie es später an eine universelle Execution-ID gebunden wird,
-bleibt offen.
+`delegation_id` beantwortet ADR-01 nicht. Es ist nur die zwingende Lifecycle-Identität
+dieses Federation-Vertrags. ADR-02 ist für V1 akzeptiert: `correlation_id` referenziert
+deterministisch die Delegation, während `message_id`, `origin_task_id` und `target_work_id`
+eigene Identitätsrollen behalten.
 
-### 3.2 Admission Result
+Die Tabelle markiert die kanonische Lage: Envelope-IDs stehen top-level; fachliche
+Delegationsfelder stehen in `payload`. `payload.delegation_id` muss bytegleich zum
+top-level `correlation_id` sein. `target_work_id` entsteht erst im Admission-Resultat und
+steht daher nicht im initialen Request.
 
-Agent City muss den Request vor jeder Ausführung entweder annehmen oder ablehnen.
+Eine V1-Message muss außerdem `payload_hash`, `signature` und `signer_key` gemäß ADR-06
+tragen. `message_id` wird vor der Signatur erzeugt; Relay/Hub darf signierte Felder nicht
+mutieren.
 
-Mindestfelder:
+### 3.2 Admission- und Receipt-Message
 
-- `contract_version`
-- `delegation_id`
-- `origin_task_id`
-- `source_node_id`
-- `target_node_id`
-- `admission_status`: `accepted` oder `rejected`
-- maschinenlesbarer `reason_code`
-- bei Annahme: persistente `target_work_id`
-- Timestamp und Signaturbindung
+Agent City muss den Request vor jeder Ausführung entweder annehmen oder ablehnen. Die
+Admission wird als `delegation_receipt` mit `receipt_stage=admission` übermittelt. Eine
+Transport-Commit-Receipt kann davor als `receipt_stage=transport_committed` vom Relay/Hub
+existieren; sie ist keine Annahme.
 
-Die endgültige Operation und die Einordnung als Receipt hängen von ADR-09 ab. Unabhängig
-davon ist stille Annahme verboten.
+Die Wire-Lage bleibt auch hier eindeutig: Envelope-Felder stehen top-level; die folgenden
+Felder stehen im `payload` der `delegation_receipt`.
+
+| Feld | Pflicht | Vertrag |
+|---|---:|---|
+| `receipt_id` | ja | eindeutige, unveränderliche Identität genau dieses Receipts |
+| `receipt_stage` | ja | exakt `transport_committed`, `admission`, `started` oder `verification`; `terminal` wird ausschließlich am Resultat geführt |
+| `delegation_id` | ja | muss bytegleich zum top-level `correlation_id` sein |
+| `subject_message_id` | ja | Message-ID, deren Verarbeitung diese Receipt-Stufe auslöste; nicht die eigene Receipt-Message-ID |
+| `origin_task_id` | ja | Ursprungstask aus dem Request |
+| `target_work_id` | ja | persistenter Zielarbeits-Handle; `null` ist nur für `transport_committed` und `admission=rejected` erlaubt, sonst Pflicht |
+| `status` | ja | stufenspezifischer positiver oder negativer Status |
+| `reason_code` | bei negativem Status | maschinenlesbarer Fehlergrund; kein freier Logtext als Primärgrund |
+| `evidence_ref` | falls vorhanden | reproduzierbare Evidence-Referenz |
+| `issuer_role` | ja | muss zur Receipt-Stufe gemäß ADR-09 passen |
+
+Zusätzlich müssen die top-level Envelope-Felder `message_id` (eigene Receipt-Message), `correlation_id`,
+`source_node_id`, `target_node_id`, `issued_at`, `expires_at`, `payload_hash`, `signature`
+und `signer_key` gemäß §3.4 vorhanden sein. Ein Receipt darf keine stillen Null-/Bool-
+Defaults für Pflichtfelder einführen.
+
+Ein Start-Receipt verwendet dieselbe `delegation_receipt`-Operation mit
+`receipt_stage=started`. Das terminale `task_completed`/`task_failed`-Resultat ist selbst
+das `receipt_stage=terminal`-Receipt und trägt daher eine eigene `receipt_id`. Stille
+Annahme oder stiller Start ist verboten.
+
+Der verbindliche V1-Operationsatz für Delegation lautet:
+
+| Operation | Richtung | Zweck |
+|---|---|---|
+| `delegate_task` | Origin → Target | Request |
+| `delegation_receipt` | Relay/Target → Origin | `transport_committed`, `admission`, `started` oder `verification`-Receipt |
+| `task_completed` | Target → Origin | terminales positives Resultat |
+| `task_failed` | Target → Origin | terminales negatives Resultat |
+
+`verification` wird primär als Origin-State/Receipt ausgestellt. Eine externe Attestation
+verwendet `delegation_receipt` mit `receipt_stage=verification`; ein neues ungebundenes
+Operationstoken ist nicht zulässig.
 
 ### 3.3 Terminal Result
 
-V1 verwendet weiterhin die fachlichen Ausgänge `task_completed` und `task_failed`, aber
-deren Payload muss mindestens enthalten:
+V1 verwendet weiterhin die fachlichen Ausgänge `task_completed` und `task_failed`. Deren
+Payload muss mindestens enthalten:
 
-- `contract_version`
-- `delegation_id`
-- `origin_task_id`
-- `target_work_id`
-- `source_node_id`
-- `target_node_id`
-- terminaler Status
-- strukturierter Outcome oder Failure
-- Evidence-Referenzen
-- Start-/Endzeit
-- Wiederholungs-/Attempt-Zähler, falls vorhanden
-- Signaturbindung
+| Feld | Pflicht | Vertrag |
+|---|---:|---|
+| `delegation_id` | ja | muss bytegleich zum top-level `correlation_id` sein |
+| `origin_task_id` | ja | Ursprungstask aus dem Request |
+| `target_work_id` | ja | derselbe persistente Handle aus der Admission |
+| `receipt_stage` | ja | exakt `terminal` für `task_completed` und `task_failed` |
+| `terminal_status` | ja | `completed` oder `failed`; kein boolescher Delivery-Ersatz |
+| `outcome` oder `failure` | genau eines | strukturierte fachliche Aussage passend zum Terminalstatus |
+| `evidence_refs` | ja | Liste reproduzierbarer Belege; leer nur mit explizitem Failure-Code |
+| `started_at` / `ended_at` | ja | RFC-3339-UTC-Zeitpunkte |
+| `attempt_count` | ja | Zielseitiger Zähler dieses Delegations-Handles |
+| `receipt_id` | ja | terminales Receipt, das dieses Resultat attestiert |
+| `subject_message_id` | ja | Message-ID, deren Verarbeitung zum terminalen Resultat führte |
+| `issuer_role` | ja | exakt `target_worker` oder `target_node` gemäß ADR-09 |
+
+Zusätzlich trägt der Envelope die unveränderlichen IDs, Ziel-/Senderbindung, Zeit- und
+Signaturfelder aus §3.4. Seine top-level `message_id` ist die Message-ID dieses terminalen
+Ergebnisses; `correlation_id` bleibt `delegation_id`.
 
 Titel, Branchname und PR-URL dürfen Zusatzfelder sein, niemals Primärkorrelation.
+
+Die Ursprungsverifikation ist kein Ziel-Resultat. Sie wird im Origin-State als
+`verification`-Receipt mit eigener `receipt_id` und `issuer_role=origin` geführt; eine
+separate Outbound-Operation ist nur erforderlich, wenn ein anderer Peer diese Attestation
+benötigt.
+
+### 3.4 Kanonischer V1-Envelope und Signaturbytes
+
+Jede V1-Message besitzt genau diese Pflichtfelder:
+
+```text
+contract_version
+message_id
+source_node_id
+target_node_id
+operation
+correlation_id
+payload
+issued_at
+expires_at
+payload_hash
+signature
+signer_key
+```
+
+`payload` ist ein JSON-Objekt; unbekannte Top-Level-Felder sind vor Spec-Freeze abzulehnen.
+Eine spätere Extension muss eine neue `contract_version` oder einen ausdrücklich signierten
+Extension-Namespace verwenden. `issued_at` und `expires_at` sind RFC-3339-UTC-Strings.
+
+Für die Signatur wird zunächst der Envelope ohne exakt `payload_hash` und `signature`
+gebildet. Dieser Body wird als UTF-8-JSON mit
+`sort_keys=true`, `ensure_ascii=false`, `separators=(",", ":")` serialisiert; nicht
+serialisierbare Werte sind ein Schemafehler. `payload_hash` ist der lowercase Hex-SHA-256
+dieser Bytes. `signature` ist base64 der Ed25519-Signatur über die ASCII-Bytes dieses
+Hex-Hashes. `signer_key` bleibt im signierten Body. `source_node_id` muss aus diesem
+Public Key ableitbar sein. Die V1-Ableitung ist exakt `ag_` plus die ersten 16 lowercase
+Hex-Zeichen von `SHA256(signer_key_hex_ascii)`, wobei `signer_key_hex_ascii` der
+64-Zeichen-Hexstring des Raw-Public-Keys ist. Relays dürfen keinen signierten Schlüssel
+hinzufügen, entfernen oder verändern.
+
+Damit ist die Signaturbytefolge unabhängig von Python-`default=str`, JSON-Whitespace,
+Hub-IDs oder Payload-Substring-Regeln. Die bestehende Steward-`exclude_hub_id`-Toleranz
+ist Legacy und nicht V1.
 
 ## 4. Zustandsvertrag
 
@@ -168,6 +259,15 @@ FAILED_AT_TARGET
 CANCELED
 ```
 
+Receipt-Stufen sind separat und monoton:
+
+```text
+transport_committed → admission → started → terminal → verification
+```
+
+Eine fehlende Folgestufe ist `delivery_unknown`, `expired` oder `recovery_required`, nie
+implizit Erfolg.
+
 Diese Zustände ersetzen keine Managed-Task-, A2A- oder Sankalpa-Enums. Die genaue
 Übersetzung bleibt Teil von ADR-10. Für V1 gelten aber folgende Invarianten:
 
@@ -177,7 +277,10 @@ Diese Zustände ersetzen keine Managed-Task-, A2A- oder Sankalpa-Enums. Die gena
 4. Nur der Ursprung darf seine fachliche Postcondition als `VERIFIED` einstufen.
 5. Ein Fehlerresultat darf nicht über denselben Übergang wie ein Erfolgsresultat pauschal
    zu `PENDING` übersetzt werden.
-6. Jeder Übergang muss `delegation_id` und vorherigen Zustand prüfen.
+6. Jeder Übergang muss `delegation_id`, `correlation_id`, vorherigen Zustand und die
+   erwartete `message_id`-/Receipt-Deduplizierung prüfen.
+7. `ACCEPTED` legt den persistenten Admission-/Dedupe-Eintrag vor jeder lokalen Mission an.
+8. `RECOVERY_REQUIRED` erlaubt keine automatische zweite Side Effect-Ausführung.
 
 ## 5. Targeting und Admission
 
@@ -188,6 +291,9 @@ Diese Zustände ersetzen keine Managed-Task-, A2A- oder Sankalpa-Enums. Die gena
   Node-Identity entspricht.
 - Broadcast ist für `delegate_task` verboten.
 - Ein Relay darf den Zielknoten nicht aus Payload-Prosa ableiten oder überschreiben.
+- `message_id`, `payload_hash`, `signature` und `signer_key` müssen beim Routing unverändert
+  bleiben; Hub-/Relay-Metadaten werden nicht nachträglich in den signierten V1-Envelope
+  eingefügt.
 
 ### 5.2 Admission-Gates
 
@@ -201,23 +307,28 @@ Vor Annahme müssen mindestens geprüft werden:
 - Sender erfüllt Trust-/Authority-Gate,
 - Capability existiert und besitzt einen konkreten Handler,
 - Repo und erlaubte Aktionen liegen innerhalb Authority,
-- lokale Kapazität erlaubt Annahme.
+- lokale Kapazität erlaubt Annahme,
+- Wiring-Manifest weist für die Capability einen konkreten Handler und Resultatpfad aus.
 
 Fehlende Handler oder Capability sind `rejected`, nicht still konsumiert.
 
 ## 6. Idempotenz, Duplicate und Recovery
 
-Bis ADR-08 entschieden ist, gelten folgende Mindestinvarianten:
+ADR-08 ist für V1 akzeptiert. Es gelten folgende verbindliche Regeln:
 
 - Derselbe `delegation_id` plus identischer kanonischer Request darf keine zweite lokale
-  Mission erzeugen.
+  Mission erzeugen; der persistente Admission-/Dedupe-Eintrag wird vor Ausführung atomar
+  geschrieben.
 - Derselbe `delegation_id` mit abweichendem Request muss fail-closed abgelehnt und als
   Konflikt persistiert werden.
 - Ein doppeltes terminales Resultat darf keinen zweiten Ursprungstransition auslösen.
 - Nach Crash muss Agent City aus persistentem State entscheiden können, ob der Request
-  unbekannt, angenommen, ausführend oder terminal ist.
-- Der Ursprung darf bei Timeout nicht blind neu ausführen; er muss Status/Recovery gemäß
-  dem späteren ADR-08-Vertrag klären.
+  unbekannt, angenommen, ausführend, `RECOVERY_REQUIRED` oder terminal ist.
+- `EXECUTING` besitzt eine Lease-/Heartbeat-Grenze; Lease-Ablauf erzeugt
+  `RECOVERY_REQUIRED`, nicht automatisch eine zweite Ausführung.
+- Der Ursprung darf bei Timeout nicht blind neu ausführen; Retry behält die signierten Bytes
+  und `message_id` der wiederholten Message.
+- Nicht-idempotente Side Effects benötigen einen fachlichen Dedup-Key oder werden abgelehnt.
 - Titel, Timestamp oder Listenposition dürfen nie als Dedup-Key dienen.
 
 ## 7. Authority und Safety
@@ -234,17 +345,21 @@ Bis ADR-08 entschieden ist, gelten folgende Mindestinvarianten:
 
 V1 trennt Zielresultat und Ursprungsverifikation:
 
-1. Agent City stellt Evidence gemäß `verification_contract` bereit.
-2. Steward korreliert ausschließlich über die stabilen Vertrags-IDs.
+1. Agent City stellt Evidence gemäß `verification_contract` bereit und sendet ein
+   `terminal`-Receipt/Resultat.
+2. Steward korreliert ausschließlich über `delegation_id`/`correlation_id` und die
+   unveränderliche Message-ID.
 3. Steward beobachtet die Postcondition unabhängig, soweit sie extern beobachtbar ist.
-4. Erst danach darf der Federation-Vertrag `VERIFIED` erreichen.
+4. Erst danach darf der Origin-State ein `verification`-Receipt mit `VERIFIED` oder
+   `FAILED_VERIFICATION` ausstellen.
 5. Tool Exit 0, PR-Erstellung oder ein grüner Target-Workflow allein erfüllen die
    Postcondition nicht.
 
-Welche Evidence als Receipt gilt und wer sie attestiert, bleibt ADR-09. V1 verbietet
-jedoch, Transportzustellung als Wirkungsnachweis auszugeben.
+ADR-09 ist für V1 akzeptiert: Transport, Admission, Start, Terminal und Verification sind
+getrennte Receipt-Stufen mit rollenbegrenzten Ausstellern. Transportzustellung darf niemals
+als Wirkungsnachweis ausgegeben werden.
 
-## 9. Failure-Vertrag
+## 9. Failure- und Receipt-Vertrag
 
 Mindestens folgende maschinenlesbare Klassen müssen unterscheidbar bleiben:
 
@@ -259,24 +374,31 @@ Mindestens folgende maschinenlesbare Klassen müssen unterscheidbar bleiben:
 - `target_result_unverifiable`
 - `origin_verification_failed`
 - `delivery_unknown`
+- `recovery_required`
+
+Receipt-Aussteller sind hart begrenzt:
+
+| `receipt_stage` | zulässiger `issuer_role` |
+|---|---|
+| `transport_committed` | `relay` oder `hub` |
+| `admission` | `target_node` |
+| `started` | `target_scheduler` |
+| `terminal` | `target_worker` oder `target_node` |
+| `verification` | `origin_node` |
 
 Die Zuordnung zum GitHub-Workflow-Exit ist durch ADR-05 nicht entschieden. Unabhängig vom
 Exit darf keine dieser Klassen ausschließlich als Logzeile enden.
 
-## 10. Offene ADR-Blocker
+## 10. Verbleibende ADR-Blocker
 
-Vor Spec-Freeze müssen mindestens entschieden sein:
+Für die vollständige V1-Spec bleiben folgende ADRs außerhalb dieses Sprints offen:
 
-- ADR-02: Beziehung zwischen Delegation-, Correlation- und Message-ID,
 - ADR-05: Workflow-Wahrheit für Delivery-/Execution-Fehler,
-- ADR-06: kanonischer Federation-Signaturvertrag,
-- ADR-07: maschinenlesbare Capability-/Handler-Deklaration,
-- ADR-08: Retry-/Recovery-Idempotenz,
-- ADR-09: Receipt-Stufen und Aussteller,
 - ADR-10: Adapter zu Managed Task, A2A und Sankalpa.
 
-ADR-01, ADR-03 und ADR-04 bleiben für die spätere übergreifende Architektur offen. Diese
-Spec darf sie nicht implizit entscheiden.
+ADR-01, ADR-03 und ADR-04 bleiben ebenfalls offen. ADR-02, -06, -07, -08 und -09 sind
+akzeptiert und in den Abschnitten §3–§9 normativ eingearbeitet. Diese Spec darf die übrigen
+ADRs nicht implizit entscheiden.
 
 ## 11. Abgeleitete Test- und Crucible-Verträge
 
@@ -285,15 +407,18 @@ Spec darf sie nicht implizit entscheiden.
 1. Agent City lehnt einen an anderen Node adressierten Request ab.
 2. Agent City besitzt einen expliziten `delegate_task`-Handler; ohne Handler entsteht ein
    Rejection-Resultat.
-3. Doppelte identische Request-Nachricht erzeugt genau ein `target_work_id`.
+3. Doppelte identische Request-Nachricht mit gleicher `message_id`/`idempotency_key` erzeugt
+   genau ein `target_work_id` und wiederholt nur das bekannte Receipt.
 4. Gleiche `delegation_id` mit abweichender Payload wird fail-closed abgelehnt.
 5. Zwei Tasks mit identischem Titel werden anhand ihrer IDs korrekt getrennt.
 6. Erfolgs- und Fehlerresultat nehmen verschiedene Transitionen.
-7. Reales Steward-Signaturformat wird von Agent City akzeptiert; manipulierte Payload,
-   falscher Key und falsches Target werden abgelehnt.
+7. Der V1-Golden-Envelope wird von Agent City akzeptiert; manipulierte Payload, falscher
+   Key, falsches Target, Hub-Mutation und nicht kanonische JSON-Bytes werden abgelehnt.
 8. Crash nach Acceptance erzeugt nach Recovery keine zweite Ausführung.
-9. Doppeltes terminales Resultat verändert den Ursprung nur einmal.
-10. Target-Workflow grün bei fehlender Postcondition endet am Ursprung
+9. Doppeltes terminales Resultat/Receipt verändert den Ursprung nur einmal; widersprüchliche
+   Resultate erzeugen `duplicate_conflict`.
+10. Receipt-Aussteller außerhalb ihrer Rolle werden abgelehnt; Target-Workflow grün bei
+    fehlender Postcondition endet am Ursprung
     `FAILED_VERIFICATION`, nicht `VERIFIED`.
 
 ### 11.2 Repoübergreifender Crucible
@@ -326,26 +451,31 @@ Störfälle:
 Noch keine Migration ist autorisiert. Eine spätere Implementierung muss getrennte,
 reviewbare Schritte verwenden:
 
-1. Wire-/Crypto-Contract und Cross-Repo-Fixtures,
-2. Agent-City-Admission ohne Ausführung,
-3. persistente ID-/Idempotenzgrenze,
-4. genau ein Capability-Handler,
-5. terminaler Resultatpfad,
-6. Ursprungsverifikation,
-7. kontrollierter Crucible.
+1. Wire-/Crypto-Contract und Cross-Repo-Golden-Fixtures nach ADR-06,
+2. Wiring-Manifest/Auditor-Vertrag nach ADR-07,
+3. Agent-City-Admission ohne Ausführung,
+4. persistente ID-/Idempotenzgrenze und Lease nach ADR-08,
+5. gestufte Receipt-Stufen nach ADR-09,
+6. genau ein Capability-Handler,
+7. terminaler Resultatpfad,
+8. Ursprungsverifikation,
+9. kontrollierter Crucible.
 
 Der bestehende Titelcallback darf während einer Migration nur beobachtet, niemals als
 Fallback für V1 verwendet werden. Aktivierung benötigt ein separates Operator-Gate.
 
 ## 13. Definition of Ready für Spec Freeze V1
 
-- alle §10-Blocker als ADR entschieden,
+- ADR-02/-06/-07/-08/-09 akzeptiert und gegen diesen Contract reconciliiert,
+- ADR-05 und ADR-10 entschieden,
 - Wire-Schemas vollständig und kanonisch serialisierbar,
 - jede Transition mit Vor-/Nachbedingung und Failure-Pfad,
 - Authority-/Target-/Crypto-Grenze adversarial reviewt,
 - Tests aus §11 als ausführbare rote Verträge präzisiert,
 - Migration ohne Broadcast- oder Titel-Fallback,
 - Context Bridge weiterhin geparkt,
-- zwei unabhängige Reviews finden keine kritische Mehrdeutigkeit.
+- zwei unabhängige Reviews finden keine kritische Mehrdeutigkeit,
+- ein vollständiger Widerspruchsreview bestätigt, dass kein Text auf Titelmatching,
+  Broadcast, boolesche Delivery-Bestätigung oder implizite Signaturbytes zurückfällt.
 
-Bis dahin bleibt diese Fassung `DRAFT 0.1` und autorisiert keinen Produktcode.
+Bis dahin bleibt diese Fassung `DRAFT 0.2` und autorisiert keinen Produktcode.
