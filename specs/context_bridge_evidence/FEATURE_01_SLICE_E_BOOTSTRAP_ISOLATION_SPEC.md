@@ -5,7 +5,18 @@
 **Parent contract:** `FEATURE_01_SLICE_D2B_WRITER_POLICY_PREFLIGHT.md`,
 `FEATURE_01_SLICE_D2B_G2_PREFLIGHT.md`
 
-**Recon pin:** `origin/main` at `9bc785337103d94dfe70c26510030ac05e618135`
+**Recon pin:** `origin/main` at `a2d545774e10d59e02314f79dae043e1259ec98b`
+
+**Pinned tree:** `78191a9cdf26085f8b966f4c9179dfceab313f13`
+
+**Pin drift:** Compared with the initial E0 base `9bc785337103d94dfe70c26510030ac05e618135`,
+`origin/main` advanced only in runtime/federation state: `.steward/.context_hash`,
+`.steward/context.json`, `.steward/federation_health.json`,
+`.steward/marketplace.json`, `.steward/sessions.json`,
+`data/federation/nadi_inbox.json`, `data/federation/nadi_outbox.json`,
+`data/federation/peers.json`, `data/federation/quarantine/index.json`,
+`data/federation/relay_seen_ids.json`, and `data/federation/steward_health.json`.
+No E0 source, spec, or implementation path is overlapped by that drift.
 
 **Related unmerged code:** PR #728, head `e280e199f111776c132713d4fec05fabe57041d5`
 
@@ -213,7 +224,9 @@ attestation/result record over the authenticated channel. The issuer returns an
 opaque capability only inside the dedicated worker after all of these checks
 pass:
 
-- worker PID and process-group identity are pinned;
+- worker process-group identity and worker-start nonce are pinned; the worker
+  PID is diagnostic metadata bound to that nonce, while the parent authority is
+  the supervisor pidfd;
 - root, `.git`, and `.steward` FDs are opened with safe flags and bound to the
   same repository root;
 - the path-to-FD binding is proven twice around bootstrap handoff;
@@ -225,9 +238,10 @@ pass:
   `pidfd` HUP/exit is the revocation signal.
 
 The D2b consumer must reject a capability with a missing bootstrap nonce,
-wrong worker PID, wrong namespace/worktree identity, changed parent, changed
-Git layout, or expired/revoked lease. A capability is never reconstructed from
-JSON, a Python class, or a caller-provided path.
+worker-PID/start-identity mismatch against the authenticated handshake,
+wrong namespace/worktree identity, changed parent, changed Git layout, or
+expired/revoked lease. A numeric PID alone is never sufficient. A capability
+is never reconstructed from JSON, a Python class, or a caller-provided path.
 
 ### 4.6 Worker-code provenance
 
@@ -307,8 +321,9 @@ Only bounded canonical JSON messages cross the channel. No target, journal,
 tempfile, root, `.git`, or `.steward` FD is sent with `SCM_RIGHTS`; all mutation
 FDs remain inside the worker namespace. The read-only source FD 4 is the sole
 launch input exception and is inherited by Bubblewrap, never sent after the
-worker starts. The parent receives an attestation, terminal result, and
-evidence digest only.
+worker starts. Apart from the required `HELLO`, barrier, and shutdown control
+messages, the parent receives only an attestation, terminal result, and
+evidence digest.
 
 The barrier messages are ordinary envelopes, not an undocumented exception:
 
@@ -337,12 +352,16 @@ continuing.
 
 Before spawning Bubblewrap, the parent creates a private host-side evidence
 directory (mode `0700`) beneath a trusted evidence root, opens an append-only
-launch record with safe dirfd-relative flags, and writes the launch nonce,
-worker-start nonce, source identity, runtime manifest hash, Bubblewrap
-executable hash/stat, expected credential map, and exact launch argv/environment.
-It fsyncs the record and its parent directory before `exec`/spawn. This record
-is outside the worker tmpfs and is therefore not destroyed when the worker or
-its namespace exits.
+launch record with dirfd-relative
+`O_WRONLY|O_CREAT|O_APPEND|O_CLOEXEC|O_NOFOLLOW` and mode `0600`, and writes
+the launch nonce, worker-start nonce, source identity, runtime manifest hash,
+Bubblewrap executable hash/stat, expected credential map, and exact launch
+argv/environment.
+Each event is a bounded length-prefixed canonical JSON record (maximum 65,536
+bytes) with a record sequence, previous-record hash, event hash, and stage.
+The parent fsyncs the record and its parent directory before `exec`/spawn. This
+record is outside the worker tmpfs and is therefore not destroyed when the
+worker or its namespace exits.
 
 For every accepted IPC envelope, the parent appends the bounded envelope,
 credential observation, and receipt stage to that host record and fsyncs the
