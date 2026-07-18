@@ -1,6 +1,6 @@
 # Context Bridge Slice E — Bootstrap and Publisher Isolation
 
-**Status:** DRAFT 0.6 — E0 architecture decisions closed; implementation forbidden
+**Status:** DRAFT 0.7 — E0 architecture decisions closed; implementation forbidden
 
 **Parent contract:** `FEATURE_01_SLICE_D2B_WRITER_POLICY_PREFLIGHT.md`,
 `FEATURE_01_SLICE_D2B_G2_PREFLIGHT.md`
@@ -196,10 +196,14 @@ The runtime root itself must already contain exactly these empty, root-owned
 mode-`0555` mountpoint directories before the root bind: `/input`, `/work`,
 `/proc`, `/dev`, and `/tmp`. `/input` is the parent for the sealed bundle;
 `/work`, `/proc`, `/dev`, and `/tmp` are subsequently mounted over those
-directories. Bubblewrap must not create a mountpoint beneath the read-only root,
-and a missing, non-directory, writable, or symlink mountpoint is
-`manual_review` before launch. This is why no `--dir` operation appears after
-the root bind.
+directories. It must also contain the regular placeholder file
+`/input/source.bundle`, root-owned mode `0444`, size `0`, and SHA-256
+`e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`.
+Bubblewrap replaces that existing placeholder with the sealed FD-4 bind; it
+must not create a mountpoint or bind target beneath the read-only root. A
+missing, non-directory, writable, symlink, non-empty, or differently hashed
+mountpoint/placeholder is `manual_review` before launch. This is why no `--dir`
+operation appears after the root bind.
 `--clearenv` is mandatory. The only worker environment variables are the nine
 `LANG`/`LC_ALL`/`PATH`/`GIT_*` assignments shown above; every other inherited
 variable, loader variable, proxy, credential, and unlisted `GIT_*` override is
@@ -418,12 +422,14 @@ every node below the runtime root except the byte-identical
 - regular files are root-owned mode `0444` or `0555`, have bounded integer
   `size`, lowercase-hex SHA-256, and `git_blob` only for repository-derived
   files;
-- `role` is one of `mountpoint`, `python`, `python_stdlib`, `python_native`, `worker`,
+- `role` is one of `mountpoint`, `bind_placeholder`, `python`, `python_stdlib`, `python_native`, `worker`,
   `git`, `git_core`, `git_template`, `elf_loader`, or `shared_library`.
 
 The closed entry set contains the five required empty mountpoint directories
-`input`, `work`, `proc`, `dev`, and `tmp` at the runtime-root top level, plus
-`/usr/bin/python3.12`, the complete packaged
+`input`, `work`, `proc`, `dev`, and `tmp` at the runtime-root top level and the
+regular `input/source.bundle` bind placeholder with exactly the empty-file
+identity above, `kind=regular`, `role=bind_placeholder`, and `git_blob=null`,
+plus `/usr/bin/python3.12`, the complete packaged
 Python 3.12 standard library and `lib-dynload`, the worker entrypoint and every
 importable Steward module in its reviewed static import closure, `/usr/bin/git`,
 every invoked `git-core` helper, Git templates, the ELF loader, and the complete
