@@ -2511,3 +2511,40 @@ Das self-contained Review-Packet für die nächste Agent-B-Prüfung ist:
 Draft 0.3 bleibt `NOT IMPLEMENTATION-READY`, bis Agent B die revidierten Crypto-, Digest-,
 Partial-Order-, Ledger- und Statusregeln bestätigt. Golden-Wire-Fixtures, Crucible-Design,
 Produktcode, Phase 1 und Context Bridge bleiben gesperrt.
+
+## §29 — ADR DECISION SPRINT 1C: DRAFT 0.4 NOCH NICHT FIXTURE-READY (2026-07-18)
+
+Agent B bewertet Draft 0.3 als wesentlich verbessert, aber noch nicht bereit für Golden-
+Wire-Fixtures. Ein enger Sprint 1C behandelt ausschließlich die verbliebenen normativen
+Lücken:
+
+- Wrong-Target wird ausschließlich internes Finding/Quarantine; keine automatische signierte Antwort.
+- Root-Identity erhält Enrollment, Root-signierte Key-Certificates, Aktivierung, Rotation,
+  Root-Ablösung, Collision-Handling und Revocation-Provenance.
+- Revocation erhält `not_before`, `not_after`, `revoked_at`, `revocation_effective_at`,
+  `revocation_reason`, reguläre Rotation und emergency compromise.
+- Canonical JSON wird als sprachneutrales SFDJ-1-Profil mit NFC-Reject, rekursiver Prüfung,
+  Escape-, Zahlen-, Größen- und Bytegleichheitsregeln festgelegt.
+- Receipt-Retransmission und Receipt-Reissue werden getrennt; `receipt_id` bleibt beim
+  Reissue gleich, `receipt_content_digest` bindet den fachlichen Inhalt.
+- `request_message_id` bleibt immer der erste Request; `causation_message_id` folgt der
+  unmittelbaren Status-/Recovery-Ursache.
+- `delegation_status_query` und `delegation_status` erhalten vollständige Schemas,
+  Authority-, Privacy-, Rate-Limit-, Replay- und Wiring-Regeln.
+- Capability-Reife und Disposition werden als zwei Achsen modelliert.
+
+Die vollständige Revision steht in:
+
+`specs/execution_truth_map/ADR_DECISION_SPRINT_1C_REVISION.md`
+
+Draft 0.4 steht in:
+
+`specs/FEDERATION_DELEGATION_CONTRACT_V1_DRAFT_0_4.md`
+
+Das self-contained Review-Packet steht in:
+
+`specs/execution_truth_map/AGENT_B_ADR_SPRINT_1C_REVIEW_PACKET.md`
+
+Die Entscheidung bleibt `NOT READY FOR GOLDEN FIXTURES`. Produktcode, Phase 1 und Context
+Bridge bleiben unverändert; ADR-05 und ADR-10 bleiben spätere Produktions-/Integrations-
+Blocker.

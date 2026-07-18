@@ -1,6 +1,6 @@
 # ADR-02 — EXECUTION-, CORRELATION- UND MESSAGE-ID
 
-> **Status:** AMENDED — SPRINT 1B REVISION IN `ADR_DECISION_SPRINT_1B_REVISION.md`
+> **Status:** AMENDED — SPRINT 1C REVISION IN `ADR_DECISION_SPRINT_1C_REVISION.md`
 > **Hinweis:** Der folgende Sprint-1-Text ist historische Begründung; Draft 0.3 und Sprint
 > 1B sind für normative Regeln maßgeblich.
 > **Datum:** 2026-07-18
@@ -111,3 +111,12 @@ den heutigen Mehrdeutigkeitsfehler nur unsichtbar machen.
 **Entscheidung:** ACCEPTED für V1. Implementierung noch nicht freigegeben. ADR-06, -08 und
 -09 müssen gemeinsam umgesetzt werden; ohne Signatur, durable Dedup und Receipt-Stufen ist
 die ID-Entscheidung nicht produktionsreif.
+
+## Sprint-1C-Amendment
+
+Transport-Retransmission und Application-Reissue sind getrennt. Retransmission behält
+kanonische Bytes, message_id, request_digest, issued_at und expires_at und ist nur vor Ablauf
+zulässig. Application-Reissue erhält eine neue message_id, issued_at, expires_at, message_hash
+und Signatur, aber dieselbe delegation_id, denselben request_digest und denselben
+request_message_id. `causation_message_id` verweist auf die auslösende Status-/Recovery-
+Message. `subject_message_id` ist Draft-0.4-verboten.

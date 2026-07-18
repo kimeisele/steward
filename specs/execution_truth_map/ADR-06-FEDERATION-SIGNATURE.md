@@ -1,6 +1,6 @@
 # ADR-06 — FEDERATION-SIGNATURVERTRAG
 
-> **Status:** OPEN / REVISION REQUIRED — SPRINT 1B
+> **Status:** OPEN / REVISION REQUIRED — SPRINT 1C
 > **Hinweis:** Der folgende Sprint-1-Text ist historischer Befund; Draft 0.3 bleibt bis zur
 > Agent-B-Bestätigung von Identity-, Rotation-, Revocation- und Domain-Regeln offen.
 > **Datum:** 2026-07-18
@@ -124,3 +124,14 @@ Kompatibilität wäre sicherheitlich schlechter.
 **Entscheidung:** ACCEPTED als V1-Kanonisierung. Implementierung nicht freigegeben.
 Spec-Freeze benötigt Golden-Byte-Fixtures und einen adversarialen Cross-Repo-Verify-Test.
 Die bestehende `exclude_hub_id`-Logik bleibt ausschließlich historischer Legacy-Befund.
+
+## Sprint-1C-Amendment — normative Revision, noch offen
+
+Draft 0.4 ersetzt die direkte Key→Node-ID-Kopplung durch eine stabile Node-ID aus der
+Identity-Root, `key_id` aus dem vollständigen Signing-Key-Fingerprint, Root-signierte
+Key-Certificates, Registry-Aktivierung, Überlappungsfenster, Revocation-Zeitmodell,
+Collision-Handling und Root-Rotation. Root-Enrollment und Key-Certificate benötigen eigene
+domain-separated Root-Signaturen. Der Signaturinput verwendet
+`STEWARD-FEDERATION-DELEGATION-V1\0` plus den rohen SHA-256-Digest, nicht den ASCII-Hextext.
+Canonicalisierung folgt dem sprachneutralen SFDJ-1-Profil; `payload_hash` wird durch
+`message_hash` ersetzt. Diese Revision bleibt bis Agent-B-Bestätigung OPEN.

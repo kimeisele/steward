@@ -4,6 +4,9 @@
 > Datum: 2026-07-18
 > Scope: Federation Delegation Contract V1; kein Produktcode
 
+> Historischer Sprint-1B-Stand. Agent B hat weitere enge Lücken identifiziert; die aktuelle
+> normative Revision ist Sprint 1C und Draft 0.4.
+
 Dieses Dokument ergänzt und revidiert die Sprint-1-Entscheidungen. Draft 0.2 wird nicht als
 Golden-Wire- oder Crucible-Basis verwendet. Die folgenden Regeln sind ein Draft-0.3-Vorschlag.
 

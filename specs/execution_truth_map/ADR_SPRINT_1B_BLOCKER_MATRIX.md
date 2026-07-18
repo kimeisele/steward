@@ -4,6 +4,9 @@
 > Datum: 2026-07-18
 > Scope: Federation Delegation Contract V1 Draft 0.3
 
+> Historische Sprint-1B-Matrix. Die aktuelle Matrix steht im Sprint-1C-Review-Packet und
+> wird mit Draft 0.4 fortgeschrieben.
+
 | Blocker | Current evidence | Draft-0.3 rule | Status | Gate |
 |---|---|---|---|---|
 | Transport vs Application Retry | Old rule reused message_id ambiguously | same bytes/message_id only for valid transport retransmission; reissue gets new envelope/message_id | addressed, review required | Agent-B approval |

@@ -5,6 +5,9 @@
 > Repository: kimeisele/steward
 > Scope: Federation Delegation Contract V1; kein Produktcode
 
+> Historischer Sprint-1B-Stand. Agent-B-Review hat einen engen Sprint 1C angefordert. Die
+> aktuelle Unterlage ist `AGENT_B_ADR_SPRINT_1C_REVIEW_PACKET.md`.
+
 Dieses Dokument ist eine vollständig eigenständige Review-Unterlage. Es enthält die
 Evidenzbasis, die revidierten Entscheidungen, Wire-Regeln, Receipt-/Recovery-Semantik,
 Statusmodell, offene Abhängigkeiten und den Review-Auftrag. Keine weitere Datei ist für die

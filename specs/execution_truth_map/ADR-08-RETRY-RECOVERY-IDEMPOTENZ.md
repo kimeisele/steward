@@ -1,6 +1,6 @@
 # ADR-08 — RETRY-, RECOVERY- UND IDEMPOTENZVERTRAG
 
-> **Status:** AMENDED — SPRINT 1B REVISION IN `ADR_DECISION_SPRINT_1B_REVISION.md`
+> **Status:** AMENDED — SPRINT 1C REVISION IN `ADR_DECISION_SPRINT_1C_REVISION.md`
 > **Hinweis:** Der folgende Sprint-1-Text ist historische Begründung; request_digest und
 > Application-Reissue werden ausschließlich in Sprint 1B normativ ergänzt.
 > **Datum:** 2026-07-18
@@ -131,3 +131,11 @@ verboten.
 **Entscheidung:** ACCEPTED für V1. Implementierung nicht freigegeben. Vor Code müssen
 Ledger-Owner, atomare Persistenz, Lease-Details und der Cross-Repo-Crash-Crucible als
 ausführbare Tests präzisiert werden.
+
+## Sprint-1C-Amendment
+
+`request_digest` ist der SHA-256-Digest der exakt definierten semantischen Request-Payload;
+`idempotency_key` ist deterministisch `fedv1:` plus Digest. Ein Application-Reissue ist nur
+nach `delegation_status_query` bei UNKNOWN oder delivery_expired_before_admission zulässig.
+Bei ACCEPTED, EXECUTING, RECOVERY_REQUIRED oder terminalem Target-Zustand ist Reissue
+verboten. Status Query ist read-only, rate-limited und selbst idempotent.

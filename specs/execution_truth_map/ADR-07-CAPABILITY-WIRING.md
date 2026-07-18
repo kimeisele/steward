@@ -1,6 +1,6 @@
 # ADR-07 — CAPABILITY-WIRING-DEFINITION
 
-> **Status:** AMENDED — SPRINT 1B REVISION IN `ADR_DECISION_SPRINT_1B_REVISION.md`
+> **Status:** AMENDED — SPRINT 1C REVISION IN `ADR_DECISION_SPRINT_1C_REVISION.md`
 > **Hinweis:** Der folgende Sprint-1-Text ist historische Begründung; die neuen Statusstufen
 > stehen in der Sprint-1B-Revision.
 > **Datum:** 2026-07-18
@@ -131,3 +131,14 @@ Empfänger besitzt.
 
 **Entscheidung:** ACCEPTED als Governance-/CI-Gate. Die konkrete Manifestdatei und der
 Auditor sind noch nicht Produktcode und werden erst nach Contract-Freeze spezifiziert.
+
+## Sprint-1C-Amendment
+
+Lifecycle-Reife und Disposition werden getrennt geführt. Reife:
+`declared`, `partially_wired`, `code_complete`, `crucible_verified`, `production_proven`.
+Disposition: `active`, `unavailable`, `legacy`, `disabled`. `implemented` ist kein
+Draft-0.4-Status. Der Manifest-Key enthält mindestens Operation, Version, Repository,
+Richtung und Target. `active` verlangt im Testprofil mindestens `crucible_verified` und im
+Produktionsprofil `production_proven`. `delegation_status_query` und `delegation_status`
+sind selbst Manifest-Einträge mit Read-only-Authority, exaktem Target, Snapshot-Handler,
+Replay-/Rate-Limit-Tests und Produktions-Evidence.

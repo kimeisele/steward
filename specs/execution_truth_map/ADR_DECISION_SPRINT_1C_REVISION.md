@@ -1,0 +1,329 @@
+# ADR DECISION SPRINT 1C — NORMATIVE REVISION
+
+> Status: REVISION PROPOSED — Agent-B-Review erforderlich
+> Datum: 2026-07-18
+> Scope: Federation Delegation Contract V1; kein Produktcode
+
+Sprint 1C behandelt ausschließlich die von Agent B in Draft 0.3 identifizierten normativen
+Lücken. Draft 0.4 ist die daraus abgeleitete Contract-Fassung und bleibt bis Review offen.
+
+## 1. Status
+
+| ADR | Status |
+|---|---|
+| ADR-02 | AMENDED / REVIEW REQUIRED |
+| ADR-06 | OPEN / REVISION REQUIRED |
+| ADR-07 | AMENDED / REVIEW REQUIRED |
+| ADR-08 | AMENDED / REVIEW REQUIRED |
+| ADR-09 | AMENDED / REVIEW REQUIRED |
+
+## 2. Wrong-Target und Auth-Failure
+
+Ein target_node_id, das nicht der lokalen Node-ID entspricht, erzeugt ausschließlich:
+
+- internes Finding/Quarantine
+- Rate-Limit und Amplification-Schutz
+- keine signierte Netzwerkantwort
+- kein Reject-Receipt
+- kein Routing-/Identity-Orakel
+- keine Target-/Origin-Ledger-Transition
+
+Das gilt auch bei gültiger Signatur und Registry-Provenance. Die lokale Node bestätigt nicht,
+ob eine andere Node, Capability oder Authority existiert.
+
+Ein externes signiertes Reject-Receipt ist nur zulässig, wenn Signatur, Registry-Provenance,
+Sender-Authority und korrektes lokales Target bereits erfolgreich geprüft sind. Zulässige
+fachliche Rejects sind unsupported_contract, authority_denied, capability_unavailable,
+request_digest_mismatch, duplicate_conflict, idempotency_conflict und expired.
+
+## 3. Root-Identity und Key-Provenance
+
+### Root
+
+- Root-Ed25519-Key wird beim Bootstrap offline/HSM-geschützt erzeugt.
+- Root-Private-Key wird nie übertragen und nie in Runtime-Envelopes eingebettet.
+- Eine verschlüsselte Recovery-Kopie wird getrennt aufbewahrt.
+- Runtime-Worker erhalten nur aktivierte Signing-Keys.
+
+Enrollment-Body:
+
+~~~text
+(node_id, identity_root_public_key, registry_epoch, not_before, provenance_metadata)
+~~~
+
+Root-Domain:
+
+~~~text
+STEWARD-FEDERATION-ROOT-ENROLLMENT-V1\0
+~~~
+
+Die Registry akzeptiert ein Enrollment nur nach korrekter Root-Signatur, Node-ID-Ableitung,
+Registry-Epoch-Prüfung und Kollisionsprüfung.
+
+### Stabile Node-ID
+
+~~~text
+node_id =
+  "ag_" + erste 32 lowercase Hex-Zeichen von
+  SHA256(identity_root_public_key_hex_ascii)
+~~~
+
+Die Node-ID bleibt bei Signing-Key-Rotation stabil.
+
+### Signing-Key-Zertifikat
+
+~~~text
+(node_id, key_id, signer_key, not_before, not_after,
+ rotation_kind, certificate_epoch)
+~~~
+
+Root-Domain:
+
+~~~text
+STEWARD-FEDERATION-SIGNING-KEY-AUTH-V1\0
+~~~
+
+Eine Registry-Zeile ohne Root-signiertes Key-Certificate ist keine ausreichende Key-Bindung.
+
+### key_id und Aktivierung
+
+~~~text
+key_id =
+  "key_" + vollständige 64 lowercase Hex-Zeichen von
+  SHA256(signing_public_key_raw_bytes)
+~~~
+
+Ablauf:
+
+1. Certificate wird als pending registriert.
+2. Registry aktiviert mit activation_epoch und activation_at.
+3. Signing vor activation_at ist verboten.
+4. Target prüft Root-Certificate und Registry-Status.
+
+### Rotation, Root-Ablösung, Collision
+
+- reguläre Rotation: neue key_id, stabile node_id, explizites Überlappungsfenster
+- emergency_compromise: sofortige Sperre für neue Messages
+- Root-Rotation: alte Root signiert neue Root; neue Root signiert Übergang; effective_at und
+  transition_epoch sind Pflicht
+- Root-Verlust/-Kompromittierung: Governance-/Operator-Recovery mit explizitem Beleg
+- gleiche node_id mit anderer Root: node_id_collision, Reject/Quarantine
+- identisches Enrollment derselben Root: idempotent
+- konkurrierende Registrierungen: registry_epoch/Governance-Entscheidung; bis dahin nicht aktiv
+- kein stilles Überschreiben oder automatisches Umbenennen
+
+## 4. Revocation-Zeitmodell
+
+Jedes Key-Certificate führt:
+
+~~~text
+not_before
+not_after
+revoked_at
+revocation_effective_at
+revocation_reason
+rotation_kind
+~~~
+
+- not_before: frühester zulässiger issued_at
+- not_after: spätester zulässiger issued_at
+- revoked_at: Registrierung der Revocation
+- revocation_effective_at: Beginn der Ablehnung neuer Messages
+- revocation_reason: rotation, compromise, lost, operator_action oder other
+- rotation_kind: regular oder emergency_compromise
+
+Reguläre Rotation lässt alte Messages mit issued_at vor effective_at bei vollständiger
+Provenance verifizierbar.
+
+Bei Kompromittierung:
+
+- bekannter compromise_time: effective_at = frühester belegter Kompromiss
+- unbekannter compromise_time: effective_at = früheste Registry-/Operator-Beobachtung
+- Zwischenzeit: historical_uncertain, nicht allein aufgrund issued_at < revoked_at gültig
+- zusätzliche unabhängige Evidence erforderlich, sonst Quarantine
+- issued_at >= effective_at wird abgelehnt
+- emergency_compromise erzeugt keine automatische historische Verification
+
+Historische Verifikation benötigt Root-/Key-Provenance, gültiges Zeitfenster, gültige Domain-
+Signatur und keine historical_uncertain-Markierung. Provenance wird mindestens bis not_after
+plus maximaler Envelope-Gültigkeit, Clock-Skew und konfigurierte Audit-Retention behalten.
+Gelöschte Provenance ergibt unavailable, nie verified.
+
+## 5. SFDJ-1 Canonical JSON
+
+Draft 0.4 verwendet das sprachneutrale Steward Federation Delegation JSON Canonicalization
+Profile 1 (SFDJ-1).
+
+- UTF-8 ohne BOM
+- Duplicate Keys sind Parse-Fehler
+- Object Keys und Stringwerte müssen bereits NFC sein; Nicht-NFC wird abgelehnt
+- rekursive NFC-Prüfung auf alle Keys und Stringwerte
+- unpaired Surrogates verboten
+- Keys nach NFC-normalisierten UTF-8-Bytefolgen lexikographisch sortiert
+- Arrays behalten Reihenfolge
+- keine Whitespace-Bytes außerhalb von Strings
+- Slash wird nicht escaped
+- Quote/Backslash Standard-Escape
+- U+0000 bis U+001F als lowercase \u00xx
+- sonstige Unicode-Codepoints als UTF-8 ohne ASCII-Escaping
+- nur Integer -2^63 bis 2^63-1
+- keine Floats, Exponenten, führenden Pluszeichen, führenden Nullen, -0, NaN, Infinity
+- vollständige Eingangsbytes müssen bytegleich der SFDJ-1-Rekonstruktion sein
+- semantisch gleiche, byteverschiedene Bytes werden rejected_noncanonical
+- Envelope 256 KiB, Payload 128 KiB, Tiefe 16, Array 1024, Key 256 Bytes, String 64 KiB
+- Base64 RFC 4648 Standard mit erforderlichem Padding; URL-safe Zeichen und Whitespace verboten
+- contract_version exakt federation-delegation-v1
+
+## 6. Request- und Receipt-Reissue
+
+Request-Transport-Retransmission:
+
+- gleiche Bytes, message_id, message_hash, request_digest, issued_at, expires_at und Signatur
+- nur vor Ablauf, kein neuer Ledger-Übergang
+
+Request-Application-Reissue:
+
+- neue message_id, issued_at/expires_at, message_hash und Signatur
+- gleiche delegation_id, request_digest, Authority, Target und request_message_id
+- causation_message_id verweist auf Status-/Recovery-Entscheidung
+- nur nach Status Query bei UNKNOWN oder delivery_expired_before_admission
+- kein neues target_work_id bei bekannter Admission/Execution/Recovery
+
+Receipt-Transport-Retransmission:
+
+- gleiche Bytes, message_id, receipt_id, receipt_content_digest, request_message_id,
+  causation_message_id, Zeitwerte und Signatur
+- nur vor Ablauf
+
+Receipt-Application-Reissue:
+
+- neue message_id, issued_at/expires_at, message_hash und Signatur
+- gleiche receipt_id und gleicher receipt_content_digest
+- gleicher fachlicher Inhalt
+- gleicher request_message_id
+- neue causation_message_id
+- keine neue Receipt-Stufe und kein neuer Ledger-Übergang
+
+receipt_content_digest:
+
+~~~text
+lowercase_hex(SHA256(SFDJ-1(canonical_receipt_content)))
+~~~
+
+receipt_content enthält receipt_id, receipt_stage, delegation_id, request_message_id,
+target_work_id, status und evidence_refs. Transport-, Envelope- und Signatur-IDs sind
+ausgeschlossen.
+
+Gleiche receipt_id mit gleichem content digest ist Replay/Reissue. Gleiche receipt_id mit
+anderem content digest ist receipt_id_conflict.
+
+## 7. Request-Root und Kausalität
+
+- request_message_id bleibt über den gesamten Lifecycle die allererste delegate_task-Message.
+- Application-Reissue erhält niemals einen neuen Request-Root.
+- causation_message_id verweist auf die unmittelbar auslösende Statusantwort, Receipt-Reissue-
+  Anforderung oder Recovery-Entscheidung.
+- Jede Receipt-/Result-Message ist direkt zum ersten Request zurückführbar.
+- subject_message_id ist im V1-Schema verboten.
+
+## 8. Status-Query-Contract
+
+### delegation_status_query
+
+- Origin → exakter Target
+- source_node_id = registrierter Origin
+- target_node_id = ursprünglicher Zielknoten
+- request_message_id = erste Request-Message
+- causation_message_id fehlt bei erster Query
+- correlation_id = delegation_id
+- read-only, kein Target-Ledger-Side-Effect
+- nur registrierter Origin/autorisiertes Relay
+- Rate-Limit pro Source und Delegation
+- UNKNOWN darf authentifiziert und korrekt adressiert signiert zurückgegeben werden
+- falsche/unauthentifizierte Query: internes Finding/Quarantine ohne Antwort
+
+Payload:
+
+~~~json
+{
+  "delegation_id": "...",
+  "request_message_id": "...",
+  "known_request_digest": "...",
+  "query_scope": "lifecycle_and_receipts"
+}
+~~~
+
+### delegation_status
+
+- Target → registrierter Origin
+- source_node_id = Target
+- target_node_id = Origin
+- request_message_id = erste Request-Message
+- causation_message_id = Query-Message
+- correlation_id = delegation_id
+- signierter Snapshot, keine Receipt und keine Verification
+
+Payload:
+
+~~~json
+{
+  "delegation_id": "...",
+  "request_message_id": "...",
+  "snapshot_id": "...",
+  "snapshot_version": 7,
+  "target_state": "UNKNOWN|ACCEPTED|EXECUTING|RECOVERY_REQUIRED|RESULT_REPORTED|REJECTED|EXPIRED",
+  "target_work_id": null,
+  "request_digest": "...",
+  "observed_receipt_stages": [],
+  "terminal_status": null,
+  "as_of": "YYYY-MM-DDTHH:MM:SSZ"
+}
+~~~
+
+snapshot_version ist monoton pro delegation_id. Query-Replay ist idempotent; neue Queries
+erzeugen keine Arbeit. Wiring verlangt Emitter, exact target, read_status Authority,
+read-only Target-Handler, Snapshot-Result, Replay-/Rate-Limit-/UNKNOWN-/Wrong-Target-Tests
+und Produktions-Evidence.
+
+## 9. Capability-Statusachsen
+
+Lifecycle maturity:
+
+- declared
+- partially_wired
+- code_complete
+- crucible_verified
+- production_proven
+
+Disposition:
+
+- active
+- unavailable
+- legacy
+- disabled
+
+Manifest-Key:
+
+~~~text
+(operation, contract_version, repository, direction, target)
+~~~
+
+Verboten:
+
+- declared + active
+- partially_wired + active
+- unavailable + active
+- legacy + active im federation-delegation-v1-Profil
+
+active verlangt crucible_verified im Testprofil und production_proven im Produktionsprofil.
+disabled ist mit jeder Reife zulässig. implemented ist kein Draft-0.4-Status.
+
+## 10. Review-Gate
+
+Draft 0.4 ist erst READY FOR GOLDEN FIXTURES, wenn Root-/Key-/Revocation-Vertrag,
+SFDJ-1, Request-/Receipt-Reissue, Request-Root, Status Query, Wrong-Target-Regel,
+Auth-Failure-Trennung, Capability-Statusachsen und erste Payload-Subschemas von Agent B
+bestätigt sind.
+
+Bis dahin kein Produktcode, keine Fixtures, kein Crucible-Design, kein Merge. Phase 1 und
+Context Bridge bleiben unverändert.

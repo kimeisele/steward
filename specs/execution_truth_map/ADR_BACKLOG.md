@@ -26,15 +26,19 @@ Sprint 1B hat Agent-Bs Review aufgenommen. Draft 0.2 ist für Golden-Wire-Fixtur
 Crucible-Design gesperrt. Die revidierten Regeln stehen in
 `ADR_DECISION_SPRINT_1B_REVISION.md`; die normative Contract-Fassung ist Draft 0.3.
 
+Sprint 1C hat die verbleibenden Draft-0.3-Lücken normativ ergänzt. Draft 0.4 bleibt bis
+Agent-B-Abnahme für Golden-Wire-Fixtures gesperrt. Vollständige Revision:
+`ADR_DECISION_SPRINT_1C_REVISION.md`.
+
 ## Decision Sprint 1 — Ergebnisübersicht
 
 | ADR | Status | Einzelentscheidung |
 |---|---|---|
-| ADR-02 | AMENDED / REVIEW REQUIRED | Transport-Replay vs Application-Reissue, neue request-/causation-IDs |
-| ADR-06 | OPEN / REVISION REQUIRED | stable Node-ID, key_id, Rotation, Revocation, Domain Separation, vollständige Canonical Bytes |
-| ADR-07 | AMENDED / REVIEW REQUIRED | declared → partially_wired → code_complete → crucible_verified → production_proven |
-| ADR-08 | AMENDED / REVIEW REQUIRED | request_digest, deterministischer idempotency_key, Statusabfrage vor Reissue |
-| ADR-09 | AMENDED / REVIEW REQUIRED | Partial Order, Out-of-Order, Kausalitäts-IDs, exakter Receipt-Replay |
+| ADR-02 | AMENDED / SPRINT 1C REVIEW | Reissue-Root, Statusabfrage und Receipt-Reissue ergänzt |
+| ADR-06 | OPEN / SPRINT 1C REVIEW | Root-Identity, Zertifikate, Revocation, SFDJ-1, Domain Separation |
+| ADR-07 | AMENDED / SPRINT 1C REVIEW | Zwei Statusachsen; Status Query vollständig verkabelt |
+| ADR-08 | AMENDED / SPRINT 1C REVIEW | Status Query vor Reissue, Digest-/Replay-Bindung |
+| ADR-09 | AMENDED / SPRINT 1C REVIEW | receipt_content_digest und Reissue-Semantik |
 
 Die Einzel-ADRs enthalten Optionen, Auswirkungen, Gegenargument und Implementierungsreife.
 Eine `ACCEPTED`-Entscheidung autorisiert noch keinen Produktcode.
@@ -53,7 +57,7 @@ Workflow und Verification hinweg kanonisch, und wo wird sie erzeugt und persisti
 **Frage:** Sind Execution-ID, Correlation-ID und Message-ID zwingend getrennte Identitäten,
 und welche Kardinalitäts- und Ableitungsregeln gelten zwischen ihnen?
 
-**Status:** AMENDED / REVIEW REQUIRED — Sprint 1B; Details: `ADR_DECISION_SPRINT_1B_REVISION.md`
+**Status:** AMENDED / REVIEW REQUIRED — Sprint 1C; Details: `ADR_DECISION_SPRINT_1C_REVISION.md`
 
 **Recon-Bezug:** Truth Map §3; mehrere Transport-IDs existieren, Correlation ist häufig leer.
 
@@ -89,7 +93,7 @@ Outcome, ein Health-Signal oder eine verbindliche Kombination davon?
 **Frage:** Welches kanonische Federation-Signaturformat gilt für Signaturscope, Hash,
 Encoding, Key-Provenance und Hub-Mutationen?
 
-**Status:** OPEN / REVISION REQUIRED — Sprint 1B; Details: `ADR_DECISION_SPRINT_1B_REVISION.md`
+**Status:** OPEN / REVISION REQUIRED — Sprint 1C; Details: `ADR_DECISION_SPRINT_1C_REVISION.md`
 
 **Recon-Bezug:** Truth Map §7.4; Steward und Agent City verifizieren unterschiedliche Bytes.
 
@@ -99,7 +103,7 @@ Encoding, Key-Provenance und Hub-Mutationen?
 Authority-Gate, Result-Operation und End-to-End-Test deklarieren, bevor sie als implementiert
 gilt?
 
-**Status:** AMENDED / REVIEW REQUIRED — Sprint 1B; Details: `ADR_DECISION_SPRINT_1B_REVISION.md`
+**Status:** AMENDED / REVIEW REQUIRED — Sprint 1C; Details: `ADR_DECISION_SPRINT_1C_REVISION.md`
 
 **Recon-Bezug:** Truth Map §7.1–7.3; `ALL_OPERATIONS` kodiert keine Richtung oder Vollständigkeit.
 
@@ -108,7 +112,7 @@ gilt?
 **Frage:** Welche Idempotenzregeln gelten für Retry, Timeout, Crash-Recovery und doppelte
 Nachrichten, insbesondere nach partiell ausgeführten Tool Calls?
 
-**Status:** AMENDED / REVIEW REQUIRED — Sprint 1B; Details: `ADR_DECISION_SPRINT_1B_REVISION.md`
+**Status:** AMENDED / REVIEW REQUIRED — Sprint 1C; Details: `ADR_DECISION_SPRINT_1C_REVISION.md`
 
 **Recon-Bezug:** Truth Map §3.2, §5 und §7.5; keine stabile Execution-Korrelation vorhanden.
 
@@ -117,7 +121,7 @@ Nachrichten, insbesondere nach partiell ausgeführten Tool Calls?
 **Frage:** Welche getrennten Receipts bestätigen Transport, Annahme, Ausführungsbeginn,
 terminales Ergebnis und verifizierte Wirkung, und wer darf sie ausstellen?
 
-**Status:** AMENDED / REVIEW REQUIRED — Sprint 1B; Details: `ADR_DECISION_SPRINT_1B_REVISION.md`
+**Status:** AMENDED / REVIEW REQUIRED — Sprint 1C; Details: `ADR_DECISION_SPRINT_1C_REVISION.md`
 
 **Recon-Bezug:** Truth Map §6; heutiges `DeliveryReceipt` bestätigt keine konkrete Wirkung.
 
@@ -132,7 +136,8 @@ terminales Ergebnis und verifizierte Wirkung, und wer darf sie ausstellen?
 
 ## Gate
 
-ADR-02, -07, -08 und -09 sind durch Sprint 1B amendiert, aber noch nicht für Fixture-Freeze
-bestätigt. ADR-06 ist bis zur Agent-Bestätigung von Node-ID, Key-Rotation, Revocation und
-Domain Separation `OPEN`. ADR-01, -03, -04, -05 und -10 bleiben OPEN. Keine Entscheidung
-darf durch eine Spec oder spätere Execution-Spine-Spec implizit erweitert werden.
+ADR-02, -07, -08 und -09 sind durch Sprint 1C amendiert, aber noch nicht für Fixture-Freeze
+bestätigt. ADR-06 ist bis zur Agent-Bestätigung von Root-Identity, Key-Certificates,
+Revocation, SFDJ-1 und Domain Separation `OPEN`. ADR-01, -03, -04, -05 und -10 bleiben
+OPEN. Keine Entscheidung darf durch eine Spec oder spätere Execution-Spine-Spec implizit
+erweitert werden.

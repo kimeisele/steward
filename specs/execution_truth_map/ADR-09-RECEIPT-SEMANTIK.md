@@ -1,6 +1,6 @@
 # ADR-09 — RECEIPT-SEMANTIK
 
-> **Status:** AMENDED — SPRINT 1B REVISION IN `ADR_DECISION_SPRINT_1B_REVISION.md`
+> **Status:** AMENDED — SPRINT 1C REVISION IN `ADR_DECISION_SPRINT_1C_REVISION.md`
 > **Hinweis:** Der folgende Sprint-1-Text ist historische Begründung; Partial Order und
 > request-/causation_message_id aus Sprint 1B sind die neue normative Grundlage.
 > **Datum:** 2026-07-18
@@ -140,3 +140,13 @@ spätere Betriebsparameter, ändern aber nicht die Stufensemantik.
 **Entscheidung:** ACCEPTED für V1. Implementierung nicht freigegeben. Vor Code müssen
 Receipt-Schema, Issuer-Key-Bindung, persistente Retention und der Stufen-Crucible als
 ausführbare Tests eingefroren werden.
+
+## Sprint-1C-Amendment
+
+Receipt-Transport-Retransmission behält Bytes, message_id, receipt_id,
+receipt_content_digest und Signatur. Receipt-Application-Reissue erzeugt eine neue
+message_id, issued_at/expires_at, message_hash und Signatur, aber dieselbe receipt_id und
+denselben receipt_content_digest; es erzeugt keine neue Stage oder Ledger-Transition.
+Gleiche receipt_id mit verändertem Content-Digest ist `receipt_id_conflict`. Der Partial
+Order ist nicht linear; terminal darf out-of-order vor dem Started-Receipt eintreffen und
+wird als pending evidence persistiert, bis der Target-Ledger den Start belegt.
