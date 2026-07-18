@@ -2548,3 +2548,40 @@ Das self-contained Review-Packet steht in:
 Die Entscheidung bleibt `NOT READY FOR GOLDEN FIXTURES`. Produktcode, Phase 1 und Context
 Bridge bleiben unverändert; ADR-05 und ADR-10 bleiben spätere Produktions-/Integrations-
 Blocker.
+
+## §30 — ADR DECISION SPRINT 1C FREEZE: DRAFT 0.5 READY FOR GOLDEN FIXTURES (2026-07-18)
+
+Agent B hat Draft 0.4 als architektonisch tragfähig, aber wegen drei eng begrenzter Freeze-
+Aufgaben noch nicht fixture-ready bewertet. Diese Aufgaben sind nun dokumentarisch und
+normativ geschlossen; es wurde kein Produktcode geändert:
+
+- Geschlossene V1-Payload-Schemas für `delegate_task`, `delegation_receipt` mit den Stufen
+  `transport_committed`, `admission`, `started`, `terminal`, `verification`, sowie
+  `delegation_status_query` und `delegation_status`: Typen, Pflichtfelder, Nullability,
+  Limits, Enums, Unknown-Field-Verbot, Digest-Bindung und Authority-/Privacy-Semantik.
+- Root-Verlust/-Kompromittierung ist kein Federation-Recovery-Pfad: Node fail-closed für
+  neue V1-Nachrichten; manuelle out-of-band Governance/Neu-Enrollment außerhalb V1; keine
+  Quorum-, automatische Übernahme- oder Root-Replacement-Semantik; Historie/Audit bleiben.
+- Status Query ist auf die kryptografisch gebundene eigene `delegation_id` beschränkt.
+  Antwort ist ein minimales Snapshot-Schema ohne fremde Delegationen, Worker-/Lease-
+  Details, Stacktraces, Secrets, Pfade oder unvereinbarte Evidence; `UNKNOWN` verrät keine
+  anderen Zustände; Rate-Limit und Audit-Finding bleiben lokal.
+
+SFDJ-1 bleibt unverändert eingefroren. ADR-02, ADR-06, ADR-07, ADR-08 und ADR-09 sind im
+engen Federation-V1-Wire-Scope `ACCEPTED`. Die Contract-Fassung ist:
+
+`specs/FEDERATION_DELEGATION_CONTRACT_V1_DRAFT_0_5.md`
+
+Das vollständige self-contained Agent-B-Freeze-Packet ist:
+
+`specs/execution_truth_map/AGENT_B_ADR_SPRINT_1C_FREEZE_REVIEW_PACKET.md`
+
+Die endgültige Matrix ist:
+
+`specs/execution_truth_map/ADR_SPRINT_1C_FINAL_BLOCKER_MATRIX.md`
+
+Damit ist Draft 0.5 `READY FOR GOLDEN FIXTURES`. Dieser Status autorisiert ausschließlich
+den nächsten Milestone: Golden-Wire-Fixtures plus unabhängige Steward-/Agent-City-Parser-
+und Signaturtests. Noch gesperrt bleiben Produktcode, Handler, Ledger-/Workflow-Änderungen,
+Crucible-Ausführung, Merge, Phase 1 und Context Bridge. ADR-03, ADR-05 und ADR-10 bleiben
+spätere Managed-Task-, Produktions- und Integrationsblocker.

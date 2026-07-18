@@ -430,3 +430,8 @@ Die revidierte Grundlage ist `ADR_DECISION_SPRINT_1B_REVISION.md`; Draft 0.2 ist
 Fixture-/Crucible-Basis. ADR-06 bleibt bis zur Bestätigung von Node-ID, key_id, Rotation,
 Revocation und Domain Separation offen. Draft 0.3 steht in
 `specs/FEDERATION_DELEGATION_CONTRACT_V1_DRAFT_0_3.md`.
+
+Nach dem Sprint-1C-Freeze ist Draft 0.5 die aktuelle, geschlossene Federation-V1-Wire-
+Fassung und `READY FOR GOLDEN FIXTURES`. Diese Statusänderung betrifft ausschließlich den
+nachfolgenden Soll-Vertrag; der historische IST-Recon bleibt unverändert. Produktcode,
+Phase 1 und Context Bridge sind weiterhin nicht autorisiert.

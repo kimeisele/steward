@@ -1,21 +1,22 @@
 # ADR DECISION SPRINT 1C — NORMATIVE REVISION
 
-> Status: REVISION PROPOSED — Agent-B-Review erforderlich
+> Status: ACCEPTED — SPRINT 1C FREEZE (enger Federation-V1-Scope)
 > Datum: 2026-07-18
 > Scope: Federation Delegation Contract V1; kein Produktcode
 
 Sprint 1C behandelt ausschließlich die von Agent B in Draft 0.3 identifizierten normativen
-Lücken. Draft 0.4 ist die daraus abgeleitete Contract-Fassung und bleibt bis Review offen.
+Lücken. Draft 0.5 ist die eingefrorene Contract-Fassung; die Entscheidung ist im engen
+Federation-V1-Wire-Scope ACCEPTED. Produktcode und Fixtures bleiben gesperrt.
 
 ## 1. Status
 
 | ADR | Status |
 |---|---|
-| ADR-02 | AMENDED / REVIEW REQUIRED |
-| ADR-06 | OPEN / REVISION REQUIRED |
-| ADR-07 | AMENDED / REVIEW REQUIRED |
-| ADR-08 | AMENDED / REVIEW REQUIRED |
-| ADR-09 | AMENDED / REVIEW REQUIRED |
+| ADR-02 | ACCEPTED — SPRINT 1C FREEZE |
+| ADR-06 | ACCEPTED — SPRINT 1C FREEZE |
+| ADR-07 | ACCEPTED — SPRINT 1C FREEZE |
+| ADR-08 | ACCEPTED — SPRINT 1C FREEZE |
+| ADR-09 | ACCEPTED — SPRINT 1C FREEZE |
 
 ## 2. Wrong-Target und Auth-Failure
 
@@ -320,10 +321,33 @@ disabled ist mit jeder Reife zulässig. implemented ist kein Draft-0.4-Status.
 
 ## 10. Review-Gate
 
-Draft 0.4 ist erst READY FOR GOLDEN FIXTURES, wenn Root-/Key-/Revocation-Vertrag,
-SFDJ-1, Request-/Receipt-Reissue, Request-Root, Status Query, Wrong-Target-Regel,
-Auth-Failure-Trennung, Capability-Statusachsen und erste Payload-Subschemas von Agent B
-bestätigt sind.
+Der historische Draft-0.4-Gate-Text verlangte Agent-B-Bestätigung von Root-/Key-/Revocation-
+Vertrag, SFDJ-1, Request-/Receipt-Reissue, Request-Root, Status Query, Wrong-Target-Regel,
+Auth-Failure-Trennung, Capability-Statusachsen und Payload-Subschemas. Dieses Gate ist in
+§11 durch den Sprint-1C-Freeze erfüllt und superseded.
 
 Bis dahin kein Produktcode, keine Fixtures, kein Crucible-Design, kein Merge. Phase 1 und
 Context Bridge bleiben unverändert.
+
+## 11. Sprint-1C-Freeze
+
+Agent-Bs drei engen Freeze-Aufgaben sind normativ geschlossen:
+
+1. Die Payload-Schemas für delegate_task, delegation_receipt (transport_committed,
+   admission, started, terminal, verification), delegation_status_query und
+   delegation_status sind geschlossen: Typen, Pflichtfelder, Nullability, Limits, Enums,
+   Unknown-Field-Verbot, Digest-Bindung sowie Authority-/Privacy-Bedeutung stehen in Draft
+   0.5 und dem self-contained Freeze-Packet.
+2. Root-Verlust oder -Kompromittierung wird nicht automatisch durch Federation repariert.
+   Die Node fail-closed für neue V1-Nachrichten; Root-Recovery/Neu-Enrollment ist manuell,
+   out-of-band und nicht Teil von V1. Quorum, automatische Übernahme und Root-Replacement
+   sind ausdrückliche Nicht-Ziele; Historie und Audit bleiben erhalten.
+3. Status Query ist auf die kryptografisch gebundene eigene delegation_id begrenzt.
+   Das Snapshot-Schema ist minimal; fremde Delegationen, Worker-/Lease-Details,
+   Stacktraces, Secrets, Pfade und nicht vertragliche Evidence werden nicht ausgegeben.
+   UNKNOWN ist kein Existenz-Orakel; Rate-Limit und Audit-Finding bleiben lokal.
+
+SFDJ-1 ist unverändert eingefroren. Draft 0.5 ist **READY FOR GOLDEN FIXTURES**. Dieser
+Status autorisiert ausschließlich den nächsten Dokument-/Test-Milestone (Golden-Wire-
+Fixtures und unabhängige Parser-/Signaturtests), nicht Produktimplementierung oder
+Crucible-Ausführung. ADR-03, ADR-05 und ADR-10 bleiben spätere Integrationsblocker.

@@ -1,11 +1,13 @@
-# FEDERATION DELEGATION CONTRACT V1 — DRAFT 0.4
+# FEDERATION DELEGATION CONTRACT V1 — DRAFT 0.4 (HISTORICAL)
 
-> Status: DRAFT 0.4 — REVISION PROPOSED; NOT READY FOR GOLDEN FIXTURES
+> Status: SUPERSEDED by Draft 0.5; retained as historical review baseline
 > Datum: 2026-07-18
 > Scope: gezielte Federation Delegation zwischen Steward und Agent City
 > Sperre: kein Produktcode, keine Aktivierung, kein Merge
 
-Draft 0.4 ersetzt Draft 0.3 normativ. Es ist noch nicht für Golden-Wire-Fixtures freigegeben.
+Draft 0.4 ersetzte Draft 0.3 als historische Review-Basis. Die normative und fixture-fähige
+Fassung ist `specs/FEDERATION_DELEGATION_CONTRACT_V1_DRAFT_0_5.md`; dieses Dokument wird
+nicht weiter als V1-SSOT fortgeschrieben.
 
 ## 1. Zweck und Nicht-Ziele
 

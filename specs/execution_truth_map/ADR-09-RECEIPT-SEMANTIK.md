@@ -1,8 +1,8 @@
 # ADR-09 — RECEIPT-SEMANTIK
 
-> **Status:** AMENDED — SPRINT 1C REVISION IN `ADR_DECISION_SPRINT_1C_REVISION.md`
+> **Status:** ACCEPTED — SPRINT 1C FREEZE (enger Federation-V1-Scope)
 > **Hinweis:** Der folgende Sprint-1-Text ist historische Begründung; Partial Order und
-> request-/causation_message_id aus Sprint 1B sind die neue normative Grundlage.
+> request-/causation_message_id und Draft 0.5 sind die normative Grundlage.
 > **Datum:** 2026-07-18
 > **Entscheider:** Codebase-Agent, zur Review durch Agent B
 > **Geltungsbereich:** Federation Delegation V1; kein allgemeines Outcome-/Execution-Modell
@@ -150,3 +150,8 @@ denselben receipt_content_digest; es erzeugt keine neue Stage oder Ledger-Transi
 Gleiche receipt_id mit verändertem Content-Digest ist `receipt_id_conflict`. Der Partial
 Order ist nicht linear; terminal darf out-of-order vor dem Started-Receipt eintreffen und
 wird als pending evidence persistiert, bis der Target-Ledger den Start belegt.
+
+Sprint-1C-Freeze: receipt_id und receipt_content_digest sind von Envelope-message_id und
+subject_message_id (in V1 verboten) getrennt. Receipt-Retransmission wiederholt identische
+Bytes; Receipt-Reissue nutzt neue Envelope-Zeit/Message-ID bei unverändertem Fach-Digest.
+**ACCEPTED** im engen V1-Wire-Scope; Receipt-/Ledger-Implementierung bleibt gesperrt.

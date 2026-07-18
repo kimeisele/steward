@@ -1,8 +1,8 @@
 # ADR-08 — RETRY-, RECOVERY- UND IDEMPOTENZVERTRAG
 
-> **Status:** AMENDED — SPRINT 1C REVISION IN `ADR_DECISION_SPRINT_1C_REVISION.md`
+> **Status:** ACCEPTED — SPRINT 1C FREEZE (enger Federation-V1-Scope)
 > **Hinweis:** Der folgende Sprint-1-Text ist historische Begründung; request_digest und
-> Application-Reissue werden ausschließlich in Sprint 1B normativ ergänzt.
+> Application-Reissue und die geschlossenen Digest-Regeln sind in Sprint 1B/1C normativ.
 > **Datum:** 2026-07-18
 > **Entscheider:** Codebase-Agent, zur Review durch Agent B
 > **Geltungsbereich:** Delegation Request, Admission, Result und Recovery; keine Provider-Spine
@@ -139,3 +139,8 @@ ausführbare Tests präzisiert werden.
 nach `delegation_status_query` bei UNKNOWN oder delivery_expired_before_admission zulässig.
 Bei ACCEPTED, EXECUTING, RECOVERY_REQUIRED oder terminalem Target-Zustand ist Reissue
 verboten. Status Query ist read-only, rate-limited und selbst idempotent.
+
+Sprint-1C-Freeze: Transport-Retransmission (identische Bytes/message_id) und Application-
+Reissue (neue message_id, gleicher Request-Root/Digest, kein zweiter Work-Handle) sind
+getrennt. Target- und Origin-Ledger, RECOVERY_REQUIRED und das Verbot blinder Neuausführung
+sind geschlossen. **ACCEPTED** im engen V1-Wire-Scope; Produktcode bleibt gesperrt.

@@ -1,6 +1,6 @@
 # ADR-07 — CAPABILITY-WIRING-DEFINITION
 
-> **Status:** AMENDED — SPRINT 1C REVISION IN `ADR_DECISION_SPRINT_1C_REVISION.md`
+> **Status:** ACCEPTED — SPRINT 1C FREEZE (enger Federation-V1-Scope)
 > **Hinweis:** Der folgende Sprint-1-Text ist historische Begründung; die neuen Statusstufen
 > stehen in der Sprint-1B-Revision.
 > **Datum:** 2026-07-18
@@ -142,3 +142,7 @@ Richtung und Target. `active` verlangt im Testprofil mindestens `crucible_verifi
 Produktionsprofil `production_proven`. `delegation_status_query` und `delegation_status`
 sind selbst Manifest-Einträge mit Read-only-Authority, exaktem Target, Snapshot-Handler,
 Replay-/Rate-Limit-Tests und Produktions-Evidence.
+
+Die geschlossenen Payload-Schemas, Unknown-Field-Regel und Mindestkriterien je
+Lifecycle-/Disposition-Achse sind in Draft 0.5 normativ eingefroren. **ACCEPTED** im engen
+V1-Wire-Scope; Manifest-Auditor und Handler bleiben spätere Implementierungsarbeit.

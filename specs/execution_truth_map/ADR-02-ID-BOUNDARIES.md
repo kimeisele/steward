@@ -1,8 +1,8 @@
 # ADR-02 — EXECUTION-, CORRELATION- UND MESSAGE-ID
 
-> **Status:** AMENDED — SPRINT 1C REVISION IN `ADR_DECISION_SPRINT_1C_REVISION.md`
+> **Status:** ACCEPTED — SPRINT 1C FREEZE (enger Federation-V1-Scope)
 > **Hinweis:** Der folgende Sprint-1-Text ist historische Begründung; Draft 0.3 und Sprint
-> 1B sind für normative Regeln maßgeblich.
+> 1B sind historischer Befund; Draft 0.5 ist für normative Regeln maßgeblich.
 > **Datum:** 2026-07-18
 > **Entscheider:** Codebase-Agent, zur Review durch Agent B
 > **Geltungsbereich:** Federation Delegation Contract V1; keine universelle Execution Spine
@@ -120,3 +120,8 @@ zulässig. Application-Reissue erhält eine neue message_id, issued_at, expires_
 und Signatur, aber dieselbe delegation_id, denselben request_digest und denselben
 request_message_id. `causation_message_id` verweist auf die auslösende Status-/Recovery-
 Message. `subject_message_id` ist Draft-0.4-verboten.
+
+Sprint-1C-Freeze: Die vollständigen Kardinalitäts-, Digest-, Reissue- und Causation-Regeln
+sind in `specs/FEDERATION_DELEGATION_CONTRACT_V1_DRAFT_0_5.md` geschlossen. Entscheidung
+im engen V1-Wire-Scope: **ACCEPTED**; Implementierung bleibt bis Golden-Wire-Fixtures und
+unabhängigen Parser-/Signaturtests gesperrt.

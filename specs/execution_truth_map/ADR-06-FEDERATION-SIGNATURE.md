@@ -1,8 +1,8 @@
 # ADR-06 — FEDERATION-SIGNATURVERTRAG
 
-> **Status:** OPEN / REVISION REQUIRED — SPRINT 1C
-> **Hinweis:** Der folgende Sprint-1-Text ist historischer Befund; Draft 0.3 bleibt bis zur
-> Agent-B-Bestätigung von Identity-, Rotation-, Revocation- und Domain-Regeln offen.
+> **Status:** ACCEPTED — SPRINT 1C FREEZE (enger Federation-V1-Scope)
+> **Hinweis:** Draft 0.5 friert Root-Provenance, Key-Rotation, Revocation, SFDJ-1 und
+> Domain Separation normativ ein; der folgende Sprint-1-Text bleibt Begründungsbefund.
 > **Datum:** 2026-07-18
 > **Entscheider:** Codebase-Agent, zur Review durch Agent B
 > **Geltungsbereich:** V1-Federation-Envelope; keine allgemeine Trust-/Identity-Neuordnung
@@ -125,7 +125,7 @@ Kompatibilität wäre sicherheitlich schlechter.
 Spec-Freeze benötigt Golden-Byte-Fixtures und einen adversarialen Cross-Repo-Verify-Test.
 Die bestehende `exclude_hub_id`-Logik bleibt ausschließlich historischer Legacy-Befund.
 
-## Sprint-1C-Amendment — normative Revision, noch offen
+## Sprint-1C-Amendment — normative Revision
 
 Draft 0.4 ersetzt die direkte Key→Node-ID-Kopplung durch eine stabile Node-ID aus der
 Identity-Root, `key_id` aus dem vollständigen Signing-Key-Fingerprint, Root-signierte
@@ -134,4 +134,8 @@ Collision-Handling und Root-Rotation. Root-Enrollment und Key-Certificate benöt
 domain-separated Root-Signaturen. Der Signaturinput verwendet
 `STEWARD-FEDERATION-DELEGATION-V1\0` plus den rohen SHA-256-Digest, nicht den ASCII-Hextext.
 Canonicalisierung folgt dem sprachneutralen SFDJ-1-Profil; `payload_hash` wird durch
-`message_hash` ersetzt. Diese Revision bleibt bis Agent-B-Bestätigung OPEN.
+`message_hash` ersetzt. Root-Verlust/-Kompromittierung ist ausschließlich manuell und
+out-of-band zu behandeln: die Node wird für neue V1-Nachrichten fail-closed deaktiviert;
+V1 definiert weder Quorum noch automatische Node-ID-Übernahme. Entscheidung im engen
+Federation-V1-Wire-Scope: **ACCEPTED**. Golden-Byte-Fixtures und Implementierung sind
+noch nicht begonnen.
