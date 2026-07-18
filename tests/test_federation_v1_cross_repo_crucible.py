@@ -6,7 +6,6 @@ the Agent City checkout is not available; CI can provide ``AGENT_CITY_REPO`` exp
 
 from __future__ import annotations
 
-import base64
 import importlib
 import json
 import os
@@ -15,7 +14,11 @@ from pathlib import Path
 
 import pytest
 
-from steward.federation_v1 import FederationV1Origin, OriginDelegationLedger
+from steward.federation_v1 import (
+    FederationV1Origin,
+    OriginDelegationLedger,
+    ValidatedFederationV1KeyRegistry,
+)
 
 ROOT = Path(__file__).parent / "fixtures" / "federation_v1"
 MANIFEST = json.loads((ROOT / "manifest.json").read_bytes())
@@ -27,10 +30,6 @@ def _private(label: str):
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
     return Ed25519PrivateKey.from_private_bytes(bytes.fromhex(KEYS[label]["private_seed_hex"]))
-
-
-def _public(label: str) -> bytes:
-    return base64.b64decode(KEYS[label]["public_key_b64"], validate=True)
 
 
 @pytest.mark.skipif(not os.environ.get("AGENT_CITY_REPO"), reason="requires the separate Agent City checkout")
@@ -45,12 +44,44 @@ def test_admission_only_cross_repo_crucible(tmp_path: Path) -> None:
         target_node = MANIFEST["positive"]["request"]["target_node_id"]
         origin_key_id = MANIFEST["positive"]["request"]["origin_key_id"]
         target_key_id = MANIFEST["positive"]["root_enrollment"]["target"]["key_id"]
-        origin_registry = {origin_key_id: {"node_id": origin_node, "public_key": _public("origin_signing_key")}}
-        target_registry = {target_key_id: {"node_id": target_node, "public_key": _public("target_signing_key")}}
-        payload = {key: value for key, value in REQUEST["payload"].items() if key not in {"request_digest", "idempotency_key"}}
-        origin = FederationV1Origin(ledger=OriginDelegationLedger(tmp_path / "origin.json"), node_id=origin_node, signing_key=_private("origin_signing_key"), signer_key_b64=KEYS["origin_signing_key"]["public_key_b64"], key_id=origin_key_id, enabled=True)
-        target = city_v1.FederationV1Admission(ledger=city_v1.TargetAdmissionLedger(tmp_path / "target.json"), node_id=target_node, signing_key=_private("target_signing_key"), signer_key_b64=KEYS["target_signing_key"]["public_key_b64"], key_id=target_key_id, registry=origin_registry, enabled=True)
-        request_wire, request_carrier = origin.create(payload=payload, target_node_id=target_node, message_id=REQUEST["message_id"], issued_at="2026-07-18T11:00:00Z", expires_at="2026-07-18T11:05:00Z")
+        provenance = ROOT / "provenance"
+        target_registry = ValidatedFederationV1KeyRegistry.from_provenance(
+            [json.loads((provenance / "target_root_enrollment.json").read_bytes())],
+            [json.loads((provenance / "target_signing_key_certificate.json").read_bytes())],
+            now="2026-07-18T11:00:00Z",
+        )
+        payload = {
+            key: value for key, value in REQUEST["payload"].items() if key not in {"request_digest", "idempotency_key"}
+        }
+        origin = FederationV1Origin(
+            ledger=OriginDelegationLedger(tmp_path / "origin.json"),
+            node_id=origin_node,
+            signing_key=_private("origin_signing_key"),
+            signer_key_b64=KEYS["origin_signing_key"]["public_key_b64"],
+            key_id=origin_key_id,
+            enabled=True,
+        )
+        city_origin_registry = city_v1.ValidatedFederationV1KeyRegistry.from_provenance(
+            [json.loads((provenance / "origin_root_enrollment.json").read_bytes())],
+            [json.loads((provenance / "origin_signing_key_certificate.json").read_bytes())],
+            now="2026-07-18T11:00:00Z",
+        )
+        target = city_v1.FederationV1Admission(
+            ledger=city_v1.TargetAdmissionLedger(tmp_path / "target.json"),
+            node_id=target_node,
+            signing_key=_private("target_signing_key"),
+            signer_key_b64=KEYS["target_signing_key"]["public_key_b64"],
+            key_id=target_key_id,
+            registry=city_origin_registry,
+            enabled=True,
+        )
+        request_wire, request_carrier = origin.create(
+            payload=payload,
+            target_node_id=target_node,
+            message_id=REQUEST["message_id"],
+            issued_at="2026-07-18T11:00:00Z",
+            expires_at="2026-07-18T11:05:00Z",
+        )
         assert request_wire == (ROOT / "messages" / "delegate_task.json").read_bytes()
         receipt_carrier = target.handle(request_carrier, now="2026-07-18T11:01:00Z")
         assert receipt_carrier is not None
