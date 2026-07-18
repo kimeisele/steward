@@ -1,6 +1,6 @@
 # Context Bridge Slice E — Bootstrap and Publisher Isolation
 
-**Status:** DRAFT 0.2 — E0 architecture decisions closed; implementation forbidden
+**Status:** DRAFT 0.3 — E0 architecture decisions closed; implementation forbidden
 
 **Parent contract:** `FEATURE_01_SLICE_D2B_WRITER_POLICY_PREFLIGHT.md`,
 `FEATURE_01_SLICE_D2B_G2_PREFLIGHT.md`
@@ -102,20 +102,47 @@ The exact launch shape is:
 /usr/bin/bwrap
   --die-with-parent --new-session --unshare-all
   --uid 65532 --gid 65532
+  --clearenv
+  --preserve-fd 3 --preserve-fd 4
   --ro-bind <immutable-runtime-root> /
-  --ro-bind <source-export> /input
+  --dir /input
+  --ro-bind /proc/self/fd/4 /input/source.bundle
   --tmpfs /work
   --proc /proc --dev /dev --tmpfs /tmp
   --chdir /work
-  --setenv LANG C --setenv LC_ALL C --setenv PATH /bin
+  --setenv LANG C
+  --setenv LC_ALL C
+  --setenv PATH /usr/bin:/bin
+  --setenv GIT_OPTIONAL_LOCKS 0
+  --setenv GIT_NO_REPLACE_OBJECTS 1
+  --setenv GIT_PAGER cat
+  --setenv GIT_CONFIG_NOSYSTEM 1
+  --setenv GIT_CONFIG_GLOBAL /dev/null
+  --setenv GIT_CONFIG_SYSTEM /dev/null
   -- <runtime-python> -I -S -m steward.publisher_worker --ipc-fd 3
 ```
 
-The worker creates a full clone with `git clone --no-local --no-hardlinks`
-from `/input` into `/work/repo`, then proves that the resulting worktree has an
-independent index and no `commondir`, `gitdir`, or alternates redirection. The
-worktree exists only in the private tmpfs namespace. No host path to `/work`
-is passed to the parent or any normal Steward process.
+FD 3 is the authenticated IPC socket and FD 4 is the parent-opened,
+read-only source-export descriptor. `--preserve-fd 3` and
+`--preserve-fd 4` are mandatory; a launch that cannot preserve both FDs is
+unsupported and returns `manual_review` before any workspace or transaction
+namespace is created. `--clearenv` is mandatory. The only worker environment
+variables are the nine `LANG`/`LC_ALL`/`PATH`/`GIT_*` assignments shown above;
+all other inherited variables, all `GIT_*` overrides not listed above, loader
+variables, proxy variables, and credential variables are absent. The six
+approved D2b Git variables (`GIT_OPTIONAL_LOCKS`, `GIT_NO_REPLACE_OBJECTS`,
+`GIT_PAGER`, `GIT_CONFIG_NOSYSTEM`, `GIT_CONFIG_GLOBAL`,
+and `GIT_CONFIG_SYSTEM`) are the complete Git allowlist; no other `GIT_*` name
+is permitted. Network access and interactive credential acquisition are
+unavailable inside the required namespaces; a command that would prompt is a
+bounded failure, never a reason to add an unreviewed environment variable.
+
+The worker creates a full clone with
+`git clone --no-local --no-hardlinks /input/source.bundle /work/repo`, then
+proves that the resulting worktree has an independent index and no `commondir`,
+`gitdir`, or alternates redirection. The worktree exists only in the private
+tmpfs namespace. No host path to `/work` is passed to the parent or any normal
+Steward process.
 
 The worker process is a separate process created from the fixed executable and
 allowlisted environment. The contract records and enforces:
@@ -131,7 +158,7 @@ allowlisted environment. The contract records and enforces:
 The worker may use only the reviewed read-only Git plumbing and the D2b
 transaction primitive. Generic subprocess execution is prohibited. The
 Bubblewrap executable, runtime interpreter, and worker module are all verified
-against the manifest in §4.5 before launch.
+against the manifest in §4.6 before launch.
 
 ### 4.3 Ephemeral publisher worktree
 
@@ -152,7 +179,33 @@ filesystem path. The workspace must have:
 The bootstrap must prove the source is a read-only bind and the destination is
 tmpfs inside the worker namespace. A path under `/tmp` alone is not proof.
 
-### 4.4 Capability issuance
+### 4.4 Source handoff and identity
+
+The parent never hands Bubblewrap a caller-controlled repository path. Before
+spawn it builds a complete Git bundle for the pinned reviewed commit in a
+private host-side `memfd` created with `MFD_ALLOW_SEALING`. The bundle is
+written, hashed, and sealed with `F_SEAL_WRITE|F_SEAL_SHRINK|F_SEAL_GROW|
+F_SEAL_SEAL`; failure to establish every seal is `manual_review`. After
+sealing, the parent reopens the memfd through its own `/proc/self/fd/<n>` entry
+with `O_RDONLY|O_CLOEXEC`, closes the writable original, and retains that
+read-only duplicate as FD 4. It records the resulting regular-file
+device/inode/type/link/size/mtime/ctime tuple, seal mask, bundle hash, and
+reviewed commit in the launch evidence. No caller path or mutable directory is
+part of the handoff.
+
+Bubblewrap resolves `--ro-bind /proc/self/fd/4 /input/source.bundle` from that
+sealed descriptor and receives no source path other than this proc-fd
+reference. A platform or Bubblewrap build that cannot bind this descriptor
+without falling back to a path lookup is unsupported and must return
+`manual_review`. The parent verifies FD 4 with `fstat()`, its seal mask, and
+its canonical bundle hash immediately before spawn, after the worker
+handshake, and before terminal evidence; any change is impossible under the
+seal contract and is nevertheless a `manual_review` result. FD 4 remains open
+until the worker has sent terminal evidence and the parent has fsynced it. It
+is then closed, allowing the ephemeral memfd to disappear. No source, root, or
+mutation FD is sent with `SCM_RIGHTS`.
+
+### 4.5 Capability issuance
 
 The capability is worker-local. No root, `.git`, `.steward`, target, journal, or
 tempfile FD crosses the process boundary. The parent receives only a bounded
@@ -176,7 +229,7 @@ wrong worker PID, wrong namespace/worktree identity, changed parent, changed
 Git layout, or expired/revoked lease. A capability is never reconstructed from
 JSON, a Python class, or a caller-provided path.
 
-### 4.5 Worker-code provenance
+### 4.6 Worker-code provenance
 
 The bootstrap builds an immutable runtime root from the reviewed worker source
 commit before launching Bubblewrap. It computes a canonical manifest containing
@@ -195,32 +248,125 @@ worker handshake returns `manual_review` before the worker opens the worktree.
 ## 5. IPC and lifecycle contract
 
 Parent and worker communicate over one Unix `SOCK_SEQPACKET` socketpair created
-before launch and inherited only as FD 3. The parent records the worker's
-`pidfd` immediately after spawn. `SO_PEERCRED` and `SCM_CREDENTIALS` must match
-the expected worker UID; the `pidfd` rather than a numeric PID is the lifetime
-and PID-reuse binding.
+before launch, with `SO_PASSCRED` enabled before spawn, and inherited only as
+FD 3. The parent records a `pidfd`
+immediately for the **host-side Bubblewrap supervisor PID**. The pidfd is the
+lifetime and PID-reuse binding; a numeric PID reported by the worker is never a
+security anchor. The worker PID inside the private PID namespace is recorded
+only as diagnostic metadata and is bound to the launch by its one-use
+`worker_start_nonce` and namespace inode in the first handshake.
 
-The parent generates a fresh 32-byte random `bootstrap_nonce` for every launch.
-The first worker message must echo that nonce and the expected runtime/source
-manifest hashes. Every message contains `(nonce, sequence, message_type,
-payload_hash)` and sequence numbers are strictly monotone from zero. A nonce is
-single-use and a socket is never reused. A replay, duplicate, stale sequence,
-credential mismatch, or unexpected message type returns `manual_review` and
-terminates the worker.
+`SO_PEERCRED` and per-message `SCM_CREDENTIALS` authenticate the socket peer to
+the Bubblewrap child. The parent does not pretend that the namespace UID
+`65532` is necessarily represented by the same host integer: the expected
+peer credential tuple is the kernel-translated `(uid,gid,pid)` proven by the
+E1 Linux drill from the exact `uid_map`/`gid_map` and launch PID. The worker
+handshake must report the exact `uid_map`, `gid_map`, PID-namespace inode, and
+effective namespace UID/GID `65532/65532`; the parent records the translated
+peer tuple and rejects any later `SO_PEERCRED` or `SCM_CREDENTIALS` mismatch.
+This binds credentials, namespace, and the supervisor pidfd without relying on
+an unverified caller-supplied UID.
+
+The E1 drill must execute this exact launch shape on the pinned Ubuntu image,
+capture the parent-side `SO_PEERCRED` tuple and every message's
+`SCM_CREDENTIALS`, and archive the worker's `uid_map`, `gid_map`, effective
+IDs, PID-namespace inode, and supervisor PID/start identity. The expected
+translated tuple is derived from those kernel observations and the reviewed
+launch identity, not supplied by the caller or guessed from `65532`. A
+different tuple, map, namespace inode, or start identity is an immediate
+`manual_review`; a mocked credential object is not evidence.
+
+The parent generates a fresh 32-byte random `bootstrap_nonce` and a distinct
+`worker_start_nonce` for every launch. The exact envelope for **every** message
+is:
+
+```json
+{
+  "schema": "slice-e.ipc.v1",
+  "direction": "parent->worker | worker->parent",
+  "nonce": "32-byte bootstrap nonce",
+  "sequence": 0,
+  "message_type": "...",
+  "payload_hash": "sha256(canonical-json(payload))",
+  "payload": {}
+}
+```
+
+`sequence` is a strictly monotone, gap-free counter beginning at zero **per
+direction**; the parent and worker maintain independent counters and the
+`direction` value is covered by the authenticated envelope. `payload_hash`
+always hashes the canonical payload only, excluding the envelope and the hash
+field itself. The first worker message is `HELLO` and echoes the bootstrap and
+worker-start nonces, runtime/source manifest hashes, namespace identity, and
+credential map. A nonce is single-use and a socket is never reused. A replay,
+duplicate, stale/gapped sequence, credential mismatch, nonce mismatch, hash
+mismatch, or unexpected message type returns `manual_review` and terminates the
+worker.
 
 Only bounded canonical JSON messages cross the channel. No target, journal,
 tempfile, root, `.git`, or `.steward` FD is sent with `SCM_RIGHTS`; all mutation
-FDs remain inside the worker namespace. The parent receives an attestation,
-terminal result, and evidence digest only.
+FDs remain inside the worker namespace. The read-only source FD 4 is the sole
+launch input exception and is inherited by Bubblewrap, never sent after the
+worker starts. The parent receives an attestation, terminal result, and
+evidence digest only.
+
+The barrier messages are ordinary envelopes, not an undocumented exception:
+
+```json
+{
+  "schema": "slice-e.ipc.v1", "direction": "worker->parent",
+  "nonce": "...", "sequence": 7, "message_type": "FENCE_READY",
+  "payload_hash": "sha256(canonical-json(payload))",
+  "payload": {"txid": "...", "target_index": 0, "fence_hash": "..."}
+}
+```
+
+```json
+{
+  "schema": "slice-e.ipc.v1", "direction": "parent->worker",
+  "nonce": "...", "sequence": 4, "message_type": "RELEASE",
+  "payload_hash": "sha256(canonical-json(payload))",
+  "payload": {"txid": "...", "target_index": 0}
+}
+```
+
+The worker verifies the complete envelope and its per-direction sequence before
+continuing.
+
+### 5.1 Crash-surviving evidence channel
+
+Before spawning Bubblewrap, the parent creates a private host-side evidence
+directory (mode `0700`) beneath a trusted evidence root, opens an append-only
+launch record with safe dirfd-relative flags, and writes the launch nonce,
+worker-start nonce, source identity, runtime manifest hash, Bubblewrap
+executable hash/stat, expected credential map, and exact launch argv/environment.
+It fsyncs the record and its parent directory before `exec`/spawn. This record
+is outside the worker tmpfs and is therefore not destroyed when the worker or
+its namespace exits.
+
+For every accepted IPC envelope, the parent appends the bounded envelope,
+credential observation, and receipt stage to that host record and fsyncs the
+record. The parent must not acknowledge a terminal result until the terminal
+envelope and its payload hash are durable. If the Bubblewrap supervisor or
+worker exits before terminal evidence, the parent waits on the supervisor
+pidfd, appends `worker_crashed_before_terminal` with the observed wait status
+and last valid sequence, fsyncs it and its parent, and returns `manual_review`.
+The vanished tmpfs journal, temps, and worktree are never treated as recovery
+authority and are not replaced by a host-side workspace cleanup. The external
+record, its final SHA-256, and the crash classification are the durable E3
+evidence. A later evidence commit may copy that record; the runtime root and
+normal checkout remain uninvolved.
 
 Lifecycle:
 
 ```text
 validate structured input
-  -> create private workspace
-  -> pin source commit and Git layout
-  -> create pidfd and authenticated IPC nonce
+  -> create private host evidence record and source FD 4
+  -> create socket, authenticated IPC nonce, and launch manifest
   -> spawn allowlisted worker
+  -> create supervisor pidfd immediately after spawn
+  -> worker creates private tmpfs workspace and clones the sealed bundle
+  -> worker pins source commit and Git layout
   -> worker opens/binds root, .git, .steward, and transaction namespace
   -> issue worker-local opaque capability
   -> run D2b primitive under the capability
@@ -231,11 +377,13 @@ validate structured input
 
 Any malformed IPC, worker exit, timeout, unexpected FD, path replacement,
 cleanup failure, or attestation mismatch returns `manual_review` without
-claiming publication success. Before releasing the `pidfd`, the parent writes a
-canonical terminal evidence record containing the nonce, worker pidfd status,
-runtime/source manifest hashes, namespace/worktree identity, D2b result, and
-all observed failure classes. The record is fsynced to the private evidence
-directory and its SHA-256 is retained for the evidence PR described in §8.
+claiming publication success. Before sending `SHUTDOWN` or releasing the
+supervisor `pidfd`, the parent appends a canonical terminal evidence record to
+the already durable host-side channel. It contains the nonce, supervisor
+pidfd wait status, namespace/worker identity, runtime/source manifest hashes,
+D2b result, all observed failure classes, and the final evidence digest. The
+parent fsyncs that record and its parent directory, then sends `SHUTDOWN`, waits
+on the pidfd, and only then closes FD 4 and the IPC descriptors.
 
 ## 6. Race and isolation model
 
@@ -260,16 +408,23 @@ The implementation must therefore make the following distinction explicit:
 E2 uses a test-only, reviewed `before_replace_barrier` seam in the worker. The
 seam is not a monkeypatch and is unreachable in production mode. Immediately
 after the complete per-target Git/parent/target/lease fence and immediately
-before the real `os.replace()`, the worker sends:
+before the real `os.replace()`, the worker sends the `FENCE_READY` envelope
+defined in §5. Its payload contains `txid`, `target_index`, and `fence_hash`,
+and the envelope therefore has a mandatory `payload_hash`; the abbreviated
+wire notation is:
 
 ```text
-FENCE_READY { nonce, sequence, txid, target_index, fence_hash }
+FENCE_READY { nonce, direction, sequence, payload_hash,
+              payload={txid, target_index, fence_hash} }
 ```
 
-and blocks. The harness then performs the adversarial action and sends:
+and blocks. The harness then performs the adversarial action and sends the
+`RELEASE` envelope defined in §5, also with its mandatory `payload_hash`; its
+abbreviated wire notation is:
 
 ```text
-RELEASE { nonce, sequence, txid, target_index }
+RELEASE { nonce, direction, sequence, payload_hash,
+          payload={txid, target_index} }
 ```
 
 The worker verifies the same nonce, sequence, transaction, and target before
@@ -302,19 +457,23 @@ direct pushes.
 The publisher worktree is a tmpfs mount inside the Bubblewrap namespace. The
 parent never recursively deletes a host path. Normal terminal cleanup is:
 
-1. worker completes D2b read-back/recovery and writes its terminal message;
-2. parent verifies the message nonce, sequence, pidfd state, result, and
-   evidence digest;
-3. parent fsyncs the canonical evidence record and atomically records its hash;
-4. parent sends `SHUTDOWN` and waits on the pidfd;
-5. kernel namespace teardown destroys tmpfs; parent verifies worker exit and
-   closes the IPC/pidfd descriptors.
+1. worker completes D2b read-back/recovery and sends its terminal envelope;
+2. parent verifies the envelope nonce, direction/sequence, credentials, pidfd
+   state, result, and evidence digest, and appends that observation to the
+   host-side evidence channel;
+3. parent fsyncs the complete canonical evidence record and its parent
+   directory, retaining the final record hash;
+4. parent sends `SHUTDOWN` and waits on the supervisor pidfd;
+5. kernel namespace teardown destroys tmpfs; parent verifies supervisor exit,
+   closes IPC/pidfd descriptors, and only then releases FD 4.
 
-If any step fails, the parent does not claim success and retains the evidence
-record as `manual_review`. A worker crash before terminal evidence is durable
-also yields `manual_review`; there is no host-side workspace cleanup fallback.
-The read-only source bind and immutable runtime root are never deleted by the
-publisher.
+If any step fails, the parent does not claim success and retains the external
+evidence record as `manual_review`. A worker or supervisor crash before
+terminal evidence is durable appends the crash status to that same external
+record before returning. There is no host-side workspace cleanup fallback and
+no attempt to recover from the vanished tmpfs journal. The read-only source
+bind and immutable runtime root are released only after the terminal record is
+durable.
 
 For every E2/E3 drill, the canonical evidence JSON is uploaded as a CI artifact
 and copied, with its SHA-256, into a later `specs/context_bridge_evidence/`
@@ -327,11 +486,14 @@ file is used as an evidence store in Slice E.
 No implementation PR may claim Slice E complete without direct, pinned evidence
 for all of the following:
 
-1. Linux worker executable/environment/CWD/FD allowlist and process reaping.
+1. Linux worker executable/environment/CWD/FD allowlist and process reaping,
+   including `--clearenv`, exact D2b Git variables, and both
+   `--preserve-fd 3`/`--preserve-fd 4` launch arguments.
 2. Darwin and unsupported-platform behavior: canonical is blocked before lock,
    workspace, journal, tempfile, or target creation.
 3. Real isolated workspace creation from a pinned source commit; independent
-   index and rejected Git redirections.
+   index and rejected Git redirections. The sealed FD-4 Git bundle cannot be
+   rewritten or replaced between launch, handshake, and terminal evidence.
 4. Capability issuance rejects arbitrary classes, tokens, path-only claims,
    mismatched root/.git/.steward FDs, changed PID, changed path, and changed
    worktree identity.
@@ -343,9 +505,12 @@ for all of the following:
    external writer is proven unable to reach the namespace, while the deliberate
    FD-leak breach yields no positive publication result; exact byte and identity
    outcomes are recorded for both.
-8. Worker crash before/after capability issue, journal write, each replace,
-   read-back, cleanup, and workspace destruction preserves evidence and returns
-   a deterministic terminal class.
+8. The host-side evidence channel is pre-persisted before spawn; every IPC
+   envelope carries the required payload hash and per-direction sequence; the
+   credential/uid-map and supervisor-pidfd bindings are recorded. Worker
+   crash before/after capability issue, journal write, each replace, read-back,
+   cleanup, and workspace destruction preserves that external evidence and
+   returns a deterministic terminal class.
 9. Workspace destruction cannot remove a foreign or replaced path, inode, or
    parent; failed identity checks leave evidence untouched.
 10. The result binds source commit, worker identity, worktree identity, Git
@@ -379,20 +544,24 @@ options:
    PID/IPC/UTS/network namespaces, worker UID/GID `65532`, `--die-with-parent`,
    and an immutable runtime root. Missing or unsafe Bubblewrap is unsupported;
    there is no lock-only fallback.
-3. **Capability:** worker-local opaque capability only; no mutation FD crosses
-   IPC. Parent/worker authentication is `SOCK_SEQPACKET` + `SO_PEERCRED`/
-   `SCM_CREDENTIALS` + one-use 32-byte nonce + monotone sequence + pidfd
-   revocation. Numeric PID alone is never accepted.
+3. **Capability and IPC:** worker-local opaque capability only; no mutation FD
+   crosses IPC. Parent/worker authentication is `SOCK_SEQPACKET` with exact
+   envelope fields, per-direction monotone sequences, `SO_PEERCRED`/
+   `SCM_CREDENTIALS` bound to the verified UID/GID maps, one-use 32-byte
+   bootstrap and worker-start nonces, and supervisor-pidfd revocation. Numeric
+   PID alone is never accepted; the namespace worker UID/GID is explicitly
+   `65532/65532` while the kernel-translated host peer tuple is recorded.
 4. **Worker provenance:** Bubblewrap, interpreter, runtime, worker entrypoint,
    and dependencies are bound to a canonical SHA-256 manifest built from the
    reviewed source commit before launch.
 5. **Race synchronization:** E2 uses the exact `FENCE_READY`/`RELEASE` barrier
    immediately around `os.replace()`; sleeps, polling, and pre-fence writes are
    invalid evidence.
-6. **Cleanup:** the worker writes terminal evidence first; the parent fsyncs and
-   records its hash, then waits on pidfd; kernel namespace teardown destroys the
-   tmpfs. No parent-side recursive cleanup or success claim after an evidence
-   failure is permitted.
+6. **Cleanup and crash evidence:** the parent pre-persists a host-side launch
+   record before spawn, fsyncs every accepted envelope and the terminal/crash
+   decision, then waits on the supervisor pidfd; kernel namespace teardown
+   destroys the tmpfs. No parent-side recursive cleanup or success claim after
+   an evidence failure is permitted.
 7. **Evidence:** canonical evidence JSON is CI-artifacted and later pinned by
    SHA-256 in a dedicated evidence commit; production runtime files are not an
    evidence store in Slice E.
