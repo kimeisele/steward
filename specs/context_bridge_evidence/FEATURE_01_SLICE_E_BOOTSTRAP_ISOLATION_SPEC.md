@@ -1,6 +1,6 @@
 # Context Bridge Slice E — Bootstrap and Publisher Isolation
 
-**Status:** DRAFT 0.4 — E0 architecture decisions closed; implementation forbidden
+**Status:** DRAFT 0.5 — E0 architecture decisions closed; implementation forbidden
 
 **Parent contract:** `FEATURE_01_SLICE_D2B_WRITER_POLICY_PREFLIGHT.md`,
 `FEATURE_01_SLICE_D2B_G2_PREFLIGHT.md`
@@ -121,24 +121,45 @@ The supervisor opens `/usr/bin/bwrap` once, dirfd-relative beneath a pinned
 RESOLVE_NO_MAGICLINKS)` and `O_RDONLY|O_CLOEXEC`. It hashes and executes that
 same descriptor and verifies the regular-file, root-owned,
 non-group/world-writable stat tuple and SHA-256 from the runtime manifest. It
-never executes Bubblewrap by path. The reviewed native launch shim
-calls `clone3(CLONE_PIDFD|CLONE_INTO_CGROUP|SIGCHLD)` with the pre-opened
-per-request cgroup-v2 FD, so child creation, cgroup placement, and the supervisor
-pidfd are one kernel operation. The child performs only async-signal-safe FD setup
+never executes Bubblewrap by path. The reviewed native supervisor/launch
+executable calls `clone3()` with `flags=CLONE_PIDFD|CLONE_INTO_CGROUP`,
+`exit_signal=SIGCHLD`, the pre-opened per-request cgroup-v2 FD in `cgroup`, and
+pidfd storage in `pidfd`, so child creation, cgroup placement, and the outer-
+process pidfd are one kernel operation. `SIGCHLD` is never placed in `flags`.
+The child performs only async-signal-safe FD setup
 and calls `execveat(bwrap_fd, "", argv, empty_env, AT_EMPTY_PATH)`. Failure of
 `clone3`, pidfd creation, FD setup, or `execveat` is `manual_review` before a
 workspace, lock, journal, tempfile, or target exists. `fork()` followed by
 `pidfd_open()`, path-based `execve()`, and `subprocess.Popen()` are forbidden
 launch paths.
 
+Each atomic child launch uses one supervisor-owned `O_CLOEXEC` status pipe.
+The child may write only a fixed-width errno record before `_exit(127)`;
+successful `execveat` closes the child end by `CLOEXEC`, producing EOF. This
+pipe is never preserved into Bubblewrap or Git and is the sole basis for the
+`execveat_result` evidence field. Timeout, extra bytes, short record, inherited
+writer, or ambiguous EOF is `spawn_failure`; inferred success from elapsed time
+or ordinary child output is forbidden.
+
 The fixed cgroup-v2 subtree is
 `/sys/fs/cgroup/steward-publisher.slice/context-publisher-v1`, delegated by the
 service installation to supervisor UID/GID `65532` and not writable by a normal
-Steward process. Before `clone3`, the supervisor creates and opens exactly the
-`<request_id>` child cgroup dirfd, verifies its parent/identity/controllers, and
-records its inode. `CLONE_INTO_CGROUP` is mandatory. Missing cgroup v2,
+Steward process. Before either child launch, the supervisor creates and opens
+exactly the `<request_id>/exporter` or `<request_id>/worker` child cgroup dirfd,
+verifies its parent/identity/controllers, and records its inode. Exporter and
+worker never share a cgroup. `CLONE_INTO_CGROUP` is mandatory. Missing cgroup v2,
 delegation, `cgroup.kill`, or an atomically usable cgroup FD is unsupported and
 returns `manual_review` before spawn.
+
+The worker user namespace has exactly one UID mapping and one GID mapping:
+namespace ID `65532` maps to host supervisor ID `65532`, length `1`. The
+canonical `/proc/<worker>/uid_map` and `gid_map` triples are exactly
+`[65532,65532,1]`; `/proc/<worker>/setgroups` is exactly `deny` before the GID
+map is installed. No subordinate-ID range, identity `0`, or second mapping is
+allowed. Bubblewrap must establish and the supervisor must read back these
+exact mappings before authenticating the worker. A platform/build that cannot
+produce them with effective namespace UID/GID `65532/65532` is unsupported and
+fails before `START`, capability issuance, or transaction creation.
 
 The exact `execveat` argv is:
 
@@ -231,10 +252,21 @@ same stage-0 `100644` blob. A one-sided absence, staged/unmerged entry, foreign
 path, blob mismatch, or different mode is `manual_review`. This preserves the
 approved `legacy_bootstrap` baseline instead of inventing four-file presence.
 
+Before starting Git, the supervisor durably installs evidence event zero from
+§5.3. That event binds the source-root and source-Git FD identities, reviewed
+commit/tree, intended exporter executable/argv/environment, exporter cgroup,
+runtime/supervisor manifest, and request/nonces. Bundle creation is forbidden
+before this event and its request-directory fsync complete.
+
 The source Git executable is opened and hash/stat-verified from the same closed
 runtime manifest as §4.6 and executed from its FD with `execveat`, never by
-`PATH` or a re-resolved absolute path. With the source `.git` FD passed and
-bound exactly as in D2a, the sole export command is:
+`PATH` or a re-resolved absolute path. The supervisor launches it through the
+same reviewed native launch path as §4.2 using
+`clone3(flags=CLONE_PIDFD|CLONE_INTO_CGROUP, exit_signal=SIGCHLD)` into the
+opened `<request_id>/exporter` cgroup. The returned exporter pidfd, cgroup
+identity, executable FD identity, and launch result are durably recorded before
+the supervisor consumes output. With the source `.git` FD passed and bound
+exactly as in D2a, the sole export command is:
 
 ```text
 git --git-dir=/proc/self/fd/<source-git-fd> bundle create - HEAD
@@ -248,10 +280,20 @@ exit, timeout, short write, output at limit plus one, source-FD drift, Git-layou
 drift, or either Git-evidence-round mismatch is `manual_review`; no partial
 bundle is launched.
 
+The supervisor waits and reaps through the exporter pidfd, proves its recorded
+cgroup `populated 0`, and durably records the wait result before the second D2a
+round or worker spawn. Supervisor crash recovery kills both recorded request
+cgroups and preserves the existing chain as specified in §5.3. No
+`subprocess`, path-executed Git, unmonitored helper, or helper created before
+event zero may participate in source export.
+
 After the second evidence round, the supervisor hashes the bundle and seals it
 with `F_SEAL_WRITE|F_SEAL_SHRINK|F_SEAL_GROW|F_SEAL_SEAL`. It then runs the
 same FD-executed Git binary with `bundle verify /proc/self/fd/<bundle-fd>` and
-`bundle list-heads /proc/self/fd/<bundle-fd>`. Verification must succeed and
+`bundle list-heads /proc/self/fd/<bundle-fd>`. Every Git invocation in both
+D2a rounds, export, verify, and list-heads uses the exporter cgroup, atomic
+clone3 pidfd, execveat, spawn event, bounded wait, and reap contract above;
+there is no unobserved metadata-command exception. Verification must succeed and
 `list-heads` stdout must be byte-exact `<reviewed_head> HEAD\n`; each metadata
 command has the same five-second deadline, 16,384-byte stdout cap, and
 4,096-byte stderr cap. After sealing, the
@@ -352,12 +394,29 @@ walks FD 5 without following links and rejects any missing, extra, changed, or
 unmanifested node; it does not infer dependencies from whatever happened to load
 in one test run.
 
-`host_executables` contains exactly the reviewed native launch shim,
-`/usr/bin/bwrap`, and the source-export `/usr/bin/git`, each with absolute
+`host_executables` contains exactly the reviewed native
+`/usr/libexec/steward-publisher-supervisor` executable (which is also the only
+launch shim), `/usr/bin/bwrap`, and the source-export `/usr/bin/git`, each with absolute
 install path, owner/mode/stat identity, size, SHA-256, ELF build ID, reviewed
 build/source identity, and the exact root-owned non-writable loader/`DT_NEEDED`
-host dependency identities. All three executables are opened once and later
-executed only with `execveat(AT_EMPTY_PATH)`; host dependency drift is checked
+host dependency identities. The array is sorted by UTF-8 `path`. Each object
+has exactly `path`, `mode`, `uid`, `gid`, `device`, `inode`, `size`, `sha256`,
+`elf_build_id`, `reviewed_source`, and `dependencies`; `dependencies` is a
+UTF-8-path-sorted array whose objects have exactly `path`, `mode`, `uid`, `gid`,
+`device`, `inode`, `size`, `sha256`, and `elf_build_id`. Every numeric field is
+a nonnegative bounded integer, every digest is `hex64`, and every build ID is
+lowercase even-length hex of 2..128 characters. `reviewed_source` has exactly
+`repository_id` (the closed identifier grammar from §5.2), `commit` (`hex40`),
+and `blob` (`hex40`). Missing, extra, duplicated, or
+unresolved executable/dependency entries are invalid. The supervisor binary and its complete native
+dependency closure are therefore part of the reviewed manifest; no
+unmanifested supervisor script, interpreter, module, or startup wrapper is
+allowed. The fixed root-owned service unit starts that supervisor from the
+non-writable install path; at process entry the supervisor opens
+`/proc/self/exe`, binds its device/inode/owner/mode/build-ID/hash to the manifest,
+and fails before event-root or source access on mismatch. Root/service-manager
+compromise remains outside the threat model. Bubblewrap and Git are opened once
+and later executed only with `execveat(AT_EMPTY_PATH)`; host dependency drift is checked
 immediately before launch and root compromise is outside the threat model. The canonical
 manifest bytes contain no self-hash. Their SHA-256 is the
 `runtime_manifest_sha256`; the runtime root contains a byte-identical manifest
@@ -376,28 +435,42 @@ and one extra-file rejection; a mocked dependency set is not evidence.
 
 Supervisor and worker communicate over one Unix `SOCK_SEQPACKET` socketpair
 created before `clone3`, with `SO_PASSCRED` enabled before launch and inherited
-only as FD 3. The supervisor pidfd returned atomically by `clone3` binds the
-outer Bubblewrap process and closes PID-reuse ambiguity. The inner worker PID
-is diagnostic metadata bound to the one-use worker-start nonce, peer
-credentials, namespace inode, and process start ticks; it is never an
-independent authority.
+only as FD 3. The outer pidfd returned atomically by `clone3` binds Bubblewrap;
+after the authenticated handshake a distinct worker pidfd binds the inner
+worker. Both must remain live for a positive result.
 
-`SO_PEERCRED` and per-message `SCM_CREDENTIALS` authenticate the socket peer.
-The namespace UID `65532` is not assumed to have the same host integer. The
-worker `HELLO` reports exact `uid_map`, `gid_map`, effective UID/GID
-`65532/65532`, PID-namespace inode, process group, and start ticks. The
-supervisor derives the expected kernel-translated `(pid,uid,gid)` from that map
-and the launched process identity and requires every message's credentials to
-match. E1 must archive the real Ubuntu observations; a mocked credential or
-numeric-PID-only test is not evidence.
+`SO_PEERCRED` is explicitly **not** worker authentication: because the
+socketpair predates worker creation, it describes endpoint credentials at
+socketpair creation. The supervisor must not use or persist it as worker
+identity. Worker authentication uses only kernel-supplied per-datagram
+`SCM_CREDENTIALS`, the exact UID/GID maps from §4.2, both pidfds, cgroup
+membership, and a challenge bound to the one-use worker-start nonce.
+
+The first `HELLO` supplies `SCM_CREDENTIALS`. The supervisor opens a pidfd for
+that credential PID, verifies that the PID is live in the recorded worker
+cgroup and reports the exact namespace maps, effective IDs, PID-namespace
+inode, process group, start ticks, and `/proc/<scm-pid>/status` `NSpid` chain,
+then sends the pre-generated one-use `AUTH_CHALLENGE`.
+Only an `AUTH_CONFIRM` carrying the same SCM PID/UID/GID, the challenge, and the
+worker-start nonce completes authentication. The supervisor then rechecks the
+worker pidfd, cgroup membership, maps, and start identity. Every later worker
+datagram must carry the same SCM credentials while both pidfds remain live.
+`HELLO.namespace_pid` must equal the final integer in the supervisor-read
+`NSpid` chain. No payload contains or claims the host SCM PID; payload values
+never override kernel evidence.
+Any exit, PID reuse, cgroup/map/credential mismatch, missing ancillary record,
+or additional credential record is terminal `credential_mismatch`. E1 must
+archive real Ubuntu credential, pidfd, map, and cgroup observations; mocks or a
+numeric PID alone are not evidence.
 
 ### 5.1 Canonical encoding and envelope
 
 Before the preflight evidence event, the supervisor generates an independent
-16-byte `request_id` and 32-byte `bootstrap_nonce` and `worker_start_nonce`
-values with `getrandom(2)` and records all three. The envelope `nonce` is the
+16-byte `request_id` and 32-byte `bootstrap_nonce`, `worker_start_nonce`, and
+`worker_auth_nonce` values with `getrandom(2)` and records all four. The envelope `nonce` is the
 bootstrap nonce; `START` carries the request ID and worker-start nonce and
-`HELLO` must echo both. The worker generates each 16-byte transaction ID and
+`HELLO` must echo both. `AUTH_CHALLENGE` carries `worker_auth_nonce`, and
+`AUTH_CONFIRM` must echo it and the worker-start nonce. The worker generates each 16-byte transaction ID and
 fence token with `getrandom(2)` inside the namespace.
 
 IPC uses RFC 8785 JSON Canonicalization Scheme bytes with additional closed
@@ -435,17 +508,25 @@ termination.
 
 ### 5.2 Closed messages and payloads
 
-The positive message order is `START`, `HELLO`, `ATTESTATION`, zero or more
+The positive message order is `START`, `HELLO`, `AUTH_CHALLENGE`,
+`AUTH_CONFIRM`, `ATTESTATION`, between zero and four complete
 `FENCE_READY`/`RELEASE` pairs, `RESULT`, `SHUTDOWN`, and `SHUTDOWN_ACK`.
-`ERROR` may replace the next expected worker message at any stage after a valid
+Pairs form only the contiguous `target_index` prefix `0`, `0,1`, `0,1,2`, or
+`0,1,2,3`, with exactly one pair immediately before each corresponding replace.
+`published` requires all four pairs; `no_op` requires zero; a terminal failure
+may preserve the completed prefix. A `FENCE_READY` without its matching next
+`RELEASE`, a fifth, duplicate, skipped, or reordered pair is a protocol error.
+`ERROR` may replace the next expected worker-to-supervisor message at any stage after a valid
 `START` and is terminal before `SHUTDOWN`; it may not follow `RESULT` or another
 `ERROR`. No other type or transition exists. Payloads contain exactly the
 following keys:
 
 | Type | Direction | Maximum envelope | Exact payload keys |
 |---|---|---:|---|
-| `HELLO` | worker → supervisor | 16,384 | `request_id`, `worker_start_nonce`, `runtime_manifest_sha256`, `source_bundle_sha256`, `uid_map`, `gid_map`, `effective_uid`, `effective_gid`, `peer_pid`, `process_group`, `process_start_ticks`, `pid_namespace_inode` |
+| `HELLO` | worker → supervisor | 16,384 | `request_id`, `worker_start_nonce`, `runtime_manifest_sha256`, `source_bundle_sha256`, `uid_map`, `gid_map`, `effective_uid`, `effective_gid`, `namespace_pid`, `process_group`, `process_start_ticks`, `pid_namespace_inode` |
 | `START` | supervisor → worker | 196,608 | `request_id`, `worker_start_nonce`, `reviewed_head`, `reviewed_tree`, `source_bundle_sha256`, `runtime_manifest_sha256`, `constitution`, `snapshot_id`, `snapshot`, `delivery_base`, `deadlines_ms` |
+| `AUTH_CHALLENGE` | supervisor → worker | 2,048 | `request_id`, `worker_start_nonce`, `worker_auth_nonce` |
+| `AUTH_CONFIRM` | worker → supervisor | 2,048 | `request_id`, `worker_start_nonce`, `worker_auth_nonce` |
 | `ATTESTATION` | worker → supervisor | 32,768 | `request_id`, `reviewed_head`, `reviewed_tree`, `runtime_manifest_sha256`, `source_bundle_sha256`, `worktree_identity`, `git_layout_hash`, `capability_hash` |
 | `FENCE_READY` | worker → supervisor | 4,096 | `request_id`, `txid`, `target_index`, `fence_token`, `fence_hash` |
 | `RELEASE` | supervisor → worker | 2,048 | `request_id`, `txid`, `target_index`, `fence_token` |
@@ -454,11 +535,14 @@ following keys:
 | `SHUTDOWN` | supervisor → worker | 1,024 | `request_id`, `terminal_evidence_hash` |
 | `SHUTDOWN_ACK` | worker → supervisor | 1,024 | `request_id`, `terminal_evidence_hash` |
 
-`request_id`, `txid`, and `fence_token` are `hex32`; `worker_start_nonce` is
-`nonce64`; hashes and snapshot IDs are `hex64`; Git commit/tree IDs are
+`request_id`, `txid`, and `fence_token` are `hex32`; `worker_start_nonce` and
+`worker_auth_nonce` are `nonce64`; hashes and snapshot IDs are `hex64`; Git commit/tree IDs are
 `hex40`; `target_index` is integer `0..3`.
-`uid_map` and `gid_map` are arrays of exactly three bounded integers, not free
-text. `worktree_identity` contains exact integer `device`, `inode`, `mode`,
+`uid_map` and `gid_map` are exactly `[65532,65532,1]`, not free text.
+`effective_uid` and `effective_gid` are exactly `65532`.
+`namespace_pid`, `process_group`, `process_start_ticks`, and
+`pid_namespace_inode` are positive bounded integers.
+`worktree_identity` contains exact integer `device`, `inode`, `mode`,
 `uid`, `gid`, `link_count`, `mount_namespace_inode`, and
 `pid_namespace_inode`. `target_hashes` has exactly `claude`, `agents`,
 `snapshot`, and `publication` `hex64` keys or is `null` before candidates
@@ -523,23 +607,59 @@ canonical JSON with exactly `schema`, `request_id`, `event_sequence`,
 it to `.<8-digit-sequence>.tmp` with
 `O_WRONLY|O_CREAT|O_EXCL|O_CLOEXEC|O_NOFOLLOW` mode `0600`, fsyncs the file,
 installs `<8-digit-sequence>.event` with `renameat2(RENAME_NOREPLACE)`, and
-fsyncs the request directory. The preflight event at sequence zero binds the
-bootstrap/worker-start nonces, source and runtime identities, exact intended argv/environment,
-and credential expectation and is durable **before** `clone3`. The spawn event
-at sequence one binds the returned supervisor pidfd identity and actual
-`clone3`/`execveat` outcome and is durable before
-the worker receives `START`.
+fsyncs the request directory.
+
+`previous_event_hash` is JSON `null` only for sequence zero. For every later
+event it is the lowercase SHA-256 of the immediately preceding canonical event
+bytes with domain prefix ASCII `steward-publisher-evidence-event-v1`, followed
+by one NUL byte and those bytes. The current event hash uses the identical
+domain construction over the complete current canonical event bytes; it is not
+embedded in the event and therefore has no self-reference. The chain aggregate
+is SHA-256 over ASCII `steward-publisher-evidence-chain-v1`, one NUL byte, then
+the raw 32-byte event hashes in sequence order. Filenames, mtimes, ZIP bytes,
+and directory metadata are outside both hash domains.
+
+At the top level, `schema` is exactly `steward.publisher.evidence/v1`,
+`request_id` is `hex32`, and `event_sequence` is a nonnegative integer subject
+to the bound below. `stage` is one closed stage below. `credentials` is non-null
+only for an accepted worker-to-supervisor IPC event and then equals the single
+kernel-supplied SCM record; it is `null` for preflight, spawn, wait, recovery,
+and supervisor-to-worker IPC. `pidfd_state` is `null` at preflight, recovery,
+and for a spawn failure that produced no pidfd; otherwise it describes the
+process named by `facts.process_kind`, or the worker for IPC. A successful terminal event
+cannot carry a running state. No implicit default or omitted nullable key is
+allowed.
+
+The preflight event at sequence zero binds all three nonces, source and runtime
+identities, exact intended exporter/worker argv and environments, exact UID/GID
+maps, supervisor identity, both intended cgroups, and reviewed head/tree. It is
+durable **before the source exporter or worker is created**. Subsequent spawn
+events bind either the exporter or worker pidfd/cgroup/executable outcome and
+are durable before consuming exporter output or sending worker `START`.
 
 Evidence `stage` is exactly `preflight`, `spawn`, `ipc`, `wait`, or `recovery`.
-`credentials` is either `null` or exactly `{pid,uid,gid}`; `pidfd_state` is
-exactly `{status,code,signal}` with status `running` or `exited` and nullable
-bounded integers. `facts` is closed by stage: preflight has exactly both nonces,
-source/runtime/argv/environment hashes and reviewed head/tree; spawn has exactly
-clone flags, pidfd identity, cgroup identity, and executable hashes; IPC has
-exactly direction, sequence, message type, and payload/envelope hashes; wait has
-exactly terminal result class and wait status; recovery has exactly prior final
-sequence/hash, cgroup identity, `cgroup.kill` result, and populated state. Fields
-not defined for the selected stage are forbidden.
+A non-null `credentials` value is exactly `{pid,uid,gid}`, each a nonnegative
+bounded integer. A non-null `pidfd_state` is exactly `{status,code,signal}` with
+status `running` or `exited`; `code` and `signal` are bounded integer or `null`
+and are both `null` while running. `ipc_envelope_hash` is `hex64` only for stage `ipc`
+and otherwise `null`. `failure_class` is `null` or one closed §5.2 value.
+
+The `facts` object has no keys beyond the following stage-specific schemas:
+
+| Stage | Exact `facts` keys and types |
+|---|---|
+| `preflight` | `bootstrap_nonce`, `worker_start_nonce`, `worker_auth_nonce` (`nonce64`); `reviewed_head`, `reviewed_tree` (`hex40`); `source_root_identity`, `source_git_identity`, `evidence_root_identity` (exact identity objects); `runtime_manifest_sha256`, `supervisor_sha256`, `exporter_argv_sha256`, `exporter_environment_sha256`, `worker_argv_sha256`, `worker_environment_sha256` (`hex64`); `uid_map`, `gid_map` (exact `[65532,65532,1]`); `exporter_cgroup_identity`, `worker_cgroup_identity` (exact identity objects) |
+| `spawn` | `process_kind` (`exporter` or `worker`); `clone_flags` (exact integer `8589938688`, the Linux x86-64 value `CLONE_PIDFD|CLONE_INTO_CGROUP`); `exit_signal` (exact integer `17`, `SIGCHLD`); `pidfd_inode`, `process_pid` (positive integers); `cgroup_identity`, `executable_identity` (exact identity objects); `executable_sha256`, `argv_sha256`, `environment_sha256` (`hex64`); `execveat_result` (`entered` or `failed`) |
+| `ipc` | `direction`, `sequence`, `message_type`, and `payload_hash` copied exactly from the accepted envelope; `envelope_hash` (`hex64`); `outer_pidfd_inode`, `worker_pidfd_inode`, `worker_cgroup_inode` (positive integers, with `worker_pidfd_inode` `null` only before `AUTH_CONFIRM`) |
+| `wait` | `process_kind` (`exporter` or `worker`); `result_class` (closed §5.2 value or `null` for exporter); `wait_code`, `wait_signal` (bounded integer or `null`); `cgroup_populated` (exact integer `0`); `output_sha256` (`hex64` or `null`) |
+| `recovery` | `prior_final_sequence` (integer `0..127`); `prior_final_hash` (`hex64`); `exporter_cgroup_identity`, `worker_cgroup_identity` (exact identity objects); `exporter_kill_result`, `worker_kill_result` (`not_present`, `killed`, or `failed`); `exporter_populated`, `worker_populated` (integer `0` or `1`); `recovery_class` (`supervisor_crash` or `evidence_failure`) |
+
+An exact identity object is `{device,inode,mode,uid,gid,link_count}` with six
+nonnegative bounded integers and no other keys. Event sequences are bounded: a
+normal request may create at most 128 events numbered `0..127`; recovery may
+append at most one event numbered `128`. More events, a second recovery event,
+or a sequence not permitted by the closed IPC lifecycle is
+`evidence_failure` without cleanup.
 
 Every accepted IPC envelope produces the next event before the supervisor sends
 an acknowledgement or proceeds. The terminal `RESULT`/`ERROR` event and its
@@ -549,17 +669,19 @@ mismatch, replacement, failed fsync/rename, or any `.tmp` left by a crash are
 preserved and classified `evidence_failure`; they are never deleted or silently
 repaired.
 
-If the worker exits before a terminal envelope, the live supervisor waits on
-the atomic pidfd, records `worker_crash` and the last valid IPC/evidence
-sequences, fsyncs the event and directory, and returns `manual_review`. If the
+If the exporter or worker exits before its required terminal transition, the
+live supervisor waits on the corresponding atomic pidfd, records
+`source_mismatch` for exporter failure or `worker_crash` for worker failure and
+the last valid IPC/evidence sequences, fsyncs the event and directory, and
+returns `manual_review`. If the
 supervisor itself crashes or the host loses power, Bubblewrap's parent-death
 contract destroys the private namespace while the already fsynced event files
 remain. Before accepting any request after restart, the dedicated supervisor
-scans the evidence root and the recorded per-request cgroup. For any incomplete
-request it writes `1` to that exact cgroup's `cgroup.kill`, waits for
-`cgroup.events` to report `populated 0`, and verifies the recorded cgroup inode
+scans the evidence root and both recorded per-request cgroups. For any incomplete
+request it writes `1` to each exact cgroup's `cgroup.kill`, waits for both
+`cgroup.events` files to report `populated 0`, and verifies both recorded cgroup inodes
 before classifying `supervisor_crash`. It adds one new recovery event only when
-the existing evidence chain and empty recorded cgroup are both proven.
+the existing evidence chain and both empty recorded cgroups are proven.
 Ambiguous/partial evidence, a changed cgroup identity, or a nonempty/unavailable
 cgroup remains untouched as `evidence_failure`. No branch recovers, cleans, or
 republishes vanished tmpfs targets.
@@ -572,10 +694,12 @@ Lifecycle:
 
 ```text
 validate structured input
-  -> create nonces, socket, sealed source FD 4, and verified runtime FD 5
+  -> create nonces, socket, verified runtime FD 5, and both cgroups
   -> pin evidence-root FD and create durable preflight event
-  -> clone3(CLONE_PIDFD|CLONE_INTO_CGROUP) and execveat Bubblewrap FD 6
-  -> send START; validate HELLO credentials and runtime/source hashes
+  -> atomically spawn/pidfd-monitor source exporter; seal and verify FD 4
+  -> clone3(flags=CLONE_PIDFD|CLONE_INTO_CGROUP,
+            exit_signal=SIGCHLD) and execveat Bubblewrap FD 6
+  -> send START; authenticate HELLO/challenge with SCM credentials and worker pidfd
   -> worker creates private tmpfs workspace and clones the sealed bundle
   -> worker pins source commit and Git layout
   -> worker opens/binds root, .git, .steward, and transaction namespace
@@ -705,17 +829,21 @@ an evidence store in Slice E.
 No implementation PR may claim Slice E complete without direct, pinned evidence
 for all of the following:
 
-1. Linux launch uses the verified launch shim, atomic
-   `clone3(CLONE_PIDFD|CLONE_INTO_CGROUP)`, Bubblewrap `execveat` from FD 6,
+1. Linux launch uses the manifested native supervisor/launch executable, atomic
+   `clone3(flags=CLONE_PIDFD|CLONE_INTO_CGROUP, exit_signal=SIGCHLD)`,
+   Bubblewrap `execveat` from FD 6,
    exact argv/environment/CWD, `--clearenv`, exact D2b Git variables, and only
-   preserved FDs 3/4/5; path-exec and post-spawn `pidfd_open` fail closed.
+   preserved FDs 3/4/5; path-exec and any post-spawn pidfd acquisition used as
+   an outer-launch fallback fail closed. The separately specified
+   SCM-credential worker handshake still requires its worker `pidfd_open`.
 2. Darwin and unsupported-platform behavior: canonical is blocked before lock,
    workspace, journal, tempfile, or target creation.
 3. The complete runtime manifest/tree is archived and both missing/extra files,
    wrong executable hash, symlink, unmanifested import, and changed FD 5 fail
    before workspace creation.
-4. Bundle creation is performed from the pinned source/Git FDs with the exact
-   Git command, two identical D2a evidence rounds, commit/tree/index checks,
+4. Bundle creation begins only after durable event zero and is performed by a
+   separately cgroup-/pidfd-bound, execveat-launched exporter from the pinned
+   source/Git FDs with the exact Git command, two identical D2a evidence rounds, commit/tree/index checks,
    strict limits, bundle verify/list-heads, seals, and worker clone verification.
    The sealed FD-4 bundle cannot be rewritten or replaced.
 5. Capability issuance rejects arbitrary classes, tokens, path-only claims,
@@ -729,8 +857,9 @@ for all of the following:
    external writer is proven unable to reach the namespace, while the deliberate
    FD-leak mutation is caught by the post-RELEASE full refence before replace;
    both fence hashes and whether replace was entered are recorded.
-9. Every IPC type, order, payload, size, canonical byte vector, hash vector,
-   failure class, credential/uid-map, and sequence rule has positive and
+9. Every IPC type, exact zero-to-four contiguous-prefix fence-pair order, payload, size,
+   canonical byte vector, event/hash-domain vector, failure class,
+   SCM-credential/challenge/pidfd/uid-map, and sequence rule has positive and
    adversarial tests; unknown or over-limit data fails before mutation.
 10. The fixed evidence root and preflight event are durable before atomic
    spawn. Worker crash before/after capability issue, journal write, each
@@ -769,17 +898,21 @@ options:
 1. **Workspace:** a full `--no-local --no-hardlinks` clone inside a Bubblewrap
    tmpfs namespace; no detached worktree in a shared checkout.
 2. **Linux boundary:** verified Bubblewrap FD execution via `execveat`, atomic
-   `clone3(CLONE_PIDFD|CLONE_INTO_CGROUP)`, private namespaces, worker UID/GID
+   `clone3(flags=CLONE_PIDFD|CLONE_INTO_CGROUP, exit_signal=SIGCHLD)`, private
+   namespaces, exact one-entry UID/GID maps for worker UID/GID
    `65532`, `--die-with-parent`, and no lock-only or path-exec fallback.
 3. **Runtime:** exact CPython 3.12, Git, worker/import, ELF, stdlib, and host
    executable sets are enumerated by the closed content-addressed runtime
    manifest and mounted from FD 5.
-4. **Source:** an exact FD-bound Git command creates a size-bounded bundle only
-   between two identical D2a evidence rounds; commit/tree/index, bundle heads,
+4. **Source:** after durable event zero, a separately cgroup-/pidfd-bound
+   execveat Git process runs the exact FD-bound command and creates a
+   size-bounded bundle only between two identical D2a evidence rounds; commit/tree/index, bundle heads,
    seals, and worker clone are all verified.
 5. **Capability and IPC:** worker-local opaque capability only; closed RFC-8785
-   messages over `SOCK_SEQPACKET`, peer credentials, per-direction sequences,
-   one-use nonces, exact payload hashes, and atomic supervisor-pidfd revocation.
+   messages over `SOCK_SEQPACKET`; `SO_PEERCRED` is not worker evidence;
+   per-message SCM credentials, challenge confirmation, outer and worker
+   pidfds, per-direction sequences, one-use nonces, exact payload hashes, and
+   pidfd/cgroup revocation are mandatory.
 6. **Race synchronization:** E2 pauses after a preliminary fence, then requires
    a complete post-RELEASE refence immediately before replace; sleeps, polling,
    and pre-fence writes are invalid evidence.
