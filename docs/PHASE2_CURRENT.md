@@ -39,6 +39,10 @@ verlinkten Slice-E-Vertrag und §25 des ausführlichen Befunds lesen.
   Publisher, Delivery und Canonical-Aktivierung bleiben gesperrt.
 - Der Merge änderte für Slice E ausschließlich Spezifikation; keine Runtime-, Workflow-,
   Root-Datei- oder Aktivierungsfläche.
+- Die anschließende Parkdokumentation wurde über PR `#791` gemergt (`a7f881d519539eb4649f22b415183efec7018eb4`;
+  Tree `c1f0cacbf9487957145ebf275d444dd866804413`). Dieser Head enthält neben den drei
+  Parkdokumenten ausschließlich zwischenzeitlichen Runtime-/Federation-State-Drift; Slice E
+  selbst bleibt unverändert.
 
 ## 2. Rolle und Sicherheitsvertrag
 
