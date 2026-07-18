@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import copy
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -10,7 +12,12 @@ import pytest
 
 import steward.context_publication as publication
 from steward.context_contract import ConstitutionAttestation
-from steward.context_publication import PublicationMode, PublicationState, publish_context
+from steward.context_publication import (
+    PublicationMode,
+    PublicationState,
+    acquire_publisher_lease,
+    publish_context,
+)
 from steward.context_rendering import build_publication_candidates
 
 GIT = "/usr/bin/git"
@@ -70,14 +77,11 @@ def candidates_and_attestation(models):
 
 
 def publish(repository, payload, snapshot, attestation):
-    return publish_context(
-        repository,
-        payload,
-        snapshot,
-        attestation,
-        mode=PublicationMode.CANONICAL,
-        isolation_attested=True,
-    )
+    lease = acquire_publisher_lease(repository)
+    try:
+        return publish_context(repository, payload, snapshot, attestation, mode=PublicationMode.CANONICAL, lease=lease)
+    finally:
+        lease.close()
 
 
 def test_disabled_is_a_pure_no_write_gate(tmp_path, candidates_and_attestation):
@@ -112,8 +116,29 @@ def test_canonical_requires_explicit_isolated_worktree_attestation(tmp_path, can
     result = publish_context(repository, payload, snapshot, attestation, mode="canonical")
 
     assert result.state is PublicationState.BLOCKED
-    assert result.reason == "isolation_not_attested"
+    assert result.reason == "publisher_lease_required"
     assert not (repository / ".steward" / ".context-publish-v1.lock").exists()
+
+
+def test_closed_publisher_lease_cannot_publish(tmp_path, candidates_and_attestation):
+    payload, snapshot, _, attestation = candidates_and_attestation
+    repository = initialize_repository(tmp_path / "repo")
+    commit_all(repository)
+    lease = acquire_publisher_lease(repository)
+    lease.close()
+
+    result = publish_context(
+        repository,
+        payload,
+        snapshot,
+        attestation,
+        mode=PublicationMode.CANONICAL,
+        lease=lease,
+    )
+
+    assert result.state is PublicationState.BLOCKED
+    assert result.reason == "publisher_lease_invalid"
+    assert (repository / ".steward" / ".context-publish-v1.lock").exists()
 
 
 def test_legacy_bootstrap_never_auto_overwritten(tmp_path, candidates_and_attestation):
@@ -167,6 +192,43 @@ def test_valid_head_bound_generation_is_no_op(tmp_path, candidates_and_attestati
     assert not list((repository / ".steward").glob(".context-publish-v1.*.txn"))
 
 
+def test_unexpected_baseline_mode_is_not_overwritten(tmp_path, candidates_and_attestation):
+    payload, snapshot, candidates, attestation = candidates_and_attestation
+    repository = initialize_repository(tmp_path / "repo")
+    (repository / "CLAUDE.md").write_bytes(candidates.claude_md)
+    (repository / "AGENTS.md").write_bytes(candidates.agents_md)
+    (repository / ".steward" / "context-snapshot.json").write_bytes(candidates.snapshot_artifact)
+    (repository / ".steward" / "context-publication.json").write_bytes(candidates.publication_artifact)
+    commit_all(repository)
+    (repository / "CLAUDE.md").chmod(0o600)
+    next_snapshot = copy.deepcopy(snapshot)
+    next_snapshot["assembled_at"] = "2026-07-16T00:00:00Z"
+
+    result = publish(repository, payload, next_snapshot, attestation)
+
+    assert result.state is PublicationState.MANUAL_REVIEW
+    assert result.reason == "baseline_mode_unexpected"
+    assert (repository / "CLAUDE.md").stat().st_mode & 0o777 == 0o600
+    assert not list((repository / ".steward").glob(".context-publish-v1.*.txn"))
+
+
+def test_unexpected_mode_is_not_reported_as_no_op(tmp_path, candidates_and_attestation):
+    payload, snapshot, candidates, attestation = candidates_and_attestation
+    repository = initialize_repository(tmp_path / "repo")
+    (repository / "CLAUDE.md").write_bytes(candidates.claude_md)
+    (repository / "AGENTS.md").write_bytes(candidates.agents_md)
+    (repository / ".steward" / "context-snapshot.json").write_bytes(candidates.snapshot_artifact)
+    (repository / ".steward" / "context-publication.json").write_bytes(candidates.publication_artifact)
+    commit_all(repository)
+    (repository / "CLAUDE.md").chmod(0o600)
+
+    result = publish(repository, payload, snapshot, attestation)
+
+    assert result.state is PublicationState.MANUAL_REVIEW
+    assert result.reason == "baseline_mode_unexpected"
+    assert (repository / "CLAUDE.md").stat().st_mode & 0o777 == 0o600
+
+
 def test_unknown_transaction_signal_fails_closed(tmp_path, candidates_and_attestation):
     payload, snapshot, _, attestation = candidates_and_attestation
     repository = initialize_repository(tmp_path / "repo")
@@ -178,6 +240,29 @@ def test_unknown_transaction_signal_fails_closed(tmp_path, candidates_and_attest
     assert result.state is PublicationState.MANUAL_REVIEW
     assert result.reason == "transaction_namespace_ambiguous"
     assert (repository / ".context-publish-v1.foreign.signal").read_text() == "foreign\n"
+
+
+def test_namespace_is_scanned_only_after_lease_lock(tmp_path, candidates_and_attestation, monkeypatch):
+    payload, snapshot, _, attestation = candidates_and_attestation
+    repository = initialize_repository(tmp_path / "repo")
+    commit_all(repository)
+    original_scan = publication._scan_namespace
+    lock_seen: list[bool] = []
+
+    def scan_with_lock(root_fd, steward_fd):
+        try:
+            os.stat(publication._LOCK, dir_fd=steward_fd, follow_symlinks=False)
+        except FileNotFoundError:
+            lock_seen.append(False)
+        else:
+            lock_seen.append(True)
+        return original_scan(root_fd, steward_fd)
+
+    monkeypatch.setattr(publication, "_scan_namespace", scan_with_lock)
+    result = publish(repository, payload, snapshot, attestation)
+
+    assert result.state is PublicationState.PUBLISHED
+    assert lock_seen and all(lock_seen)
 
 
 def test_prepared_transaction_recovers_without_target_mutation(tmp_path, candidates_and_attestation, monkeypatch):
@@ -205,7 +290,7 @@ def test_prepared_transaction_recovers_without_target_mutation(tmp_path, candida
     assert not list((repository / ".steward").glob(".context-publish-v1.*.txn"))
 
 
-def test_partial_replace_never_auto_recovers_or_deletes_evidence(tmp_path, candidates_and_attestation, monkeypatch):
+def test_partial_replace_recovers_four_file_absent_baseline(tmp_path, candidates_and_attestation, monkeypatch):
     payload, snapshot, candidates, attestation = candidates_and_attestation
     repository = initialize_repository(tmp_path / "repo")
     commit_all(repository)
@@ -226,10 +311,69 @@ def test_partial_replace_never_auto_recovers_or_deletes_evidence(tmp_path, candi
 
     monkeypatch.setattr(publication, "_replace_one", original_replace)
     second = publish(repository, payload, snapshot, attestation)
-    assert second.state is PublicationState.MANUAL_REVIEW
-    assert second.reason == "recovery_requires_review"
-    assert (repository / "CLAUDE.md").read_bytes() == candidates.claude_md
+    assert second.state is PublicationState.BLOCKED
+    assert second.reason == "recovered_rollback"
+    assert not (repository / "CLAUDE.md").exists()
     assert not (repository / "AGENTS.md").exists()
+    assert not list((repository / ".steward").glob(".context-publish-v1.*.txn"))
+
+
+def test_partial_replace_restores_present_baseline(tmp_path, candidates_and_attestation, monkeypatch):
+    payload, snapshot, candidates, attestation = candidates_and_attestation
+    repository = initialize_repository(tmp_path / "repo")
+    (repository / "CLAUDE.md").write_bytes(candidates.claude_md)
+    (repository / "AGENTS.md").write_bytes(candidates.agents_md)
+    (repository / ".steward" / "context-snapshot.json").write_bytes(candidates.snapshot_artifact)
+    (repository / ".steward" / "context-publication.json").write_bytes(candidates.publication_artifact)
+    commit_all(repository)
+    next_snapshot = copy.deepcopy(snapshot)
+    next_snapshot["assembled_at"] = "2026-07-16T00:00:00Z"
+    original_replace = publication._replace_one
+    calls = 0
+
+    def interrupt_after_first(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise ValueError("injected_present_baseline_crash")
+        return original_replace(*args, **kwargs)
+
+    monkeypatch.setattr(publication, "_replace_one", interrupt_after_first)
+    first = publish(repository, payload, next_snapshot, attestation)
+    assert first.state is PublicationState.MANUAL_REVIEW
+    monkeypatch.setattr(publication, "_replace_one", original_replace)
+    recovered = publish(repository, payload, next_snapshot, attestation)
+    assert recovered.state is PublicationState.BLOCKED
+    assert recovered.reason == "recovered_rollback"
+    assert (repository / "CLAUDE.md").read_bytes() == candidates.claude_md
+    assert (repository / "AGENTS.md").read_bytes() == candidates.agents_md
+    assert (repository / ".steward" / "context-snapshot.json").read_bytes() == candidates.snapshot_artifact
+    assert (repository / ".steward" / "context-publication.json").read_bytes() == candidates.publication_artifact
+    assert not list((repository / ".steward").glob(".context-publish-v1.*.txn"))
+
+
+def test_head_change_between_replacements_stops_transaction(tmp_path, candidates_and_attestation, monkeypatch):
+    payload, snapshot, candidates, attestation = candidates_and_attestation
+    repository = initialize_repository(tmp_path / "repo")
+    commit_all(repository)
+    original_replace = publication._replace_one
+    calls = 0
+
+    def replace_then_commit(*args, **kwargs):
+        nonlocal calls
+        result = original_replace(*args, **kwargs)
+        calls += 1
+        if calls == 1:
+            (repository / "README.md").write_text("head changed\n")
+            git(repository, "add", "README.md")
+            git(repository, "commit", "-qm", "head changed")
+        return result
+
+    monkeypatch.setattr(publication, "_replace_one", replace_then_commit)
+    result = publish(repository, payload, snapshot, attestation)
+
+    assert result.state is PublicationState.MANUAL_REVIEW
+    assert (repository / "CLAUDE.md").read_bytes() == candidates.claude_md
     assert list((repository / ".steward").glob(".context-publish-v1.*.txn"))
 
 

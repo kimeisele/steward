@@ -79,6 +79,7 @@ _OPEN_FILE = observer._OPEN_FILE
 
 _THREAD_LOCK_GUARD = threading.Lock()
 _THREAD_LOCKS: dict[tuple[int, int], threading.Lock] = {}
+_LEASE_TOKEN = object()
 
 
 class PublicationMode(str, Enum):
@@ -136,6 +137,94 @@ class _HeldLock:
             self.thread_lock.release()
 
 
+class PublisherLease:
+    """Private-worktree capability required for canonical publication."""
+
+    __slots__ = (
+        "_repository_root",
+        "_root_fd",
+        "_git_fd",
+        "_steward_fd",
+        "_lock",
+        "_root_anchor",
+        "_git_anchor",
+        "_steward_anchor",
+        "_pid",
+        "_deadline",
+        "_closed",
+        "_token",
+    )
+
+    def __init__(
+        self,
+        token: object,
+        repository_root: Path,
+        root_fd: int,
+        git_fd: int,
+        steward_fd: int,
+        lock: _HeldLock,
+        anchors: tuple[tuple[int, int, int, int], tuple[int, int, int, int], tuple[int, int, int, int]],
+        deadline: float,
+    ) -> None:
+        if token is not _LEASE_TOKEN:
+            raise TypeError("lease_constructor_private")
+        self._token = token
+        self._repository_root = repository_root
+        self._root_fd = root_fd
+        self._git_fd = git_fd
+        self._steward_fd = steward_fd
+        self._lock = lock
+        self._root_anchor, self._git_anchor, self._steward_anchor = anchors
+        self._pid = os.getpid()
+        self._deadline = deadline
+        self._closed = False
+
+    @property
+    def repository_root(self) -> Path:
+        return self._repository_root
+
+    @property
+    def root_fd(self) -> int:
+        return self._root_fd
+
+    @property
+    def git_fd(self) -> int:
+        return self._git_fd
+
+    @property
+    def steward_fd(self) -> int:
+        return self._steward_fd
+
+    @property
+    def deadline(self) -> float:
+        return self._deadline
+
+    def verify(self) -> bool:
+        if self._closed or os.getpid() != self._pid or time.monotonic() >= self._deadline:
+            return False
+        try:
+            if _directory_anchor(self._root_fd) != self._root_anchor:
+                return False
+            if _directory_anchor(self._git_fd) != self._git_anchor:
+                return False
+            if _directory_anchor(self._steward_fd) != self._steward_anchor:
+                return False
+            return _same_identity(self._lock.identity, _identity(os.fstat(self._lock.descriptor)))
+        except (OSError, ValueError):
+            return False
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        self._lock.close()
+        for descriptor in (self._git_fd, self._steward_fd, self._root_fd):
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+
+
 def _result(state: PublicationState, reason: str, txid: str | None = None) -> PublicationResult:
     return PublicationResult(state, reason[:160], txid)
 
@@ -174,6 +263,13 @@ def _identity(value: os.stat_result, *, include_size: bool = False) -> dict[str,
     if include_size:
         result["size"] = int(value.st_size)
     return result
+
+
+def _directory_anchor(descriptor: int) -> tuple[int, int, int, int]:
+    value = os.fstat(descriptor)
+    if not stat.S_ISDIR(value.st_mode) or value.st_uid != os.geteuid() or value.st_mode & 0o022:
+        raise ValueError("unsafe_directory_anchor")
+    return (value.st_dev, value.st_ino, stat.S_IFMT(value.st_mode), stat.S_IMODE(value.st_mode))
 
 
 def _same_identity(expected: Mapping[str, object], actual: Mapping[str, object]) -> bool:
@@ -363,6 +459,40 @@ def _acquire_lock(steward_fd: int, deadline: float) -> _HeldLock:
         raise
 
 
+def acquire_publisher_lease(repository_root: Path) -> PublisherLease:
+    """Acquire a pinned, private-worktree publication capability."""
+    if not isinstance(repository_root, Path) or not repository_root.is_absolute():
+        raise ValueError("repository_path_invalid")
+    root_fd = steward_fd = git_fd = None
+    lock: _HeldLock | None = None
+    deadline = time.monotonic() + _DEADLINE_SECONDS
+    try:
+        root_fd = observer._open_repository_root(repository_root)
+        steward_fd = _open_steward(root_fd)
+        git_fd = _open_git(root_fd)
+        _directory_anchor(root_fd)
+        _directory_anchor(steward_fd)
+        _directory_anchor(git_fd)
+        _safe_git()
+        lock = _acquire_lock(steward_fd, deadline)
+        anchors = (
+            _directory_anchor(root_fd),
+            _directory_anchor(git_fd),
+            _directory_anchor(steward_fd),
+        )
+        return PublisherLease(_LEASE_TOKEN, repository_root, root_fd, git_fd, steward_fd, lock, anchors, deadline)
+    except Exception:
+        if lock is not None:
+            lock.close()
+        for descriptor in (git_fd, steward_fd, root_fd):
+            if descriptor is not None:
+                try:
+                    os.close(descriptor)
+                except OSError:
+                    pass
+        raise
+
+
 def _scan_namespace(root_fd: int, steward_fd: int) -> tuple[list[str], list[str], bool]:
     journals: list[str] = []
     temps: list[str] = []
@@ -423,6 +553,16 @@ def _same_view(left: _View, right: _View) -> bool:
     )
 
 
+def _same_git_view(left: _View, right: _View) -> bool:
+    return (
+        left.head == right.head
+        and left.tree == right.tree
+        and left.index == right.index
+        and left.head_blobs == right.head_blobs
+        and left.layout == right.layout
+    )
+
+
 def _candidate_metadata(candidates: PublicationCandidates) -> tuple[str, str, str]:
     snapshot = json.loads(candidates.snapshot_artifact.decode("utf-8"))
     publication = json.loads(candidates.publication_artifact.decode("utf-8"))
@@ -456,6 +596,9 @@ def _target_baseline(
         }
     if tree_target is None or head_bytes is None or current.data != head_bytes:
         raise ValueError("baseline_unbound")
+    expected_mode = int(tree_target.mode, 8) & 0o777
+    if current.identity["mode"] != expected_mode:
+        raise ValueError("baseline_mode_unexpected")
     return {
         "parent": dict(parent_identity),
         "target": dict(current.identity),
@@ -737,21 +880,35 @@ def _prepare_temp(
     check = _safe_file_state(parent_fd, name, PERSISTED_TARGET_MAX_BYTES[path])
     if check is None or check.data != data or check.identity != temp_identity:
         raise ValueError("temp_changed")
+    os.fsync(parent_fd)
     journal["temps"][path] = {**temp_identity, "candidate_sha256": hashlib.sha256(data).hexdigest()}
+    _refresh_parent_bindings(journal, root_fd, steward_fd, parent_fd)
+    _write_journal(journal_fd, steward_fd, journal)
+
+
+def _refresh_parent_bindings(
+    journal: dict[str, object],
+    root_fd: int,
+    steward_fd: int,
+    parent_fd: int,
+) -> None:
     current_parent = _parent_identity(parent_fd)
+    targets = journal["targets"]
     for target_path in _TARGETS:
         target_parent_fd, _ = _parent_fd(root_fd, steward_fd, target_path)
         if target_parent_fd == parent_fd:
-            journal["targets"][target_path]["parent"] = dict(current_parent)
-            journal["targets"][target_path]["baseline"]["parent"] = dict(current_parent)
-    journal["repository"]["root"] = _parent_identity(root_fd)
-    journal["repository"]["steward"] = _parent_identity(steward_fd)
-    _write_journal(journal_fd, steward_fd, journal)
+            targets[target_path]["parent"] = dict(current_parent)
+            targets[target_path]["baseline"]["parent"] = dict(current_parent)
+    if parent_fd == root_fd:
+        journal["repository"]["root"] = dict(current_parent)
+    elif parent_fd == steward_fd:
+        journal["repository"]["steward"] = dict(current_parent)
 
 
 def _fence_parent(root_fd: int, steward_fd: int, path: str, expected: Mapping[str, object]) -> int:
     parent_fd, _ = _parent_fd(root_fd, steward_fd, path)
-    if not _same_identity(expected, _parent_identity(parent_fd)):
+    current = _parent_identity(parent_fd)
+    if not _same_identity(expected, current):
         raise ValueError("parent_changed")
     return parent_fd
 
@@ -796,6 +953,7 @@ def _replace_one(
     journal: dict[str, object],
     candidates: PublicationCandidates,
     index: int,
+    lease: PublisherLease,
 ) -> None:
     path = _TARGETS[index]
     txid = journal["txid"]
@@ -813,6 +971,8 @@ def _replace_one(
         or temp.data != _candidate_bytes(candidates, path)
     ):
         raise ValueError("temp_changed")
+    if not lease.verify():
+        raise ValueError("publisher_lease_changed")
     _fence_parent(root_fd, steward_fd, path, record["parent"])
     target_name = path.removeprefix(".steward/")
     os.replace(temp_name, target_name, src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
@@ -825,6 +985,10 @@ def _replace_one(
         os.close(descriptor)
     if installed is None or installed.data != _candidate_bytes(candidates, path):
         raise ValueError("readback_failed")
+    os.fsync(parent_fd)
+    _refresh_parent_bindings(journal, root_fd, steward_fd, parent_fd)
+    if not lease.verify():
+        raise ValueError("publisher_lease_changed")
     record["installed"] = {**installed.identity, "candidate_sha256": hashlib.sha256(installed.data).hexdigest()}
     journal["installed_targets"][path] = record["installed"]
     journal["cursor"] = index + 1
@@ -836,13 +1000,20 @@ def _replace_one(
         journal["status"] = "replaced"
         journal["in_flight_target"] = None
     _write_journal(journal_fd, steward_fd, journal)
-    os.fsync(parent_fd)
 
 
-def _cleanup_transaction(root_fd: int, steward_fd: int, journal_fd: int, journal: Mapping[str, object]) -> None:
+def _cleanup_transaction(
+    root_fd: int,
+    steward_fd: int,
+    journal_fd: int,
+    journal: Mapping[str, object],
+    parent_fences: Mapping[int, Mapping[str, int | str]] | None = None,
+) -> None:
     _validate_transaction_namespace(root_fd, steward_fd, journal)
     txid = journal["txid"]
-    parent_fences: dict[int, dict[str, int | str]] = {}
+    active_parent_fences: dict[int, dict[str, int | str]] = {
+        int(key): dict(value) for key, value in (parent_fences or {}).items()
+    }
     for path in _TARGETS:
         parent_kind, name = _temp_name(path, txid)
         parent_fd = root_fd if parent_kind == 0 else steward_fd
@@ -851,27 +1022,27 @@ def _cleanup_transaction(root_fd: int, steward_fd: int, journal_fd: int, journal
             continue
         current_parent = _parent_identity(parent_fd)
         parent_key = int(parent_fd)
-        if parent_key not in parent_fences:
+        if parent_key not in active_parent_fences:
             if not _same_identity(current_parent, journal["targets"][path]["parent"]):
                 raise ValueError("parent_changed")
-        elif not _same_identity(current_parent, parent_fences[parent_key]):
+        elif not _same_identity(current_parent, active_parent_fences[parent_key]):
             raise ValueError("parent_changed")
         state = _safe_file_state(parent_fd, name, PERSISTED_TARGET_MAX_BYTES[path])
         if state is None and path in journal["installed_targets"]:
-            parent_fences[parent_key] = current_parent
+            active_parent_fences[parent_key] = current_parent
             continue
         _require_owned_file(parent_fd, name)
         if state is None or not _same_stat_identity(expected, state.identity):
             raise ValueError("temp_cleanup_identity")
         os.unlink(name, dir_fd=parent_fd)
         os.fsync(parent_fd)
-        parent_fences[parent_key] = _parent_identity(parent_fd)
+        active_parent_fences[parent_key] = _parent_identity(parent_fd)
     identity = journal["journal"]
     if not _same_identity(identity, _identity(os.fstat(journal_fd))):
         raise ValueError("journal_cleanup_identity")
-    if int(steward_fd) not in parent_fences:
-        parent_fences[int(steward_fd)] = _parent_identity(steward_fd)
-    if not _same_identity(_parent_identity(steward_fd), parent_fences[int(steward_fd)]):
+    if int(steward_fd) not in active_parent_fences:
+        active_parent_fences[int(steward_fd)] = _parent_identity(steward_fd)
+    if not _same_identity(_parent_identity(steward_fd), active_parent_fences[int(steward_fd)]):
         raise ValueError("repository_parent_changed")
     os.unlink(f".context-publish-v1.{txid}.txn", dir_fd=steward_fd)
     os.fsync(steward_fd)
@@ -884,8 +1055,12 @@ def _create_transaction(
     view: _View,
     candidates: PublicationCandidates,
     attestation: ConstitutionAttestation,
+    lease: PublisherLease,
 ) -> PublicationResult:
     txid = secrets.token_hex(16)
+    journals, temps, unknown = _scan_namespace(root_fd, steward_fd)
+    if journals or temps or unknown:
+        raise ValueError("transaction_namespace_ambiguous")
     name = f".context-publish-v1.{txid}.txn"
     journal_fd = os.open(
         name,
@@ -901,11 +1076,19 @@ def _create_transaction(
             _prepare_temp(root_fd, steward_fd, journal_fd, journal, path, _candidate_bytes(candidates, path))
         _validate_transaction_namespace(root_fd, steward_fd, journal)
         for index in range(len(_TARGETS)):
+            if not lease.verify():
+                raise ValueError("publisher_lease_changed")
             _validate_transaction_namespace(root_fd, steward_fd, journal)
             _fence_targets(root_fd, steward_fd, journal, candidates, index)
-            _replace_one(root_fd, steward_fd, journal_fd, journal, candidates, index)
+            _replace_one(root_fd, steward_fd, journal_fd, journal, candidates, index, lease)
+            current = _view(root_fd, git_fd, steward_fd, attestation, _safe_git()[0], lease.deadline)
+            if not _same_git_view(view, current):
+                raise ValueError("git_changed_during_transaction")
         _validate_transaction_namespace(root_fd, steward_fd, journal)
         _fence_targets(root_fd, steward_fd, journal, candidates, len(_TARGETS))
+        current = _view(root_fd, git_fd, steward_fd, attestation, _safe_git()[0], lease.deadline)
+        if not _same_git_view(view, current) or not lease.verify():
+            raise ValueError("final_transaction_fence")
         journal["status"] = "read_back_validated"
         _write_journal(journal_fd, steward_fd, journal)
         _cleanup_transaction(root_fd, steward_fd, journal_fd, journal)
@@ -969,6 +1152,190 @@ def _validate_transaction_files(root_fd: int, steward_fd: int, journal: Mapping[
             raise ValueError("temp_foreign")
 
 
+def _parent_state_matches(
+    root_fd: int,
+    steward_fd: int,
+    path: str,
+    expected: Mapping[str, int | str],
+) -> int:
+    parent_fd, _ = _parent_fd(root_fd, steward_fd, path)
+    if not _same_identity(_parent_identity(parent_fd), expected):
+        raise ValueError("recovery_parent_changed")
+    return parent_fd
+
+
+def _baseline_bytes(view: _View, journal: Mapping[str, object], path: str) -> bytes | None:
+    baseline = journal["targets"][path]["baseline"]
+    if not baseline["present"]:
+        return None
+    data = view.head_blobs.get(path)
+    if data is None or hashlib.sha256(data).hexdigest() != baseline["sha256"] or len(data) != baseline["size"]:
+        raise ValueError("recovery_baseline_unavailable")
+    return data
+
+
+def _fence_recovery_state(
+    root_fd: int,
+    steward_fd: int,
+    journal: Mapping[str, object],
+    candidates: PublicationCandidates,
+    view: _View,
+    cursor: int,
+    restored: set[str],
+    parent_states: Mapping[int, Mapping[str, int | str]],
+) -> None:
+    for index, path in enumerate(_TARGETS):
+        record = journal["targets"][path]
+        parent_fd, _ = _parent_fd(root_fd, steward_fd, path)
+        parent_key = int(parent_fd)
+        expected_parent = parent_states.get(parent_key, record["parent"])
+        _parent_state_matches(root_fd, steward_fd, path, expected_parent)
+        baseline = record["baseline"]
+        state = _safe_file_state(parent_fd, path.removeprefix(".steward/"), PERSISTED_TARGET_MAX_BYTES[path])
+        if path in restored:
+            expected_data = _baseline_bytes(view, journal, path)
+            if expected_data is None:
+                if state is not None:
+                    raise ValueError("recovery_target_present")
+            elif state is None or state.data != expected_data or state.identity["mode"] != baseline["mode"]:
+                raise ValueError("recovery_baseline_changed")
+        elif index < cursor:
+            installed = record["installed"]
+            if (
+                state is None
+                or installed is None
+                or not _same_stat_identity(installed, state.identity)
+                or state.data != _candidate_bytes(candidates, path)
+            ):
+                raise ValueError("recovery_candidate_changed")
+        elif baseline["present"]:
+            if (
+                state is None
+                or not _same_stat_identity(baseline["target"], state.identity)
+                or hashlib.sha256(state.data).hexdigest() != baseline["sha256"]
+            ):
+                raise ValueError("recovery_suffix_changed")
+        elif state is not None:
+            raise ValueError("recovery_suffix_present")
+
+
+def _prepare_recovery_temp(
+    root_fd: int,
+    steward_fd: int,
+    journal: Mapping[str, object],
+    path: str,
+    data: bytes,
+) -> tuple[int, str]:
+    parent_kind, name = _temp_name(path, journal["txid"])
+    parent_fd = root_fd if parent_kind == 0 else steward_fd
+    if _safe_file_state(parent_fd, name, PERSISTED_TARGET_MAX_BYTES[path]) is not None:
+        raise ValueError("recovery_temp_present")
+    descriptor = os.open(
+        name,
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | os.O_NOFOLLOW,
+        0o600,
+        dir_fd=parent_fd,
+    )
+    try:
+        _write_all(descriptor, data)
+        os.fsync(descriptor)
+        value = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(value.st_mode)
+            or value.st_nlink != 1
+            or stat.S_IMODE(value.st_mode) != 0o600
+            or value.st_uid != os.geteuid()
+            or value.st_size != len(data)
+        ):
+            raise ValueError("recovery_temp_unsafe")
+        identity = _identity(value, include_size=True)
+    finally:
+        os.close(descriptor)
+    check = _safe_file_state(parent_fd, name, PERSISTED_TARGET_MAX_BYTES[path])
+    if check is None or check.data != data or check.identity != identity:
+        raise ValueError("recovery_temp_changed")
+    os.fsync(parent_fd)
+    return parent_fd, name
+
+
+def _rollback_partial_transaction(
+    root_fd: int,
+    git_fd: int,
+    steward_fd: int,
+    journal_fd: int,
+    journal: Mapping[str, object],
+    candidates: PublicationCandidates,
+    attestation: ConstitutionAttestation,
+    view: _View,
+    lease: PublisherLease,
+    deadline: float,
+) -> PublicationResult:
+    cursor = journal["cursor"]
+    _fence_targets(root_fd, steward_fd, journal, candidates, cursor)
+    restored: set[str] = set()
+    parent_states = {
+        int(root_fd): _parent_identity(root_fd),
+        int(steward_fd): _parent_identity(steward_fd),
+    }
+    for index in reversed(range(cursor)):
+        if not lease.verify():
+            raise ValueError("publisher_lease_changed")
+        _fence_recovery_state(root_fd, steward_fd, journal, candidates, view, cursor, restored, parent_states)
+        path = _TARGETS[index]
+        baseline = journal["targets"][path]["baseline"]
+        data = _baseline_bytes(view, journal, path)
+        parent_fd, target_name = _parent_fd(root_fd, steward_fd, path)
+        if data is None:
+            os.unlink(target_name, dir_fd=parent_fd)
+            os.fsync(parent_fd)
+            if _safe_file_state(parent_fd, target_name, PERSISTED_TARGET_MAX_BYTES[path]) is not None:
+                raise ValueError("recovery_unlink_failed")
+        else:
+            _, temp_name = _prepare_recovery_temp(root_fd, steward_fd, journal, path, data)
+            parent_states[int(parent_fd)] = _parent_identity(parent_fd)
+            _fence_recovery_state(root_fd, steward_fd, journal, candidates, view, cursor, restored, parent_states)
+            os.replace(temp_name, target_name, src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
+            descriptor = os.open(target_name, _OPEN_FILE, dir_fd=parent_fd)
+            try:
+                os.fchmod(descriptor, baseline["mode"])
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+            restored_state = _safe_file_state(parent_fd, target_name, PERSISTED_TARGET_MAX_BYTES[path])
+            if (
+                restored_state is None
+                or restored_state.data != data
+                or restored_state.identity["mode"] != baseline["mode"]
+            ):
+                raise ValueError("recovery_readback_failed")
+        parent_states[int(parent_fd)] = _parent_identity(parent_fd)
+        restored.add(path)
+        current = _view(root_fd, git_fd, steward_fd, attestation, _safe_git()[0], deadline)
+        if not _same_git_view(view, current) or not lease.verify():
+            raise ValueError("git_changed_during_recovery")
+    _fence_recovery_state(root_fd, steward_fd, journal, candidates, view, cursor, restored, parent_states)
+    _cleanup_transaction(root_fd, steward_fd, journal_fd, journal, parent_states)
+    return _result(PublicationState.BLOCKED, "recovered_rollback", journal["txid"])
+
+
+def _validate_recovery_view_state(status: object, state: observer.GenerationState) -> None:
+    allowed = {
+        "prepared": {observer.GenerationState.ABSENT, observer.GenerationState.VALID},
+        "replacing": {
+            observer.GenerationState.MIXED,
+            observer.GenerationState.UNBOUND,
+            observer.GenerationState.VALID,
+            observer.GenerationState.ABSENT,
+            observer.GenerationState.INVALID,
+            observer.GenerationState.MANUAL_REVIEW,
+        },
+        "replaced": {observer.GenerationState.VALID, observer.GenerationState.UNBOUND},
+        "read_back_validated": {observer.GenerationState.VALID, observer.GenerationState.UNBOUND},
+    }
+    if state not in allowed.get(status, set()):
+        raise ValueError("recovery_state_untrusted")
+
+
 def _validate_journal_binding(
     root_fd: int,
     git_fd: int,
@@ -987,11 +1354,12 @@ def _validate_journal_binding(
         or journal["source_blob"] != attestation.source_blob
     ):
         raise ValueError("journal_binding")
-    if journal["repository"] != {
+    current_repository = {
         "root": _parent_identity(root_fd),
         "git": _parent_identity(git_fd),
         "steward": _parent_identity(steward_fd),
-    }:
+    }
+    if any(not _same_identity(journal["repository"][key], current_repository[key]) for key in current_repository):
         raise ValueError("repository_binding")
     for path in _TARGETS:
         data = _candidate_bytes(candidates, path)
@@ -1008,6 +1376,7 @@ def _recover_existing(
     attestation: ConstitutionAttestation,
     candidates: PublicationCandidates,
     deadline: float,
+    lease: PublisherLease,
 ) -> PublicationResult:
     journals, temps, unknown = _scan_namespace(root_fd, steward_fd)
     if unknown or journals != [journal_name]:
@@ -1020,21 +1389,38 @@ def _recover_existing(
         _validate_transaction_namespace(root_fd, steward_fd, journal)
         git, _ = _safe_git()
         view = _view(root_fd, git_fd, steward_fd, attestation, git, deadline)
+        _validate_recovery_view_state(journal["status"], view.state)
         _validate_journal_binding(root_fd, git_fd, steward_fd, journal, candidates, attestation, view)
         _validate_transaction_files(root_fd, steward_fd, journal)
         status = journal.get("status")
         cursor = journal.get("cursor")
         if status == "prepared" and cursor == 0:
             _fence_targets(root_fd, steward_fd, journal, candidates, 0)
+            current = _view(root_fd, git_fd, steward_fd, attestation, _safe_git()[0], deadline)
+            if not _same_git_view(view, current) or not lease.verify():
+                raise ValueError("git_changed_during_recovery")
             _cleanup_transaction(root_fd, steward_fd, journal_fd, journal)
             return _result(PublicationState.BLOCKED, "recovered_prepared", journal["txid"])
         if status in {"replaced", "read_back_validated"} and cursor == 4:
             _fence_targets(root_fd, steward_fd, journal, candidates, 4)
+            current = _view(root_fd, git_fd, steward_fd, attestation, _safe_git()[0], deadline)
+            if not _same_git_view(view, current) or not lease.verify():
+                raise ValueError("git_changed_during_recovery")
             _cleanup_transaction(root_fd, steward_fd, journal_fd, journal)
             return _result(PublicationState.PUBLISHED, "recovered_generation", journal["txid"])
         if status == "replacing" and isinstance(cursor, int) and 1 <= cursor <= 3:
-            _fence_targets(root_fd, steward_fd, journal, candidates, cursor)
-            return _result(PublicationState.MANUAL_REVIEW, "recovery_requires_review", journal["txid"])
+            return _rollback_partial_transaction(
+                root_fd,
+                git_fd,
+                steward_fd,
+                journal_fd,
+                journal,
+                candidates,
+                attestation,
+                view,
+                lease,
+                deadline,
+            )
         return _result(PublicationState.MANUAL_REVIEW, "recovery_state_invalid", journal["txid"])
     except (OSError, ValueError, ContractViolation, TimeoutError, observer._ObservationFailure) as error:
         return _result(PublicationState.MANUAL_REVIEW, type(error).__name__.lower(), journal.get("txid"))
@@ -1053,7 +1439,7 @@ def publish_context(
     attestation: ConstitutionAttestation,
     *,
     mode: PublicationMode | str = PublicationMode.DISABLED,
-    isolation_attested: bool = False,
+    lease: PublisherLease | None = None,
 ) -> PublicationResult:
     """Publish one validated generation; canonical mode is never caller-wired."""
     try:
@@ -1069,26 +1455,33 @@ def publish_context(
         return _result(PublicationState.BLOCKED, "disabled")
     if selected_mode is PublicationMode.PREVIEW:
         return _result(PublicationState.BLOCKED, "preview_only")
-    if not isolation_attested:
-        return _result(PublicationState.BLOCKED, "isolation_not_attested")
     if not isinstance(repository_root, Path) or not repository_root.is_absolute():
         return _result(PublicationState.BLOCKED, "repository_path_invalid")
-    root_fd = git_fd = steward_fd = None
-    lock: _HeldLock | None = None
-    deadline = time.monotonic() + _DEADLINE_SECONDS
+    if not isinstance(lease, PublisherLease):
+        return _result(PublicationState.BLOCKED, "publisher_lease_required")
+    if lease.repository_root != repository_root or not lease.verify():
+        return _result(PublicationState.BLOCKED, "publisher_lease_invalid")
+    root_fd = lease.root_fd
+    git_fd = lease.git_fd
+    steward_fd = lease.steward_fd
+    deadline = lease.deadline
     try:
-        root_fd = observer._open_repository_root(repository_root)
-        steward_fd = _open_steward(root_fd)
-        git_fd = _open_git(root_fd)
+        if not lease.verify():
+            return _result(PublicationState.MANUAL_REVIEW, "publisher_lease_changed")
         git, _ = _safe_git()
+        # Namespace state is read only after the exclusive lease exists.
         journals, temps, unknown = _scan_namespace(root_fd, steward_fd)
-        lock = _acquire_lock(steward_fd, deadline)
         if unknown or len(journals) > 1:
             return _result(PublicationState.MANUAL_REVIEW, "transaction_namespace_ambiguous")
         if journals or temps:
             if len(journals) != 1:
                 return _result(PublicationState.MANUAL_REVIEW, "transaction_journal_missing")
-            return _recover_existing(root_fd, git_fd, steward_fd, journals[0], attestation, candidates, deadline)
+            result = _recover_existing(
+                root_fd, git_fd, steward_fd, journals[0], attestation, candidates, deadline, lease
+            )
+            if result.state in {PublicationState.PUBLISHED, PublicationState.NO_OP} and not lease.verify():
+                return _result(PublicationState.MANUAL_REVIEW, "publisher_lease_changed", result.transaction_id)
+            return result
         before = _view(root_fd, git_fd, steward_fd, attestation, git, deadline)
         if before.state not in {observer.GenerationState.ABSENT, observer.GenerationState.VALID}:
             return _result(PublicationState.MANUAL_REVIEW, f"baseline_{before.state.value}")
@@ -1100,20 +1493,22 @@ def publish_context(
             for path in _TARGETS:
                 parent_fd, name = _parent_fd(root_fd, steward_fd, path)
                 current_states[path] = _safe_file_state(parent_fd, name, PERSISTED_TARGET_MAX_BYTES[path])
+                current = current_states[path]
+                tree_target = before.tree.get(path)
+                if (
+                    current is not None
+                    and tree_target is not None
+                    and current.identity["mode"] != int(tree_target.mode, 8) & 0o777
+                ):
+                    return _result(PublicationState.MANUAL_REVIEW, "baseline_mode_unexpected")
             if all(
                 current_states[path] is not None and current_states[path].data == _candidate_bytes(candidates, path)
                 for path in _TARGETS
             ):
                 return _result(PublicationState.NO_OP, "already_published")
-        return _create_transaction(root_fd, git_fd, steward_fd, after, candidates, attestation)
+        result = _create_transaction(root_fd, git_fd, steward_fd, after, candidates, attestation, lease)
+        if result.state in {PublicationState.PUBLISHED, PublicationState.NO_OP} and not lease.verify():
+            return _result(PublicationState.MANUAL_REVIEW, "publisher_lease_changed", result.transaction_id)
+        return result
     except (OSError, ValueError, ContractViolation, TimeoutError, observer._ObservationFailure) as error:
         return _result(PublicationState.MANUAL_REVIEW, type(error).__name__.lower())
-    finally:
-        if lock is not None:
-            lock.close()
-        for descriptor in (git_fd, steward_fd, root_fd):
-            if descriptor is not None:
-                try:
-                    os.close(descriptor)
-                except OSError:
-                    pass
