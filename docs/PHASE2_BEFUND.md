@@ -2356,3 +2356,67 @@ ist `a7f881d519539eb4649f22b415183efec7018eb4`, Tree
 `c1f0cacbf9487957145ebf275d444dd866804413`; gegenüber dem E0-/Park-Basisstand kam nur
 zwischenzeitlicher Runtime-/Federation-State hinzu. Das ändert weder den E0-Vertrag noch den
 geparkten Resume-Punkt.
+
+## §26 — EXECUTION TRUTH MAP RECON AKZEPTIERT; FUNDAMENT-GATES GETRENNT (2026-07-18)
+
+### Autoritativer Stand
+
+Der read-only Execution-Truth-Map-Recon über Steward, Agent City und die produktive
+Steward-Protocol-Grenze ist abgeschlossen und als Gate akzeptiert. Live-Pins, vollständige
+Identitäts-/Status-/Fehler-/Verification-Inventare, Federation-Wiring, Ist-Sequenz,
+Gap-Matrix, Tests und Produktionsbelege stehen in:
+
+`specs/execution_truth_map/EXECUTION_TRUTH_MAP_RECON.md`
+
+Die zehn noch nicht entschiedenen Architekturfragen stehen ohne erfundene Antworten in:
+
+`specs/execution_truth_map/ADR_BACKLOG.md`
+
+### Bestätigte Fundamentrisse
+
+- **G0:** Agent City kann trotz funktionalem Git-Push-Fehler grün enden; Produktionsrun
+  `29644618328` belegt `GH006` plus Workflow-Success. `delegate_task` besitzt am Agent-City-
+  Pin keinen Fachhandler. Steward und Agent City verwenden für PR-Verdicts inkompatible
+  Signaturscopes/-encodings; vier fokussierte E2E-Tests reproduzieren die Ablehnung.
+- **G1:** Es gibt keine durchgehende Ausführungsidentität. Delegation broadcastet trotz
+  `target_agent`, verliert Ursprungstask/Korrelation, erzeugt am Empfänger eine neue Task-ID
+  und korreliert Callbacks per Titel-Substring. Completion kann vor Wirkung/Verifikation
+  eintreten; Transport-Receipts beweisen keine Remote-Wirkung; unbekannte Federation-
+  Operationen können ohne strukturiertes Finding konsumiert werden.
+- **G2:** Managed Task, A2A, Sankalpa und Chitta besitzen nicht übersetzte Statusmodelle.
+  Agent City meldet produktiv den fehlenden optionalen `steward.provider`-Import. Der
+  Heartbeat-Masterstatus war gegenüber dem bereits gemergten Schnitt A veraltet und ist
+  mit diesem Milestone reconciliiert.
+
+### Widerlegte oder präzisierte Altbehauptungen
+
+- PR-Verdicts sind nicht als funktionierender End-to-End-Pfad belegt; der reale Crypto-
+  Vertrag ist inkompatibel.
+- Kirtan verifiziert Delegationscallbacks nicht: der Hook erwartet ein nicht vorhandenes
+  `KirtanLoop.get_status`.
+- `DeliveryReceipt` bestätigt keine Annahme, Ausführung oder Postcondition, sondern nur
+  eine heuristische Transport-/Peer-Beobachtung.
+- „Schnitt A noch nicht implementiert" war veraltet. PR `#759`, Merge
+  `281c7112bb90d0fe1440d25bf8229dfe12980f17`, lieferte das Cognition-Instrument. Der
+  aktuelle Health-State enthält den Block; `tests/test_moksha_health.py` läuft mit
+  `17 passed`. Schnitt A ändert weiterhin keinen Run-Exit.
+
+### Beschlossene nächste Gates
+
+1. Heartbeat Failure Propagation bleibt in getrennten Schnitten: A ist geliefert; B
+   (Eskalation) benötigt A-Produktionsdaten und eigene Spec; C (Run-rot) bleibt bis zu
+   empirischer Schwelle, Prädikatentscheidung, atomarem Health-Write, Default-off
+   Kill-Switch und Operator-Go gesperrt. Reconciliierte Dokumente:
+   `specs/HEARTBEAT_FAILURE_PROPAGATION_SYSTEM_SPEC.md` und
+   `specs/HEARTBEAT_FAILURE_PROPAGATION_FEATURE_01.md`.
+2. Federation Delegation wird als eigener V1-Vertrag vorbereitet:
+   `specs/FEDERATION_DELEGATION_CONTRACT_V1.md`. Die Fassung ist DRAFT 0.1, durch ADRs und
+   adversariales Review blockiert und autorisiert keinen Produktcode.
+3. Eine große Execution-Spine-System-Spec bleibt gesperrt. Eine spätere Spine muss aus den
+   entschiedenen Heartbeat- und Federation-Verträgen abstrahieren, nicht umgekehrt.
+
+### Schutzgrenzen
+
+Dieser Milestone ändert ausschließlich Dokumentation. Phase 1 bleibt read-only. Die
+Context Bridge bleibt gemäß §25 geparkt; PR `#728` ist offen und nicht freigegeben. E1,
+D2b, G1, Publisher, Delivery und Canonical-Aktivierung bleiben gesperrt.

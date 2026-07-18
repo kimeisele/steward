@@ -2,31 +2,32 @@
 
 ## Sichtbarmachung anhaltenden kognitiven/Provider-Kollaps
 
-> **Status:** DRAFT 1.0 — SIEBEN REVIEW-RUNDEN, BEDINGTES GO. §5.3 vollständig definiert und
-> **fail-laut** (Dekoder werfen bei Form-Drift statt still „gesund" zu lesen, Befund 1);
-> Prosa/Code-Konsistenz hergestellt (Membran-Skip bewusst nicht erfasst, Befund 2);
-> Snapshot-Verzerrung benannt (Befund 3). Keine Designfehler mehr offen. **G1 formal erst
-> nach:** (i) Versions-Gegenprüfung der Statusformen gegen die Produktions-`steward-protocol`-
-> Version als **Impl-Schritt 1**; (ii) normales Deployment-Gate + Operator-Go. IMPL./
-> AKTIVIERUNG GESPERRT bis Operator-Go.
-> **Datum:** 2026-07-17
-> **Produktionsbasis:** `kimeisele/steward@bf2fba2075a87463fc8e333f8f57d805fce4d030`
+> **Status:** RECONCILED 1.1 — SCHNITT A IMPLEMENTIERT UND PRODUKTIV SICHTBAR;
+> SCHNITT B/C WEITERHIN GESPERRT
+> **Datum:** 2026-07-18
+> **Aktuelle Produktionsbasis:**
+> `kimeisele/steward@24f86ec0749a1eff919921a947189ee5c459a4c8`
+> **Historische Spec-Basis:**
+> `kimeisele/steward@bf2fba2075a87463fc8e333f8f57d805fce4d030`
 > **Herkunft:** Phase-2 §7.3; Recon RECON_01–04; adversariales Review (§12)
+> **Lieferbeleg:** PR `#759`, Merge `281c7112bb90d0fe1440d25bf8229dfe12980f17`;
+> Implementierungscommits `71a207e39efa84396b8f030a58a66b7abd77b513` und
+> `899135cee8af79efa74139fc10da7e015508eef0`
 
 ---
 
 ## 1. Zweck und Gate
 
 Anhaltenden kognitiven/Provider-Kollaps beobachtbar machen, ohne die bewusste Resilienz zu
-brechen. LOGGING zuerst; Erzwingen (Run rot) erst nach belegter Beobachtung, nur hinter
-Kill-Switch. DRAFT — kein G1 ohne Auflösung der offenen Blocker (§12) und Operator-Go.
-**Schnitt A** ist ohne Interpretationsspielraum spezifiziert; **B/C** sind datengesteuert
-gegated.
+brechen. **Schnitt A ist geliefert:** das Cognition-Instrument persistiert Beobachtung,
+ohne den Run-Exit zu verändern. Erzwingen (Run rot) bleibt erst nach belegter Beobachtung
+und nur hinter Kill-Switch zulässig. **B/C** sind weiterhin datengesteuert gegated.
 
 ## 2. Normative Abhängigkeiten
 
-RECON_01–04 (`heartbeat_failure_propagation_evidence/`). Alle Zeilenanker gelten auf der
-Produktionsbasis oben und sind vor Implementierung erneut zu pinnen.
+RECON_01–04 (`heartbeat_failure_propagation_evidence/`). Ihre Zeilenanker gelten auf der
+historischen Spec-Basis. Für die gelieferte Implementierung wurden sie in PR `#759` erneut
+geprüft; der heutige Stand ist zusätzlich in §13 gepinnt.
 
 ## 3. Gepinnte Fakten (belegt, mit Anker)
 
@@ -183,12 +184,13 @@ schon als Feld `alive` — `hard_down`/`usable` nutzen es direkt, keine Neuberec
 „gesund"** — die Drift ist als Feld `decode_error` im Artefakt sichtbar. Zusätzlich validiert
 `execute()` beim ersten Aufruf die Form einmal gegen die installierte Version.
 
-**Versionsabgleich ist IMPLEMENTIERUNGS-SCHRITT 1, nicht danach (Befund 1):** gepinnt gegen
+**Historischer Versionsabgleich als Implementierungsschritt 1 (erfüllt):** gepinnt gegen
 `steward-protocol==0.3.2` (PyPI); Produktion installiert editable aus `main`
 (`steward-heartbeat.yml:49`). Bevor eine Zeile von §5.3 geschrieben wird, die drei Formen
 (`CircuitBreaker.get_status`, `OperationalQuota.get_status`, `MahaCellUnified.is_alive`) gegen
-die exakte Produktionsversion gegenlesen (oder die Dependency-Version pinnen). Das Fail-laut
-oben macht jede Drift, die *nach* diesem Abgleich entsteht, sichtbar statt blind.
+die exakte Produktionsversion gegenlesen (oder die Dependency-Version pinnen). Dieser
+Schritt wurde in Schnitt A als `_validate_protocol_shape_once()` und direkte Regressionstests
+geliefert. Das Fail-laut oben macht jede spätere Drift sichtbar statt blind.
 
 **Snapshot-Näherung (benannt):** `_breaker_ok`/`_quota_ok` lesen den `get_status()`-Snapshot
 zum MOKSHA-Zeitpunkt; die echten Skips nutzen zusätzlich Live-Größen (Recovery-Timeout,
@@ -240,12 +242,22 @@ Disk-Roundtrip-Ebene (**das eigentliche Novum — Befund 3**):
 - `test_execute_appends_ok_and_returns_none`: `execute(ctx)` gibt `None`, hängt
   `"moksha_health_report:ok"` an, wirft nicht.
 
-## 7. SCHNITT A — AKZEPTANZ (Produktionslog, nicht grüner Test)
+## 7. SCHNITT A — AKZEPTANZ UND ERFÜLLUNGSSTAND
 
 Nach einem Heartbeat-Run enthält `.steward/federation_health.json` den `cognition`-Block mit
 allen Feldern (inkl. `calls_delta`/`fail_delta`/`degraded`); bei gesunder Kognition
 `consecutive_collapsed_cycles: 0`; Run-Exit-Status unverändert grün. Verifikation am realen
 Artefakt über mehrere aufeinanderfolgende Runs (Streak-Verhalten sichtbar).
+
+**Erfüllt am Recon-Pin 2026-07-18:** Der git-persistierte Block enthält alle normativen
+Felder. Drei Provider sind alive/usable; alle drei Collapse-Prädikate sind `false`,
+`decode_error` ist `null`, Streak `0`. Der direkte Lauf
+`pytest -q tests/test_moksha_health.py` ergibt `17 passed`. PR `#759` hatte grüne Python-
+3.11/3.12-, Lint- und Security-Checks.
+
+**Nicht durch A bewiesen:** dass der Heartbeat allgemein wahrheitsgetreu rot/grün endet.
+Agent City Run `29644618328` ist ein aktuelles Gegenbeispiel für einen anderen Kanal:
+geschützter `main` lehnt den Push ab, der Workflow bleibt wegen `git push || true` grün.
 
 ## 8. SCHNITT B/C — PRÄZISE GEGATED
 
@@ -324,11 +336,12 @@ None-Guard (Befund 6).
 
 ## 11. Schlussstatus
 
-DRAFT 1.0 — bedingtes Go. Schnitt A misst Hard-Down, Degradation und Skip-Kollaps; §5.3
-vollständig definiert, fail-laut, ohne offene Designfehler. B/C korrekt gegated.
-**Verbleibend vor G1:** (i) Statusformen gegen die Produktions-`steward-protocol`-Version
-gegenprüfen — **als erster Implementierungsschritt** (§5.3a); (ii) normales Deployment-Gate.
-Kein Impl./Aktivierung ohne Review + Operator-Go.
+RECONCILED 1.1. Schnitt A misst Hard-Down, Degradation und Skip-Kollaps; §5.3 ist
+implementiert und fail-laut. Die Produktionsform-Gegenprüfung wird durch
+`_validate_protocol_shape_once()` ausgeführt und durch `TestProtocolShapeValidation`
+regressionsgeprüft. A ist gemergt und im persistierten Health-State sichtbar.
+
+B/C bleiben korrekt gegated. Dieses Dokument autorisiert weder Eskalation noch Run-rot.
 
 **Minor (für den C-Designer):** `skip_collapse` ist ein **Kapazitäts**-Prädikat („könnten
 wir kognizieren?"), in denselben Streak gefaltet wie die **Failure**-Prädikate
@@ -400,3 +413,37 @@ Inkrement heißt also nicht immer „Kognition scheiterte".
   Breaker-Recovery → in §10.1 benannt. Der Reviewer korrigierte zudem seinen eigenen
   Runde-5-Fehler (globaler Quota IST im non-streaming `invoke()` erreichbar). Verbleibend nur
   noch Versionsabgleich + Deployment-Gate; nächster sinnvoller Schritt ist Code, nicht Review.
+
+## 13. Implementierungs- und Produktions-Reconciliation
+
+### 13.1 Implementierung
+
+- `71a207e39efa84396b8f030a58a66b7abd77b513` implementierte Schnitt A in
+  `steward/hooks/moksha_health.py` und `tests/test_moksha_health.py`.
+- `899135cee8af79efa74139fc10da7e015508eef0` schloss Reviewbefunde: Shape-Validation,
+  Drift darf eindeutiges `degraded`/`hard_down` nicht maskieren, zusätzliche Tests.
+- PR `#759` wurde als `281c7112bb90d0fe1440d25bf8229dfe12980f17` gemergt.
+
+Aktuelle Blob-Pins am Recon-Head vor dieser Dokumentreconciliation:
+
+```text
+steward/hooks/moksha_health.py  727833b06a6095db63914d875c958eedca55ff76
+tests/test_moksha_health.py     2cb9df0f56fd26a1d4117e7eea5b67de813ff1f9
+Feature-Spec                    3cda6496c2d508af407e4cdb0510a081c6a39b64
+```
+
+### 13.2 Tatsächliche Grenzen
+
+- Health-Writes bleiben nicht atomar; das ist weiterhin C-Blocker.
+- Schnitt A ist ein Snapshot-/Streak-Instrument, kein Task- oder Provider-Attempt-Receipt.
+- `ctx.operations.append("moksha_health_report:ok")` bestätigt Hookabschluss, nicht die
+  erfolgreiche Wirkung jedes Writers.
+- B besitzt weder Eskalationsvertrag noch Implementierung.
+- C besitzt weder Schwelle noch Prädikatentscheidung, Kill-Switch oder Implementierung.
+
+### 13.3 Nächster erlaubter Gate
+
+Nicht „mehr Schnitt A" und nicht eine große Execution-Spine-Spec. Zuerst müssen A-Daten
+für B/C ausgewertet und die entsprechenden separaten Specs mit Operator-Go geführt werden.
+Der parallel belegte Federation-Delegationsbruch wird unabhängig in
+`specs/FEDERATION_DELEGATION_CONTRACT_V1.md` vorbereitet.
