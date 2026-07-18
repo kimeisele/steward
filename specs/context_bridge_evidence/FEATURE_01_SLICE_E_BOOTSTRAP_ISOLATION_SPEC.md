@@ -1,6 +1,6 @@
 # Context Bridge Slice E — Bootstrap and Publisher Isolation
 
-**Status:** DRAFT 0.7 — E0 architecture decisions closed; implementation forbidden
+**Status:** DRAFT 0.8 — E0 architecture decisions closed; implementation forbidden
 
 **Parent contract:** `FEATURE_01_SLICE_D2B_WRITER_POLICY_PREFLIGHT.md`,
 `FEATURE_01_SLICE_D2B_G2_PREFLIGHT.md`
@@ -192,17 +192,20 @@ the verified Bubblewrap executable consumed by `execveat`. Only FDs 3, 4, and
 5 cross the Bubblewrap launch. All three `--preserve-fd` arguments are
 mandatory. A launch that cannot preserve exactly those FDs is unsupported and
 returns `manual_review` before any workspace or transaction namespace exists.
-The runtime root itself must already contain exactly these empty, root-owned
-mode-`0555` mountpoint directories before the root bind: `/input`, `/work`,
-`/proc`, `/dev`, and `/tmp`. `/input` is the parent for the sealed bundle;
-`/work`, `/proc`, `/dev`, and `/tmp` are subsequently mounted over those
-directories. It must also contain the regular placeholder file
+The runtime root itself must already contain exactly these root-owned mode-`0555`
+mountpoint directories before the root bind: `/input`, `/work`, `/proc`, `/dev`,
+and `/tmp`. `/input` is the one non-empty mountpoint: it contains exactly the
+regular placeholder file below. The other four mountpoints (`/work`, `/proc`,
+`/dev`, and `/tmp`) must be empty. `/work`, `/proc`, `/dev`, and `/tmp` are
+subsequently mounted over those directories. `/input` must contain the regular placeholder file
 `/input/source.bundle`, root-owned mode `0444`, size `0`, and SHA-256
 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`.
 Bubblewrap replaces that existing placeholder with the sealed FD-4 bind; it
 must not create a mountpoint or bind target beneath the read-only root. A
-missing, non-directory, writable, symlink, non-empty, or differently hashed
-mountpoint/placeholder is `manual_review` before launch. This is why no `--dir`
+missing, non-directory, writable, symlink, unexpectedly populated, or differently
+hashed mountpoint/placeholder is `manual_review` before launch. For `/input`,
+“unexpectedly populated” means anything other than the single named placeholder.
+This is why no `--dir`
 operation appears after the root bind.
 `--clearenv` is mandatory. The only worker environment variables are the nine
 `LANG`/`LC_ALL`/`PATH`/`GIT_*` assignments shown above; every other inherited
@@ -300,15 +303,22 @@ by the caller.
 The exporter environment is exactly the nine variables listed in §4.2; it has
 no `HOME`, `XDG_*`, `LD_*`, proxy, credential, or unlisted `GIT_*` variable.
 The supervisor validates the source local configuration through the pinned
-`.git` FD before each Git invocation. The only accepted local keys are
-`core.repositoryformatversion`, `core.filemode`, `core.bare`,
-`core.logallrefupdates`, and `extensions.objectformat`, with their canonical
-scalar types and values; every `include.*` or `includeIf.*` key/section,
+`.git` FD before each Git invocation. It computes `config_sha256` as SHA-256 of
+the exact raw UTF-8 config bytes and binds that hash in both D2a evidence rounds.
+After parsing, the effective normalized object has exactly these keys and
+values: `core.repositoryformatversion=0`, `core.bare=false`,
+`core.filemode` one of the exact booleans `true` or `false`,
+`core.logallrefupdates` one of the exact booleans `true` or `false`, and
+`extensions.objectformat=sha1` (an absent key normalizes to `sha1`). Missing
+`core.repositoryformatversion`, `core.bare`, `core.filemode`, or
+`core.logallrefupdates` keys normalize only to the fixed values `0`, `false`,
+`true`, and `true`, respectively; no other key may be absent. Duplicate keys,
+invalid scalar syntax, or any other value is `manual_review`. Every `include.*` or `includeIf.*` key/section,
 `core.hooksPath`, `core.fsmonitor`, filter/process/clean/smudge command,
 credential helper, SSH command, upload-pack, receive-pack, pager, alias, and
 any other local key is a `manual_review` block. The parser rejects a changed
 or unreadable config before spawning Git, and the second D2a round proves that
-the validated config bytes and parent/layout identities did not change. Thus
+the validated `config_sha256` and parent/layout identities did not change. Thus
 local config cannot introduce an include, executable hook, external helper,
 or alternate object/config path. Global and system config remain disabled by
 the six explicit `GIT_CONFIG_*` settings.
@@ -425,8 +435,9 @@ every node below the runtime root except the byte-identical
 - `role` is one of `mountpoint`, `bind_placeholder`, `python`, `python_stdlib`, `python_native`, `worker`,
   `git`, `git_core`, `git_template`, `elf_loader`, or `shared_library`.
 
-The closed entry set contains the five required empty mountpoint directories
-`input`, `work`, `proc`, `dev`, and `tmp` at the runtime-root top level and the
+The closed entry set contains the five required mountpoint directories
+`input`, `work`, `proc`, `dev`, and `tmp` at the runtime-root top level; `work`,
+`proc`, `dev`, and `tmp` are empty, while `input` contains only the
 regular `input/source.bundle` bind placeholder with exactly the empty-file
 identity above, `kind=regular`, `role=bind_placeholder`, and `git_blob=null`,
 plus `/usr/bin/python3.12`, the complete packaged
@@ -693,7 +704,7 @@ The `facts` object has no keys beyond the following stage-specific schemas:
 
 | Stage | Exact `facts` keys and types |
 |---|---|
-| `preflight` | `bootstrap_nonce`, `worker_start_nonce`, `worker_auth_nonce` (`nonce64`); `reviewed_head`, `reviewed_tree` (`hex40`); `source_root_identity`, `source_git_identity`, `evidence_root_identity` (exact identity objects); `runtime_manifest_sha256`, `supervisor_sha256`, `exporter_argv_sha256`, `exporter_environment_sha256`, `worker_argv_sha256`, `worker_environment_sha256` (`hex64`); `uid_map`, `gid_map` (exact `[65532,65532,1]`); `exporter_cgroup_identity`, `worker_cgroup_identity` (exact identity objects) |
+| `preflight` | `bootstrap_nonce`, `worker_start_nonce`, `worker_auth_nonce` (`nonce64`); `reviewed_head`, `reviewed_tree` (`hex40`); `source_root_identity`, `source_git_identity`, `evidence_root_identity` (exact identity objects); `runtime_manifest_sha256`, `supervisor_sha256`, `source_config_sha256`, `exporter_argv_sha256`, `exporter_environment_sha256`, `worker_argv_sha256`, `worker_environment_sha256` (`hex64`); `uid_map`, `gid_map` (exact `[65532,65532,1]`); `exporter_cgroup_identity`, `worker_cgroup_identity` (exact identity objects) |
 | `spawn` | `process_kind` (`exporter` or `worker`); `clone_flags` (exact integer `8589938688`, the Linux x86-64 value `CLONE_PIDFD|CLONE_INTO_CGROUP`); `exit_signal` (exact integer `17`, `SIGCHLD`); `pidfd_inode`, `process_pid` (positive integers); `cgroup_identity`, `executable_identity` (exact identity objects); `executable_sha256`, `argv_sha256`, `environment_sha256` (`hex64`); `execveat_result` (`entered` or `failed`) |
 | `ipc` | `direction`, `sequence`, `message_type`, and `payload_hash` copied exactly from the accepted envelope; `envelope_hash` (`hex64`); `outer_pidfd_inode`, `worker_pidfd_inode`, `worker_cgroup_inode` (positive integers, with `worker_pidfd_inode` `null` only before `AUTH_CONFIRM`) |
 | `wait` | `process_kind` (`exporter` or `worker`); `result_class` (closed §5.2 value or `null` for exporter); `wait_code`, `wait_signal` (bounded integer or `null`); `cgroup_populated` (exact integer `0`); `output_sha256` (`hex64` or `null`) |
