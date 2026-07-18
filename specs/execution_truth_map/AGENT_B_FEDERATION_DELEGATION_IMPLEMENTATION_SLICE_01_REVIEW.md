@@ -1,9 +1,9 @@
 # Agent-B Implementation Review Packet — Federation Delegation V1 Slice 01
 
-Status: `REVISION REVIEW REQUESTED`  
+Status: `MERGED — POST-MERGE SMOKE VERIFIED`
 Scope: admission-only Federation Delegation V1 product slice  
 Feature gate: `FEDERATION_V1_DELEGATION_ENABLED`, default `false`  
-Merge: not performed  
+Merge: Steward PR #829 and Agent City PR #2203 performed
 Production activation: not performed
 
 This packet is self-contained. It records the exact implementation pins, the
@@ -241,6 +241,38 @@ for the next gate. In particular:
 
 Requested decision: `ACCEPTED FOR ADMISSION-ONLY CRUCIBLE/REVIEW` or a precise blocking
 finding. No product scope beyond this packet is requested.
+
+## Merge, CI and Post-Merge Smoke Record
+
+Agent-B final acceptance was `ACCEPTED FOR MERGE REVIEW`. The implementation branches
+were merged into the authoritative repositories:
+
+| Repository | PR | Merge commit | Current `main` pin used for docs/smoke | Merge method |
+|---|---:|---|---|---|
+| `kimeisele/steward` | #829 | `9f6519d8d8713b81c6197217d61e3b1fcc144ea7` | `2bae8b694222aa2d3395c779bfdc2b2ed9813901` | regular merge; later heartbeat excluded from semantic history |
+| `kimeisele/agent-city` | #2203 | `d16b7ffb1db0cd1f794bd6066b7978e6db86794b` | `d16b7ffb1db0cd1f794bd6066b7978e6db86794b` | documented administrator bypass for GitHub `REVIEW_REQUIRED`; no automatic checks existed |
+
+The Agent City PR contains the pre-merge audit comment with the exact base/head pins,
+Agent-B acceptance, test counts, cross-repo result, absent-checks explanation, bypass
+reason and disabled-gate confirmation.
+
+Post-merge smoke against the `main` pins produced:
+
+| Repository / command | Result |
+|---|---:|
+| Steward `pytest -q tests/test_federation_v1_admission.py tests/federation_v1` | **65 passed** |
+| Steward `pytest -q tests/test_federation_gateway.py tests/test_federation_quarantine.py` | **61 passed** |
+| Agent City `pytest -q tests/test_federation_v1_admission.py tests/test_federation_v1_hardening.py tests/federation_v1` | **64 passed** |
+| Agent City `pytest -q tests/test_federation_nadi.py tests/test_federation_relay.py` | **91 passed** |
+| Cross-repo admission-only crucible using Agent City `main` | **1 passed** |
+| Steward PR #829 CI | **Python 3.11, Python 3.12, Lint, Security all passed** |
+
+The current capability state is unchanged by merge: `delegate_task` and
+`delegation_receipt` are `crucible_verified` / `disabled`; `delegation_status_query`
+and `delegation_status` remain `declared` / `unavailable`. The feature gate remains
+`false` by default and no production caller is wired. Worker/tool execution, status
+query, lease/recovery automation, terminal/verification receipts, managed-task
+completion, Provider Failover, Context Bridge and the Execution Spine remain excluded.
 
 ## 11. Revision for Agent-B Blockers (Slice 01A)
 

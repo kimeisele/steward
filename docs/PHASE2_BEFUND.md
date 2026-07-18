@@ -2797,3 +2797,39 @@ Grenzen, korrupten Ledger-State sowie parallele unabhängige Ledger-Instanzen un
 Updates ab. Feature-Gate, Legacy-Pfade, Phase 1, Context Bridge und alle weiterhin
 gesperrten Runtime-/Workflow-Funktionen bleiben unverändert. Agent-B-Status ist nun
 `REVISION REVIEW REQUESTED`; Merge und produktive Aktivierung bleiben ausstehend.
+
+## §37 — FEDERATION DELEGATION SLICE 01A: MERGE- UND CI-STAND (2026-07-18)
+
+Die Agent-B-Abnahme `ACCEPTED FOR MERGE REVIEW` wurde umgesetzt. Die beiden
+Implementierungs-PRs sind nun auf den jeweiligen autoritativen `main`-Branches:
+
+- Steward PR #829 wurde regulär gemergt. Merge-Commit:
+  `9f6519d8d8713b81c6197217d61e3b1fcc144ea7`. Der danach verifizierte aktuelle
+  Remote-`main`-Stand ist `2bae8b694222aa2d3395c779bfdc2b2ed9813901`; der zusätzliche
+  Heartbeat-Commit `chore: heartbeat #5879 state sync` ist für die historische
+  Signalbewertung ausdrücklich ausgeschlossen.
+- Agent City PR #2203 wurde nach dokumentiertem Admin-Bypass gemergt, weil GitHub
+  ausschließlich `REVIEW_REQUIRED` meldete und für den Branch keine automatischen
+  Required Checks vorhanden waren. Merge-Commit und aktueller Remote-`main`-Stand:
+  `d16b7ffb1db0cd1f794bd6066b7978e6db86794b`.
+- Der Audit-Kommentar in PR #2203 enthält die vor dem Bypass verifizierten Base-/Head-
+  Pins, Agent-B-Abnahme, Testzahlen, Crucible-Beleg, fehlende automatische Checks,
+  Begründung des Bypasses und den weiterhin deaktivierten Gate-Zustand.
+
+Post-Merge-Smoke gegen diese `main`-Stände:
+
+- Steward Slice/Golden Fixtures: `65 passed`.
+- Steward Legacy Gateway/Quarantine: `61 passed`.
+- Agent City Slice/Hardening/Fixtures: `64 passed`.
+- Agent City Legacy Federation/NADI/Relay: `91 passed`.
+- Cross-Repo Admission-only Crucible mit Agent-City-`main`: `1 passed`.
+- Steward CI für PR #829: Python 3.11, Python 3.12, Lint und Security jeweils
+  erfolgreich.
+
+Der Merge ändert keine Aktivierung: `FEDERATION_V1_DELEGATION_ENABLED` bleibt
+standardmäßig `false`, die beiden implementierten Wiring-Einträge bleiben
+`crucible_verified` mit Disposition `disabled`, und es gibt keinen produktiven Caller.
+Worker-/Tool-Ausführung, Status Query, Lease/Recovery, Terminal-/Verification-Receipts,
+Managed-Task-Abschluss, Provider-Failover, Context Bridge und Execution-Spine bleiben
+gesperrt. Die Feature-Branches sind nicht mehr die Wahrheitsquelle; die obigen
+`main`-Pins sind autoritativ.
