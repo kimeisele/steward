@@ -20,6 +20,12 @@ import logging
 import subprocess
 from dataclasses import dataclass
 
+from steward.repository_policy import (
+    mutation_repository_allowed,
+    parse_repository,
+    repository_from_pr_url,
+)
+
 logger = logging.getLogger("STEWARD.ACTUATORS")
 
 _PROTECTED = frozenset({"main", "master", "develop", "release"})
@@ -298,10 +304,15 @@ class GitHubActuator:
             return None
         return result
 
-    def merge_pr(self, pr_number: int, method: str = "squash") -> ActuatorResult:
-        """Merge a PR. Method: merge, squash, rebase."""
+    def merge_pr(self, pr_number: int, method: str = "squash", *, repository: str | None = None) -> ActuatorResult:
+        """Merge only an explicitly allowlisted repository PR."""
+        repo = parse_repository(repository or "")
+        if repo is None or not mutation_repository_allowed(repo):
+            return ActuatorResult(success=False, error="BLOCKED: repository mutation boundary")
+        if method not in {"merge", "squash", "rebase"}:
+            return ActuatorResult(success=False, error="BLOCKED: invalid merge method")
         result = self._gh.call(
-            ["pr", "merge", str(pr_number), f"--{method}", "--delete-branch"],
+            ["pr", "merge", str(pr_number), "--repo", repo, f"--{method}", "--delete-branch"],
             timeout=30,
         )
         if result is None:
@@ -315,6 +326,9 @@ class GitHubActuator:
         all required status checks pass. Requires branch protection
         rules to be configured on the repo.
         """
+        parsed = repository_from_pr_url(pr_url)
+        if parsed is None or not mutation_repository_allowed(parsed[0]):
+            return ActuatorResult(success=False, error="BLOCKED: repository mutation boundary")
         result = self._gh.call(
             ["pr", "merge", "--auto", "--merge", pr_url.strip()],
             timeout=15,
