@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Awaitable, Callable
 
 from steward import agent_memory
+from steward.repository_policy import mutation_repository_allowed, repository_from_pr_url
 from steward.services import SVC_MARKETPLACE
 from steward.tools.circuit_breaker import CircuitBreaker
 from vibe_core.di import ServiceRegistry
@@ -488,7 +489,14 @@ class FixPipeline:
                 )
                 if pr_url:
                     # Close the Kirtan: auto-merge when CI passes
-                    gh.call(["pr", "merge", "--auto", "--merge", pr_url.strip()], timeout=15)
+                    parsed = repository_from_pr_url(pr_url)
+                    if parsed is not None and mutation_repository_allowed(parsed[0]):
+                        gh.call(
+                            ["pr", "merge", "--auto", "--merge", pr_url.strip()],
+                            timeout=15,
+                        )
+                    else:
+                        logger.warning("Fix pipeline: auto-merge denied for ambiguous or protected repository")
                 return pr_url
 
         except Exception as e:
