@@ -183,6 +183,7 @@ class AgentLoop:
         self._feedback = feedback
         self._maha_llm = maha_llm
         self._siksastakam = siksastakam
+        self._tool_hint: str | None = None
 
         # Ensure system prompt is first message
         if system_prompt and (not conversation.messages or conversation.messages[0].role != MessageRole.SYSTEM):
@@ -334,6 +335,16 @@ class AgentLoop:
                 user_message, round_num, context_pct, seed=cr.seed, l0_guardian=l0_guardian
             )
             if round_num == 0:
+                suggested_tools = sorted(directive.tool_names)
+                registered_tools = self._registry.list_tools()
+                if 0 < len(suggested_tools) <= 8 and len(suggested_tools) < len(registered_tools):
+                    self._tool_hint = (
+                        "[Buddhi] For this task, these tools may be useful: "
+                        f"{', '.join(suggested_tools)}. "
+                        "All other tools remain fully available."
+                    )
+                else:
+                    self._tool_hint = None
                 usage.buddhi_action = directive.action.value
                 usage.buddhi_guna = directive.guna.value
                 usage.buddhi_tier = directive.tier.value
@@ -775,6 +786,14 @@ class AgentLoop:
             "messages": self._conversation.to_dicts(),
             "max_tokens": max_tokens,
         }
+
+        tool_hint = self._tool_hint
+        self._tool_hint = None
+        messages = kwargs["messages"]
+        if tool_hint and messages and messages[0].get("role") == MessageRole.SYSTEM:
+            system_message = dict(messages[0])
+            system_message["content"] = f"{system_message['content']}\n\n{tool_hint}"
+            messages[0] = system_message
 
         # Brain-in-a-jar: JSON mode (no tools parameter, saves ~1500 tokens/call)
         if self._json_mode:
