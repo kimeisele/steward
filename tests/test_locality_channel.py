@@ -1,9 +1,7 @@
 """Regression tests for the phonetic locality channel."""
 
-from vibe_core.mahamantra.adapters.compression import MahaCompression
-
 from steward.antahkarana.manas import Manas
-
+from vibe_core.mahamantra.adapters.compression import MahaCompression
 
 VARIANTS = [
     "fix the failing test in test_agent.py",
