@@ -2877,3 +2877,65 @@ atomare Admission-to-Assignment-Grenze, Duplicate/Crash-Verhalten und die Entste
 eines einzigen `started`-Receipts entscheidet. Noch kein Produktcode, keine Worker-/Tool-
 Ausführung, kein Status Query, keine Recovery-Automation, keine Verification oder
 Context-Bridge-Aktivierung.
+
+## §39 — FEDERATION DELEGATION IMPLEMENTATION PLAN 02 (2026-07-18)
+
+Der Slice-02-Recon ist akzeptiert und Steward PR #836 regulär gemergt:
+
+- Merge-Commit: `2f1ac917ff6f48a97839b0804cd201e1a2a8c030`
+- aktueller verifizierter Steward-`main`-Head zum Planbeginn:
+  `2f1ac917ff6f48a97839b0804cd201e1a2a8c030`
+
+Der rein dokumentarische Plan 02 steht vollständig in:
+
+`specs/execution_truth_map/FEDERATION_DELEGATION_IMPLEMENTATION_PLAN_02.md`
+
+Er definiert ausschließlich:
+
+`validated ACCEPTED admission -> eine target-owned Assignment im bestehenden
+TargetAdmissionLedger -> keine Mission/Task/Worker/Tool-Ausführung -> dauerhaft
+gespeichertes signiertes started-Receipt -> Steward-Korrelation auf dieselbe Delegation
+und denselben target_work_id`.
+
+Die bevorzugte Architektur ist eine enge Erweiterung des bestehenden
+`TargetAdmissionLedger`; ein zweiter Work-Store ist nur nach belegtem Code-Blocker
+zulässig. Die Assignment- und vollständigen Started-Receipt-Daten werden als eine
+atomare Commit-Einheit geplant. `ASSIGNMENT_PENDING` und `ASSIGNED` bleiben interne
+Vor-Commit-Phasen; der durable Zustand springt von `ACCEPTED` auf `STARTED`, damit keine
+Assignment ohne Start-Evidence persistiert wird. Candidate-/Authority-Digests und
+Assignment-Epoch werden über geschlossene `evidence_refs` des eingefrorenen Started-
+Receipt-Schemas gebunden.
+
+Der Plan enthält Ledger-Schema-Diff, Candidate-Auswahl, Atomicity-/Crash-/Duplicate-
+Matrix, Origin-Korrelation, Wiring-/Legacy-Isolation, Definition of Done und Agent-B-
+Reviewfragen. Noch kein Produktcode, keine Mission, kein Worker/Cartridge, kein Tool,
+keine Recovery-/Lease-Automation, kein Status Query, keine terminale oder Verification-
+Receipt-Logik und keine Aktivierung.
+
+## §40 — FEDERATION DELEGATION PLAN 02: ASSIGNMENT/STARTED-KORREKTUR (2026-07-18)
+
+Agent B hat Plan 02 Revision 0.1 wegen einer semantisch falschen Verwendung von
+`receipt_stage=started` zurückgewiesen. Die Revision 0.2 wählt deshalb ausdrücklich Weg A:
+
+- Slice 02 endet bei `ACCEPTED -> ASSIGNED` im bestehenden target-owned
+  `TargetAdmissionLedger`.
+- `ASSIGNED` bedeutet nur unveränderlicher beobachteter Candidate-Snapshot, Authority-
+  Bindung, Epoch und atomar persistierte signierte target-lokale Assignment-Attestation.
+- Es gibt kein externes Receipt, kein `started`, keine Reservation, keine Mission, kein
+  Queue Item und keine Ausführung.
+- Das eingefrorene `started`-Receipt bleibt einem späteren Slice mit durablem Work Item
+  oder echter Scheduler-Reservation vorbehalten.
+- Steward besitzt in diesem Slice kein Assignment-Evidence-Objekt und behauptet daher
+  keine unabhängige Verification. Eine spätere externe Attestation wäre nur eine signed
+  target attestation, keine Verification Receipt.
+- Candidate-Staleness wird über `observed_candidate_snapshot`, `observed_at` und einen
+  vor Commit erneut geprüften Source-Observation-Token begrenzt. Eine fortbestehende
+  Availability oder Ownership wird nicht behauptet.
+
+Der vollständige revidierte Plan steht in:
+
+`specs/execution_truth_map/FEDERATION_DELEGATION_IMPLEMENTATION_PLAN_02.md`
+
+Noch kein Produktcode und weiterhin gesperrt: Mission, Queue, Worker/Cartridge, Tool,
+LLM, Git, Lease/Recovery, terminale/Verification-Receipts, Status Query, Provider
+Failover, Context Bridge und Aktivierung.
