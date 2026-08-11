@@ -47,16 +47,11 @@ def test_post_verdict_no_token():
     assert result is False
 
 
-def test_post_verdict_creates_review():
+def test_agent_city_legacy_approve_is_denied_without_network_call():
     poster = PRVerdictPoster()
     poster._token = "ghp_test"
 
-    mock_response = MagicMock()
-    mock_response.status = 201
-    mock_response.__enter__ = MagicMock(return_value=mock_response)
-    mock_response.__exit__ = MagicMock(return_value=False)
-
-    with patch("urllib.request.urlopen", return_value=mock_response) as mock_open:
+    with patch("urllib.request.urlopen") as mock_open:
         result = poster.post_verdict(
             repo="kimeisele/agent-city",
             pr_number=42,
@@ -66,17 +61,25 @@ def test_post_verdict_creates_review():
             source_agent="steward",
         )
 
-    assert result is True
-    assert poster._post_count == 1
+    assert result is False
+    mock_open.assert_not_called()
+    assert poster._post_count == 0
 
-    # Verify the request was made correctly
-    call_args = mock_open.call_args
-    req = call_args[0][0]
-    assert "kimeisele/agent-city/pulls/42/reviews" in req.full_url
-    body = json.loads(req.data)
-    assert body["event"] == "APPROVE"
-    assert "steward" in body["body"]
-    assert "All checks passed" in body["body"]
+
+def test_own_steward_review_can_still_post():
+    poster = PRVerdictPoster()
+    poster._token = "ghp_test"
+    mock_response = MagicMock(status=201)
+    mock_response.__enter__ = MagicMock(return_value=mock_response)
+    mock_response.__exit__ = MagicMock(return_value=False)
+
+    with patch("urllib.request.urlopen", return_value=mock_response) as mock_open:
+        result = poster.post_verdict(repo="kimeisele/steward", pr_number=42, verdict="comment")
+
+    assert result is True
+    req = mock_open.call_args[0][0]
+    assert "kimeisele/steward/pulls/42/reviews" in req.full_url
+    assert json.loads(req.data)["event"] == "COMMENT"
 
 
 def test_post_verdict_request_changes():
@@ -137,7 +140,7 @@ def test_post_from_nadi_event_full_payload():
     mock_response.__exit__ = MagicMock(return_value=False)
 
     payload = {
-        "repo": "kimeisele/agent-city",
+        "repo": "kimeisele/steward",
         "pr_number": 42,
         "verdict": "approve",
         "reason": "all checks passed",
@@ -149,6 +152,16 @@ def test_post_from_nadi_event_full_payload():
         result = poster.post_from_nadi_event(payload)
 
     assert result is True
+
+
+def test_post_from_nadi_event_rejects_malformed_repository():
+    poster = PRVerdictPoster()
+    poster._token = "ghp_test"
+
+    assert (
+        poster.post_from_nadi_event({"repo": "https://evil.example/kimeisele/steward/pull/42", "pr_number": 42})
+        is False
+    )
 
 
 # ── Stats ──────────────────────────────────────────────────────────

@@ -279,7 +279,7 @@ class TestGitHubActuatorMergePR:
         gh.call.return_value = "Merged PR #1"
         actuator = GitHubActuator(gh_client=gh)
 
-        result = actuator.merge_pr(1)
+        result = actuator.merge_pr(1, repository="kimeisele/steward")
         assert result.success
 
     def test_merge_pr_rebase(self):
@@ -287,7 +287,7 @@ class TestGitHubActuatorMergePR:
         gh.call.return_value = "Merged"
         actuator = GitHubActuator(gh_client=gh)
 
-        actuator.merge_pr(1, method="rebase")
+        actuator.merge_pr(1, method="rebase", repository="kimeisele/steward")
         args = gh.call.call_args[0][0]
         assert "--rebase" in args
 
@@ -298,7 +298,7 @@ class TestGitHubActuatorEnableAutoMerge:
         gh.call.return_value = "Auto-merge enabled"
         actuator = GitHubActuator(gh_client=gh)
 
-        result = actuator.enable_auto_merge("https://github.com/owner/repo/pull/42")
+        result = actuator.enable_auto_merge("https://github.com/kimeisele/steward/pull/42")
         assert result.success
         args = gh.call.call_args[0][0]
         assert "--auto" in args
@@ -309,15 +309,45 @@ class TestGitHubActuatorEnableAutoMerge:
         gh.call.return_value = "Auto-merge enabled"
         actuator = GitHubActuator(gh_client=gh)
 
-        actuator.enable_auto_merge("  https://github.com/owner/repo/pull/42  \n")
+        actuator.enable_auto_merge("  https://github.com/kimeisele/steward/pull/42  \n")
         args = gh.call.call_args[0][0]
-        assert args[-1] == "https://github.com/owner/repo/pull/42"
+        assert args[-1] == "https://github.com/kimeisele/steward/pull/42"
 
     def test_enable_auto_merge_fails(self):
         gh = MagicMock()
         gh.call.return_value = None
         actuator = GitHubActuator(gh_client=gh)
 
-        result = actuator.enable_auto_merge("https://github.com/owner/repo/pull/42")
+        result = actuator.enable_auto_merge("https://github.com/kimeisele/steward/pull/42")
         assert not result.success
         assert "auto" in result.error.lower()
+
+
+def test_merge_pr_denies_agent_city_without_calling_github():
+    gh = MagicMock()
+    actuator = GitHubActuator(gh_client=gh)
+
+    result = actuator.merge_pr(42, repository="kimeisele/agent-city")
+
+    assert not result.success
+    gh.call.assert_not_called()
+
+
+def test_auto_merge_denies_agent_city_url_without_calling_github():
+    gh = MagicMock()
+    actuator = GitHubActuator(gh_client=gh)
+
+    result = actuator.enable_auto_merge("https://github.com/kimeisele/agent-city/pull/42")
+
+    assert not result.success
+    gh.call.assert_not_called()
+
+
+def test_auto_merge_rejects_malformed_url_without_calling_github():
+    gh = MagicMock()
+    actuator = GitHubActuator(gh_client=gh)
+
+    result = actuator.enable_auto_merge("https://evil.example/kimeisele/agent-city/pull/42")
+
+    assert not result.success
+    gh.call.assert_not_called()
