@@ -19,6 +19,8 @@ import logging
 import os
 from pathlib import Path
 
+from steward.repository_policy import AGENT_CITY_REPOSITORY, parse_repository
+
 logger = logging.getLogger("STEWARD.PR_VERDICT")
 
 GITHUB_API = "https://api.github.com"
@@ -91,6 +93,17 @@ class PRVerdictPoster:
         Returns:
             True if review was posted successfully
         """
+        normalized_repo = parse_repository(repo)
+        if normalized_repo is None:
+            logger.warning("PR_VERDICT: ambiguous repository, refusing review post")
+            return False
+        if normalized_repo == AGENT_CITY_REPOSITORY:
+            logger.warning("PR_VERDICT: legacy review post denied for %s", normalized_repo)
+            return False
+        if not isinstance(pr_number, int) or isinstance(pr_number, bool) or pr_number <= 0:
+            logger.warning("PR_VERDICT: malformed pull request number")
+            return False
+        repo = normalized_repo
         if not self._token:
             logger.warning("PR_VERDICT: no GitHub token, skipping post")
             return False
